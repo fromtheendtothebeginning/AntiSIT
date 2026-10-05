@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
@@ -218,14 +219,16 @@ class _LoginPageState extends State<LoginPage> {
                             child: const Text('先逛逛（免登录）', style: TextStyle(fontSize: 13)),
                           ),
                         ),
-                        const SizedBox(
-                            width: 1, height: 18, child: ColoredBox(color: SemColors.border)),
-                        Expanded(
-                          child: TextButton(
-                            onPressed: _busy ? null : _demo,
-                            child: const Text('演示模式（假数据）', style: TextStyle(fontSize: 13)),
+                        if (kDebugMode) ...[
+                          const SizedBox(
+                              width: 1, height: 18, child: ColoredBox(color: SemColors.border)),
+                          Expanded(
+                            child: TextButton(
+                              onPressed: _busy ? null : _demo,
+                              child: const Text('演示模式（假数据）', style: TextStyle(fontSize: 13)),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ],

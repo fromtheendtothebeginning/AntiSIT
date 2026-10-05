@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
@@ -106,10 +107,11 @@ class LoginPrompt extends StatelessWidget {
               child: Text(st.direct ? '去填写校园凭据' : '去登录 / 设置服务器'),
             ),
             const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () => AppState.I.setDemo(true),
-              child: const Text('演示模式（本地假数据）'),
-            ),
+            if (kDebugMode)
+              OutlinedButton(
+                onPressed: () => AppState.I.setDemo(true),
+                child: const Text('演示模式（本地假数据）'),
+              ),
           ],
         ),
       ),

@@ -26,6 +26,7 @@ class _TimetablePageState extends State<TimetablePage> {
   final PageController _dayPc = PageController();
   int _shownWeek = 1;
   int _shownDay = 0; // 0=周一
+  DateTime? _lastNavTap; // 上次点击周次标题的时间：500ms 内点两次回今天
   bool _dayView = false;
   bool _booting = true;
   final Set<int> _loadingWeeks = {};
@@ -1358,7 +1359,6 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   Widget _weekNav() {
-    final isCurrent = _shownWeek == _todayWeek;
     return Center(
       child: Container(
         decoration: BoxDecoration(
@@ -1376,8 +1376,10 @@ class _TimetablePageState extends State<TimetablePage> {
             _navBtn(Icons.chevron_left, _shownWeek > 1 ? () => _jumpTo(_shownWeek - 1) : null),
             GestureDetector(
               onTap: () {
-                final tw = _todayWeek;
-                _jumpTo(tw ?? 1);
+                if (_navTitleTappedTwice()) {
+                  final tw = _todayWeek;
+                  _jumpTo(tw ?? 1);
+                }
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -1385,32 +1387,20 @@ class _TimetablePageState extends State<TimetablePage> {
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
               ),
             ),
-            if (!isCurrent)
-              GestureDetector(
-                onTap: () {
-                  final tw = _todayWeek;
-                  _jumpTo(tw ?? 1);
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: SemColors.accent),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.my_location, size: 12, color: SemColors.accent),
-                      SizedBox(width: 4),
-                      Text('回到今天', style: TextStyle(fontSize: 12, color: SemColors.accent)),
-                    ],
-                  ),
-                ),
-              ),
             _navBtn(Icons.chevron_right, _shownWeek < _weekCount ? () => _jumpTo(_shownWeek + 1) : null),
           ],
         ),
       ),
     );
+  }
+
+  /// 周次标题 500ms 内被点第二次 → 回到今天。
+  bool _navTitleTappedTwice() {
+    final now = DateTime.now();
+    final twice =
+        _lastNavTap != null && now.difference(_lastNavTap!) < const Duration(milliseconds: 500);
+    _lastNavTap = twice ? null : now;
+    return twice;
   }
 
   Widget _navBtn(IconData icon, VoidCallback? onTap) => SizedBox(
@@ -1432,11 +1422,7 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   Widget _dayNav() {
-    final todayIdx = _todayWeek == null
-        ? null
-        : (_todayWeek! - 1) * 7 + DateTime.now().weekday - 1;
     final idx = (_shownWeek - 1) * 7 + _shownDay;
-    final isToday = todayIdx == idx;
     return Center(
       child: Container(
         decoration: BoxDecoration(
@@ -1454,8 +1440,10 @@ class _TimetablePageState extends State<TimetablePage> {
             _navBtn(Icons.chevron_left, idx > 0 ? () => _goDay(idx ~/ 7, idx % 7 - 1) : null),
             GestureDetector(
               onTap: () {
-                final tw = _todayWeek;
-                _goDay(tw ?? 1, DateTime.now().weekday - 1);
+                if (_navTitleTappedTwice()) {
+                  final tw = _todayWeek;
+                  _goDay(tw ?? 1, DateTime.now().weekday - 1);
+                }
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -1463,27 +1451,6 @@ class _TimetablePageState extends State<TimetablePage> {
                     style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
               ),
             ),
-            if (!isToday)
-              GestureDetector(
-                onTap: () {
-                  final tw = _todayWeek;
-                  _goDay(tw ?? 1, DateTime.now().weekday - 1);
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: SemColors.accent),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.my_location, size: 12, color: SemColors.accent),
-                      SizedBox(width: 4),
-                      Text('回到今天', style: TextStyle(fontSize: 12, color: SemColors.accent)),
-                    ],
-                  ),
-                ),
-              ),
             _navBtn(Icons.chevron_right, idx < _weekCount * 7 - 1 ? () => _goDay(idx ~/ 7 + (idx % 7 == 6 ? 1 : 0), (idx + 1) % 7) : null),
           ],
         ),

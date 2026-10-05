@@ -171,8 +171,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: AppCard(
                     radius: 10,
-                    onTap: () => Navigator.of(context)
-                        .push(MaterialPageRoute(builder: (_) => ActivityDetailPage(id: '${a['id']}'))),
+                    onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => ActivityDetailPage(id: '${a['id']}', activity: a))),
                     padding: const EdgeInsets.all(14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,9 +260,13 @@ class _FilterChip extends StatelessWidget {
 }
 
 class ActivityDetailPage extends StatefulWidget {
-  const ActivityDetailPage({super.key, required this.id});
+  const ActivityDetailPage({super.key, required this.id, this.activity});
 
   final String id;
+
+  /// 列表项数据：详情接口只返回 id/hdms/quota/signup，
+  /// 名称、时间、校区等元信息从这里取。
+  final Map<String, dynamic>? activity;
 
   @override
   State<ActivityDetailPage> createState() => _ActivityDetailPageState();
@@ -276,19 +280,25 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   @override
   void initState() {
     super.initState();
+    _data = widget.activity == null ? null : Map<String, dynamic>.from(widget.activity!);
     _load();
   }
 
   Future<void> _load() async {
+    final hasBase = _data != null && _data!.isNotEmpty;
     setState(() {
-      _loading = true;
+      _loading = !hasBase;
       _err = null;
     });
     try {
       final r = await ApiClient.I.activityDetail(widget.id);
-      _data = r['data'] as Map<String, dynamic>?;
+      // 详情接口结果（完整说明/名额/报名方式）覆盖列表数据；其余元信息保留列表项内容。
+      _data = {...?_data, ...?r['data'] as Map<String, dynamic>?};
     } catch (e) {
-      _err = e is ApiError ? e.message : e.toString();
+      // 已有列表项数据时不必因详情拉取失败而整页报错。
+      if (_data == null || _data!.isEmpty) {
+        _err = e is ApiError ? e.message : e.toString();
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

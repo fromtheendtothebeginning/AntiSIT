@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -375,12 +376,13 @@ class _ConnectPageState extends State<ConnectPage> {
                     onPressed: () => _server.clear(),
                     child: const Text('清空'),
                   ),
-                  OutlinedButton(
-                    onPressed: () {
-                      _server.text = AppState.localUrl;
-                    },
-                    child: const Text('本地调试'),
-                  ),
+                  if (kDebugMode)
+                    OutlinedButton(
+                      onPressed: () {
+                        _server.text = AppState.localUrl;
+                      },
+                      child: const Text('本地调试'),
+                    ),
                 ],
               ),
               if (_serverProbe != null) ...[

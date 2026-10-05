@@ -51,7 +51,7 @@ class AppState extends ChangeNotifier {
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
     serverUrl = sp.getString('server_url') ?? '';
-    demo = sp.getBool('demo') ?? false;
+    demo = kDebugMode && (sp.getBool('demo') ?? false); // 演示模式仅 debug 构建可用
     remember = sp.getBool('remember') ?? true;
     token = sp.getString('token');
     mode = sp.getString('app_mode') == 'direct' ? AppMode.direct : AppMode.server;

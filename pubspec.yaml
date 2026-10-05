@@ -96,14 +96,15 @@ flutter:
   # see https://flutter.dev/to/font-from-package
 
 # 启动图标：源文件与生成脚本见 tool/（make_icon.py 生成，本命令应用）
-# 更换方案：把下面 4 处 d 改成 e / a / b / c 后执行 dart run flutter_launcher_icons
+# 更换方案：把下面 4 处 j 改成 h / i / f / g / d / e / a / b / c 后执行 dart run flutter_launcher_icons
 flutter_launcher_icons:
-  image_path: "tool/icon/icon_d_1024.png"
+  image_path: "tool/icon/icon_j_1024.png"
   android: true
   ios: false
-  adaptive_icon_background: "tool/icon/adaptive_bg_d.png"
-  adaptive_icon_foreground: "tool/icon/adaptive_fg_d.png"
+  adaptive_icon_background: "tool/icon/adaptive_bg_j.png"
+  adaptive_icon_foreground: "tool/icon/adaptive_fg_j.png"
+  adaptive_icon_foreground_inset: 0
   windows:
     generate: true
-    image_path: "tool/icon/icon_d_1024.png"
+    image_path: "tool/icon/icon_j_1024.png"
     icon_size: 256
