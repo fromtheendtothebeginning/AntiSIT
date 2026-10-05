@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../app_state.dart';
-import '../pages/login_page.dart';
+import '../pages/connect_page.dart';
 
 final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 
@@ -72,7 +72,7 @@ class PageStateView extends StatelessWidget {
   }
 }
 
-/// 未登录提示卡：数据页在游客模式下的占位内容。
+/// 未登录提示卡：数据页在游客模式下的占位内容（文案随数据来源模式变化）。
 class LoginPrompt extends StatelessWidget {
   const LoginPrompt({super.key, this.title = '未登录'});
 
@@ -80,6 +80,7 @@ class LoginPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final st = AppState.I;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
@@ -90,17 +91,19 @@ class LoginPrompt extends StatelessWidget {
             const SizedBox(height: 12),
             Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
-            const Text(
-              '登录 anticraft 账号后查看校园数据\n校园凭据在网站「我的 → 校园服务」配置一次即可',
+            Text(
+              st.direct
+                  ? '直连模式：填写学号与统一身份认证密码后\n由本机直接访问学校系统（需在校园网 / 校内 VPN 内）'
+                  : '登录服务器账号后查看校园数据\n校园凭据在该服务器网站「我的 → 校园服务」配置一次即可',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12.5, color: SemColors.textMuted, height: 1.7),
+              style: const TextStyle(fontSize: 12.5, color: SemColors.textMuted, height: 1.7),
             ),
             const SizedBox(height: 20),
             FilledButton(
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const LoginPage()),
+                MaterialPageRoute(builder: (_) => const ConnectPage()),
               ),
-              child: const Text('去登录'),
+              child: Text(st.direct ? '去填写校园凭据' : '去登录 / 设置服务器'),
             ),
             const SizedBox(height: 10),
             OutlinedButton(
@@ -128,7 +131,7 @@ class LoginGate extends StatelessWidget {
         final st = AppState.I;
         if (!st.loggedIn) return const LoginPrompt();
         return KeyedSubtree(
-          key: ValueKey('gate_${st.demo}_${st.token != null}'),
+          key: ValueKey('gate_${st.demo}_${st.direct}_${st.token != null}_${st.creds.hasLogin}'),
           child: child,
         );
       },

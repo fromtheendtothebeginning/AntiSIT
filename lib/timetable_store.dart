@@ -115,14 +115,15 @@ class TimetableStore {
   }
 
   void _pushCloud() {
-    if (!AppState.I.loggedIn || AppState.I.demo) return;
+    if (!AppState.I.loggedIn || AppState.I.demo || AppState.I.direct) return;
     final data = toJson();
     ApiClient.I.timetableCloudPut(data).catchError((_) {});
   }
 
   /// 登录后拉云端合并：云端较新则整体采纳（返回 true），本地较新则回推。
+  /// 直连模式没有云端课表（数据源是学校教务 + 本机存储）。
   Future<bool> syncCloud() async {
-    if (!AppState.I.loggedIn || AppState.I.demo) return false;
+    if (!AppState.I.loggedIn || AppState.I.demo || AppState.I.direct) return false;
     try {
       final r = await ApiClient.I.timetableCloudGet();
       final data = r['data'];

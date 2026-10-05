@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 
 import 'app_state.dart';
 import 'pages/home_page.dart';
+import 'widgets/captcha_dialog.dart';
 import 'widgets/common.dart';
 
 void main() {
+  // 直连模式的学校系统验证码输入弹窗（服务器模式用不到）
+  installDirectCaptchaPrompt();
   runApp(const CampusApp());
 }
 

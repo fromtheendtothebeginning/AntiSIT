@@ -3,23 +3,21 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'api_error.dart';
 import 'app_state.dart';
 import 'demo_data.dart';
+import 'direct/campus_direct.dart';
 
-class ApiError implements Exception {
-  final String message;
-  final int? code;
-  ApiError(this.message, [this.code]);
-  @override
-  String toString() => message;
-}
+export 'api_error.dart';
 
-/// 统一 API 客户端（鉴权与 anticraft 网站同源 JWT）。
-/// - 登录 = POST /api/login {username, password} → access_token（30 天 JWT）
-/// - 401 → 先 POST /api/refresh 换新 token，失败再用记住的账号密码重登，均失败才抛出
-/// - 隧道类接口全局串行：学校侧单 VPN 隧道约束
-/// - 202 = VPN 建隧道中，等 retry_after 秒重试同一请求
-/// - 电费充值 once=true：单次调用，绝不重试
+/// 统一 API 客户端，按「连接设置」的数据来源模式分流：
+/// - 服务器模式：与网站同源的账号 JWT 鉴权
+///   · 登录 = POST /api/login {username, password} → access_token（30 天 JWT）
+///   · 401 → 先 POST /api/refresh 换新 token，失败再用记住的账号密码重登，均失败才抛出
+///   · 隧道类接口全局串行：学校侧单 VPN 隧道约束
+///   · 202 = VPN 建隧道中，等 retry_after 秒重试同一请求
+///   · 电费充值 once=true：单次调用，绝不重试
+/// - 直连模式：App 直接用校园凭据访问学校系统（CampusDirect），不走服务器
 class ApiClient {
   static final ApiClient I = ApiClient._();
   ApiClient._();
@@ -27,6 +25,16 @@ class ApiClient {
   final http.Client _http = http.Client();
   Future<void> _queue = Future.value();
   Future<bool>? _recoverInFlight; // 并发 401 时共享同一次 refresh/重登，防止登录请求风暴触发 429
+
+  /// 直连模式生效条件：演示模式优先（demo 时一切走本地假数据）。
+  bool get _useDirect => !AppState.I.demo && AppState.I.direct;
+
+  /// 服务器模式必填服务器地址；未配置直接引导，不发起无意义请求。
+  void _requireServer() {
+    if (AppState.I.serverUrl.isEmpty) {
+      throw ApiError('尚未配置服务器地址：请在「我的 → 连接设置 → 服务器模式」填写');
+    }
+  }
 
   Future<T> _serial<T>(Future<T> Function() task) {
     final r = _queue.then((_) => task());
@@ -52,6 +60,7 @@ class ApiClient {
   }) async {
     final st = AppState.I;
     if (st.demo) return DemoData.handle(method, path, body: body, query: query);
+    _requireServer();
 
     Future<Map<String, dynamic>> attempt() async {
       var recovered = false; // 每个请求只做一次鉴权恢复，防止 401→refresh→401 死循环
@@ -147,13 +156,17 @@ class ApiClient {
     return false;
   }
 
-  /// anticraft 账号登录换 JWT。失败抛 ApiError（401 账号密码错误 / 429 限流）。
+  /// 服务器模式：服务器账号登录换 JWT。失败抛 ApiError（401 账号密码错误 / 429 限流）。
   Future<Map<String, dynamic>> login(String username, String password) async {
     final st = AppState.I;
     if (st.demo) {
       await Future.delayed(const Duration(milliseconds: 500));
       return {'ok': true, 'access_token': 'demo-token'};
     }
+    if (st.direct) {
+      throw ApiError('当前是直连模式：请在「连接设置」填写校园凭据，无需服务器账号');
+    }
+    _requireServer();
     http.Response resp;
     try {
       resp = await _http
@@ -185,7 +198,7 @@ class ApiClient {
   /// 滑动续期：用当前 token 换新 token；失败返回 null（不影响调用方）。
   Future<String?> refresh() async {
     final st = AppState.I;
-    if (st.demo) return null;
+    if (st.demo || st.direct) return null;
     final token = st.token;
     if (token == null) return null;
     try {
@@ -205,64 +218,83 @@ class ApiClient {
     return null;
   }
 
-  Future<Map<String, dynamic>> status() =>
-      _call('GET', '/api/campus-open/status');
+  Future<Map<String, dynamic>> status() => _useDirect
+      ? CampusDirect.I.status()
+      : _call('GET', '/api/campus-open/status');
 
-  /// 断开 VPN 会话（释放隧道，下次数据调用自动重连）。
+  /// 断开 VPN 会话（释放隧道，下次数据调用自动重连）；直连模式则清学校系统会话。
   Future<void> disconnect() async {
+    if (_useDirect) {
+      await CampusDirect.I.disconnect();
+      return;
+    }
     try {
       await _call('POST', '/api/campus-open/disconnect', once: true);
     } catch (_) {}
   }
 
-  Future<Map<String, dynamic>> score() =>
-      _call('GET', '/api/campus-open/score', tunnel: true);
+  Future<Map<String, dynamic>> score() => _useDirect
+      ? CampusDirect.I.score()
+      : _call('GET', '/api/campus-open/score', tunnel: true);
 
   /// xnm/xqm 均不传时返回全部学期成绩 + terms 列表。
-  Future<Map<String, dynamic>> grades({String? xnm, String? xqm}) => _call(
-        'GET',
-        '/api/campus-open/grades',
-        query: {
-          if (xnm != null && xnm.isNotEmpty) 'xnm': xnm,
-          if (xqm != null && xqm.isNotEmpty) 'xqm': xqm,
-        },
-        tunnel: true,
-      );
+  Future<Map<String, dynamic>> grades({String? xnm, String? xqm}) => _useDirect
+      ? CampusDirect.I.grades(xnm: xnm, xqm: xqm)
+      : _call(
+          'GET',
+          '/api/campus-open/grades',
+          query: {
+            if (xnm != null && xnm.isNotEmpty) 'xnm': xnm,
+            if (xqm != null && xqm.isNotEmpty) 'xqm': xqm,
+          },
+          tunnel: true,
+        );
 
-  Future<Map<String, dynamic>> activities() =>
-      _call('GET', '/api/campus-open/activities', tunnel: true);
+  Future<Map<String, dynamic>> activities() => _useDirect
+      ? CampusDirect.I.activities()
+      : _call('GET', '/api/campus-open/activities', tunnel: true);
 
-  Future<Map<String, dynamic>> activityDetail(String aid) =>
-      _call('GET', '/api/campus-open/activities/$aid', tunnel: true);
+  Future<Map<String, dynamic>> activityDetail(String aid) => _useDirect
+      ? CampusDirect.I.activityDetail(aid)
+      : _call('GET', '/api/campus-open/activities/$aid', tunnel: true);
 
   Future<Map<String, dynamic>> timetableWeek(String xnm, String xqm, int zs) =>
-      _call('POST', '/api/campus-open/timetable/week',
-          body: {'xnm': xnm, 'xqm': xqm, 'zs': zs}, tunnel: true);
+      _useDirect
+          ? CampusDirect.I.timetableWeek(xnm, xqm, zs)
+          : _call('POST', '/api/campus-open/timetable/week',
+              body: {'xnm': xnm, 'xqm': xqm, 'zs': zs}, tunnel: true);
 
-  Future<Map<String, dynamic>> exams(String xnm, String xqm) =>
-      _call('POST', '/api/campus-open/timetable/exams',
+  Future<Map<String, dynamic>> exams(String xnm, String xqm) => _useDirect
+      ? CampusDirect.I.exams(xnm, xqm)
+      : _call('POST', '/api/campus-open/timetable/exams',
           body: {'xnm': xnm, 'xqm': xqm}, tunnel: true);
 
   Future<Map<String, dynamic>> ecard() =>
-      _call('GET', '/api/campus-open/ecard');
+      _useDirect ? CampusDirect.I.ecard() : _call('GET', '/api/campus-open/ecard');
 
-  Future<Map<String, dynamic>> electricityQuery() =>
-      _call('POST', '/api/campus-open/electricity/query');
+  Future<Map<String, dynamic>> electricityQuery() => _useDirect
+      ? CampusDirect.I.electricityQuery()
+      : _call('POST', '/api/campus-open/electricity/query');
 
-  /// 电费历史（站内记录，无需隧道）：records 升序，recharge>0 表示当天有充值。
-  Future<Map<String, dynamic>> electricityHistory({int days = 90}) =>
-      _call('GET', '/api/campus-open/electricity/history',
-          query: {'days': '$days'});
+  /// 电费历史：服务器模式取站内记录，直连模式取本机记录（均升序，recharge>0 表示当天有充值）。
+  Future<Map<String, dynamic>> electricityHistory({int days = 90}) => _useDirect
+      ? CampusDirect.I.electricityHistory(days: days)
+      : _call('GET', '/api/campus-open/electricity/history', query: {'days': '$days'});
 
   /// ⚠️ 扣款接口：单次调用绝不重试；超时后请先查余额确认。
-  Future<Map<String, dynamic>> electricityRecharge(num amount) =>
-      _call('POST', '/api/campus-open/electricity/recharge',
+  Future<Map<String, dynamic>> electricityRecharge(num amount) => _useDirect
+      ? CampusDirect.I.electricityRecharge(amount)
+      : _call('POST', '/api/campus-open/electricity/recharge',
           body: {'amount': amount}, once: true);
 
-  /// 课程表云端存储（站内接口，与网站共用同一份数据）。
-  Future<Map<String, dynamic>> timetableCloudGet() => _call('GET', '/api/timetable');
+  /// 课程表云端存储（站内接口，与网站共用同一份数据）；直连模式没有云端，静默降级为本地。
+  Future<Map<String, dynamic>> timetableCloudGet() async {
+    if (_useDirect) return {'ok': true, 'data': null};
+    return _call('GET', '/api/timetable');
+  }
 
   Future<void> timetableCloudPut(Map<String, dynamic> data) async {
+    if (_useDirect) return;
     await _call('PUT', '/api/timetable', body: {'data': data});
   }
 }

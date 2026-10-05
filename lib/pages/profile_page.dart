@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api_client.dart';
 import '../app_state.dart';
 import '../widgets/common.dart';
+import 'connect_page.dart';
 import 'login_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -49,16 +50,18 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _disconnectVpn() async {
+    final direct = AppState.I.direct;
     await ApiClient.I.disconnect();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('已断开 VPN 隧道，下次查询会自动重连'), behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(direct ? '已清除直连会话，下次查询会重新登录学校系统' : '已断开 VPN 隧道，下次查询会自动重连'),
+        behavior: SnackBarBehavior.floating));
     _loadStatus();
   }
 
   void _goLogin() {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginPage()),
+      MaterialPageRoute(builder: (_) => AppState.I.direct ? const ConnectPage() : const LoginPage()),
       (route) => false,
     );
   }
@@ -70,11 +73,15 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _logout() async {
+    final direct = AppState.I.direct;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('退出登录'),
-        content: const Text('将清除本机登录 token 并断开 VPN 隧道，返回浏览模式（不会进入登录页）；若开启了记住密码，下次登录可一键填入。'),
+        content: Text(direct
+            ? '将清除本机保存的校园密码并断开学校系统会话，返回浏览模式（不会进入登录页）；学校信息与学号保留，'
+                '再次查询时重新登录。'
+            : '将清除本机登录 token 并断开 VPN 隧道，返回浏览模式（不会进入登录页）；若开启了记住密码，下次登录可一键填入。'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('退出')),
@@ -83,41 +90,21 @@ class _ProfilePageState extends State<ProfilePage> {
     );
     if (ok != true) return;
     await ApiClient.I.disconnect();
-    await AppState.I.clearSession(keepCreds: AppState.I.remember);
+    if (direct) {
+      await AppState.I.clearDirectSession();
+    } else {
+      await AppState.I.clearSession(keepCreds: AppState.I.remember);
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('已退出登录'), behavior: SnackBarBehavior.floating));
   }
 
-  Future<void> _switchServer() async {
-    final picked = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('服务器地址'),
-        children: [
-          for (final (label, url) in const [('生产环境', AppState.prodUrl), ('本地调试', AppState.localUrl)])
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, url),
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(label),
-                subtitle: Text(url, style: const TextStyle(fontSize: 12)),
-                trailing: AppState.I.serverUrl == url
-                    ? const Icon(Icons.check_circle, color: SemColors.accent)
-                    : null,
-              ),
-            ),
-        ],
-      ),
-    );
-    if (picked != null && picked != AppState.I.serverUrl) {
-      await AppState.I.setServer(picked);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('已切换到 $picked'), behavior: SnackBarBehavior.floating));
-      }
-      _refreshAll();
-    }
+  Future<void> _openConnect() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConnectPage()));
+    if (!mounted) return;
+    _refreshAll();
+    setState(() {});
   }
 
   @override
@@ -157,7 +144,10 @@ class _ProfilePageState extends State<ProfilePage> {
                             radius: 28,
                             backgroundColor: SemColors.accentSoft,
                             child: Text(
-                              (st.username ?? '校').characters.first.toUpperCase(),
+                              (st.direct ? st.school.name : (st.username ?? '校'))
+                                  .characters
+                                  .first
+                                  .toUpperCase(),
                               style: const TextStyle(
                                   fontSize: 22, fontWeight: FontWeight.bold,
                                   color: SemColors.accent),
@@ -168,7 +158,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(st.username ?? '-',
+                                Text(st.direct ? '直连模式 · ${st.school.name}' : (st.username ?? '-'),
                                     style: const TextStyle(
                                         fontSize: 18, fontWeight: FontWeight.bold,
                                         color: SemColors.textPrimary)),
@@ -193,7 +183,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(st.demo ? '演示模式' : '未登录',
+                                Text(st.demo ? '演示模式' : (st.direct ? '未填写校园凭据' : '未登录'),
                                     style: const TextStyle(
                                         fontSize: 18, fontWeight: FontWeight.bold,
                                         color: SemColors.textPrimary)),
@@ -201,12 +191,16 @@ class _ProfilePageState extends State<ProfilePage> {
                                 FilledButton(
                                   onPressed: st.demo
                                       ? null
-                                      : () => Navigator.of(context)
-                                          .push(MaterialPageRoute(builder: (_) => const LoginPage())),
+                                      : () => Navigator.of(context).push(MaterialPageRoute(
+                                          builder: (_) => st.direct
+                                              ? const ConnectPage()
+                                              : const LoginPage())),
                                   style: FilledButton.styleFrom(
                                       visualDensity: VisualDensity.compact,
                                       padding: const EdgeInsets.symmetric(horizontal: 18)),
-                                  child: Text(st.demo ? '演示数据，退出后可登录' : '去登录'),
+                                  child: Text(st.demo
+                                      ? '演示数据，退出后可登录'
+                                      : (st.direct ? '去填写校园凭据' : '去登录')),
                                 ),
                               ],
                             ),
@@ -222,10 +216,14 @@ class _ProfilePageState extends State<ProfilePage> {
                   padding: EdgeInsets.zero,
                   child: ListTile(
                     leading: const Icon(Icons.login_rounded, color: SemColors.accent),
-                    title: const Text('点击登录',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(st.direct ? '点击填写校园凭据' : '点击登录',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
-                        st.demo ? '退出演示模式并登录 anticraft 账号' : '登录后可查看课表导入、校园码、成绩等校园数据',
+                        st.demo
+                            ? (st.direct ? '退出演示模式并填写校园凭据' : '退出演示模式并登录服务器账号')
+                            : (st.direct
+                                ? '填写学号与统一身份认证密码后可直接查询校园数据（需校园网）'
+                                : '登录后可查看课表导入、校园码、成绩等校园数据'),
                         style: const TextStyle(fontSize: 12)),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: st.demo ? _exitDemoAndLogin : _goLogin,
@@ -234,7 +232,7 @@ class _ProfilePageState extends State<ProfilePage> {
               if (!loggedIn) const SizedBox(height: 10),
 
               if (loggedIn) ...[
-                // 凭据配置引导（对应网站「我的 → 校园服务」）
+                // 凭据配置引导（服务器模式对应网站「我的 → 校园服务」）
                 if (!configured && !st.demo)
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -244,12 +242,14 @@ class _ProfilePageState extends State<ProfilePage> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
                     ),
-                    child: const Text(
-                      '校园凭据未配置：请登录 anticraft.top →「我的 → 校园服务」填写学号与 VPN 密码，隧道类查询才能使用。',
-                      style: TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.6),
+                    child: Text(
+                      st.direct
+                          ? '校园凭据未填写完整：请在「连接设置 → 直连模式」填写学号与统一身份认证密码，才能查询校园数据。'
+                          : '校园凭据未配置：请登录所用服务器的网站 →「我的 → 校园服务」填写学号与 VPN 密码，隧道类查询才能使用。',
+                      style: const TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.6),
                     ),
                   ),
-                if (configured && status?['auto_captcha'] != true)
+                if (configured && status?['auto_captcha'] != true && !st.direct)
                   Container(
                     padding: const EdgeInsets.all(12),
                     margin: const EdgeInsets.only(bottom: 10),
@@ -261,6 +261,20 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: const Text(
                       '未开启「AI 自动识别验证码」：请在网站「我的 → 校园服务」开启，否则隧道类查询会失败。',
                       style: TextStyle(fontSize: 12.5, color: SemColors.warning, height: 1.6),
+                    ),
+                  ),
+                if (st.direct)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: SemColors.accentSoft,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: SemColors.accent.withValues(alpha: 0.3)),
+                    ),
+                    child: const Text(
+                      '直连模式：数据由本机直接访问学校系统，不走任何服务器，需要在校园网 / 校内 VPN 内；登录验证码手动输入。',
+                      style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.6),
                     ),
                   ),
 
@@ -313,10 +327,14 @@ class _ProfilePageState extends State<ProfilePage> {
                                         .withValues(alpha: 0.5)),
                               ),
                               child: Text(
-                                connected ? '校园网隧道已连接' : '隧道未连接（首次查询时建立）',
+                                st.direct
+                                    ? '本机直连学校系统'
+                                    : (connected ? '校园网隧道已连接' : '隧道未连接（首次查询时建立）'),
                                 style: TextStyle(
                                     fontSize: 11,
-                                    color: connected ? SemColors.success : SemColors.warning),
+                                    color: (st.direct || connected)
+                                        ? SemColors.success
+                                        : SemColors.warning),
                               ),
                             ),
                         ],
@@ -333,9 +351,12 @@ class _ProfilePageState extends State<ProfilePage> {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      const Text('登录态失效会在下次查询时自动重登',
-                          style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                      if (connected)
+                      Text(
+                          st.direct
+                              ? '登录态失效会在下次查询时重新登录（需输入验证码）'
+                              : '登录态失效会在下次查询时自动重登',
+                          style: const TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                      if (connected || st.direct)
                         Align(
                           alignment: Alignment.centerRight,
                           child: TextButton(
@@ -343,7 +364,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             style: TextButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
                                 foregroundColor: SemColors.textSecondary),
-                            child: const Text('断开 VPN', style: TextStyle(fontSize: 12)),
+                            child: Text(st.direct ? '清除直连会话' : '断开 VPN',
+                                style: const TextStyle(fontSize: 12)),
                           ),
                         ),
                     ],
@@ -359,21 +381,26 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: [
                     ListTile(
                       leading: const Icon(Icons.dns_outlined),
-                      title: const Text('服务器地址'),
-                      subtitle: Text(st.serverUrl, style: const TextStyle(fontSize: 12)),
+                      title: const Text('连接设置'),
+                      subtitle: Text(
+                          st.direct
+                              ? '直连模式 · ${st.school.name}（本机访问学校系统）'
+                              : (st.serverUrl.isEmpty ? '服务器模式 · 未填写地址' : '服务器模式 · ${st.serverUrl}'),
+                          style: const TextStyle(fontSize: 12)),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: _switchServer,
+                      onTap: _openConnect,
                     ),
-                    ListenableBuilder(
-                      listenable: AppState.I,
-                      builder: (_, __) => SwitchListTile(
-                        secondary: const Icon(Icons.lock_outline),
-                        title: const Text('记住密码并自动重登'),
-                        subtitle: const Text('token 失效时无需重新输入', style: TextStyle(fontSize: 12)),
-                        value: st.remember,
-                        onChanged: (v) => AppState.I.setRemember(v),
+                    if (!st.direct)
+                      ListenableBuilder(
+                        listenable: AppState.I,
+                        builder: (_, __) => SwitchListTile(
+                          secondary: const Icon(Icons.lock_outline),
+                          title: const Text('记住密码并自动重登'),
+                          subtitle: const Text('token 失效时无需重新输入', style: TextStyle(fontSize: 12)),
+                          value: st.remember,
+                          onChanged: (v) => AppState.I.setRemember(v),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -403,9 +430,14 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
               const SizedBox(height: 14),
-              const Center(
-                child: Text('AntiSIT · 数据来自 anticraft.top 开放接口',
-                    style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+              Center(
+                child: Text(
+                    st.direct
+                        ? 'AntiSIT · 直连模式（本机访问学校系统，数据不经过服务器）'
+                        : (st.serverUrl.isEmpty
+                            ? 'AntiSIT · 服务器模式（地址未填写，见连接设置）'
+                            : 'AntiSIT · 数据来自 ${st.serverUrl} 开放接口'),
+                    style: const TextStyle(fontSize: 11, color: SemColors.textMuted)),
               ),
             ],
           ),

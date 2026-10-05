@@ -97,6 +97,29 @@ void main() {
     });
   });
 
+  group('新建学期', () {
+    test('建档 → persist → load 往返后学期仍在（切换学期的基础）', () async {
+      final store = TimetableStore.instance;
+      store.semester('2026', '12'); // 建空学期（页面新建学期同款路径）
+      store.semesters['2026-12']!.startDate = '2027-03-01';
+      await store.persist();
+
+      store.semesters = {}; // 模拟重启后从磁盘加载
+      await store.load();
+      expect(store.semesters.containsKey('2026-12'), isTrue);
+      expect(store.semesters['2026-12']!.startDate, '2027-03-01');
+    });
+
+    test('semester() 幂等：重复访问同一学期不重建', () {
+      final store = TimetableStore.instance;
+      final a = store.semester('2025', '3');
+      a.startDate = '2025-09-01';
+      final b = store.semester('2025', '3');
+      expect(identical(a, b), isTrue);
+      expect(b.startDate, '2025-09-01');
+    });
+  });
+
   group('删除教务课程', () {
     test('removeImportedOccurrence 仅删指定周', () {
       final tt = SemesterTt();

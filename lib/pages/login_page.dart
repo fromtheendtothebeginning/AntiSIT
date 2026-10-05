@@ -112,7 +112,7 @@ class _LoginPageState extends State<LoginPage> {
                             color: SemColors.textPrimary)),
                     const SizedBox(height: 6),
                     const Text(
-                      'anticraft 账号登录 · 服务器代连校园内网',
+                      '服务器账号登录 · 服务器代连校园内网',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 13, color: SemColors.textSecondary),
                     ),
@@ -137,7 +137,7 @@ class _LoginPageState extends State<LoginPage> {
                       controller: _user,
                       autofillHints: const [AutofillHints.username],
                       decoration: const InputDecoration(
-                        labelText: 'anticraft 用户名',
+                        labelText: '用户名',
                         prefixIcon: Icon(Icons.person_outline),
                       ),
                       validator: (v) =>

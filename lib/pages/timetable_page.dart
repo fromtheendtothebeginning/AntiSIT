@@ -94,12 +94,13 @@ class _TimetablePageState extends State<TimetablePage> {
     super.dispose();
   }
 
-  Future<void> _init() async {
+  Future<void> _init({bool keepSemester = false}) async {
     if (mounted) setState(() => _booting = true);
     await TimetableStore.instance.load();
     final adopted = await TimetableStore.instance.syncCloud();
-    if (adopted) {
-      // 云端数据覆盖本地后学期可能变化：重置到推断学期
+    if (adopted && !keepSemester) {
+      // 云端数据覆盖本地后学期可能变化：重置到推断学期。
+      // 显式切换学期（keepSemester）时不重置，否则切换会被弹回当前学期。
       final (a, b) = AppState.inferSemester(DateTime.now());
       xnm = a;
       xqm = b;
@@ -283,8 +284,11 @@ class _TimetablePageState extends State<TimetablePage> {
 
   bool _checkLogin() {
     if (AppState.I.loggedIn) return true;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('该功能需要登录 anticraft 账号'), behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(AppState.I.direct
+            ? '该功能需要先在「连接设置 → 直连模式」填写校园凭据'
+            : '该功能需要先登录服务器账号'),
+        behavior: SnackBarBehavior.floating));
     return false;
   }
 
@@ -323,23 +327,37 @@ class _TimetablePageState extends State<TimetablePage> {
       context: context,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(padding: EdgeInsets.all(8), child: Text('选择学期', style: TextStyle(fontWeight: FontWeight.bold))),
-            if (opts.isEmpty) _genericSemesterPicker(ctx),
-            for (final o in opts)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(padding: EdgeInsets.all(8), child: Text('选择学期', style: TextStyle(fontWeight: FontWeight.bold))),
+              if (opts.isEmpty) _genericSemesterPicker(ctx),
+              for (final o in opts)
+                ListTile(
+                  title: Text(o.$3),
+                  trailing: (o.$1 == xnm && o.$2 == xqm)
+                      ? const Icon(Icons.check, color: SemColors.accent)
+                      : null,
+                  onTap: () => Navigator.pop(ctx, {'xnm': o.$1, 'xqm': o.$2}),
+                ),
+              const Divider(height: 1),
               ListTile(
-                title: Text(o.$3),
-                trailing: (o.$1 == xnm && o.$2 == xqm)
-                    ? const Icon(Icons.check, color: SemColors.accent)
-                    : null,
-                onTap: () => Navigator.pop(ctx, {'xnm': o.$1, 'xqm': o.$2}),
+                leading: const Icon(Icons.add_circle_outline, color: SemColors.accent),
+                title: const Text('新建学期', style: TextStyle(color: SemColors.accent)),
+                subtitle: const Text('建一个空学期，手动排课或稍后从教务导入',
+                    style: TextStyle(fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, const {'new': true}),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     ).then((t) {
+      if (t is Map && t['new'] == true) {
+        _newSemester();
+        return;
+      }
       String? nxnm, nxqm;
       if (t is Map<String, dynamic>) {
         nxnm = '${t['xnm']}';
@@ -353,13 +371,44 @@ class _TimetablePageState extends State<TimetablePage> {
           xnm = nxnm!;
           xqm = nxqm!;
         });
-        _init();
+        _init(keepSemester: true);
       }
     });
   }
 
+  /// 新建空学期：选学年 + 学期码 → 建档并切换 → 立刻打开「学期设置」。
+  Future<void> _newSemester() async {
+    final created = await showModalBottomSheet<List<String>>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(padding: EdgeInsets.all(8), child: Text('新建学期', style: TextStyle(fontWeight: FontWeight.bold))),
+            _genericSemesterPicker(ctx, confirmLabel: '创建'),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || created == null || created.length != 2) return;
+    final yn = created[0];
+    final xq = created[1];
+    if (yn.isEmpty || xq.isEmpty) return;
+    if (yn != xnm || xq != xqm) {
+      setState(() {
+        xnm = yn;
+        xqm = xq;
+      });
+      TimetableStore.instance.semester(yn, xq); // 建空学期
+      await TimetableStore.instance.persist();
+      await _init(keepSemester: true);
+    }
+    if (mounted) _semSettings(); // 新建后立刻到学期设置（设起点 / 周数）
+  }
+
   /// 未登录（无学期列表）时的通用选择器：学年 + 学期码。
-  Widget _genericSemesterPicker(BuildContext ctx) {
+  Widget _genericSemesterPicker(BuildContext ctx, {String confirmLabel = '确定'}) {
     final now = DateTime.now().year;
     final years = [for (var y = now - 3; y <= now; y++) '$y'];
     var year = years.contains(xnm) ? xnm : years.last;
@@ -398,7 +447,7 @@ class _TimetablePageState extends State<TimetablePage> {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: () => Navigator.pop(ctx, [year, xq]),
-              child: const Text('确定'),
+              child: Text(confirmLabel),
             ),
           ),
         ],
@@ -1152,9 +1201,11 @@ class _TimetablePageState extends State<TimetablePage> {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: SemColors.info.withValues(alpha: 0.3)),
         ),
-        child: const Text(
-          '未登录：手动编辑 / 调休等本地功能可正常使用，登录后可从教务导入课表与考试。',
-          style: TextStyle(fontSize: 12, color: SemColors.info, height: 1.5),
+        child: Text(
+          AppState.I.direct
+              ? '未填写校园凭据：手动编辑 / 调休等本地功能可正常使用，填写后可从教务导入课表与考试（需校园网）。'
+              : '未登录：手动编辑 / 调休等本地功能可正常使用，登录后可从教务导入课表与考试。',
+          style: const TextStyle(fontSize: 12, color: SemColors.info, height: 1.5),
         ),
       );
 
@@ -1670,8 +1721,11 @@ class _TimetablePageState extends State<TimetablePage> {
             const SizedBox(height: 8),
             const Text('还没有课程', style: TextStyle(color: SemColors.textMuted)),
             const SizedBox(height: 4),
-            const Text('点右上角 + 手动添加，或登录后从教务导入',
-                style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+            Text(
+                AppState.I.direct
+                    ? '点右上角 + 手动添加，或在连接设置填好凭据后从教务导入'
+                    : '点右上角 + 手动添加，或登录后从教务导入',
+                style: const TextStyle(fontSize: 12, color: SemColors.textMuted)),
             const SizedBox(height: 60),
           ],
         ),
