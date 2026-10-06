@@ -20,16 +20,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version: 3.35.7
           cache: true
 
-      - name: 安装 Android SDK 组件
-        run: sdkmanager "platforms;android-36" "build-tools;36.1.0"
+      - name: 补齐 Android SDK 组件
+        # GitHub 的 ubuntu 镜像自带 Android SDK（ANDROID_SDK_ROOT 已设，platform 36 与
+        # build-tools 36.x 预装），这里只保证版本齐全，不额外装 SDK 管理器。
+        run: |
+          SDKM=$(command -v sdkmanager || echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager")
+          "$SDKM" --install "platforms;android-36" "build-tools;36.1.0"
 
       - name: 校验 tag 与 pubspec 版本号一致
         run: |
