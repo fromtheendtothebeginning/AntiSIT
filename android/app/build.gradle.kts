@@ -10,6 +10,18 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    // GitHub 发布签名：release.keystore 随仓库公开。公开仓库的 CI 拿不到机密，而密钥每次
+    // 随机生成会让用户无法覆盖安装升级，所以固定一把专用密钥。密码与密钥同处仓库，它不构成
+    // 安全边界，只保证各版本签名一致、可互相覆盖安装；debug 构建仍用本机 debug 密钥。
+    signingConfigs {
+        create("release") {
+            storeFile = file("release.keystore")
+            storePassword = "antisit"
+            keyAlias = "antisit"
+            keyPassword = "antisit"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -20,10 +32,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "top.anticraft.campus_service"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -32,9 +41,7 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

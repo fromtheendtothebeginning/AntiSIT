@@ -11,6 +11,14 @@ Flutter 编写的 Android / Windows 客户端。同一套接口支持两种接�
 
 服务器模式填任意地址即用（同一套开放接口，任意自建服务器皆可）；直连模式适合校内直连或自建服务器不可用时使用，验证码需手动输入。
 
+## 下载安装
+
+[Releases](../../releases) 页提供签好名的 release APK（Android 7.0+）：下载 `AntiSIT-x.y.z.apk` 直接安装，首次需允许「未知来源」；表格里的 `.sha256` 可用于校验下载完整性。
+
+- 发布版由仓库内 `android/app/release.keystore` 签名——公开仓库的 CI 存不下机密，密钥随仓库才能保证各版本签名一致、可互相覆盖安装（覆盖安装保留数据）
+- 本地 `flutter run` / debug 构建用的是本机 debug 密钥，与发布版签名不同，两种渠道互相覆盖前需先卸载
+- **发版**：`pubspec.yaml` 升版本号 → 提交推送 → 打同名 tag（`git tag v1.0.4 && git push origin v1.0.4`），[release.yml](.github/workflows/release.yml) 会构建、校验签名指纹、发布 Release
+
 ## 功能
 
 - **课程表**

@@ -1,0 +1,88 @@
+name: Release APK
+
+# 发版 = 打 tag：tag 名必须与 pubspec.yaml 的 version 一致（如 v1.0.4 ↔ 1.0.4+n），
+# 推上去即自动构建 release APK 并发布 GitHub Release（APK + sha256 校验文件都挂上去）。
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # gh release create 需要写权限
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.35.7
+          cache: true
+
+      - name: 安装 Android SDK 组件
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: 校验 tag 与 pubspec 版本号一致
+        run: |
+          VERSION=$(sed -n 's/^version: *\([0-9][0-9.]*\)+.*/\1/p' pubspec.yaml)
+          if [ "v$VERSION" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} 与 pubspec.yaml 的 version $VERSION 不一致，请先升版本号再打 tag"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: 构建 APK
+        run: flutter build apk --release
+
+      - name: 校验签名指纹
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          APKSIGNER=$(ls "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
+          GOT=$("$APKSIGNER" verify --print-certs "$APK" |
+            sed -n 's/.*SHA-1 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+          WANT=498c439fcafb1304cb3461514575a19c768765e5
+          echo "APK 签名 SHA-1：$GOT"
+          if [ "$GOT" != "$WANT" ]; then
+            echo "签名指纹与仓库内的 android/app/release.keystore 不符——换了密钥就发不出能覆盖安装的版本，中止发布"
+            exit 1
+          fi
+
+      - name: 整理发布物与说明
+        run: |
+          APK_NAME="AntiSIT-${VERSION}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "$APK_NAME"
+          sha256sum "$APK_NAME" > "$APK_NAME.sha256"
+          {
+            echo "## AntiSIT ${VERSION}"
+            echo
+            echo "APK 直装（Android 7.0+）：下载 \`${APK_NAME}\` 安装，首次需允许「未知来源」。"
+            echo
+            echo "- 同一把发布密钥签名的版本可直接覆盖安装；覆盖安装会保留数据（登录态、课表）"
+            echo "- 从本机 \`flutter run\` / debug 构建换过来，或此前装的是其它签名的包，需先卸载"
+            echo "- 校验下载：\`sha256sum -c ${APK_NAME}.sha256\`"
+            echo
+            echo "### 本次更新"
+            PREV=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null || true)
+            if [ -n "$PREV" ]; then
+              git log --no-merges --pretty='- %s' "$PREV..HEAD"
+            else
+              git log --no-merges --pretty='- %s' -n 15
+            fi
+          } > release-notes.md
+
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "AntiSIT-${VERSION}.apk" "AntiSIT-${VERSION}.apk.sha256" \
+            --title "AntiSIT ${VERSION}" --notes-file release-notes.md

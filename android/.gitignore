@@ -12,3 +12,7 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# 例外：GitHub 发布专用密钥。公开仓库的 CI 无法保存机密，而发布签名必须跨版本稳定
+# （否则用户覆盖安装会失败），因此这把密钥随仓库公开，只用于签名发布版 APK。
+!app/release.keystore
