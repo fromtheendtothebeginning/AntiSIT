@@ -104,7 +104,9 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.school_rounded, size: 56, color: SemColors.accent),
+                    Center(
+                      child: Image.asset('assets/sit-mark.png', width: 76, height: 76),
+                    ),
                     const SizedBox(height: 10),
                     const Text('AntiSIT',
                         textAlign: TextAlign.center,

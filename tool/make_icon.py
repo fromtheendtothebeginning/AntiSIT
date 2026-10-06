@@ -2,7 +2,15 @@
 """生成 AntiSIT 启动图标母版（1024x1024，需 Pillow）。
 
 用法:
-    python tool/make_icon.py [f|g|d|e|a|b|c|all]
+    python tool/make_icon.py [p|f|g|d|e|a|b|c|k|l|m|all]
+
+上线方案 p（默认外的实际使用方案）:
+    p  上应标记：sit-mark-512.png 提供的抽象「S」标记（浅蓝弧 + 深蓝弧 + 绿点），白底
+
+Flutter 风格三方案（只用 Flutter 官方品牌色，扁平直角、无渐变无阴影）:
+    k  深色：Flutter Navy #042B59 底 + 浅蓝帽 + 品牌黄流苏
+    l  亮色：Flutter Sky #027DFD 底 + 白帽 + 品牌黄流苏
+    m  白底：板面沿中脊两色折面 + 深蓝「应」+ Sky 流苏
 
 方案（j 为默认：白底 + 深绿宋体「应戴学位帽」，含上海应用技术大学意象，不照抄校徽）:
     j  白底深绿：宋体、字缩小、琥珀流苏
@@ -21,10 +29,14 @@
     adaptive_bg_<v>.png 自适应图标背景层
     adaptive_fg_<v>.png 自适应图标前景层
 
+素材（tool/icon/，手工放入）:
+    sit-mark-512.png    方案 p 的透明底标记原图
+
 接入: pubspec.yaml 的 flutter_launcher_icons 指向对应文件后执行
     dart run flutter_launcher_icons
 """
 
+import math
 import os
 import sys
 
@@ -402,10 +414,169 @@ def make_variant(v):
     print(f'方案 {v} 完成 → {os.path.abspath(OUT)}')
 
 
+# ── Flutter 风格（官方品牌色 + 官方 logo 的 45° 光束语言） ──
+FL = dict(
+    sky='#027DFD',    # Flutter Sky（品牌主色）
+    blue='#0553B1',   # Flutter Blue
+    navy='#042B59',   # Flutter Navy
+    light='#54C5F8',  # 官方 logo 浅蓝
+    mid='#29B6F6',    # 官方 logo 中蓝（光束叠色）
+    dark='#01579B',   # 官方 logo 深蓝
+    yellow='#FFF275', # 品牌辅助黄（流苏）
+)
+FL_SCALE = 1.18   # Flutter 方案图形放大（接近满幅，留 ~12% 安全边）
+FL_THICK = 34     # 板厚加大，让「板面/板厚/穹顶」三层纯色平面读得出来
+FL_FG_SCALE = 0.72  # 自适应前景缩到安全区（图形本身已近满幅）
+
+
+def diag_mask(c, size=S * SS, soft=2.0):
+    """45° 斜切软掩码（白=左上侧 x+y<c），斜线垂直于官方 logo 的光束方向。"""
+    import numpy as np
+    x = np.arange(size, dtype=np.float32)
+    t = (c - (x[:, None] + x[None, :])) / soft
+    return Image.fromarray((np.clip(t + 0.5, 0.0, 1.0) * 255).astype('uint8'), 'L')
+
+
+def cap_masks(cx, cy, scale=1.0, char=None, char_size=196, thick=TH):
+    """学士帽部件 L 掩码（SS 分辨率）：dome 穹顶 / edge 板厚 / board 板面 /
+    tassel 流苏（直角几何：横杆 + 菱形结 + 梯形穗）/ ch 板面字。几何与 draw_cap 同源。"""
+    P = lambda x, y: ((cx + (x - 512) * scale) * SS, (cy + (y - 512) * scale) * SS)
+    hw, hh = BOARD_W // 2, BOARD_H // 2
+    new = lambda: Image.new('L', (S * SS, S * SS), 0)
+    dome, edge, board, tassel = new(), new(), new(), new()
+    ImageDraw.Draw(dome).ellipse([P(512 - DOME_RX, 540 - DOME_RY),
+                                  P(512 + DOME_RX, 540 + DOME_RY)], fill=255)
+    ImageDraw.Draw(edge).polygon([P(512 - hw, 500 + thick), P(512, 500 + hh + thick),
+                                  P(512 + hw, 500 + thick), P(512, 500 - hh + thick)], fill=255)
+    ImageDraw.Draw(board).polygon([P(512 - hw, 500), P(512, 500 - hh),
+                                   P(512 + hw, 500), P(512, 500 + hh)], fill=255)
+    dt = ImageDraw.Draw(tassel)
+    dt.line([P(824, 500), P(824, 632)], fill=255, width=int(12 * scale * SS))
+    dt.polygon([P(824 - 25, 632), P(824, 607), P(824 + 25, 632), P(824, 657)], fill=255)
+    dt.polygon([P(824 - 22, 655), P(824 + 22, 655), P(824 + 13, 727), P(824 - 13, 727)], fill=255)
+    ch = char_mask_img(char, cx, cy - 12, char_size * scale) if char else None
+    return dome, edge, board, tassel, ch
+
+
+def paste_color(img, color, mask):
+    img.paste(Image.new('RGBA', img.size, color), (0, 0), mask)
+
+
+def center_mark(mark):
+    """按图形包围盒把 mark 移到画布正中（流苏偏右，避免整体偏左/偏低）。"""
+    x0, y0, x1, y1 = mark.getbbox()
+    out = Image.new('RGBA', mark.size, (0, 0, 0, 0))
+    out.alpha_composite(mark, (S * SS // 2 - (x0 + x1) // 2, S * SS // 2 - (y0 + y1) // 2))
+    return out
+
+
+def flutter_master(bg, colors, scale=FL_SCALE, char='应'):
+    """Flutter 风格扁平学士帽。colors=(穹顶, 板厚, 板面, 字, 流苏)；bg=None 得透明图层。"""
+    mark = Image.new('RGBA', (S * SS, S * SS), (0, 0, 0, 0))
+    dome, edge, board, tassel, ch = cap_masks(512, 512, scale, char, thick=FL_THICK)
+    for color, mask in zip(colors, (dome, edge, board, ch, tassel)):
+        paste_color(mark, color, mask)
+    mark = center_mark(mark)
+    if bg is None:
+        return mark
+    out = Image.new('RGBA', mark.size, bg)
+    out.alpha_composite(mark)
+    return out
+
+
+def make_flutter(v):
+    """三层纯色平面（板面/板厚/穹顶）的扁平学士帽：
+    k 深色（Navy 底 + 浅蓝帽） l 亮色（Sky 底 + 白帽） m 白底（Sky 板 + 白字）。"""
+    if v == 'k':
+        bg = FL['navy']
+        cols = (FL['blue'], FL['mid'], FL['light'], FL['navy'], FL['yellow'])
+    elif v == 'l':
+        bg = FL['sky']
+        cols = (FL['navy'], FL['light'], '#FFFFFF', FL['sky'], FL['yellow'])
+    else:
+        bg = '#FFFFFF'
+        cols = (FL['navy'], FL['dark'], FL['sky'], '#FFFFFF', FL['navy'])
+    master = flutter_master(bg, cols)
+    rounded_master(master.resize((S, S), Image.LANCZOS), os.path.join(OUT, f'icon_{v}_1024.png'))
+    # 自适应背景层：纯色满幅（启动器自行遮罩圆角）
+    Image.new('RGB', (S, S), bg).save(os.path.join(OUT, f'adaptive_bg_{v}.png'))
+    # 自适应前景层：透明底，图形缩进 66% 安全圆内
+    fg = flutter_master(None, cols, cx=512, cy=512, scale=FL_SCALE * FL_FG_SCALE)
+    fg.resize((S, S), Image.LANCZOS).save(os.path.join(OUT, f'adaptive_fg_{v}.png'))
+    print(f'方案 {v} 完成 → {os.path.abspath(OUT)}')
+
+
+def flutter_glyph_layer(light, dark, cx=512, cy=500, scale=1.0):
+    """大幅「应戴学位帽」按官方 logo 的光束方向 45° 斜切两色（透明底图层）。"""
+    gm, bm, tm = ying_cap_masks(cx, cy, scale, prefer='deng', char_size=470)
+    whole = ImageChops.lighter(ImageChops.lighter(gm, bm), tm)
+    x0, y0, x1, y1 = whole.getbbox()
+    m = diag_mask((x0 + y0) + 0.55 * ((x1 + y1) - (x0 + y0)), soft=3.0)
+    layer = Image.new('RGBA', (S * SS, S * SS), (0, 0, 0, 0))
+    paste_color(layer, light, ImageChops.multiply(whole, m))
+    paste_color(layer, dark, ImageChops.multiply(whole, ImageChops.invert(m)))
+    return layer
+
+
+def make_flutter_glyph(v):
+    """n 浅蓝#54C5F8/深蓝#01579B（官方 logo 配色）；o 中蓝#29B6F6/海军蓝#042B59（白底更硬朗）。"""
+    light, dark = (FL['light'], FL['dark']) if v == 'n' else (FL['mid'], FL['navy'])
+    master = Image.new('RGBA', (S * SS, S * SS), (255, 255, 255, 255))
+    master.alpha_composite(flutter_glyph_layer(light, dark))
+    rounded_master(master.resize((S, S), Image.LANCZOS), os.path.join(OUT, f'icon_{v}_1024.png'))
+    Image.new('RGB', (S, S), '#FFFFFF').save(os.path.join(OUT, f'adaptive_bg_{v}.png'))
+    fg = flutter_glyph_layer(light, dark, cy=512, scale=0.80)
+    fg.resize((S, S), Image.LANCZOS).save(os.path.join(OUT, f'adaptive_fg_{v}.png'))
+    print(f'方案 {v} 完成 → {os.path.abspath(OUT)}')
+
+
+# ── 方案 p：外部提供的「S」标记（浅蓝弧 + 深蓝弧 + 绿点，透明底） ──
+MARK_SRC = os.path.join(OUT, 'sit-mark-512.png')
+MARK_FILL = 0.86     # 母版：标记外接圆占画布 86%，圆角内四周留约 7% 边距
+MARK_FG_FILL = 0.60  # 自适应前景：收进 66dp 安全圆（占画布 61%）
+
+
+def sit_mark(fill):
+    """标记按「外接圆直径 = fill × 画布」缩放后居中（SS 分辨率透明底图层）。
+    标记的圆弧斜向铺满自身包围盒，按外接圆定尺寸才不会顶到圆角或安全圆。"""
+    src = Image.open(MARK_SRC).convert('RGBA')
+    src = src.crop(src.getbbox())
+    w, h = src.size
+    alpha = src.getchannel('A').tobytes()
+    cx, cy = w / 2, h / 2
+    rmax = max(math.hypot(x + 0.5 - cx, y + 0.5 - cy)
+               for y in range(h) for x in range(w) if alpha[y * w + x] > 40)
+    k = fill * S * SS / (2 * rmax)
+    mark = src.resize((round(w * k), round(h * k)), Image.LANCZOS)
+    layer = Image.new('RGBA', (S * SS, S * SS), (0, 0, 0, 0))
+    layer.alpha_composite(mark, ((S * SS - mark.width) // 2, (S * SS - mark.height) // 2))
+    return layer
+
+
+def make_sit_mark(v):
+    """p 白底：母版圆角白底 + 标记；自适应 = 纯白背景层 + 安全圆内的标记前景层。"""
+    master = Image.new('RGBA', (S * SS, S * SS), (255, 255, 255, 255))
+    master.alpha_composite(sit_mark(MARK_FILL))
+    rounded_master(master.resize((S, S), Image.LANCZOS),
+                   os.path.join(OUT, f'icon_{v}_1024.png'))
+    Image.new('RGB', (S, S), '#FFFFFF').save(os.path.join(OUT, f'adaptive_bg_{v}.png'))
+    sit_mark(MARK_FG_FILL).resize((S, S), Image.LANCZOS).save(
+        os.path.join(OUT, f'adaptive_fg_{v}.png'))
+    print(f'方案 {v} 完成 → {os.path.abspath(OUT)}')
+
+
 def main():
     v = (sys.argv[1] if len(sys.argv) > 1 else 'j').lower()
-    for x in (['j', 'h', 'i', 'f', 'g', 'd', 'e', 'a', 'b', 'c'] if v == 'all' else [v]):
-        make_variant(x)
+    for x in (['j', 'h', 'i', 'f', 'g', 'd', 'e', 'a', 'b', 'c', 'k', 'l', 'm', 'n', 'o', 'p']
+              if v == 'all' else [v]):
+        if x in ('k', 'l', 'm'):
+            make_flutter(x)
+        elif x in ('n', 'o'):
+            make_flutter_glyph(x)
+        elif x == 'p':
+            make_sit_mark(x)
+        else:
+            make_variant(x)
 
 
 if __name__ == '__main__':

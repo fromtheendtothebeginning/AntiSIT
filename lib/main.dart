@@ -116,13 +116,12 @@ class _BootPageState extends State<BootPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.school_rounded, size: 72, color: scheme.primary),
+            Image.asset('assets/sit-mark.png', width: 96, height: 96),
             const SizedBox(height: 16),
             Text('AntiSIT', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 24),
