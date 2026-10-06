@@ -16,11 +16,13 @@ import 'xg.dart';
 typedef ProbeResult = ({String name, bool ok, String detail});
 
 /// 验证码输入回调：UI 层注入（返回 null = 用户取消；refresh 用于「换一张」）。
+/// [error] 非空表示上一次提交失败，弹窗据此提示原因（如「验证码错误」）。
 typedef CaptchaPrompt = Future<String?> Function(
   Uint8List image,
   String hint,
-  Future<Uint8List> Function() refresh,
-);
+  Future<Uint8List> Function() refresh, {
+  String? error,
+});
 
 /// 直连模式总控：App 用校园凭据直接访问学校系统（教务 / 学工 / 校付宝），
 /// 不经 anticraft 服务器——因此需要设备本身在校园网（或校内 VPN）内。
@@ -30,14 +32,20 @@ class CampusDirect {
   CampusDirect._();
 
   /// 验证码输入回调：由 UI 层注入（返回 null = 用户取消）。
-  Future<String?> Function(Uint8List image, String hint, Future<Uint8List> Function() refresh)?
-      captchaPrompt;
+  Future<String?> Function(Uint8List image, String hint, Future<Uint8List> Function() refresh,
+      {String? error})? captchaPrompt;
 
   JwxtClient? _jwxt;
   XgClient? _xg;
   EpayClient? _epay;
   String _schoolKey = '';
   String _realNameCache = '';
+
+  /// 登录单飞：主页四个 Tab 同时常驻，启动时会并发查询（课表 / 二课 / 电费 / 学籍），
+  /// 若各自独立走一遍登录流程，验证码弹窗就会叠着弹好几次。
+  /// 同一系统的登录只跑一次，并发调用者共享同一个 Future。
+  Future<void>? _xgLogin;
+  Future<void>? _jwxtLogin;
 
   static const String _histKey = 'direct_electricity_history';
 
@@ -55,6 +63,8 @@ class CampusDirect {
     _epay = null;
     _schoolKey = key;
     _realNameCache = '';
+    _xgLogin = null; // 换学校后旧客户端的登录流程作废
+    _jwxtLogin = null;
   }
 
   JwxtClient get _jwxtClient {
@@ -73,8 +83,13 @@ class CampusDirect {
     return _epay ??= EpayClient(AppState.I.school.ecardBase);
   }
 
-  /// 断开直连会话（清 Cookie 与登录态，下次查询重新登录）。
+  /// 断开直连会话（登录态与 Cookie 一并清掉，下次查询必须重新登录）。
+  /// 注意：Cookie 是持久化在 SharedPreferences 里的，只丢客户端对象会让下次查询
+  /// 悄悄复用旧会话，所以这里必须清 Cookie。
   Future<void> disconnect() async {
+    _jwxt?.clearSession();
+    _xg?.clearSession();
+    _epay?.clearSession();
     _jwxt?.dispose();
     _xg?.dispose();
     _epay?.dispose();
@@ -83,6 +98,8 @@ class CampusDirect {
     _epay = null;
     _realNameCache = '';
     _schoolKey = '';
+    _xgLogin = null;
+    _jwxtLogin = null;
   }
 
   /// 凭据/学校改动后调用：保留 Cookie，仅要求重新走登录流程。
@@ -91,6 +108,8 @@ class CampusDirect {
     _xg?.loggedIn = false;
     _epay = null;
     _realNameCache = '';
+    _xgLogin = null;
+    _jwxtLogin = null;
   }
 
   CampusCreds get _cred => AppState.I.creds;
@@ -104,15 +123,31 @@ class CampusDirect {
   Future<String?> _askCaptcha(
     Uint8List image,
     String hint,
-    Future<Uint8List> Function() refresh,
-  ) async {
+    Future<Uint8List> Function() refresh, {
+    String? error,
+  }) async {
     final prompt = captchaPrompt;
     if (prompt == null) throw ApiError('$hint：需要输入验证码，但当前界面无法弹出输入框');
-    return prompt(image, hint, refresh);
+    return prompt(image, hint, refresh, error: error);
   }
 
+  /// 学校系统回文案里含「验证码」→ 只是码输错了，换一张重输；否则（密码/账号错）直接抛出，
+  /// 免得拿同一个错误密码连弹三次验证码。
+  static bool _isCaptchaError(String msg) => msg.contains('验证码');
+
   /// 学工 CAS 登录（持久化 Cookie 仍有效时免验证码）。
-  Future<void> _ensureXg() async {
+  Future<void> _ensureXg() {
+    final inflight = _xgLogin;
+    if (inflight != null) return inflight; // 并发查询复用同一次登录（只弹一次验证码）
+    if (_xg != null && _xg!.loggedIn) return Future.value();
+    final f = _loginXg();
+    _xgLogin = f;
+    return f.whenComplete(() {
+      if (identical(_xgLogin, f)) _xgLogin = null;
+    });
+  }
+
+  Future<void> _loginXg() async {
     _requireCreds();
     if (_xg != null && _xg!.loggedIn) return;
     final client = _xgClient;
@@ -125,20 +160,32 @@ class CampusDirect {
         final img = await client.prepareLogin(_cred.studentId, _cred.password);
         if (img == null || img.isEmpty) throw ApiError('验证码获取失败，请重试');
         return img;
-      });
+      }, error: lastError);
       if (text == null || text.trim().isEmpty) throw ApiError('已取消验证码输入');
       try {
         await client.completeLogin(text.trim());
         return;
       } on ApiError catch (e) {
         lastError = e.message;
+        if (!_isCaptchaError(lastError)) rethrow;
       }
     }
     throw ApiError('统一认证登录失败：${lastError ?? '请稍后重试'}');
   }
 
   /// 正方教务登录（持久化 Cookie 仍有效时免验证码）。
-  Future<void> _ensureJwxt() async {
+  Future<void> _ensureJwxt() {
+    final inflight = _jwxtLogin;
+    if (inflight != null) return inflight;
+    if (_jwxt != null && _jwxt!.loggedIn) return Future.value();
+    final f = _loginJwxt();
+    _jwxtLogin = f;
+    return f.whenComplete(() {
+      if (identical(_jwxtLogin, f)) _jwxtLogin = null;
+    });
+  }
+
+  Future<void> _loginJwxt() async {
     _requireCreds();
     if (_jwxt != null && _jwxt!.loggedIn) return;
     final client = _jwxtClient;
@@ -151,13 +198,14 @@ class CampusDirect {
         final img = await client.prepareLogin(_cred.studentId, _cred.password);
         if (img.isEmpty) throw ApiError('验证码获取失败，请重试');
         return img;
-      });
+      }, error: lastError);
       if (text == null || text.trim().isEmpty) throw ApiError('已取消验证码输入');
       try {
         await client.completeLogin(text.trim());
         return;
       } on ApiError catch (e) {
         lastError = e.message;
+        if (!_isCaptchaError(lastError)) rethrow;
       }
     }
     throw ApiError('教务系统登录失败：${lastError ?? '请稍后重试'}');

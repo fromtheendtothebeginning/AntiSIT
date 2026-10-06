@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../direct/campus_direct.dart';
+import '../direct/mock_campus_server.dart';
 import '../direct/school.dart';
 import '../widgets/common.dart';
 import 'login_page.dart';
@@ -140,6 +141,52 @@ class _ConnectPageState extends State<ConnectPage> {
     } finally {
       // 探测用草稿地址，结束恢复原学校；真正切换交给「保存」
       await AppState.I.setSchool(original);
+      if (mounted) setState(() => _testing = false);
+    }
+  }
+
+  /// 调试：一键切到本机模拟校园服务（四个系统都在 127.0.0.1，凭据用模拟值）。
+  /// 直连模式没有校园网时，靠它把验证码 / 会话 / 各系统查询链路真正跑起来。
+  Future<void> _useMock() async {
+    setState(() {
+      _testing = true;
+      _error = null;
+      _ok = null;
+      _probes = null;
+    });
+    try {
+      await MockCampusServer.instance.start();
+      final p = MockCampusServer.instance.profile();
+      final st = AppState.I;
+      await st.upsertSchool(p);
+      await st.setSchool(p);
+      st.creds
+        ..studentId = MockCampusServer.studentId
+        ..password = MockCampusServer.password
+        ..payPassword = MockCampusServer.payPassword
+        ..dorm = MockCampusServer.dorm
+        ..realName = MockCampusServer.realName;
+      await st.setMode(AppMode.direct);
+      await st.persistDirect();
+      CampusDirect.I.forgetLoginState();
+      st.statusInfo = null;
+      st.studentInfo = null;
+      if (!mounted) return;
+      setState(() {
+        _mode = AppMode.direct;
+        _loadSchool(p);
+        _sid.text = MockCampusServer.studentId;
+        _pwd.text = MockCampusServer.password;
+        _payPwd.text = MockCampusServer.payPassword;
+        _dorm.text = MockCampusServer.dorm;
+        _realName.text = MockCampusServer.realName;
+        _ok = '已切换到本地模拟服务（${MockCampusServer.instance.baseUrl}）：'
+            '教务 / 统一认证 / 学工 / 校付宝都在本机模拟。返回首页查询会弹出验证码，'
+            '图片上的数字就是答案（日志里也会打印）。';
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = '本地模拟服务启动失败：$e');
+    } finally {
       if (mounted) setState(() => _testing = false);
     }
   }
@@ -462,6 +509,7 @@ class _ConnectPageState extends State<ConnectPage> {
           ),
         ),
         const SizedBox(height: 10),
+        if (kDebugMode) ...[_mockCard(), const SizedBox(height: 10)],
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -647,6 +695,56 @@ class _ConnectPageState extends State<ConnectPage> {
         keyboardType: TextInputType.url,
         decoration: InputDecoration(labelText: label, hintText: hint, isDense: true),
       );
+
+  // ==================== 本地模拟服务（仅 debug） ====================
+
+  /// 没有校园网（模拟器 / 教室外）时用它在 App 进程内跑一套行为一致的学校系统，
+  /// 用来验证直连链路：验证码弹窗、会话 Cookie、登录失败重试、各系统查询。
+  Widget _mockCard() {
+    final mock = MockCampusServer.instance;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.science_outlined, size: 18, color: SemColors.accent),
+              SizedBox(width: 6),
+              Text('本地模拟服务（仅调试构建）',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '在 App 内监听 127.0.0.1 起一套与学校系统行为一致的模拟服务：'
+            '正方教务（RSA 加密 + 图形验证码）、统一认证 CAS（AES 加密 + 图形验证码）、'
+            '学工二课、校付宝（SM4 支付密码）。没有校园网也能把直连链路跑通。',
+            style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.7),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _testing ? null : _useMock,
+                  child: Text(mock.running ? '重启并切到本地模拟服务' : '使用本地模拟服务'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            mock.running
+                ? '运行中：${mock.baseUrl}（模拟凭据 学号 ${MockCampusServer.studentId} / '
+                    '密码 ${MockCampusServer.password} / 支付密码 ${MockCampusServer.payPassword}）'
+                : '模拟凭据：学号 ${MockCampusServer.studentId} / 密码 ${MockCampusServer.password} / '
+                    '支付密码 ${MockCampusServer.payPassword} / 寝室 ${MockCampusServer.dorm}',
+            style: const TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.6),
+          ),
+        ],
+      ),
+    );
+  }
 
   // ==================== 自建服务器指引 ====================
 

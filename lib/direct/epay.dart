@@ -49,6 +49,12 @@ class EpayClient {
 
   void dispose() => _http.dispose();
 
+  /// 丢弃会话：令牌与 Cookie（含持久化的）一起清，下次调用重新登录。
+  void clearSession() {
+    _token = null;
+    _http.clearCookies();
+  }
+
   /// 登录换 accessToken：custname 必须是真实姓名（用学号会被拒）。
   Future<void> _login(String studentId, String realName, String payPassword) async {
     if (studentId.isEmpty) throw ApiError('缺少学号，请在连接设置里填写校园凭据');

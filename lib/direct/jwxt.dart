@@ -43,6 +43,12 @@ class JwxtClient {
 
   void dispose() => _http.dispose();
 
+  /// 丢弃会话：登录态与 Cookie（含持久化的）一起清，下次调用重新走登录流程。
+  void clearSession() {
+    loggedIn = false;
+    _http.clearCookies();
+  }
+
   /// 探测持久化 Cookie 是否仍有效，避免每次启动都要输验证码。
   Future<bool> checkSession() async {    try {
       final r = await _http.get('$_jwglxt/xtgl/index_initMenu.html', redirect: false);

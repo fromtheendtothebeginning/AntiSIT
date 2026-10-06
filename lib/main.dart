@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_state.dart';
+import 'direct/mock_campus_server.dart';
 import 'pages/home_page.dart';
 import 'widgets/captcha_dialog.dart';
 import 'widgets/common.dart';
@@ -107,6 +108,8 @@ class _BootPageState extends State<BootPage> {
 
   Future<void> _boot() async {
     await AppState.I.load();
+    // 调试构建：学校档案指向本机回环时，拉起本地模拟校园服务（直连模式无校园网也能测）
+    await MockCampusServer.instance.ensureIfConfigured();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
   }

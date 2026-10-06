@@ -35,6 +35,12 @@ class XgClient {
 
   void dispose() => _http.dispose();
 
+  /// 丢弃会话：登录态与 Cookie（含持久化的）一起清，下次调用重新走 CAS 登录。
+  void clearSession() {
+    loggedIn = false;
+    _http.clearCookies();
+  }
+
   Never _sessionLost() {
     loggedIn = false;
     _http.clearCookies();

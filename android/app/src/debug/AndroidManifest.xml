@@ -4,4 +4,7 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 调试专用：允许明文 HTTP。直连模式的本地模拟校园服务监听 http://127.0.0.1，
+         Android 9+ 默认禁止明文请求（回环地址也不例外）。release 构建不受影响。 -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>
