@@ -87,14 +87,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 已存在则覆盖附件并改写说明，同一个 tag 重跑也能用
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" \
-              "AntiSIT-${VERSION}.apk" "AntiSIT-${VERSION}.apk.sha256" --clobber
-            gh release edit "$GITHUB_REF_NAME" \
-              --title "AntiSIT ${VERSION}" --notes-file release-notes.md
-          else
-            gh release create "$GITHUB_REF_NAME" \
-              "AntiSIT-${VERSION}.apk" "AntiSIT-${VERSION}.apk.sha256" \
-              --title "AntiSIT ${VERSION}" --notes-file release-notes.md
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "AntiSIT ${VERSION}" \
+              --notes-file release-notes.md \
+              "AntiSIT-${VERSION}.apk" "AntiSIT-${VERSION}.apk.sha256"
           fi
+          gh release upload "$GITHUB_REF_NAME" \
+            "AntiSIT-${VERSION}.apk" "AntiSIT-${VERSION}.apk.sha256" --clobber
+          # 显式置为正式发布：tag 若被删过再重建，GitHub 会把 release 降级成草稿，
+          # 匿名用户既看不到也下不了（页面直接报「没有 release」）。
+          gh release edit "$GITHUB_REF_NAME" --title "AntiSIT ${VERSION}" \
+            --notes-file release-notes.md --draft=false --prerelease=false
+          echo "--- 发布结果 ---"
+          gh release view "$GITHUB_REF_NAME"
