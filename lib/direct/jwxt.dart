@@ -69,6 +69,16 @@ class JwxtClient {
     throw ApiError('教务登录已失效，请重新导入/查询');
   }
 
+  /// 会话是否已失效：正方对过期会话的接口请求不一定回 302，也可能回 200 + 登录页 HTML
+  /// （有些版本），甚至回一段不含预期字段的 JSON。
+  /// 这些都必须按「会话失效」处理：否则 loggedIn 一直是 true，之后每次查询都会同样失败，
+  /// 课表还会被误报成「该周没有课表数据」而静默不显示——只能靠手动清会话才恢复。
+  bool _deadSession(HttpResult r) =>
+      r.status == 302 ||
+      r.status == 901 ||
+      r.text.contains('login_slogin') ||
+      r.text.contains('login_getPublicKey');
+
   /// 可达性探测（连接设置页「测试连接」）：能取到教务登录页即视为可达。
   Future<String?> probe() async {
     final html = (await _http.get('$_jwglxt/xtgl/login_slogin.html')).text;
@@ -169,10 +179,11 @@ class JwxtClient {
       },
       redirect: false,
     );
-    if (resp.status == 302) _sessionLost();
+    if (_deadSession(resp)) _sessionLost();
     final j = _parse(resp);
     final items = j is Map ? j['items'] : null;
     if (items is! List) {
+      if (j == null) _sessionLost(); // 不是 JSON：被学校打回登录页/门户页了
       final t = resp.text;
       throw ApiError('教务系统查询失败（${resp.status}）：${t.length > 200 ? t.substring(0, 200) : t}');
     }
@@ -266,10 +277,11 @@ class JwxtClient {
       headers: _jwxtHeaders,
       redirect: false,
     );
-    if (resp.status == 302 || resp.status == 901) _sessionLost();
+    if (_deadSession(resp)) _sessionLost();
     final j = _parse(resp);
     final rqazc = j is Map ? j['rqazcList'] : null;
     if (rqazc is! List || rqazc.isEmpty) {
+      if (j == null) _sessionLost(); // 不是 JSON：多半是登录页，别误报成「这周没课」
       throw ApiError('该周没有课表数据（可能已超出学期范围）');
     }
     final courses = <Map<String, dynamic>>[];
@@ -344,10 +356,11 @@ class JwxtClient {
       },
       redirect: false,
     );
-    if (resp.status == 302 || resp.status == 901) _sessionLost();
+    if (_deadSession(resp)) _sessionLost();
     final j = _parse(resp);
     final items = j is Map ? j['items'] : null;
     if (items is! List) {
+      if (j == null) _sessionLost(); // 不是 JSON：被学校打回登录页/门户页了
       final t = resp.text;
       throw ApiError('教务系统查询失败（${resp.status}）：${t.length > 200 ? t.substring(0, 200) : t}');
     }

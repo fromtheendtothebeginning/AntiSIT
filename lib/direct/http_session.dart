@@ -183,36 +183,67 @@ class HttpSession {
     bool redirect = true,
     Duration timeout = const Duration(seconds: 30),
   }) async {
-    final uri = Uri.parse(url);
-    final host = uri.host;
-    await load(); // 首次请求前载入持久化 Cookie（跨启动复用登录态）
-    try {
-      final req = http.Request(method, uri);
-      req.followRedirects = redirect;
-      req.headers['User-Agent'] =
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
-      final cookie = _cookieHeader(host);
-      if (cookie.isNotEmpty) req.headers['Cookie'] = cookie;
-      if (contentType != null) req.headers['Content-Type'] = contentType;
-      if (headers != null) req.headers.addAll(headers);
-      if (body != null) req.body = body;
-      final streamed = await _client.send(req).timeout(timeout);
-      final resp = await http.Response.fromStream(streamed).timeout(timeout);
+    // 自己跟随重定向：dart:io/http 自动跟随只把最后一跳的响应交出来，
+    // 中间 302 上的 Set-Cookie（学校系统恰恰用它建会话）会被丢掉——会话对不上，
+    // 验证码就绑到另一个会话上，登录必然失败。服务端 Python 用 requests 不会丢，
+    // 所以这里手动跟，每一跳都收 Cookie。
+    var currentUrl = url;
+    var currentMethod = method;
+    String? currentBody = body;
+    String? currentType = contentType;
+    for (var hop = 0; hop <= _maxRedirects; hop++) {
+      final uri = Uri.parse(currentUrl);
+      final host = uri.host;
+      await load(); // 首次请求前载入持久化 Cookie（跨启动复用登录态）
+      final http.Response resp;
+      try {
+        final req = http.Request(currentMethod, uri);
+        req.followRedirects = false;
+        req.headers['User-Agent'] =
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
+        // 与浏览器 / 服务端 requests 一致的常规头：学校系统前的 WAF 会挑没有 Accept 的请求
+        req.headers['Accept'] = '*/*';
+        req.headers['Accept-Language'] = 'zh-CN,zh;q=0.9';
+        final cookie = _cookieHeader(host);
+        if (cookie.isNotEmpty) req.headers['Cookie'] = cookie;
+        if (currentType != null) req.headers['Content-Type'] = currentType;
+        if (headers != null) req.headers.addAll(headers);
+        if (currentBody != null) req.body = currentBody;
+        final streamed = await _client.send(req).timeout(timeout);
+        resp = await http.Response.fromStream(streamed).timeout(timeout);
+      } on ApiError {
+        rethrow;
+      } on TimeoutException {
+        throw ApiError(_netHint(host, '连接超时'));
+      } on SocketException {
+        throw ApiError(_netHint(host, '无法连接'));
+      } on HttpException {
+        throw ApiError(_netHint(host, '无法连接'));
+      } catch (e) {
+        throw ApiError('访问学校系统失败（$host）：$e');
+      }
       _storeCookies(host, resp.headersSplitValues);
-      return HttpResult(resp.statusCode, resp.request?.url.toString() ?? url,
-          resp.bodyBytes, resp.headersSplitValues);
-    } on ApiError {
-      rethrow;
-    } on TimeoutException {
-      throw ApiError(_netHint(host, '连接超时'));
-    } on SocketException {
-      throw ApiError(_netHint(host, '无法连接'));
-    } on HttpException {
-      throw ApiError(_netHint(host, '无法连接'));
-    } catch (e) {
-      throw ApiError('访问学校系统失败（$host）：$e');
+      final location = resp.headersSplitValues['location']?.first ?? '';
+      if (!redirect || location.isEmpty || !_isRedirect(resp.statusCode)) {
+        return HttpResult(
+            resp.statusCode, uri.toString(), resp.bodyBytes, resp.headersSplitValues);
+      }
+      // 302/303 跟随时改 GET 并丢掉请求体（浏览器与 requests 的默认行为）
+      if (resp.statusCode == 303 ||
+          ((resp.statusCode == 301 || resp.statusCode == 302) && currentMethod != 'GET')) {
+        currentMethod = 'GET';
+        currentBody = null;
+        currentType = null;
+      }
+      currentUrl = uri.resolve(location).toString();
     }
+    throw ApiError('学校系统（$url）重定向次数过多，请核对该校系统地址是否配置正确');
   }
+
+  static const int _maxRedirects = 10;
+
+  static bool _isRedirect(int status) =>
+      status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
 
   /// 直连模式的网络失败提示：把「内网要求」讲清楚（服务器模式才有 VPN 代连）。
   static String _netHint(String host, String what) =>

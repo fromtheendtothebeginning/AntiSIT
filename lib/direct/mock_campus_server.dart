@@ -49,6 +49,9 @@ class MockCampusServer {
   String? debugJwxtCaptcha;
   String? debugAuthCaptcha;
 
+  /// 测试用：把登录页加密盐的 value 写到 id 之前（页面改版时属性顺序会变，解析不能依赖顺序）。
+  bool debugFlipSaltAttribute = false;
+
   bool get running => _server != null;
   Uri get baseUri => Uri.parse('http://127.0.0.1:$_port');
   String get baseUrl => baseUri.toString();
@@ -193,7 +196,7 @@ class MockCampusServer {
         return _html(res, '<html><body><div id="mock">index_initMenu</div></body></html>');
 
       case '/jwglxt/cjcx/cjcx_cxXsgrcj.html':
-        if (!s.jwxt) return _redirect(res, '/jwglxt/xtgl/login_slogin.html');
+        if (!s.jwxt) return _jwxtExpired(res);
         final xnm = form['xnm'] ?? '';
         final xqm = form['xqm'] ?? '';
         final items = _grades
@@ -202,7 +205,7 @@ class MockCampusServer {
         return _json(res, {'items': items, 'totalResult': '${items.length}'});
 
       case '/jwglxt/kbcx/xskbcxMobile_cxXsKb.html':
-        if (!s.jwxt) return _redirect(res, '/jwglxt/xtgl/login_slogin.html');
+        if (!s.jwxt) return _jwxtExpired(res);
         final zs = int.tryParse(form['zs'] ?? '') ?? 1;
         if (zs < 1 || zs > _mockWeekCount) {
           return _json(res, {'kbList': const [], 'rqazcList': const []});
@@ -226,7 +229,7 @@ class MockCampusServer {
         });
 
       case '/jwglxt/kwgl/kscx_cxXsksxxIndex.html':
-        if (!s.jwxt) return _redirect(res, '/jwglxt/xtgl/login_slogin.html');
+        if (!s.jwxt) return _jwxtExpired(res);
         return _json(res, {'items': _exams});
     }
     _text(res, 404, 'mock: 未实现的教务路径 $path', 'text/plain; charset=utf-8');
@@ -247,6 +250,17 @@ class MockCampusServer {
   void _tips(HttpResponse res, String msg) =>
       _html(res, '<html><body><div id="tips">$msg</div></body></html>');
 
+  /// 会话过期时业务接口的应答：真实正方有些版本不打回 302，而是直接给一张登录页 HTML
+  /// （客户端若把它当成 JSON 解析就会失败，还容易误报成「这周没课」）。
+  void _jwxtExpired(HttpResponse res) => _html(res, _jwxtLoginPage);
+
+  /// 测试用：服务端偷偷把教务会话删掉（模拟正方会话超时），客户端并不知情。
+  void debugForgetJwxtSession() {
+    for (final s in _sessions.values) {
+      s.jwxt = false;
+    }
+  }
+
   // ==================== 统一身份认证（CAS） ====================
 
   Future<void> _cas(
@@ -261,19 +275,21 @@ class MockCampusServer {
         if (req.method == 'POST') {
           final cap = (form['captchaResponse'] ?? '').toUpperCase();
           if (cap.isEmpty || cap != (s.authCaptcha ?? '').toUpperCase()) {
-            return _casError(res, '验证码错误');
+            return _casError(res, 'cpatchaError', '验证码错误');
           }
-          if ((form['username'] ?? '') != studentId) return _casError(res, '用户名或密码错误');
+          if ((form['username'] ?? '') != studentId) {
+            return _casError(res, 'usernameError', '用户名或密码错误');
+          }
           if (!_wiseduPasswordOk(form['password'] ?? '', s.casSalt, password)) {
-            return _casError(res, '用户名或密码错误');
+            return _casError(res, 'passwordError', '用户名或密码错误');
           }
-          s.cas = true;
+          s.cas = true; // 统一认证会话（CASTGC）建立
           s.authCaptcha = null;
-          return _redirect(res, s.casService.isEmpty
-              ? '/zftal-xgxt-web/teacher/xtgl/index/check.zf'
-              : s.casService);
+          return _redirect(res, _ticketUrl(s.casService));
         }
         s.casService = req.uri.queryParameters['service'] ?? s.casService;
+        // 统一认证会话还有效时不渲染登录页，直接带票据 302 回业务系统（真实 CAS 的 SSO 行为）
+        if (s.cas) return _redirect(res, _ticketUrl(s.casService));
         s.casExecution = 'e1s1-mock-${DateTime.now().microsecondsSinceEpoch}';
         s.casLt = 'LT-mock-${DateTime.now().microsecondsSinceEpoch}';
         s.casSalt = _randomSalt();
@@ -288,7 +304,11 @@ class MockCampusServer {
     _text(res, 404, 'mock: 未实现的认证路径 $path', 'text/plain; charset=utf-8');
   }
 
-  String _casLoginPage(_MockSession s) => '''
+  String _casLoginPage(_MockSession s) {
+    final saltInput = debugFlipSaltAttribute
+        ? '<input type="hidden" value="${s.casSalt}" id="pwdDefaultEncryptSalt"/>'
+        : '<input type="hidden" id="pwdDefaultEncryptSalt" value="${s.casSalt}"/>';
+    return '''
 <html><body>
 <form id="casLoginForm" method="post" action="/authserver/login">
   <input type="hidden" name="execution" value="${s.casExecution}"/>
@@ -296,17 +316,20 @@ class MockCampusServer {
   <input type="hidden" name="lt" value="${s.casLt}"/>
   <input type="hidden" name="rmShown" value="1"/>
   <input type="hidden" name="dllt" value="userNamePasswordLogin"/>
-  <input type="hidden" id="pwdDefaultEncryptSalt" value="${s.casSalt}"/>
-  <input type="text" name="username" placeholder="学号"/>
-  <input type="password" name="password"/>
-  <input type="text" name="captchaResponse"/>
+  $saltInput
+  <input type="text" id="username" name="username" placeholder="学号"/>
+  <input type="password" id="password" name="password"/>
+  <input type="text" id="captchaResponse" name="captchaResponse"/>
   <img id="captchaImg" src="/authserver/captcha.html"/>
-  <input type="submit" value="登录"/>
+  <button type="submit" class="auth_login_btn">登录</button>
 </form>
 </body></html>''';
+  }
 
-  void _casError(HttpResponse res, String msg) =>
-      _html(res, '<html><body><span id="msg">$msg</span></body></html>');
+  /// 登录失败页：用 SIT 真实页面的错误元素（#cpatchaError / #usernameError / #passwordError），
+  /// 与浏览器版登录实现读的是同一套选择器——这样「客户端能否分辨验证码错/密码错」也就被测到了。
+  void _casError(HttpResponse res, String elementId, String msg) =>
+      _html(res, '<html><body><span id="$elementId" class="auth_error">$msg</span></body></html>');
 
   // ==================== 学工（第二课堂） ====================
 
@@ -318,12 +341,14 @@ class MockCampusServer {
     Map<String, String> form,
   ) async {
     switch (path) {
+      // 业务系统入口：没有业务会话就 302 去统一认证；带 ticket 回来则建立业务会话
       case '/zftal-xgxt-web/teacher/xtgl/index/check.zf':
-        if (!s.cas) return _redirect(res, _casLoginUrl(path));
-        return _html(res, '<html><body>ok</body></html>');
+        if ((req.uri.queryParameters['ticket'] ?? '').isNotEmpty && s.cas) s.xg = true;
+        if (!s.xg) return _redirect(res, _casLoginUrl(path));
+        return _html(res, '<html><body>xgHome ok</body></html>');
 
       case '/zftal-xgxt-web/teacher/xtgl/login/getCurrentUser.zf':
-        return _json(res, s.cas
+        return _json(res, s.xg
             ? {
                 'code': 0,
                 'msg': 'ok',
@@ -332,7 +357,7 @@ class MockCampusServer {
             : {'code': 1, 'msg': '未登录'});
 
       case '/zftal-xgxt-web/xsrdtjcx/getAllXslbTjcx.zf':
-        if (!s.cas) return _redirect(res, _casLoginUrl(path));
+        if (!s.xg) return _redirect(res, _casLoginUrl(path));
         return _json(res, {
           'code': 0,
           'tableHeader': _scoreHeader,
@@ -342,7 +367,7 @@ class MockCampusServer {
         });
 
       case '/zftal-xgxt-web/hdgl/getHdgcHdList.zf':
-        if (!s.cas) return _redirect(res, _casLoginUrl(path));
+        if (!s.xg) return _redirect(res, _casLoginUrl(path));
         return _json(res, {
           'code': 0,
           'data': {
@@ -365,7 +390,7 @@ class MockCampusServer {
         });
 
       case '/zftal-xgxt-web/hdgl/details.zf':
-        if (!s.cas) return _redirect(res, _casLoginUrl(path));
+        if (!s.xg) return _redirect(res, _casLoginUrl(path));
         final a = _activityItems[req.uri.queryParameters['id'] ?? ''];
         if (a == null) return _json(res, {'code': 1, 'msg': '活动不存在'});
         return _json(res, {
@@ -378,6 +403,22 @@ class MockCampusServer {
 
   String _casLoginUrl(String servicePath) =>
       '$baseUrl/authserver/login?service=${Uri.encodeComponent('$baseUrl$servicePath')}';
+
+  /// 统一认证回业务系统的跳转：真实 CAS 一定带 ticket（业务系统据此建会话）。
+  String _ticketUrl(String service) {
+    final target =
+        service.isEmpty ? '$baseUrl/zftal-xgxt-web/teacher/xtgl/index/check.zf' : service;
+    final sep = target.contains('?') ? '&' : '?';
+    return '$target${sep}ticket=ST-mock-${DateTime.now().microsecondsSinceEpoch}';
+  }
+
+  /// 测试用：只丢业务会话、保留统一认证会话（模拟 CASTGC 还有效但学工 Cookie 过期）。
+  /// 旧实现的坑正是这里：authserver 会把登录页 302 回业务系统，拿到的是业务页而非登录页。
+  void debugForgetXgSession() {
+    for (final s in _sessions.values) {
+      s.xg = false;
+    }
+  }
 
   // ==================== 校付宝 ====================
 
@@ -741,7 +782,8 @@ class MockCampusServer {
 
 class _MockSession {
   bool jwxt = false; // 教务已登录
-  bool cas = false; // 统一认证已登录（学工可用）
+  bool cas = false; // 统一认证会话（CASTGC）已建立
+  bool xg = false; // 学工业务会话（靠 CAS 回跳带的 ticket 建立）
   String? jwxtCaptcha;
   String? authCaptcha;
   String casService = '';

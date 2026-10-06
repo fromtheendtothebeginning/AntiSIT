@@ -130,6 +130,55 @@ void main() {
         throwsA(isA<ApiError>()),
       );
     });
+
+    test('加密盐写在 id 之前也能解析（页面改版属性顺序会变）', () async {
+      mock.debugFlipSaltAttribute = true;
+      addTearDown(() => mock.debugFlipSaltAttribute = false);
+      final c = XgClient(authBase: mock.profile().authBase, xgBase: mock.baseUrl);
+      addTearDown(c.dispose);
+
+      final png = await c.prepareLogin(MockCampusServer.studentId, MockCampusServer.password);
+      expect(png, isNotNull);
+      await c.completeLogin(mock.debugAuthCaptcha!);
+      expect(c.loggedIn, isTrue);
+    });
+
+    test('统一认证会话还在、学工会话过期：靠 SSO 自愈，不再要验证码', () async {
+      final c = XgClient(authBase: mock.profile().authBase, xgBase: mock.baseUrl);
+      addTearDown(c.dispose);
+
+      // 先正常登录一次，建立统一认证会话（CASTGC）
+      await c.prepareLogin(MockCampusServer.studentId, MockCampusServer.password);
+      await c.completeLogin(mock.debugAuthCaptcha!);
+      expect(await c.score(MockCampusServer.studentId), isNotEmpty);
+
+      // 只丢业务会话：下次 authserver 不会再给登录页，而是带 ticket 302 回业务系统
+      mock.debugForgetXgSession();
+      c.loggedIn = false;
+      final again = await c.prepareLogin(MockCampusServer.studentId, MockCampusServer.password);
+      expect(again, isNull, reason: '不该再要验证码：跟完 SSO 跳转其实已经登录成功');
+      expect(c.loggedIn, isTrue);
+      expect(await c.score(MockCampusServer.studentId), isNotEmpty);
+    });
+
+    test('登录失败要透出学校页面原文（能分辨验证码错 / 密码错）', () async {
+      final c = XgClient(authBase: mock.profile().authBase, xgBase: mock.baseUrl);
+      addTearDown(c.dispose);
+
+      // 验证码错：学校页面 #cpatchaError 的原文
+      await c.prepareLogin(MockCampusServer.studentId, MockCampusServer.password);
+      await expectLater(
+        () => c.completeLogin('0000'),
+        throwsA(isA<ApiError>().having((e) => e.message, 'message', contains('验证码'))),
+      );
+
+      // 密码错：#passwordError 的原文（不能退化成笼统的「登录失败」）
+      await c.prepareLogin(MockCampusServer.studentId, 'wrong-password');
+      await expectLater(
+        () => c.completeLogin(mock.debugAuthCaptcha!),
+        throwsA(isA<ApiError>().having((e) => e.message, 'message', contains('用户名或密码错误'))),
+      );
+    });
   });
 
   group('校付宝（SM4 支付密码）', () {
@@ -224,6 +273,30 @@ void main() {
       expect(hints.length, 2);
       expect(hints.any((h) => h.contains('教务')), isTrue);
       expect(hints.any((h) => h.contains('统一身份认证')), isTrue);
+    });
+
+    test('教务会话超时（客户端不知情）：查询要自动重登并成功，不必手动清会话', () async {
+      useMockSchool();
+      var prompts = 0;
+      CampusDirect.I.captchaPrompt = (image, hint, refresh, {error}) async {
+        prompts++;
+        return readCaptcha(hint);
+      };
+
+      final first = await CampusDirect.I.grades();
+      expect((first['data'] as Map)['count'], 6);
+      expect(prompts, 1);
+
+      // 服务端把教务会话删掉：客户端 loggedIn 依然是 true，旧实现从此次次失败
+      mock.debugForgetJwxtSession();
+      final week = await CampusDirect.I.timetableWeek('2026', '3', 1);
+      expect((week['courses'] as List), isNotEmpty,
+          reason: '会话失效不能被误报成「该周没有课表数据」而静默不显示');
+      expect(prompts, 2, reason: '自动重登会再要一次教务验证码');
+
+      final again = await CampusDirect.I.grades();
+      expect((again['data'] as Map)['count'], 6, reason: '会话失效要自动重登后重试');
+      expect(prompts, 2, reason: '已经重登过，不该再弹验证码');
     });
 
     test('验证码输错：带着错误原因重新弹，密码错则不再弹', () async {

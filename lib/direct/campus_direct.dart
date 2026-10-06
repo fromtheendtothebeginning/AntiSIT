@@ -211,14 +211,32 @@ class CampusDirect {
     throw ApiError('教务系统登录失败：${lastError ?? '请稍后重试'}');
   }
 
+  /// 学校会话可能在两次查询之间失效（教务会话尤其短，学工也会掉）。客户端在内存里
+  /// `loggedIn` 仍是 true，就会次次失败、只能靠手动「清除直连会话」恢复——所以这里
+  /// 一旦认出会话失效就自动重登一次再试，用户最多再输一次验证码。
+  Future<Map<String, dynamic>> _withRelogin(
+    Future<Map<String, dynamic>> Function() run,
+    Future<void> Function() login,
+  ) async {
+    try {
+      return await run();
+    } on ApiError catch (e) {
+      if (!e.message.contains('失效')) rethrow;
+      await login();
+      return run();
+    }
+  }
+
   /// 校付宝登录用的真实姓名：优先用填写值，其次查学工补全。
   Future<String> _realName() async {
     final filled = _cred.realName.trim();
     if (filled.isNotEmpty) return filled;
     if (_realNameCache.isNotEmpty) return _realNameCache;
     try {
-      await _ensureXg();
-      final s = await _xg!.score(_cred.studentId);
+      final s = await _withRelogin(() async {
+        await _ensureXg();
+        return _xg!.score(_cred.studentId);
+      }, _ensureXg);
       final xm = ((s['student'] as Map?)?['xm'] ?? '').toString().trim();
       if (xm.isNotEmpty) {
         _realNameCache = xm;
@@ -252,55 +270,56 @@ class CampusDirect {
 
   // ==================== 学工：二课分 / 活动 ====================
 
-  Future<Map<String, dynamic>> score() async {
-    await _ensureXg();
-    final data = await _xg!.score(_cred.studentId);
-    final xm = ((data['student'] as Map?)?['xm'] ?? '').toString().trim();
-    if (xm.isNotEmpty && _cred.realName.trim().isEmpty) {
-      _cred.realName = xm;
-      await AppState.I.persistDirect();
-    }
-    return {'ok': true, 'data': data};
-  }
+  Future<Map<String, dynamic>> score() => _withRelogin(() async {
+        await _ensureXg();
+        final data = await _xg!.score(_cred.studentId);
+        final xm = ((data['student'] as Map?)?['xm'] ?? '').toString().trim();
+        if (xm.isNotEmpty && _cred.realName.trim().isEmpty) {
+          _cred.realName = xm;
+          await AppState.I.persistDirect();
+        }
+        return {'ok': true, 'data': data};
+      }, _ensureXg);
 
-  Future<Map<String, dynamic>> activities() async {
-    await _ensureXg();
-    return {'ok': true, 'data': await _xg!.activitiesPayload()};
-  }
+  Future<Map<String, dynamic>> activities() => _withRelogin(() async {
+        await _ensureXg();
+        return {'ok': true, 'data': await _xg!.activitiesPayload()};
+      }, _ensureXg);
 
-  Future<Map<String, dynamic>> activityDetail(String aid) async {
-    await _ensureXg();
-    final data = await _xg!.fetchActivityDetail(aid);
-    final hdms = (data['hdms'] ?? '').toString();
-    return {
-      'ok': true,
-      'data': {
-        'id': aid,
-        'hdms': hdms,
-        'quota': extractQuota(hdms),
-        'signup': extractSignup(hdms),
-      },
-    };
-  }
+  Future<Map<String, dynamic>> activityDetail(String aid) => _withRelogin(() async {
+        await _ensureXg();
+        final data = await _xg!.fetchActivityDetail(aid);
+        final hdms = (data['hdms'] ?? '').toString();
+        return {
+          'ok': true,
+          'data': {
+            'id': aid,
+            'hdms': hdms,
+            'quota': extractQuota(hdms),
+            'signup': extractSignup(hdms),
+          },
+        };
+      }, _ensureXg);
 
   // ==================== 教务：成绩 / 课表 / 考试 ====================
 
-  Future<Map<String, dynamic>> grades({String? xnm, String? xqm}) async {
-    await _ensureJwxt();
-    final data = await _jwxt!.grades(_cred.studentId, xnm: xnm ?? '', xqm: xqm ?? '');
-    return {'ok': true, 'data': data};
-  }
+  Future<Map<String, dynamic>> grades({String? xnm, String? xqm}) => _withRelogin(() async {
+        await _ensureJwxt();
+        final data = await _jwxt!.grades(_cred.studentId, xnm: xnm ?? '', xqm: xqm ?? '');
+        return {'ok': true, 'data': data};
+      }, _ensureJwxt);
 
-  Future<Map<String, dynamic>> timetableWeek(String xnm, String xqm, int zs) async {
-    await _ensureJwxt();
-    final data = await _jwxt!.kbcx(_cred.studentId, xnm, xqm, zs);
-    return {'ok': true, 'zs': zs, ...data};
-  }
+  Future<Map<String, dynamic>> timetableWeek(String xnm, String xqm, int zs) =>
+      _withRelogin(() async {
+        await _ensureJwxt();
+        final data = await _jwxt!.kbcx(_cred.studentId, xnm, xqm, zs);
+        return {'ok': true, 'zs': zs, ...data};
+      }, _ensureJwxt);
 
-  Future<Map<String, dynamic>> exams(String xnm, String xqm) async {
-    await _ensureJwxt();
-    return {'ok': true, 'exams': await _jwxt!.exams(xnm, xqm)};
-  }
+  Future<Map<String, dynamic>> exams(String xnm, String xqm) => _withRelogin(() async {
+        await _ensureJwxt();
+        return {'ok': true, 'exams': await _jwxt!.exams(xnm, xqm)};
+      }, _ensureJwxt);
 
   // ==================== 校付宝：校园码 / 电费 ====================
 

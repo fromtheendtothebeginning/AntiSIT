@@ -66,17 +66,63 @@ class XgClient {
   static String? _hiddenField(String html, String name) =>
       RegExp('name="$name"[^>]*value="([^"]*)"').firstMatch(html)?.group(1);
 
-  static String _findSalt(String html) =>
-      RegExp(r'id="pwdDefaultEncryptSalt"[^>]*value="([^"]+)"').firstMatch(html)?.group(1) ??
-      RegExp(r'pwdDefaultEncryptSalt\s*=\s*["' "'" r']([^"' "'" r']+)["' "'" r']')
-              .firstMatch(html)
-              ?.group(1) ??
-      '';
+  /// 加密盐：`<input ... id="pwdDefaultEncryptSalt" value="...">` 或 JS 变量。
+  /// 不假设 id / value 的先后顺序（页面改版时 element 属性顺序并不稳定），引号单双都认。
+  static String _findSalt(String html) {
+    final tag = RegExp(r'<input[^>]*pwdDefaultEncryptSalt[^>]*>', caseSensitive: false)
+        .firstMatch(html)
+        ?.group(0);
+    if (tag != null) {
+      final v = RegExp('''value\\s*=\\s*["']([^"']+)["']''').firstMatch(tag)?.group(1);
+      if (v != null && v.isNotEmpty) return v;
+    }
+    return RegExp('''pwdDefaultEncryptSalt\\s*[:=]\\s*["']([^"']+)["']''').firstMatch(html)?.group(1) ??
+        '';
+  }
+
+  /// 取不到加密盐时的诊断：把「请求到了哪个页面、页面里有哪些要素」一并给出，
+  /// 一眼能分清是登录页改版，还是压根没到统一认证（把这段截图给开发者即可）。
+  static String _saltError(HttpResult page, String html, String loginUrl) {
+    const marks = {
+      'pwdDefaultEncryptSalt': '盐字段名',
+      'auth_login_btn': '登录按钮',
+      'captchaImg': '验证码图',
+      'execution': 'CAS 令牌',
+      'username': '用户名框',
+      'publicKey': '公钥',
+    };
+    final found = [for (final e in marks.entries) if (html.contains(e.key)) e.value];
+    final at = html.toLowerCase().indexOf('salt');
+    final snippet = at < 0
+        ? '（整页没有 salt 字样）'
+        : '…${html.substring((at - 80).clamp(0, html.length), (at + 80).clamp(0, html.length)).replaceAll(RegExp(r'\s+'), ' ')}…';
+    return '统一认证登录页异常（请求 $loginUrl → HTTP ${page.status} · ${page.url} · ${html.length} 字）：'
+        '${found.isEmpty ? '页面上没有登录表单要素' : '命中 ${found.join('/')}'}，'
+        '但取不到加密盐 pwdDefaultEncryptSalt。$snippet';
+  }
+
+  /// 学工会话是否已建立（统一认证 SSO 完成后的确认）。
+  Future<bool> _currentUserOk() async {
+    final cu = await _http.get('$_api/teacher/xtgl/login/getCurrentUser.zf');
+    return cu.text.contains('"code":0');
+  }
 
   static String _loginError(String html, String fallback) {
-    final m = RegExp(r'id="msg"[^>]*>(.*?)</(?:span|div)>', dotAll: true).firstMatch(html);
-    final msg = m == null ? '' : m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
-    return msg.isEmpty ? fallback : msg;
+    // 金智 authserver 的错误提示元素各校不一：SIT 实测用 .auth_error / #usernameError /
+    // #passwordError / #cpatchaError（页面里就这么拼的）/ #loginError，另有学校用 <span id="msg">。
+    // 解析不出就只能给笼统文案，分辨不出「验证码错」还是「密码错」，所以逐个试。
+    final rules = <RegExp>[
+      RegExp(r'id="msg"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
+      RegExp(r'id="(?:username|password|cpatcha|captcha|login)Error"[^>]*>(.*?)</(?:span|div)>',
+          dotAll: true),
+      RegExp(r'class="[^"]*auth_error[^"]*"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
+    ];
+    for (final re in rules) {
+      final m = re.firstMatch(html);
+      final msg = m == null ? '' : m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
+      if (msg.isNotEmpty) return msg;
+    }
+    return fallback;
   }
 
   String _absolute(String url) {
@@ -90,11 +136,11 @@ class XgClient {
     _studentId = studentId;
     _password = password;
     String loginUrl;
-    String html;
+    HttpResult page;
     final check = await _http.get('$_api/teacher/xtgl/index/check.zf', redirect: false);
     if (check.status >= 300 && check.status < 400 && check.location.isNotEmpty) {
       loginUrl = _absolute(check.location);
-      html = (await _http.get(loginUrl)).text;
+      page = await _http.get(loginUrl);
     } else {
       final cu = await _http.get('$_api/teacher/xtgl/login/getCurrentUser.zf');
       if (cu.text.contains('"code":0')) {
@@ -103,9 +149,9 @@ class XgClient {
       }
       loginUrl =
           '$authBase/login?service=${Uri.encodeComponent('$_api/teacher/xtgl/index/check.zf')}';
-      html = (await _http.get(loginUrl)).text;
+      page = await _http.get(loginUrl);
     }
-    _loginUrl = loginUrl;
+    final html = page.text;
     final fields = <String, String>{};
     for (final name in ['execution', '_eventId', 'lt', 'rmShown', 'dllt', 'geolocation']) {
       final v = _hiddenField(html, name);
@@ -113,8 +159,19 @@ class XgClient {
     }
     fields.putIfAbsent('dllt', () => 'userNamePasswordLogin');
     fields.putIfAbsent('_eventId', () => 'submit');
+    _loginUrl = loginUrl;
     _fields = fields;
     _salt = _findSalt(html);
+    if (_salt!.isEmpty) {
+      // 统一认证会话（CASTGC）还有效时 authserver 不给登录页，而是直接 302 回业务系统——
+      // 跟过去拿到的就是业务页，自然没有加密盐。这种「其实已经登录成功」的情形要认出来，
+      // 否则用户会卡在一个根本不是登录页的页面上反复重试。
+      if (await _currentUserOk()) {
+        loggedIn = true;
+        return null;
+      }
+      throw ApiError(_saltError(page, html, loginUrl));
+    }
     final cap = await _http.get('$authBase/captcha.html?ts=${_ms()}');
     return cap.body;
   }
