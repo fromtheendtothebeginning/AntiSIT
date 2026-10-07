@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../api_client.dart';
 import '../direct/campus_direct.dart';
 import 'common.dart';
 
@@ -15,9 +16,12 @@ Future<T> _serial<T>(Future<T> Function() task) {
   return r;
 }
 
-/// 注入直连模式的验证码输入弹窗（App 启动时调用一次）。
+/// 注入验证码输入弹窗（App 启动时调用一次）：直连模式本机登录学校系统用；
+/// 服务器模式在自动识码走不通（未配识图模型等）回 need_captcha 时也用同一只弹窗。
 void installDirectCaptchaPrompt() {
   CampusDirect.I.captchaPrompt = (image, hint, refresh, {error}) =>
+      _serial(() => _showCaptcha(image, hint, refresh, error));
+  ApiClient.I.captchaPrompt = (image, hint, refresh, {error}) =>
       _serial(() => _showCaptcha(image, hint, refresh, error));
 }
 
@@ -150,7 +154,7 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
           ),
           const SizedBox(height: 10),
           const Text(
-            '直连模式由本机直接登录学校系统，验证码需手动输入（服务器模式才是 AI 自动识别）。',
+            '服务器模式配置识图模型后由 AI 自动识别；未配置或识别失败时，与直连模式一样需手动输入。',
             style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
           ),
         ],

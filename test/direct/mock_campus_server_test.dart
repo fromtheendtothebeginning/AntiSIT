@@ -81,6 +81,27 @@ void main() {
       );
     });
 
+    // 学校页面里没有可读错误文案（新版登录页把提示交给 JS 渲染）：过去会退化成全页搜「验证码」
+    // 二字，把 HTML 注释里的 `验证码-->` 当成失败原因贴给用户，还因为含「验证码」白重试三次。
+    test('登录页没有错误文案 → 报状态码与页面片段，不拿页面碎片当原因', () async {
+      mock.debugJwxtLoginFailBody =
+          '<html><head><!--验证码--></head><body><label>验证码</label>'
+          '<form id="loginForm" action="/jwglxt/xtgl/login_slogin.html"></form></body></html>';
+      addTearDown(() => mock.debugJwxtLoginFailBody = null);
+      final c = JwxtClient(mock.baseUrl);
+      addTearDown(c.dispose);
+
+      await c.prepareLogin(MockCampusServer.studentId, MockCampusServer.password);
+      await expectLater(
+        () => c.completeLogin('0000'),
+        throwsA(isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('HTTP 200'), contains('loginForm'), isNot(contains('-->'))),
+        )),
+      );
+    });
+
     test('未登录直接查业务接口 → 会话失效', () async {
       final c = JwxtClient(mock.baseUrl);
       addTearDown(c.dispose);

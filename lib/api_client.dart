@@ -26,6 +26,10 @@ class ApiClient {
   Future<void> _queue = Future.value();
   Future<bool>? _recoverInFlight; // 并发 401 时共享同一次 refresh/重登，防止登录请求风暴触发 429
 
+  /// 服务器模式的手动验证码弹窗：开放接口无法自动识码（未配识图模型等）时回 need_captcha，
+  /// UI 层注入后弹出与直连模式同款的输入框（启动时与 CampusDirect 一起装一次）。
+  CaptchaPrompt? captchaPrompt;
+
   /// 直连模式生效条件：演示模式优先（demo 时一切走本地假数据）。
   bool get _useDirect => !AppState.I.demo && AppState.I.direct;
 
@@ -65,6 +69,7 @@ class ApiClient {
     Future<Map<String, dynamic>> attempt() async {
       var recovered = false; // 每个请求只做一次鉴权恢复，防止 401→refresh→401 死循环
       var waited = 0;
+      var captchaRounds = 0;
       while (true) {
         http.Response resp;
         try {
@@ -126,11 +131,52 @@ class ApiClient {
           }
           throw ApiError(msg, resp.statusCode);
         }
+        if (j?['need_captcha'] == true) {
+          // 服务器自动识码走不通（未配识图模型/识图失败）：弹手动验证码，登录完成后重试原请求
+          if (++captchaRounds > 3) throw ApiError('验证码登录未完成，请稍后重试');
+          await _solveCaptcha(j!);
+          continue;
+        }
         return j ?? <String, dynamic>{};
       }
     }
 
     return tunnel ? _serial(attempt) : attempt();
+  }
+
+  /// need_captcha 手动验证码流程：弹输入框 → POST /api/campus-open/captcha 提交；
+  /// 学校回「验证码」类错误则换一张（GET 同路径）再弹，其他错误（密码/账号错）直接抛出。
+  /// 注意：提交/换一张绝不能 tunnel:true——原请求正占着隧道串行队列，排队会死等自己。
+  Future<void> _solveCaptcha(Map<String, dynamic> j) async {
+    final mode = (j['mode'] ?? 'xg').toString();
+    final hint = mode == 'jwxt' ? '教务系统验证码' : '统一身份认证验证码';
+    var image = base64Decode((j['captcha_base64'] ?? '').toString());
+    String? lastError;
+    for (var round = 0; round < 3; round++) {
+      final prompt = captchaPrompt;
+      if (prompt == null) throw ApiError('$hint：需要输入验证码，但当前界面无法弹出输入框');
+      final text = await prompt(image, hint, () async {
+        final r = await _call('GET', '/api/campus-open/captcha',
+            query: {'mode': mode}, once: true);
+        final b64 = (r['captcha_base64'] ?? '').toString();
+        return b64.isEmpty ? image : base64Decode(b64); // 期间已登录成功：原样返回，外层重试即可
+      }, error: lastError);
+      if (text == null || text.trim().isEmpty) throw ApiError('已取消验证码输入');
+      try {
+        await _call('POST', '/api/campus-open/captcha',
+            body: {'mode': mode, 'captcha': text.trim()}, once: true);
+        return;
+      } on ApiError catch (e) {
+        lastError = e.message;
+        if (!lastError.contains('验证码')) rethrow; // 密码/账号错直接失败，不反复弹窗
+        final r = await _call('GET', '/api/campus-open/captcha',
+            query: {'mode': mode}, once: true);
+        final b64 = (r['captcha_base64'] ?? '').toString();
+        if (b64.isEmpty) rethrow;
+        image = base64Decode(b64);
+      }
+    }
+    throw ApiError('$hint：连续 3 次验证码未通过，请稍后重试');
   }
 
   /// 单飞恢复登录态：refresh 成功或用记住的密码重登成功返回 true。

@@ -259,7 +259,8 @@ class _ProfilePageState extends State<ProfilePage> {
                       border: Border.all(color: SemColors.warning.withValues(alpha: 0.35)),
                     ),
                     child: const Text(
-                      '未开启「AI 自动识别验证码」：请在网站「我的 → 校园服务」开启，否则隧道类查询会失败。',
+                      '未开启「AI 自动识别验证码」：隧道类查询会弹出手动验证码输入框；'
+                      '想让 AI 自动过码请到网站「我的 → 校园服务」开启。',
                       style: TextStyle(fontSize: 12.5, color: SemColors.warning, height: 1.6),
                     ),
                   ),

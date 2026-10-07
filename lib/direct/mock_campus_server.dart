@@ -52,6 +52,10 @@ class MockCampusServer {
   /// 测试用：把登录页加密盐的 value 写到 id 之前（页面改版时属性顺序会变，解析不能依赖顺序）。
   bool debugFlipSaltAttribute = false;
 
+  /// 测试用：教务登录失败时改回这段「页面里没有可读错误文案」的 HTML（SIT 新版登录页就是
+  /// 错误由 JS 渲染、服务端 HTML 里没有原因）。null = 默认的 #tips 文案。
+  String? debugJwxtLoginFailBody;
+
   bool get running => _server != null;
   Uri get baseUri => Uri.parse('http://127.0.0.1:$_port');
   String get baseUrl => baseUri.toString();
@@ -171,10 +175,12 @@ class MockCampusServer {
         if (req.method == 'POST') {
           final yzm = (form['yzm'] ?? '').toUpperCase();
           if (yzm.isEmpty || yzm != (s.jwxtCaptcha ?? '').toUpperCase()) {
-            return _tips(res, '验证码错误');
+            return _jwxtLoginFail(res, '验证码错误');
           }
-          if ((form['yhm'] ?? '') != studentId) return _tips(res, '用户名或密码错误');
-          if (_rsaDecrypt(form['mm'] ?? '') != password) return _tips(res, '用户名或密码错误');
+          if ((form['yhm'] ?? '') != studentId) return _jwxtLoginFail(res, '用户名或密码错误');
+          if (_rsaDecrypt(form['mm'] ?? '') != password) {
+            return _jwxtLoginFail(res, '用户名或密码错误');
+          }
           s.jwxt = true;
           s.jwxtCaptcha = null;
           return _redirect(res, '/jwglxt/xtgl/index_initMenu.html');
@@ -249,6 +255,13 @@ class MockCampusServer {
 
   void _tips(HttpResponse res, String msg) =>
       _html(res, '<html><body><div id="tips">$msg</div></body></html>');
+
+  /// 教务登录失败页：默认 #tips 文案；测试用 debugJwxtLoginFailBody 换成没有可读文案的页面。
+  void _jwxtLoginFail(HttpResponse res, String msg) {
+    final body = debugJwxtLoginFailBody;
+    if (body == null) return _tips(res, msg);
+    _html(res, body);
+  }
 
   /// 会话过期时业务接口的应答：真实正方有些版本不打回 302，而是直接给一张登录页 HTML
   /// （客户端若把它当成 JSON 解析就会失败，还容易误报成「这周没课」）。

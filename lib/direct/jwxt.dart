@@ -96,14 +96,56 @@ class JwxtClient {
     return j;
   }
 
-  static String _loginError(String html) {
-    final m = RegExp(r'id="tips"[^>]*>(.*?)</', dotAll: true).firstMatch(html);
-    final tips = m == null ? '' : m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
-    if (tips.isNotEmpty) return tips;
-    final m2 = RegExp('验证码[^<]{0,20}').firstMatch(html);
-    return (m2 != null && m2.group(0)!.trim().isNotEmpty)
-        ? m2.group(0)!.trim()
-        : '教务登录失败（验证码错误或账号密码错误）';
+  /// 学校原文里的错误文案（如「验证码错误」「用户名或密码错误」）。
+  /// 正方各版本把提示塞在不同元素里，SIT 新版登录页的文案还可能是 JS 写进去的、服务端返回的
+  /// HTML 里根本没有，所以先按元素找，再退一步找「像一句话」的文本节点。
+  /// 文本节点必须同时含提示对象（验证码/密码/账号/用户名）与错误词，否则会抓到页面里的
+  /// `<label>验证码</label>` 这类静态文案，把「页面改版」误判成「验证码错误」。
+  static String _schoolTip(String html) {
+    for (final re in <RegExp>[
+      RegExp(r'id="(?:tips|msg|tipsMsg|errorMsg|loginError)"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
+          dotAll: true),
+      RegExp(r'class="[^"]*(?:tips|error|msg)[^"]*"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
+          dotAll: true),
+    ]) {
+      final m = re.firstMatch(html);
+      final t = m == null ? '' : m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
+      if (t.isNotEmpty) return t;
+    }
+    for (final m in RegExp(r'>([^<>]{1,60})<').allMatches(html)) {
+      final t = m.group(1)!.trim();
+      if (t.isEmpty) continue;
+      if (!RegExp(r'验证码|密码|账号|用户名').hasMatch(t)) continue;
+      if (!RegExp(r'错误|不正确|失效|过期|为空|不存在|无效|请输入').hasMatch(t)) continue;
+      return t;
+    }
+    return '';
+  }
+
+  /// 登录失败的提示：学校给了文案就用原文（含「验证码」→ 上层换张验证码重输，否则直接失败）。
+  /// 取不到就如实说「学校页面没有错误文案」，并把页面片段一并带上——不要退化成全页搜「验证码」
+  /// 二字：那样会抓到 HTML 注释里的 `验证码-->` 之类碎片，既说不清失败原因，又因为含「验证码」
+  /// 被当成验证码错误，白白重试三次。
+  static String _loginError(HttpResult r) {
+    final tip = _schoolTip(r.text);
+    if (tip.isNotEmpty) return tip;
+    return '教务登录未通过（HTTP ${r.status}，学校登录页没有错误文案，可能是登录页改版）：'
+        '${_pageSnippet(r.text)}';
+  }
+
+  /// 页面片段（压掉空白、限长）：给开发者定位用，别再猜。先去掉 HTML 注释——
+  /// 注释里常留着 `<!--验证码-->` 这种模板垃圾，留着只会继续误导。
+  static String _pageSnippet(String html) {
+    final text = html
+        .replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (text.isEmpty) return '（学校返回了空页面）';
+    final at = text.indexOf('验证码');
+    final start = (at < 0 ? 0 : at - 60).clamp(0, text.length);
+    final end = (start + 160).clamp(0, text.length);
+    return '${start > 0 ? '…' : ''}${text.substring(start, end).trim()}'
+        '${end < text.length ? '…' : ''}';
   }
 
   /// 准备登录：抓 csrftoken + 公钥加密密码 + 验证码图片；返回验证码图片字节。
@@ -136,7 +178,7 @@ class JwxtClient {
       redirect: false,
     );
     _encPassword = null;
-    if (resp.status != 302) throw ApiError(_loginError(resp.text));
+    if (resp.status != 302) throw ApiError(_loginError(resp));
     loggedIn = true;
   }
 
