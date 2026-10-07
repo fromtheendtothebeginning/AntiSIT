@@ -7,6 +7,30 @@ import 'pages/home_page.dart';
 import 'widgets/captcha_dialog.dart';
 import 'widgets/common.dart';
 
+/// fade-through 页面过渡：旧页在前 35% 快速淡出，新页在其后淡入；
+/// 被覆盖页不做位移缩放，玻璃透明面不会互相叠影。
+class _FadeThroughTransitionsBuilder extends PageTransitionsBuilder {
+  const _FadeThroughTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
+      Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
+    return FadeTransition(
+      // 本页被新页覆盖时（secondary 0→1）快速淡出；在上层时不衰减
+      opacity: Tween<double>(begin: 1, end: 0).animate(CurvedAnimation(
+          parent: secondaryAnimation,
+          curve: const Interval(0, 0.35, curve: Curves.easeIn))),
+      child: FadeTransition(
+        // 本页作为新页进入时快速淡入；返回时对称淡出
+        opacity: CurvedAnimation(
+            parent: animation,
+            curve: const Interval(0.15, 0.65, curve: Curves.easeOut)),
+        child: child,
+      ),
+    );
+  }
+}
+
 void main() {
   // 直连模式的学校系统验证码输入弹窗（服务器模式用不到）
   installDirectCaptchaPrompt();
@@ -80,6 +104,15 @@ ThemeData buildGlassTheme(GlassPalette c) {
       dividerColor: c.border,
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: c.accent),
+    // 玻璃页全部透明，M3 缩放过渡的旧页慢淡出会与新页半透明叠加产生跳变；
+    // 改为快速淡出/淡入（fade-through）：旧页先快速消失，新页再淡入
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: _FadeThroughTransitionsBuilder(),
+      TargetPlatform.iOS: _FadeThroughTransitionsBuilder(),
+      TargetPlatform.windows: _FadeThroughTransitionsBuilder(),
+      TargetPlatform.macOS: _FadeThroughTransitionsBuilder(),
+      TargetPlatform.linux: _FadeThroughTransitionsBuilder(),
+    }),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: c.accent,

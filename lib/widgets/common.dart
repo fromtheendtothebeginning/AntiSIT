@@ -384,28 +384,32 @@ class AppCard extends StatelessWidget {
     final top = Color.alphaBlend(Colors.white.withValues(alpha: 0.10), base);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+      child: DecoratedBox(
+        // 阴影画在 Material/Ink 之外：InkFeature 会被 Material 画布裁剪，
+        // 半透明玻璃面下透出方形阴影角
+        decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(r),
-          onTap: onTap,
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(r),
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [top, base],
-                stops: const [0, 0.5],
-              ),
-              border: Border.all(color: SemColors.border),
-              boxShadow: [
-                BoxShadow(
-                    color: SemColors.shadow, offset: const Offset(0, 8), blurRadius: 24),
-              ],
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [top, base],
+            stops: const [0, 0.5],
+          ),
+          border: Border.all(color: SemColors.border),
+          boxShadow: [
+            BoxShadow(
+                color: SemColors.shadow, offset: const Offset(0, 8), blurRadius: 24),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(r),
+            onTap: onTap,
+            child: Padding(
+              padding: padding ?? const EdgeInsets.all(16),
+              child: child,
             ),
-            padding: padding ?? const EdgeInsets.all(16),
-            child: child,
           ),
         ),
       ),

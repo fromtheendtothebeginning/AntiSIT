@@ -1712,10 +1712,7 @@ class _TimetablePageState extends State<TimetablePage> {
                     Expanded(
                       child: Stack(
                       children: [
-                        // 时段色带 + 中午细线
-                        _band(0, '上午'),
-                        _band(_bandH + 4 * _slotH + _noonH, '下午'),
-                        _band(_bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH, '晚上'),
+                        // 中午细线（11:55）
                         Positioned(
                           top: _bandH + 4 * _slotH + _noonH / 2 - 0.5,
                           left: 0,
@@ -1806,6 +1803,10 @@ class _TimetablePageState extends State<TimetablePage> {
                             }),
                           ),
                         ),
+                        // 时段色带最后绘制：盖在天分隔竖线上方，且不进入左侧时间列
+                        _band(0, '上午'),
+                        _band(_bandH + 4 * _slotH + _noonH, '下午'),
+                        _band(_bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH, '晚上'),
                       ],
                       ),
                     ),
@@ -1876,7 +1877,7 @@ class _TimetablePageState extends State<TimetablePage> {
 
   Widget _band(double top, String label) => Positioned(
         top: top,
-        left: 0,
+        left: _axisW, // 不进入最左时间列
         right: 0,
         height: _bandH,
         child: Container(
