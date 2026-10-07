@@ -142,28 +142,21 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                height: 34,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final (i, label) in const [(0, '全部'), (1, '报名中'), (2, '即将报名'), (3, '已结束')])
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _FilterChip(
-                          label: i == 0 ? label : '$label (${_countOf(i)})',
-                          selected: _filter == i,
-                          onTap: () => setState(() => _filter = i),
-                        ),
-                      ),
-                  ],
-                ),
+              GlassTabs(
+                labels: [
+                  for (final (i, label) in const [(0, '全部'), (1, '报名中'), (2, '即将报名'), (3, '已结束')])
+                    i == 0 ? label : '$label (${_countOf(i)})'
+                ],
+                index: _filter,
+                onChanged: (i) => setState(() => _filter = i),
+                height: 30,
+                fontSize: 10.5,
               ),
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text('共 ${list.length} 个活动',
-                    style: const TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                    style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
               ),
               const SizedBox(height: 6),
               for (final a in list)
@@ -184,18 +177,18 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                           children: [
                             Capsule(_stateText(_stateOf(a)), color: _stateColor(_stateOf(a))),
                             if (a['backfill'] as bool? ?? false)
-                              const Capsule('事后补录', color: SemColors.info),
+                              Capsule('事后补录', color: SemColors.info),
                             Capsule('${a['campus']}'),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Text('${a['name']}',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 15, fontWeight: FontWeight.w600,
                                 color: SemColors.textPrimary)),
                         const SizedBox(height: 4),
                         Text('${a['dlmc']} · ${a['lbmc']}',
-                            style: const TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+                            style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
                         const SizedBox(height: 6),
                         _row('主办：${a['host']}  ·  名额：${a['quota'] ?? '—'}'),
                         const SizedBox(height: 2),
@@ -215,7 +208,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   Widget _row(String text) => Align(
         alignment: Alignment.centerLeft,
         child: Text(text,
-            style: const TextStyle(fontSize: 12, color: SemColors.textMuted),
+            style: TextStyle(fontSize: 12, color: SemColors.textMuted),
             overflow: TextOverflow.ellipsis,
             maxLines: 1),
       );
@@ -223,39 +216,6 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   String _short(Object? s) {
     final str = '$s';
     return str.length >= 16 ? str.substring(5, 16) : str;
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({required this.label, required this.selected, this.onTap});
-
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? SemColors.accentSoft : Colors.white,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: selected ? SemColors.accent : SemColors.border,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: selected ? SemColors.accent : SemColors.textSecondary,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -335,14 +295,14 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                       runSpacing: 4,
                       children: [
                         Capsule(_stateText(_stateOf(a)), color: _stateColor(_stateOf(a))),
-                        if (a['backfill'] as bool? ?? false) const Capsule('事后补录', color: SemColors.info),
+                        if (a['backfill'] as bool? ?? false) Capsule('事后补录', color: SemColors.info),
                         Capsule('${a['dlmc']}', color: SemColors.accent),
                         Capsule('${a['lbmc']}', color: SemColors.accent),
                       ],
                     ),
                   if (a != null) const SizedBox(height: 10),
                   Text('${a?['name'] ?? ''}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 18, fontWeight: FontWeight.bold, color: SemColors.textPrimary)),
                   const Divider(height: 24),
                   _kv('活动时间', '${a?['start'] ?? '-'} ~ ${a?['end'] ?? '-'}'),
@@ -381,7 +341,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                   const SizedBox(height: 8),
                   SelectableText(
                     '${_data?['hdms'] ?? '暂无活动说明'}',
-                    style: const TextStyle(fontSize: 13, height: 1.7, color: SemColors.textSecondary),
+                    style: TextStyle(fontSize: 13, height: 1.7, color: SemColors.textSecondary),
                   ),
                 ],
               ),
@@ -399,7 +359,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           children: [
             SizedBox(
               width: 68,
-              child: Text(k, style: const TextStyle(fontSize: 13, color: SemColors.textMuted)),
+              child: Text(k, style: TextStyle(fontSize: 13, color: SemColors.textMuted)),
             ),
             Expanded(child: Text(v, style: const TextStyle(fontSize: 13))),
           ],
@@ -411,14 +371,14 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 7),
               child: Icon(Icons.circle, size: 4, color: SemColors.textMuted),
             ),
             const SizedBox(width: 8),
             Expanded(
                 child: Text(text,
-                    style: const TextStyle(fontSize: 12, color: SemColors.textSecondary))),
+                    style: TextStyle(fontSize: 12, color: SemColors.textSecondary))),
           ],
         ),
       );
@@ -427,12 +387,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: SemColors.textMuted)),
+            Text(label, style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
             Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
             IconButton(
               visualDensity: VisualDensity.compact,
               onPressed: () => _copy(label, value),
-              icon: const Icon(Icons.copy_rounded, size: 16, color: SemColors.textMuted),
+              icon: Icon(Icons.copy_rounded, size: 16, color: SemColors.textMuted),
             ),
           ],
         ),

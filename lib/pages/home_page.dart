@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../widgets/common.dart';
 import 'ecard_page.dart';
 import 'profile_page.dart';
 import 'timetable_page.dart';
@@ -65,14 +66,14 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                   ),
-                NavigationBar(
-                  selectedIndex: i,
-                  onDestinationSelected: (v) => tab.value = v,
-                  destinations: const [
-                    NavigationDestination(icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month), label: '课程表'),
-                    NavigationDestination(icon: Icon(Icons.qr_code_2_outlined), selectedIcon: Icon(Icons.qr_code_2), label: '校园码'),
-                    NavigationDestination(icon: Icon(Icons.widgets_outlined), selectedIcon: Icon(Icons.widgets), label: '工具'),
-                    NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: '我的'),
+                GlassNavBar(
+                  index: i,
+                  onChanged: (v) => tab.value = v,
+                  items: const [
+                    GlassNavBarItem(Icons.calendar_month_outlined, Icons.calendar_month, '课程表'),
+                    GlassNavBarItem(Icons.qr_code_2_outlined, Icons.qr_code_2, '校园码'),
+                    GlassNavBarItem(Icons.widgets_outlined, Icons.widgets, '工具'),
+                    GlassNavBarItem(Icons.person_outline, Icons.person, '我的'),
                   ],
                 ),
               ],

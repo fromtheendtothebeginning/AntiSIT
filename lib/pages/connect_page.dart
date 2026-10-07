@@ -201,21 +201,20 @@ class _ConnectPageState extends State<ConnectPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
+            GlassField(
+              label: '学校名称',
               controller: name,
               autofocus: true,
-              decoration: const InputDecoration(labelText: '学校名称', hintText: '如 某某大学'),
+              hintText: '如 某某大学',
             ),
             const SizedBox(height: 12),
-            TextField(
+            GlassField(
+              label: '学校域名（可留空）',
               controller: domain,
-              decoration: const InputDecoration(
-                labelText: '学校域名（可留空）',
-                hintText: '如 sit.edu.cn',
-              ),
+              hintText: '如 sit.edu.cn',
             ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               '填域名会按「子系统.学校域名」自动推导四个系统地址'
               '（authserver. / jwxt. / xg. / ecard.），保存后可逐项改成学校实际地址。',
               style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
@@ -325,18 +324,13 @@ class _ConnectPageState extends State<ConnectPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('数据来源', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                _sectionTitle(Icons.alt_route_rounded, '数据来源'),
                 const SizedBox(height: 10),
-                SegmentedButton<AppMode>(
-                  segments: const [
-                    ButtonSegment(
-                        value: AppMode.server, label: Text('服务器模式'), icon: Icon(Icons.cloud_outlined)),
-                    ButtonSegment(
-                        value: AppMode.direct, label: Text('直连模式'), icon: Icon(Icons.lan_outlined)),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: (v) => setState(() {
-                    _mode = v.first;
+                GlassTabs(
+                  labels: const ['服务器模式', '直连模式'],
+                  index: _mode == AppMode.server ? 0 : 1,
+                  onChanged: (i) => setState(() {
+                    _mode = i == 0 ? AppMode.server : AppMode.direct;
                     _probes = null;
                     _error = null;
                     _ok = null;
@@ -347,7 +341,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   _mode == AppMode.server
                       ? '服务器代连校园内网：填任意服务器地址（IP 或域名，可带端口）+ 该服务器的账号密码即可使用，同一套开放接口。'
                       : '本机直连学校系统：填学校系统地址 + 校园凭据，数据不经过任何服务器，需要设备在校园网 / 校内 VPN 内。',
-                  style: const TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.7),
+                  style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.7),
                 ),
               ],
             ),
@@ -364,7 +358,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
               ),
               child: Text(_error!,
-                  style: const TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.6)),
+                  style: TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.6)),
             ),
           ],
           if (_ok != null) ...[
@@ -377,7 +371,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 border: Border.all(color: SemColors.success.withValues(alpha: 0.35)),
               ),
               child: Text(_ok!,
-                  style: const TextStyle(fontSize: 12.5, color: SemColors.success, height: 1.6)),
+                  style: TextStyle(fontSize: 12.5, color: SemColors.success, height: 1.6)),
             ),
           ],
         ],
@@ -394,17 +388,15 @@ class _ConnectPageState extends State<ConnectPage> {
             children: [
               const Text('服务器地址', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
               const SizedBox(height: 10),
-              TextField(
+              GlassField(
+                label: 'IP 或域名（可带端口）',
                 controller: _server,
                 keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: 'IP 或域名（可带端口）',
-                  hintText: '192.168.1.10:8000 / my.server.cn:8443',
-                  prefixIcon: Icon(Icons.dns_outlined),
-                ),
+                hintText: '192.168.1.10:8000 / my.server.cn:8443',
+                prefixIcon: const Icon(Icons.dns_outlined),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '登录时用该服务器上的账号密码；校园凭据（学号 / 校园网密码）在该服务器的网站「我的 → 校园服务」配置一次。',
                 style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
               ),
@@ -435,7 +427,7 @@ class _ConnectPageState extends State<ConnectPage> {
               if (_serverProbe != null) ...[
                 const SizedBox(height: 8),
                 Text(_serverProbe!,
-                    style: const TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6)),
+                    style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6)),
               ],
               const SizedBox(height: 6),
               Row(
@@ -482,7 +474,7 @@ class _ConnectPageState extends State<ConnectPage> {
                       : (st.token != null
                           ? '已登录：${st.username ?? ''} @ ${st.serverUrl.isEmpty ? '未填写地址' : st.serverUrl}'
                           : '该服务器未登录：登录后即可查询校园数据'),
-                  style: const TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.6),
+                  style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.6),
                 ),
               ),
             ],
@@ -502,7 +494,7 @@ class _ConnectPageState extends State<ConnectPage> {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: SemColors.warning.withValues(alpha: 0.35)),
           ),
-          child: const Text(
+          child: Text(
             '直连模式不走服务器：请先连接校园网或校内 VPN（校园内网）。校外且没有校内 VPN 时，'
             '请改用服务器模式，或让学校提供可访问的服务器地址。',
             style: TextStyle(fontSize: 12.5, color: SemColors.warning, height: 1.7),
@@ -514,26 +506,22 @@ class _ConnectPageState extends State<ConnectPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  const Text('学校信息', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  const Spacer(),
+              _sectionTitle(Icons.dns_outlined, '学校信息', actions: [
+                TextButton.icon(
+                  onPressed: _addSchool,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('添加', style: TextStyle(fontSize: 13)),
+                ),
+                if (st.schools.length > 1)
                   TextButton.icon(
-                    onPressed: _addSchool,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('添加', style: TextStyle(fontSize: 13)),
+                    onPressed: _removeSchool,
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('删除', style: TextStyle(fontSize: 13)),
                   ),
-                  if (st.schools.length > 1)
-                    TextButton.icon(
-                      onPressed: _removeSchool,
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('删除', style: TextStyle(fontSize: 13)),
-                    ),
-                ],
-              ),
-              DropdownButtonFormField<String>(
-                initialValue: st.school.name,
-                decoration: const InputDecoration(labelText: '当前学校', isDense: true),
+              ]),
+              GlassDropdown<String>(
+                label: '当前学校',
+                value: st.school.name,
                 items: [
                   for (final s in st.schools)
                     DropdownMenuItem(value: s.name, child: Text(s.name)),
@@ -551,10 +539,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 },
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _schoolName,
-                decoration: const InputDecoration(labelText: '学校名称', isDense: true),
-              ),
+              GlassField(label: '学校名称', controller: _schoolName),
               const SizedBox(height: 10),
               _addrField(_jwxtBase, '教务系统', 'https://jwxt.example.edu.cn'),
               const SizedBox(height: 10),
@@ -569,14 +554,11 @@ class _ConnectPageState extends State<ConnectPage> {
                 childrenPadding: const EdgeInsets.only(bottom: 8),
                 title: const Text('高级', style: TextStyle(fontSize: 13.5)),
                 children: [
-                  TextField(
+                  GlassField(
+                    label: '响应解密密钥（留空即可）',
                     controller: _aesKey,
-                    decoration: const InputDecoration(
-                      labelText: '响应解密密钥（留空即可）',
-                      helperText: '个别学校接口返回 isEncrypt 加密数据时需要，向学校系统维护方索取',
-                      helperMaxLines: 2,
-                      isDense: true,
-                    ),
+                    helperText: '个别学校接口返回 isEncrypt 加密数据时需要，向学校系统维护方索取',
+                    helperMaxLines: 2,
                   ),
                 ],
               ),
@@ -588,59 +570,47 @@ class _ConnectPageState extends State<ConnectPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('校园凭据', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              _sectionTitle(Icons.badge_outlined, '校园凭据'),
               const SizedBox(height: 6),
-              const Text('仅保存在本机，用于直连学校系统；不会上传到任何服务器。',
-                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6)),
+              Text('仅保存在本机，用于直连学校系统；不会上传到任何服务器。',
+                  style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary, height: 1.6)),
               const SizedBox(height: 12),
-              TextField(
+              GlassField(
+                label: '学号',
                 controller: _sid,
-                decoration: const InputDecoration(
-                    labelText: '学号', prefixIcon: Icon(Icons.badge_outlined), isDense: true),
+                prefixIcon: const Icon(Icons.badge_outlined),
               ),
               const SizedBox(height: 10),
-              TextField(
+              GlassField(
+                label: '统一身份认证密码（= 校园网 / VPN 密码）',
                 controller: _pwd,
                 obscureText: _hidePwd,
-                decoration: InputDecoration(
-                  labelText: '统一身份认证密码（= 校园网 / VPN 密码）',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  isDense: true,
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(() => _hidePwd = !_hidePwd),
-                    icon: Icon(
-                        _hidePwd ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                  ),
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  onPressed: () => setState(() => _hidePwd = !_hidePwd),
+                  icon: Icon(
+                      _hidePwd ? Icons.visibility_off_outlined : Icons.visibility_outlined),
                 ),
               ),
               const SizedBox(height: 10),
-              TextField(
+              GlassField(
+                label: '校付宝支付密码（校园码 / 电费）',
                 controller: _payPwd,
                 obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '校付宝支付密码（校园码 / 电费）',
-                  prefixIcon: Icon(Icons.credit_card_outlined),
-                  isDense: true,
-                ),
+                prefixIcon: const Icon(Icons.credit_card_outlined),
               ),
               const SizedBox(height: 10),
-              TextField(
+              GlassField(
+                label: '寝室号（电费查询 / 充值）',
                 controller: _dorm,
-                decoration: const InputDecoration(
-                  labelText: '寝室号（电费查询 / 充值）',
-                  hintText: '如 24号楼1016',
-                  prefixIcon: Icon(Icons.house_outlined),
-                  isDense: true,
-                ),
+                hintText: '如 24号楼1016',
+                prefixIcon: const Icon(Icons.house_outlined),
               ),
               const SizedBox(height: 10),
-              TextField(
+              GlassField(
+                label: '姓名（可留空，校付宝登录用；查学工会自动补全）',
                 controller: _realName,
-                decoration: const InputDecoration(
-                  labelText: '姓名（可留空，校付宝登录用；查学工会自动补全）',
-                  prefixIcon: Icon(Icons.person_outline),
-                  isDense: true,
-                ),
+                prefixIcon: const Icon(Icons.person_outline),
               ),
               const SizedBox(height: 12),
               Row(
@@ -690,10 +660,30 @@ class _ConnectPageState extends State<ConnectPage> {
         ),
       ];
 
-  Widget _addrField(TextEditingController c, String label, String hint) => TextField(
+  /// 分区标题：玻璃风图标章 + 标题（+ 可选右侧按钮），让卡片头部与液态玻璃面融合。
+  Widget _sectionTitle(IconData icon, String title, {List<Widget> actions = const []}) => Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: SemColors.accentSoft,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 17, color: SemColors.accent),
+          ),
+          const SizedBox(width: 8),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const Spacer(),
+          ...actions,
+        ],
+      );
+
+  Widget _addrField(TextEditingController c, String label, String hint) => GlassField(
+        label: label,
         controller: c,
+        hintText: hint,
         keyboardType: TextInputType.url,
-        decoration: InputDecoration(labelText: label, hintText: hint, isDense: true),
       );
 
   // ==================== 本地模拟服务（仅 debug） ====================
@@ -706,7 +696,7 @@ class _ConnectPageState extends State<ConnectPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Icon(Icons.science_outlined, size: 18, color: SemColors.accent),
               SizedBox(width: 6),
@@ -715,7 +705,7 @@ class _ConnectPageState extends State<ConnectPage> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             '在 App 内监听 127.0.0.1 起一套与学校系统行为一致的模拟服务：'
             '正方教务（RSA 加密 + 图形验证码）、统一认证 CAS（AES 加密 + 图形验证码）、'
             '学工二课、校付宝（SM4 支付密码）。没有校园网也能把直连链路跑通。',
@@ -739,7 +729,7 @@ class _ConnectPageState extends State<ConnectPage> {
                     '密码 ${MockCampusServer.password} / 支付密码 ${MockCampusServer.payPassword}）'
                 : '模拟凭据：学号 ${MockCampusServer.studentId} / 密码 ${MockCampusServer.password} / '
                     '支付密码 ${MockCampusServer.payPassword} / 寝室 ${MockCampusServer.dorm}',
-            style: const TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.6),
+            style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.6),
           ),
         ],
       ),
@@ -768,11 +758,11 @@ class _ConnectPageState extends State<ConnectPage> {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(
             children: [
-              const Icon(Icons.open_in_new, size: 15, color: SemColors.accent),
+              Icon(Icons.open_in_new, size: 15, color: SemColors.accent),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(label,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12.5, color: SemColors.accent, height: 1.5)),
               ),
             ],
@@ -788,26 +778,26 @@ class _ConnectPageState extends State<ConnectPage> {
         children: [
           const Text('自建服务器', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             '上面填的地址可以是任何实现了同一套开放接口的服务器，两种方式：',
             style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.7),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             '① 参照 API 文档自行实现：本项目仓库内 docs/campus-api.md 是完整接口规约，'
                 '照此用任意语言 / 框架重建服务端即可接入本 App。',
             style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.7),
           ),
           _repoLink('github.com/fromtheendtothebeginning/AntiSIT（含 API 文档）', _antisitRepo),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             '② 直接部署现成服务端：anticraft 校园服务网站就是这套接口的参考实现，同样开源，'
                 '部署好把地址填到上方即可。',
             style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.7),
           ),
           _repoLink('github.com/fromtheendtothebeginning/anticraft（GPL-3.0）', _anticraftRepo),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '两个项目均为 GPL-3.0 开源。协议要点：可自由使用、学习、修改与再分发；'
                 '再分发或衍生作品必须同样以 GPL-3.0 开源并提供完整源码；软件不含任何担保。',
             style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),

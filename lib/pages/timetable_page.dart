@@ -338,14 +338,14 @@ class _TimetablePageState extends State<TimetablePage> {
                 ListTile(
                   title: Text(o.$3),
                   trailing: (o.$1 == xnm && o.$2 == xqm)
-                      ? const Icon(Icons.check, color: SemColors.accent)
+                      ? Icon(Icons.check, color: SemColors.accent)
                       : null,
                   onTap: () => Navigator.pop(ctx, {'xnm': o.$1, 'xqm': o.$2}),
                 ),
               const Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.add_circle_outline, color: SemColors.accent),
-                title: const Text('新建学期', style: TextStyle(color: SemColors.accent)),
+                leading: Icon(Icons.add_circle_outline, color: SemColors.accent),
+                title: Text('新建学期', style: TextStyle(color: SemColors.accent)),
                 subtitle: const Text('建一个空学期，手动排课或稍后从教务导入',
                     style: TextStyle(fontSize: 12)),
                 onTap: () => Navigator.pop(ctx, const {'new': true}),
@@ -554,7 +554,7 @@ class _TimetablePageState extends State<TimetablePage> {
                 children: [
                   const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('调休设置', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
                   if (tt.startDate.isEmpty)
-                    const Text('请先在「学期设置」里设定学期起点，调休规则才能对应到周次。',
+                    Text('请先在「学期设置」里设定学期起点，调休规则才能对应到周次。',
                         style: TextStyle(fontSize: 12, color: SemColors.warning)),
                   const SizedBox(height: 4),
                   ConstrainedBox(
@@ -563,7 +563,7 @@ class _TimetablePageState extends State<TimetablePage> {
                       shrinkWrap: true,
                       children: [
                         if (tt.adjustments.isEmpty)
-                          const Padding(
+                          Padding(
                             padding: EdgeInsets.symmetric(vertical: 16),
                             child: Text('暂无调休规则', textAlign: TextAlign.center,
                                 style: TextStyle(fontSize: 13, color: SemColors.textMuted)),
@@ -573,9 +573,9 @@ class _TimetablePageState extends State<TimetablePage> {
                             dense: true,
                             contentPadding: EdgeInsets.zero,
                             title: Text(desc(a), style: const TextStyle(fontSize: 14)),
-                            subtitle: Text(a.date, style: const TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                            subtitle: Text(a.date, style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
                             trailing: IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 20, color: SemColors.textMuted),
+                              icon: Icon(Icons.delete_outline, size: 20, color: SemColors.textMuted),
                               onPressed: () {
                                 setState(() => tt.adjustments.removeWhere((x) => x.date == a.date));
                                 TimetableStore.instance.save();
@@ -614,13 +614,10 @@ class _TimetablePageState extends State<TimetablePage> {
                         },
                         child: Text(endDate == null ? '结束日期（可选）' : '~ ${TimetableStore.iso(endDate!)}'),
                       ),
-                      SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(value: 'off', label: Text('放假')),
-                          ButtonSegment(value: 'follow', label: Text('调课')),
-                        ],
-                        selected: {type},
-                        onSelectionChanged: (v) => setS(() => type = v.first),
+                      GlassTabs(
+                        labels: const ['放假', '调课'],
+                        index: type == 'follow' ? 1 : 0,
+                        onChanged: (i) => setS(() => type = i == 1 ? 'follow' : 'off'),
                       ),
                       if (type == 'follow')
                         DropdownButton<int>(
@@ -646,7 +643,7 @@ class _TimetablePageState extends State<TimetablePage> {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  const Text('规则在渲染时生效：同一天只会命中一条；「调课」当天的课在原星期列照常显示。',
+                  Text('规则在渲染时生效：同一天只会命中一条；「调课」当天的课在原星期列照常显示。',
                       style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                 ],
               );
@@ -780,7 +777,7 @@ class _TimetablePageState extends State<TimetablePage> {
             children: [
               Row(children: [
                 Expanded(child: Text(c.name, style: Theme.of(ctx).textTheme.titleLarge)),
-                if (imported) const Capsule('教务课程', color: SemColors.info),
+                if (imported) Capsule('教务课程', color: SemColors.info),
               ]),
               const SizedBox(height: 12),
               _detailRow('时间', '周${'一二三四五六日'[c.day]} 第${c.slotStart + 1}-${c.slotEnd + 1}节 · '
@@ -805,8 +802,8 @@ class _TimetablePageState extends State<TimetablePage> {
                     Navigator.pop(ctx);
                     _deleteCourse(c, zs);
                   },
-                  icon: const Icon(Icons.delete_outline, size: 18, color: SemColors.danger),
-                  label: const Text('删除', style: TextStyle(color: SemColors.danger)),
+                  icon: Icon(Icons.delete_outline, size: 18, color: SemColors.danger),
+                  label: Text('删除', style: TextStyle(color: SemColors.danger)),
                 ),
               ]),
             ],
@@ -908,16 +905,11 @@ class _TimetablePageState extends State<TimetablePage> {
               const SizedBox(height: 8),
               TextField(controller: placeC, decoration: const InputDecoration(labelText: '地点', isDense: true)),
               const SizedBox(height: 8),
-              Row(children: [
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('单次（选日期）')),
-                    ButtonSegment(value: true, label: Text('每周重复')),
-                  ],
-                  selected: {weekly},
-                  onSelectionChanged: (v) => setS(() => weekly = v.first),
-                ),
-              ]),
+              GlassTabs(
+                labels: const ['单次（选日期）', '每周重复'],
+                index: weekly ? 1 : 0,
+                onChanged: (i) => setS(() => weekly = i == 1),
+              ),
               const SizedBox(height: 8),
               Row(children: [
                 if (weekly)
@@ -1026,8 +1018,8 @@ class _TimetablePageState extends State<TimetablePage> {
             children: [
               Row(children: [
                 Expanded(child: Text(e.name, style: Theme.of(ctx).textTheme.titleLarge)),
-                if (e.kind == 'exam') const Capsule('考试', color: SemColors.danger),
-                if (e.date.isEmpty) const Capsule('每周', color: SemColors.info),
+                if (e.kind == 'exam') Capsule('考试', color: SemColors.danger),
+                if (e.date.isEmpty) Capsule('每周', color: SemColors.info),
               ]),
               const SizedBox(height: 12),
               _detailRow('时间', e.date.isEmpty
@@ -1053,8 +1045,8 @@ class _TimetablePageState extends State<TimetablePage> {
                     setState(() => tt.events.removeWhere((x) => x.id == e.id));
                     TimetableStore.instance.save();
                   },
-                  icon: const Icon(Icons.delete_outline, size: 18, color: SemColors.danger),
-                  label: const Text('删除', style: TextStyle(color: SemColors.danger)),
+                  icon: Icon(Icons.delete_outline, size: 18, color: SemColors.danger),
+                  label: Text('删除', style: TextStyle(color: SemColors.danger)),
                 ),
               ]),
             ],
@@ -1206,7 +1198,7 @@ class _TimetablePageState extends State<TimetablePage> {
           AppState.I.direct
               ? '未填写校园凭据：手动编辑 / 调休等本地功能可正常使用，填写后可从教务导入课表与考试（需校园网）。'
               : '未登录：手动编辑 / 调休等本地功能可正常使用，登录后可从教务导入课表与考试。',
-          style: const TextStyle(fontSize: 12, color: SemColors.info, height: 1.5),
+          style: TextStyle(fontSize: 12, color: SemColors.info, height: 1.5),
         ),
       );
 
@@ -1233,7 +1225,7 @@ class _TimetablePageState extends State<TimetablePage> {
           children: [
             Row(
               children: [
-                const Icon(Icons.today_rounded, size: 15, color: SemColors.accent),
+                Icon(Icons.today_rounded, size: 15, color: SemColors.accent),
                 const SizedBox(width: 6),
                 Text(
                   noStart
@@ -1247,7 +1239,7 @@ class _TimetablePageState extends State<TimetablePage> {
                 if (noStart)
                   GestureDetector(
                     onTap: _semSettings,
-                    child: const Text('去设置', style: TextStyle(fontSize: 12, color: SemColors.accent)),
+                    child: Text('去设置', style: TextStyle(fontSize: 12, color: SemColors.accent)),
                   )
                 else
                   Text(
@@ -1279,7 +1271,7 @@ class _TimetablePageState extends State<TimetablePage> {
                       ),
                       child: Text(
                         '${c.name} ${c.slotStart + 1}-${c.slotEnd + 1}节 @${c.place.isEmpty ? '-' : c.place}',
-                        style: const TextStyle(fontSize: 12, color: SemColors.textSecondary),
+                        style: TextStyle(fontSize: 12, color: SemColors.textSecondary),
                         overflow: TextOverflow.ellipsis,
                       ),
                     );
@@ -1289,7 +1281,7 @@ class _TimetablePageState extends State<TimetablePage> {
             ],
             Text(
               '现在时间 ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
-              style: const TextStyle(fontSize: 10, color: SemColors.textMuted),
+              style: TextStyle(fontSize: 10, color: SemColors.textMuted),
             ),
           ],
         ),
@@ -1324,7 +1316,7 @@ class _TimetablePageState extends State<TimetablePage> {
                 const SizedBox(width: 6),
                 const Text('近期日程', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                 const Spacer(),
-                Text('${upcoming.length} 项', style: const TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                Text('${upcoming.length} 项', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
               ],
             ),
             const SizedBox(height: 8),
@@ -1345,7 +1337,7 @@ class _TimetablePageState extends State<TimetablePage> {
                     child: Text(
                       '${e.name} ${e.date.substring(5)} '
                       '${diff == 0 ? '今天' : diff == 1 ? '明天' : '还有$diff天'}',
-                      style: const TextStyle(fontSize: 12, color: SemColors.danger),
+                      style: TextStyle(fontSize: 12, color: SemColors.danger),
                       overflow: TextOverflow.ellipsis,
                     ),
                   );
@@ -1362,9 +1354,9 @@ class _TimetablePageState extends State<TimetablePage> {
     return Center(
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: SemColors.cardElevated,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: SemColors.border),
+          border: Border.all(color: SemColors.borderStrong),
           boxShadow: [
             BoxShadow(color: SemColors.accent.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 2)),
           ],
@@ -1426,9 +1418,9 @@ class _TimetablePageState extends State<TimetablePage> {
     return Center(
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: SemColors.cardElevated,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: SemColors.border),
+          border: Border.all(color: SemColors.borderStrong),
           boxShadow: [
             BoxShadow(color: SemColors.accent.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 2)),
           ],
@@ -1489,7 +1481,7 @@ class _TimetablePageState extends State<TimetablePage> {
             Text('$dateText 周${'一二三四五六日'[day]}',
                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
-            if (isToday) const Capsule('今天', color: SemColors.accent),
+            if (isToday) Capsule('今天', color: SemColors.accent),
           ],
         ),
         if (adj != null) ...[
@@ -1514,10 +1506,10 @@ class _TimetablePageState extends State<TimetablePage> {
             padding: const EdgeInsets.only(top: 60),
             child: Column(
               children: [
-                const Icon(Icons.event_available_outlined, size: 44, color: SemColors.textMuted),
+                Icon(Icons.event_available_outlined, size: 44, color: SemColors.textMuted),
                 const SizedBox(height: 10),
                 Text(adj?.type == 'off' ? '放假中，当天无课' : '当天没有安排',
-                    style: const TextStyle(color: SemColors.textMuted)),
+                    style: TextStyle(color: SemColors.textMuted)),
               ],
             ),
           )
@@ -1547,7 +1539,7 @@ class _TimetablePageState extends State<TimetablePage> {
                 child: Column(
                   children: [
                     Text(_slotTimes[rs], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                    Text(_slotEndTimes[re.clamp(0, 10)], style: const TextStyle(fontSize: 10, color: SemColors.textSecondary)),
+                    Text(_slotEndTimes[re.clamp(0, 10)], style: TextStyle(fontSize: 10, color: SemColors.textSecondary)),
                   ],
                 ),
               ),
@@ -1559,10 +1551,10 @@ class _TimetablePageState extends State<TimetablePage> {
                     Text(c.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 4),
                     Text('第${c.slotStart + 1}-${c.slotEnd + 1}节 · ${c.weekStart}-${c.weekEnd}周${_weekTypeLabel(c.weekType)}',
-                        style: const TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                        style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
                     if (c.place.isNotEmpty || c.teachers.isNotEmpty)
                       Text([if (c.place.isNotEmpty) c.place, if (c.teachers.isNotEmpty) c.teachers].join(' · '),
-                          style: const TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+                          style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
                   ],
                 ),
               ),
@@ -1601,7 +1593,7 @@ class _TimetablePageState extends State<TimetablePage> {
                             fontSize: 11, fontWeight: FontWeight.w600,
                             color: isExam ? SemColors.danger : SemColors.accent)),
                     if (e.end.isNotEmpty)
-                      Text(e.end, style: const TextStyle(fontSize: 10, color: SemColors.textSecondary)),
+                      Text(e.end, style: TextStyle(fontSize: 10, color: SemColors.textSecondary)),
                   ],
                 ),
               ),
@@ -1617,12 +1609,12 @@ class _TimetablePageState extends State<TimetablePage> {
                                 fontSize: 15, fontWeight: FontWeight.w600,
                                 color: isExam ? SemColors.danger : SemColors.textPrimary)),
                       ),
-                      if (e.date.isEmpty) const Capsule('每周', color: SemColors.info),
+                      if (e.date.isEmpty) Capsule('每周', color: SemColors.info),
                     ]),
                     if (e.place.isNotEmpty)
-                      Text(e.place, style: const TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+                      Text(e.place, style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
                     if (e.note.isNotEmpty)
-                      Text(e.note, style: const TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                      Text(e.note, style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
                   ],
                 ),
               ),
@@ -1684,15 +1676,15 @@ class _TimetablePageState extends State<TimetablePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.edit_calendar_outlined, size: 40, color: SemColors.textMuted),
+            Icon(Icons.edit_calendar_outlined, size: 40, color: SemColors.textMuted),
             const SizedBox(height: 8),
-            const Text('还没有课程', style: TextStyle(color: SemColors.textMuted)),
+            Text('还没有课程', style: TextStyle(color: SemColors.textMuted)),
             const SizedBox(height: 4),
             Text(
                 AppState.I.direct
                     ? '点右上角 + 手动添加，或在连接设置填好凭据后从教务导入'
                     : '点右上角 + 手动添加，或登录后从教务导入',
-                style: const TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
             const SizedBox(height: 60),
           ],
         ),
@@ -1707,7 +1699,7 @@ class _TimetablePageState extends State<TimetablePage> {
             padding: const EdgeInsets.fromLTRB(10, 4, 10, 80),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: SemColors.card,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: SemColors.border),
               ),
@@ -1730,7 +1722,7 @@ class _TimetablePageState extends State<TimetablePage> {
                           right: 0,
                           child: Row(
                             children: [
-                              const SizedBox(
+                              SizedBox(
                                 width: _axisW,
                                 child: Text('11:55',
                                     textAlign: TextAlign.center,
@@ -1760,11 +1752,11 @@ class _TimetablePageState extends State<TimetablePage> {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text('${row + 1}',
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                   fontSize: 11, fontWeight: FontWeight.w600,
                                                   color: SemColors.textMuted)),
                                           Text(_slotTimes[row],
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                   fontSize: 7.5, color: SemColors.textMuted)),
                                         ],
                                       ),
@@ -1837,7 +1829,7 @@ class _TimetablePageState extends State<TimetablePage> {
             width: _axisW,
             child: Text(monthLabel,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 9, color: SemColors.textMuted)),
+                style: TextStyle(fontSize: 9, color: SemColors.textMuted)),
           ),
           Expanded(
             child: Row(
@@ -1888,11 +1880,11 @@ class _TimetablePageState extends State<TimetablePage> {
         right: 0,
         height: _bandH,
         child: Container(
-          color: const Color(0xFFF8FAFC),
+          color: SemColors.stripe,
           alignment: Alignment.center,
           child: Text(
             label,
-            style: const TextStyle(fontSize: 9, letterSpacing: 2, color: SemColors.textMuted),
+            style: TextStyle(fontSize: 9, letterSpacing: 2, color: SemColors.textMuted),
           ),
         ),
       );
@@ -1956,7 +1948,7 @@ class _TimetablePageState extends State<TimetablePage> {
                   Text(c.teachers,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 9.5, color: SemColors.textMuted)),
+                      style: TextStyle(fontSize: 9.5, color: SemColors.textMuted)),
               ],
             ),
           ),
@@ -2017,10 +2009,10 @@ class _TimetablePageState extends State<TimetablePage> {
                 Text(e.place,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 9.5, color: SemColors.textSecondary)),
+                    style: TextStyle(fontSize: 9.5, color: SemColors.textSecondary)),
               if (e.seat.isNotEmpty)
                 Text('座位 ${e.seat}',
-                    style: const TextStyle(fontSize: 9, color: SemColors.textSecondary)),
+                    style: TextStyle(fontSize: 9, color: SemColors.textSecondary)),
             ],
           ),
         ),
@@ -2041,7 +2033,7 @@ class _TimetablePageState extends State<TimetablePage> {
           children: [
             SizedBox(
               width: 72,
-              child: Text(k, style: const TextStyle(color: SemColors.textSecondary)),
+              child: Text(k, style: TextStyle(color: SemColors.textSecondary)),
             ),
             Expanded(child: Text(v)),
           ],
@@ -2057,6 +2049,9 @@ class _TimetablePageState extends State<TimetablePage> {
       h = (h * 31 + ch) % 100000;
     }
     final hue = _hues[h % _hues.length];
-    return HSLColor.fromAHSL(0.16, hue, 0.70, 0.58).toColor();
+    // 深色下提亮提饱和，玻璃底上保持课块色彩辨识度（文字仍为 textPrimary）
+    return SemColors.isDark
+        ? HSLColor.fromAHSL(0.30, hue, 0.55, 0.68).toColor()
+        : HSLColor.fromAHSL(0.16, hue, 0.70, 0.58).toColor();
   }
 }

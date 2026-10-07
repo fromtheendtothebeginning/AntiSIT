@@ -126,7 +126,7 @@ class _EcardPageState extends State<EcardPage> {
             child: Column(
               children: [
                 if (_err != null && _data == null) ...[
-                  const Icon(Icons.error_outline, size: 44, color: SemColors.danger),
+                  Icon(Icons.error_outline, size: 44, color: SemColors.danger),
                   const SizedBox(height: 10),
                   Text(_err!, textAlign: TextAlign.center),
                   const SizedBox(height: 14),
@@ -135,7 +135,7 @@ class _EcardPageState extends State<EcardPage> {
                   AppCard(
                     child: Column(
                       children: [
-                        const Align(
+                        Align(
                           alignment: Alignment.topLeft,
                           child: Capsule('校园卡动态码', color: SemColors.success),
                         ),
@@ -162,16 +162,16 @@ class _EcardPageState extends State<EcardPage> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text('卡余额 ', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                            Text('卡余额 ', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
                             Text(
                               balance == null ? '—' : '¥${balance.toStringAsFixed(2)}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 15, fontWeight: FontWeight.w600, color: SemColors.textPrimary),
                             ),
                             const SizedBox(width: 14),
                             Text(
                               _loading ? '刷新中…' : '$_countdown 秒后自动刷新',
-                              style: const TextStyle(fontSize: 12, color: SemColors.textMuted),
+                              style: TextStyle(fontSize: 12, color: SemColors.textMuted),
                             ),
                           ],
                         ),
@@ -180,13 +180,13 @@ class _EcardPageState extends State<EcardPage> {
                           onPressed: _loading ? null : _fetch,
                           style: OutlinedButton.styleFrom(
                             visualDensity: VisualDensity.compact,
-                            side: const BorderSide(color: SemColors.border),
+                            side: BorderSide(color: SemColors.border),
                             foregroundColor: SemColors.textSecondary,
                           ),
                           child: Text(_loading ? '刷新中…' : '立即刷新'),
                         ),
                         const SizedBox(height: 10),
-                        const Text(
+                        Text(
                           '动态码仅供本人付款使用，请勿截图转发',
                           style: TextStyle(fontSize: 11, color: SemColors.textMuted),
                         ),

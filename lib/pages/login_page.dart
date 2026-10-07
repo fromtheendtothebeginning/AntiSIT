@@ -108,13 +108,13 @@ class _LoginPageState extends State<LoginPage> {
                       child: Image.asset('assets/sit-mark.png', width: 76, height: 76),
                     ),
                     const SizedBox(height: 10),
-                    const Text('AntiSIT',
+                    Text('AntiSIT',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                             fontSize: 26, fontWeight: FontWeight.bold,
                             color: SemColors.textPrimary)),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       '服务器账号登录 · 服务器代连校园内网',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 13, color: SemColors.textSecondary),
@@ -129,40 +129,36 @@ class _LoginPageState extends State<LoginPage> {
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: SemColors.accent.withValues(alpha: 0.35)),
                       ),
-                      child: const Text(
+                      child: Text(
                         '校园凭据（学号 / VPN 密码 / 支付密码 / 寝室）只需在网站「我的 → 校园服务」配置一次，App 不需要填写校园密码。',
                         style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6),
                       ),
                     ),
                     const SizedBox(height: 16),
 
-                    TextFormField(
+                    GlassField(
+                      label: '用户名',
                       controller: _user,
                       autofillHints: const [AutofillHints.username],
-                      decoration: const InputDecoration(
-                        labelText: '用户名',
-                        prefixIcon: Icon(Icons.person_outline),
-                      ),
+                      prefixIcon: const Icon(Icons.person_outline),
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? '请输入用户名' : null,
                     ),
                     const SizedBox(height: 14),
-                    TextFormField(
+                    GlassField(
+                      label: '密码',
                       controller: _pwd,
                       obscureText: _hidePwd,
                       autofillHints: const [AutofillHints.password],
-                      decoration: InputDecoration(
-                        labelText: '密码',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          onPressed: () => setState(() => _hidePwd = !_hidePwd),
-                          icon: Icon(_hidePwd
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined),
-                        ),
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() => _hidePwd = !_hidePwd),
+                        icon: Icon(_hidePwd
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined),
                       ),
                       validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : null,
-                      onFieldSubmitted: (_) => _busy ? null : _login(),
+                      onSubmitted: (_) => _busy ? null : _login(),
                     ),
                     const SizedBox(height: 4),
                     Row(
@@ -194,7 +190,7 @@ class _LoginPageState extends State<LoginPage> {
                           border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
                         ),
                         child: Text(_error!,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13, color: SemColors.danger, height: 1.5)),
                       ),
                       const SizedBox(height: 8),
@@ -222,7 +218,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                         if (kDebugMode) ...[
-                          const SizedBox(
+                          SizedBox(
                               width: 1, height: 18, child: ColoredBox(color: SemColors.border)),
                           Expanded(
                             child: TextButton(

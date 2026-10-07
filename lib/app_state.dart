@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'direct/school.dart';
@@ -35,6 +36,9 @@ class AppState extends ChangeNotifier {
   String? password; // 仅勾选「记住密码」时持久化
   bool remember = true;
 
+  /// 外观模式：跟随系统 / 浅色 / 深色（液态玻璃主题）。
+  ThemeMode themeMode = ThemeMode.system;
+
   /// 直连模式：学校档案（可多个）+ 当前学校 + 校园凭据。
   List<SchoolProfile> schools = [];
   SchoolProfile school = SchoolProfile.sit();
@@ -54,6 +58,11 @@ class AppState extends ChangeNotifier {
     demo = kDebugMode && (sp.getBool('demo') ?? false); // 演示模式仅 debug 构建可用
     remember = sp.getBool('remember') ?? true;
     token = sp.getString('token');
+    themeMode = switch (sp.getString('theme_mode')) {
+      'light' => ThemeMode.light,
+      'dark' => ThemeMode.dark,
+      _ => ThemeMode.system,
+    };
     mode = sp.getString('app_mode') == 'direct' ? AppMode.direct : AppMode.server;
     schools = SchoolProfile.decodeList(sp.getString('direct_schools'));
     if (schools.isEmpty) schools = [SchoolProfile.sit()];
@@ -65,6 +74,8 @@ class AppState extends ChangeNotifier {
       password = sp.getString('password');
     }
     loaded = true;
+    // 主题等偏好可能在首帧后才异步加载完成，通知根组件按持久化偏好重建
+    notifyListeners();
   }
 
   static Map<String, dynamic>? _decodeObj(String? raw) {
@@ -82,6 +93,8 @@ class AppState extends ChangeNotifier {
     await sp.setBool('demo', demo);
     await sp.setString('server_url', serverUrl);
     await sp.setBool('remember', remember);
+    await sp.setString('theme_mode',
+        switch (themeMode) { ThemeMode.light => 'light', ThemeMode.dark => 'dark', _ => 'system' });
     await sp.setString('app_mode', direct ? 'direct' : 'server');
     await sp.setString('direct_schools', SchoolProfile.encodeList(schools));
     await sp.setString('direct_school', school.name);
@@ -151,6 +164,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> setRemember(bool v) async {
     remember = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  Future<void> setThemeMode(ThemeMode m) async {
+    themeMode = m;
     await _persist();
     notifyListeners();
   }

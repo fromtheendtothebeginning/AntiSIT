@@ -4,6 +4,7 @@ import '../api_client.dart';
 import '../app_state.dart';
 import '../widgets/common.dart';
 import 'connect_page.dart';
+import 'feedback_page.dart';
 import 'login_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -148,7 +149,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                   .characters
                                   .first
                                   .toUpperCase(),
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 22, fontWeight: FontWeight.bold,
                                   color: SemColors.accent),
                             ),
@@ -159,12 +160,12 @@ class _ProfilePageState extends State<ProfilePage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(st.direct ? '直连模式 · ${st.school.name}' : (st.username ?? '-'),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 18, fontWeight: FontWeight.bold,
                                         color: SemColors.textPrimary)),
                                 const SizedBox(height: 3),
                                 Text('${status?['student_id_masked'] ?? '学号未配置'}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 13, color: SemColors.textMuted)),
                               ],
                             ),
@@ -173,7 +174,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       )
                     : Row(
                         children: [
-                          const CircleAvatar(
+                          CircleAvatar(
                             radius: 28,
                             backgroundColor: SemColors.accentSoft,
                             child: Icon(Icons.person_outline, size: 30, color: SemColors.accent),
@@ -184,7 +185,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(st.demo ? '演示模式' : (st.direct ? '未填写校园凭据' : '未登录'),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 18, fontWeight: FontWeight.bold,
                                         color: SemColors.textPrimary)),
                                 const SizedBox(height: 8),
@@ -215,7 +216,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 AppCard(
                   padding: EdgeInsets.zero,
                   child: ListTile(
-                    leading: const Icon(Icons.login_rounded, color: SemColors.accent),
+                    leading: Icon(Icons.login_rounded, color: SemColors.accent),
                     title: Text(st.direct ? '点击填写校园凭据' : '点击登录',
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
@@ -246,7 +247,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       st.direct
                           ? '校园凭据未填写完整：请在「连接设置 → 直连模式」填写学号与统一身份认证密码，才能查询校园数据。'
                           : '校园凭据未配置：请登录所用服务器的网站 →「我的 → 校园服务」填写学号与 VPN 密码，隧道类查询才能使用。',
-                      style: const TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.6),
+                      style: TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.6),
                     ),
                   ),
                 if (configured && status?['auto_captcha'] != true && !st.direct)
@@ -258,7 +259,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: SemColors.warning.withValues(alpha: 0.35)),
                     ),
-                    child: const Text(
+                    child: Text(
                       '未开启「AI 自动识别验证码」：隧道类查询会弹出手动验证码输入框；'
                       '想让 AI 自动过码请到网站「我的 → 校园服务」开启。',
                       style: TextStyle(fontSize: 12.5, color: SemColors.warning, height: 1.6),
@@ -273,7 +274,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: SemColors.accent.withValues(alpha: 0.3)),
                     ),
-                    child: const Text(
+                    child: Text(
                       '直连模式：数据由本机直接访问学校系统，不走任何服务器，需要在校园网 / 校内 VPN 内；登录验证码手动输入。',
                       style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.6),
                     ),
@@ -291,7 +292,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           child: Text(
                               configured ? '打开「工具 → 二课分数」后自动获取' : '配置校园凭据后自动获取',
-                              style: const TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                              style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
                         )
                       else ...[
                         _kv('年级', '${info['nj'] ?? '-'}'),
@@ -356,7 +357,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           st.direct
                               ? '登录态失效会在下次查询时重新登录（需输入验证码）'
                               : '登录态失效会在下次查询时自动重登',
-                          style: const TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                          style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                       if (connected || st.direct)
                         Align(
                           alignment: Alignment.centerRight,
@@ -391,6 +392,27 @@ class _ProfilePageState extends State<ProfilePage> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: _openConnect,
                     ),
+                    ListTile(
+                      leading: const Icon(Icons.auto_awesome_outlined),
+                      title: const Text('外观'),
+                      subtitle: const Text('液态玻璃主题 · 跟随系统或手动指定', style: TextStyle(fontSize: 12)),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: GlassTabs(
+                        labels: const ['跟随系统', '浅色', '深色'],
+                        index: switch (st.themeMode) {
+                          ThemeMode.light => 1,
+                          ThemeMode.dark => 2,
+                          _ => 0,
+                        },
+                        onChanged: (i) => AppState.I.setThemeMode(switch (i) {
+                          1 => ThemeMode.light,
+                          2 => ThemeMode.dark,
+                          _ => ThemeMode.system,
+                        }),
+                      ),
+                    ),
                     if (!st.direct)
                       ListenableBuilder(
                         listenable: AppState.I,
@@ -402,6 +424,15 @@ class _ProfilePageState extends State<ProfilePage> {
                           onChanged: (v) => AppState.I.setRemember(v),
                         ),
                       ),
+                    ListTile(
+                      leading: const Icon(Icons.feedback_outlined),
+                      title: const Text('提交反馈'),
+                      subtitle: const Text('Issue · PR · Fork · GitHub（GPL-3.0）',
+                          style: TextStyle(fontSize: 12)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const FeedbackPage())),
+                    ),
                   ],
                 ),
               ),
@@ -410,8 +441,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 AppCard(
                   padding: EdgeInsets.zero,
                   child: ListTile(
-                    leading: const Icon(Icons.logout, color: SemColors.danger),
-                    title: const Text('退出登录',
+                    leading: Icon(Icons.logout, color: SemColors.danger),
+                    title: Text('退出登录',
                         style: TextStyle(
                             color: SemColors.danger, fontWeight: FontWeight.w600)),
                     onTap: _logout,
@@ -421,8 +452,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 AppCard(
                   padding: EdgeInsets.zero,
                   child: ListTile(
-                    leading: const Icon(Icons.science_outlined, color: SemColors.accent),
-                    title: const Text('退出演示模式',
+                    leading: Icon(Icons.science_outlined, color: SemColors.accent),
+                    title: Text('退出演示模式',
                         style: TextStyle(
                             color: SemColors.accent, fontWeight: FontWeight.w600)),
                     onTap: () async {
@@ -438,7 +469,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         : (st.serverUrl.isEmpty
                             ? 'AntiSIT · 服务器模式（地址未填写，见连接设置）'
                             : 'AntiSIT · 数据来自 ${st.serverUrl} 开放接口'),
-                    style: const TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                    style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
               ),
             ],
           ),
@@ -469,7 +500,7 @@ class _ProfilePageState extends State<ProfilePage> {
           children: [
             SizedBox(
               width: 64,
-              child: Text(k, style: const TextStyle(fontSize: 13, color: SemColors.textMuted)),
+              child: Text(k, style: TextStyle(fontSize: 13, color: SemColors.textMuted)),
             ),
             Expanded(child: Text(v, style: const TextStyle(fontSize: 13))),
           ],

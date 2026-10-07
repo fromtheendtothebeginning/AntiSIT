@@ -16,7 +16,7 @@ class BalanceChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (records.length < 2) {
-      return const SizedBox(
+      return SizedBox(
         height: 120,
         child: Center(child: Text('数据不足，需至少两天的记录', style: TextStyle(fontSize: 12, color: SemColors.textMuted))),
       );
@@ -57,7 +57,7 @@ class _ChartPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     // 横向虚线网格 + Y 轴刻度（4 条）
-    final labelStyle = const TextStyle(fontSize: 9, color: SemColors.textMuted);
+    final labelStyle = TextStyle(fontSize: 9, color: SemColors.textMuted);
     for (var g = 0; g < 4; g++) {
       final t = g / 3;
       final vy = _padT + plotH * t;

@@ -103,7 +103,7 @@ class _ScorePageState extends State<ScorePage> {
     ];
     return Text(
       parts.join('  ·  '),
-      style: const TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6),
+      style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6),
     );
   }
 
@@ -117,10 +117,10 @@ class _ScorePageState extends State<ScorePage> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('总得分', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+            Text('总得分', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
             const SizedBox(height: 2),
             Text('$total',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 30, fontWeight: FontWeight.w600, height: 1.1,
                     color: SemColors.textPrimary)),
           ],
@@ -129,7 +129,7 @@ class _ScorePageState extends State<ScorePage> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('实践学分', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+            Text('实践学分', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
             const SizedBox(height: 2),
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -144,7 +144,7 @@ class _ScorePageState extends State<ScorePage> {
                           : (reached ? SemColors.success : SemColors.danger)),
                 ),
                 const SizedBox(width: 4),
-                const Text('/ 8',
+                Text('/ 8',
                     style: TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w700,
                         color: SemColors.textSecondary)),
@@ -186,13 +186,13 @@ class _ScorePageState extends State<ScorePage> {
   }
 
   BoxDecoration _groupDecoration() => BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: SemColors.stripe,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: SemColors.border),
       );
 
   Widget _groupName(String name) => Text(name,
-      style: const TextStyle(
+      style: TextStyle(
           fontSize: 13, fontWeight: FontWeight.w600, color: SemColors.textPrimary));
 
   /// 组达标胶囊：默认蓝；有目标时达标绿 / 未达标红（cs-group-sub）。
@@ -285,7 +285,7 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: SemColors.stripe,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: SemColors.border),
       ),
@@ -300,7 +300,7 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
                 children: [
                   Expanded(
                     child: Text(widget.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w600,
                             color: SemColors.textPrimary)),
                   ),
@@ -317,7 +317,7 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
                   AnimatedRotation(
                     turns: _open ? 0.5 : 0,
                     duration: const Duration(milliseconds: 200),
-                    child: const Icon(Icons.arrow_drop_down,
+                    child: Icon(Icons.arrow_drop_down,
                         size: 20, color: SemColors.textMuted),
                   ),
                 ],
@@ -332,11 +332,11 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
             secondChild: Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: SemColors.border)),
               ),
               child: widget.rows.isEmpty
-                  ? const Padding(
+                  ? Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: Text('暂无第二课堂数据，请稍后重试',
                           textAlign: TextAlign.center,
@@ -374,13 +374,13 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
       decoration: BoxDecoration(
         border: last
             ? null
-            : const Border(bottom: BorderSide(color: SemColors.border)),
+            : Border(bottom: BorderSide(color: SemColors.border)),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(name,
-                style: const TextStyle(fontSize: 13, color: SemColors.textSecondary)),
+                style: TextStyle(fontSize: 13, color: SemColors.textSecondary)),
           ),
           Text(
             hasTarget ? '$valueText / ${_fmtNum(subTarget)}' : valueText,

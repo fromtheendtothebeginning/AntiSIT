@@ -94,7 +94,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
               onSubmitted: (_) => Navigator.pop(ctx, true),
             ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               '扣款仅提交一次、绝不自动重试；超时请先查余额确认',
               style: TextStyle(fontSize: 11, color: SemColors.textMuted),
             ),
@@ -244,7 +244,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              const Center(
+              Center(
                 child: Text(
                   '余额低于 10 元、预计可用不足 5 天会标红；充值走校付宝公网直连',
                   style: TextStyle(fontSize: 11, color: SemColors.textMuted),
@@ -262,31 +262,24 @@ class _ElectricityPageState extends State<ElectricityPage> {
                             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                         const SizedBox(width: 8),
                         Text('每天最低余额（元）',
-                            style: const TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                         const Spacer(),
-                        for (final d in const [7, 30, 90])
-                          GestureDetector(
-                            onTap: () {
+                        SizedBox(
+                          width: 126,
+                          child: GlassTabs(
+                            labels: const ['7天', '30天', '90天'],
+                            index: const [7, 30, 90].indexOf(_days),
+                            onChanged: (i) {
+                              final d = const [7, 30, 90][i];
                               if (_days != d) {
-                                _days = d;
+                                setState(() => _days = d);
                                 _loadHistory();
                               }
                             },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              margin: const EdgeInsets.only(left: 6),
-                              decoration: BoxDecoration(
-                                color: _days == d ? SemColors.accentSoft : Colors.white,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color: _days == d ? SemColors.accent : SemColors.border),
-                              ),
-                              child: Text('$d天',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color: _days == d ? SemColors.accent : SemColors.textMuted)),
-                            ),
+                            height: 28,
+                            fontSize: 11,
                           ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -297,7 +290,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
                     else
                       BalanceChart(records: _history),
                     const SizedBox(height: 6),
-                    const Center(
+                    Center(
                       child: Text('每晚 22:00 自动查询并记录 · 绿点为当天有充值',
                           style: TextStyle(fontSize: 10.5, color: SemColors.textMuted)),
                     ),

@@ -69,14 +69,14 @@ class _GradesPageState extends State<GradesPage> {
           children: [
             ListTile(
               title: const Text('全部学期'),
-              trailing: _xnm.isEmpty ? const Icon(Icons.check, color: SemColors.accent) : null,
+              trailing: _xnm.isEmpty ? Icon(Icons.check, color: SemColors.accent) : null,
               onTap: () => Navigator.pop(ctx, '|'),
             ),
             for (final t in _terms)
               ListTile(
                 title: Text('${t['xnmmc']} · ${_xqName('${t['xqmmc']}')}'),
                 trailing: (_xnm == '${t['xnm']}' && _xqm == '${t['xqm']}')
-                    ? const Icon(Icons.check, color: SemColors.accent)
+                    ? Icon(Icons.check, color: SemColors.accent)
                     : null,
                 onTap: () => Navigator.pop(ctx, '${t['xnm']}|${t['xqm']}'),
               ),
@@ -139,7 +139,7 @@ class _GradesPageState extends State<GradesPage> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: SemColors.cardElevated,
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
                                 color: _xnm.isEmpty ? SemColors.border : SemColors.accent,
@@ -154,14 +154,14 @@ class _GradesPageState extends State<GradesPage> {
                                             ? SemColors.textMuted
                                             : SemColors.accent)),
                                 const SizedBox(width: 4),
-                                const Icon(Icons.expand_more, size: 14, color: SemColors.textMuted),
+                                Icon(Icons.expand_more, size: 14, color: SemColors.textMuted),
                               ],
                             ),
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text('共 ${_all.length} 门 · 满分绩点 5.0',
-                            style: const TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+                            style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
                       ],
                     ),
                   ],
@@ -174,7 +174,7 @@ class _GradesPageState extends State<GradesPage> {
                   margin: const EdgeInsets.only(bottom: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
-                    side: const BorderSide(color: SemColors.border),
+                    side: BorderSide(color: SemColors.border),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -185,7 +185,7 @@ class _GradesPageState extends State<GradesPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text('${g['kcmc']}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       fontWeight: FontWeight.w600, color: SemColors.textPrimary)),
                               const SizedBox(height: 4),
                               Wrap(
@@ -205,12 +205,12 @@ class _GradesPageState extends State<GradesPage> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text('${g['cj']}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.bold,
                                     color: SemColors.accent)),
                             Text('学分 ${g['xf']} · 绩点 ${g['jd']}',
-                                style: const TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                                style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                           ],
                         ),
                       ],
@@ -230,6 +230,6 @@ class _GradesPageState extends State<GradesPage> {
           color: SemColors.neutralSoft,
           borderRadius: BorderRadius.circular(5),
         ),
-        child: Text(text, style: const TextStyle(fontSize: 10, color: SemColors.textMuted)),
+        child: Text(text, style: TextStyle(fontSize: 10, color: SemColors.textMuted)),
       );
 }

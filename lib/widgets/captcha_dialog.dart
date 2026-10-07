@@ -111,7 +111,7 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
                 border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
               ),
               child: Text('上次提交失败：${widget.error}',
-                  style: const TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.5)),
+                  style: TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.5)),
             ),
             const SizedBox(height: 10),
           ],
@@ -142,18 +142,16 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
             ],
           ),
           const SizedBox(height: 12),
-          TextField(
+          GlassField(
+            label: '验证码',
             controller: _ctrl,
             autofocus: true,
             textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(
-              labelText: '验证码',
-              prefixIcon: Icon(Icons.verified_outlined),
-            ),
+            prefixIcon: const Icon(Icons.verified_outlined),
             onSubmitted: (_) => _submit(),
           ),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             '服务器模式配置识图模型后由 AI 自动识别；未配置或识别失败时，与直连模式一样需手动输入。',
             style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
           ),
