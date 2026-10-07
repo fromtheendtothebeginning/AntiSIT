@@ -99,24 +99,33 @@ class JwxtClient {
   /// 学校原文里的错误文案（如「验证码错误」「用户名或密码错误」）。
   /// 正方各版本把提示塞在不同元素里，SIT 新版登录页的文案还可能是 JS 写进去的、服务端返回的
   /// HTML 里根本没有，所以先按元素找，再退一步找「像一句话」的文本节点。
-  /// 文本节点必须同时含提示对象（验证码/密码/账号/用户名）与错误词，否则会抓到页面里的
-  /// `<label>验证码</label>` 这类静态文案，把「页面改版」误判成「验证码错误」。
+  /// 元素规则与文本节点一样要过语义门槛（提示对象 + 错误词缺一不可）：新版登录页有
+  /// `class="tipsqrcode"` 的微信扫码区块（命中 tips）和 `<!-- 0-弹出验证码-->` 这类模板
+  /// 注释（尾巴 `验证码-->`），不过门槛就会被当成错误文案——前者被直接抛给用户，
+  /// 后者因含「验证码」被误当成验证码错误白白重试三次。
   static String _schoolTip(String html) {
+    // 注释先剥掉，别让 `<!-- 0-弹出验证码-->` 的尾巴混进下面的捕获
+    final clean = html.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ');
+    final obj = RegExp(r'验证码|密码|账号|用户名');
+    final err = RegExp(r'错误|不正确|失效|过期|为空|不存在|无效|请输入');
     for (final re in <RegExp>[
       RegExp(r'id="(?:tips|msg|tipsMsg|errorMsg|loginError)"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
           dotAll: true),
       RegExp(r'class="[^"]*(?:tips|error|msg)[^"]*"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
           dotAll: true),
     ]) {
-      final m = re.firstMatch(html);
-      final t = m == null ? '' : m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
-      if (t.isNotEmpty) return t;
+      for (final m in re.allMatches(clean)) {
+        final t = m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
+        if (t.isEmpty) continue;
+        if (!obj.hasMatch(t) || !err.hasMatch(t)) continue;
+        return t;
+      }
     }
-    for (final m in RegExp(r'>([^<>]{1,60})<').allMatches(html)) {
+    for (final m in RegExp(r'>([^<>]{1,60})<').allMatches(clean)) {
       final t = m.group(1)!.trim();
       if (t.isEmpty) continue;
-      if (!RegExp(r'验证码|密码|账号|用户名').hasMatch(t)) continue;
-      if (!RegExp(r'错误|不正确|失效|过期|为空|不存在|无效|请输入').hasMatch(t)) continue;
+      if (!obj.hasMatch(t)) continue;
+      if (!err.hasMatch(t)) continue;
       return t;
     }
     return '';

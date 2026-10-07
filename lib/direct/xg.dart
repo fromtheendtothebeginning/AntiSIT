@@ -111,6 +111,9 @@ class XgClient {
     // 金智 authserver 的错误提示元素各校不一：SIT 实测用 .auth_error / #usernameError /
     // #passwordError / #cpatchaError（页面里就这么拼的）/ #loginError，另有学校用 <span id="msg">。
     // 解析不出就只能给笼统文案，分辨不出「验证码错」还是「密码错」，所以逐个试。
+    // 页面里还留着 `<!-- 滑块验证码：-->` 这类模板注释，尾巴 `验证码：-->` 含「验证码」，
+    // 被抓走会误触发验证码重试，所以先把注释剥掉再匹配。
+    final clean = html.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ');
     final rules = <RegExp>[
       RegExp(r'id="msg"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
       RegExp(r'id="(?:username|password|cpatcha|captcha|login)Error"[^>]*>(.*?)</(?:span|div)>',
@@ -118,7 +121,7 @@ class XgClient {
       RegExp(r'class="[^"]*auth_error[^"]*"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
     ];
     for (final re in rules) {
-      final m = re.firstMatch(html);
+      final m = re.firstMatch(clean);
       final msg = m == null ? '' : m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
       if (msg.isNotEmpty) return msg;
     }
