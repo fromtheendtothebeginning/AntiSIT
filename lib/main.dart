@@ -32,6 +32,12 @@ class _FadeThroughTransitionsBuilder extends PageTransitionsBuilder {
 }
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 竖屏锁定：手机横过来也不跟着陀螺仪转（页面布局按竖屏设计）
+  SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
   // 直连模式的学校系统验证码输入弹窗（服务器模式用不到）
   installDirectCaptchaPrompt();
   runApp(const CampusApp());
