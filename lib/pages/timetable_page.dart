@@ -1370,14 +1370,19 @@ class _TimetablePageState extends State<TimetablePage> {
                     ),
                     if (inClass) ...[
                       const SizedBox(width: 6),
+                      // 玻璃化：底色很淡 + 文字半透明 + 细描边，压在课程色块上不抢主体
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
-                          color: SemColors.accent.withValues(alpha: 0.18),
+                          color: SemColors.accent.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: SemColors.accent.withValues(alpha: 0.25), width: 0.8),
                         ),
                         child: Text('正在上课',
-                            style: TextStyle(fontSize: 9.5, color: SemColors.accent)),
+                            style: TextStyle(
+                                fontSize: 9.5,
+                                color: SemColors.accent.withValues(alpha: 0.85))),
                       ),
                     ],
                   ],
@@ -2019,43 +2024,47 @@ class _TimetablePageState extends State<TimetablePage> {
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () => _showCourseDetail(c, zs),
-        child: Container(
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: past ? SemColors.neutralSoft : _courseColor(name),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_slotTimes[rowStart.clamp(0, 10)],
-                    style: TextStyle(
-                        fontSize: 9,
-                        color: past ? SemColors.textMuted : SemColors.textSecondary)),
-                Text(name,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        height: 1.2,
-                        color: past ? SemColors.textMuted : SemColors.textPrimary)),
-                const Spacer(),
-                Text(c.place.isEmpty ? '' : c.place,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 10,
-                        height: 1.15,
-                        color: past ? SemColors.textMuted : SemColors.textSecondary)),
-                if (c.teachers.isNotEmpty)
-                  Text(c.teachers,
-                      maxLines: 1,
+        child: Opacity(
+          // 上完的课整体压暗（与单日视图 _dayCourseCard 同透明度），一眼看出已经上过
+          opacity: past ? 0.55 : 1,
+          child: Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: past ? SemColors.neutralSoft : _courseColor(name),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_slotTimes[rowStart.clamp(0, 10)],
+                      style: TextStyle(
+                          fontSize: 9,
+                          color: past ? SemColors.textMuted : SemColors.textSecondary)),
+                  Text(name,
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 9.5, color: SemColors.textMuted)),
-              ],
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
+                          color: past ? SemColors.textMuted : SemColors.textPrimary)),
+                  const Spacer(),
+                  Text(c.place.isEmpty ? '' : c.place,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 10,
+                          height: 1.15,
+                          color: past ? SemColors.textMuted : SemColors.textSecondary)),
+                  if (c.teachers.isNotEmpty)
+                    Text(c.teachers,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 9.5, color: SemColors.textMuted)),
+                ],
+              ),
             ),
           ),
         ),
