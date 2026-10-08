@@ -1,6 +1,7 @@
 import 'package:campus_service/class_reminder_service.dart';
 import 'package:campus_service/timetable_store.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 上课提醒的排期算法是纯函数：给定课表 + 起始时间，算出「课前 15 分钟」的提醒时刻。
 /// 这里只测算出来的时刻对不对（不触发插件 / 系统通知）。
@@ -134,6 +135,32 @@ void main() {
 
       final other = ClassReminderService.plan(storeWith([course(name: '英语')]), from).first;
       expect(other.id, isNot(a.id));
+    });
+  });
+
+  group('开关状态', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('默认关闭；关闭后持久化，重开 App 不会自己变回开启', () async {
+      await ClassReminderService.I.loadEnabled();
+      expect(ClassReminderService.I.enabled, isFalse, reason: '未设置过时默认关闭');
+
+      // 模拟「关掉提醒」这一步（插件在测试环境不可用，排期失败不影响开关落盘）
+      await ClassReminderService.I.disable();
+      expect(ClassReminderService.I.enabled, isFalse);
+
+      final sp = await SharedPreferences.getInstance();
+      expect(sp.getBool('class_reminder_on'), isFalse, reason: '关闭状态要落盘');
+
+      // 下次启动：读回持久化值
+      await ClassReminderService.I.loadEnabled();
+      expect(ClassReminderService.I.enabled, isFalse);
+    });
+
+    test('持久化为开启时，启动读回开启状态', () async {
+      SharedPreferences.setMockInitialValues({'class_reminder_on': true});
+      await ClassReminderService.I.loadEnabled();
+      expect(ClassReminderService.I.enabled, isTrue);
     });
   });
 }

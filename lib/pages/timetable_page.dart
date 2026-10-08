@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../app_state.dart';
+import '../class_reminder_service.dart';
 import '../timetable_store.dart';
 import '../widgets/common.dart';
 
@@ -1058,6 +1059,25 @@ class _TimetablePageState extends State<TimetablePage> {
 
   // ── 渲染 ──
 
+  /// 上课提醒开关：打开时申请通知权限（必要时再要精确闹钟权限），并按当前课表排期。
+  Future<void> _onReminderToggle(bool v) async {
+    final messenger = ScaffoldMessenger.of(context);
+    String? tip;
+    if (v) {
+      tip = await ClassReminderService.I.enable();
+    } else {
+      await ClassReminderService.I.disable();
+      tip = '已关闭上课提醒';
+    }
+    if (!mounted) return;
+    if (tip != null) {
+      messenger.showSnackBar(SnackBar(content: Text(tip), behavior: SnackBarBehavior.floating));
+    }
+  }
+
+  /// 课表页 AppBar 的提醒图标：点击即开关（与「我的」页开关同一份状态）。
+  Future<void> _toggleReminder() => _onReminderToggle(!ClassReminderService.I.enabled);
+
   @override
   Widget build(BuildContext context) {
     if (_booting) {
@@ -1092,6 +1112,18 @@ class _TimetablePageState extends State<TimetablePage> {
             },
             icon: Icon(_dayView ? Icons.calendar_view_week_rounded : Icons.calendar_view_day_rounded),
             tooltip: _dayView ? '周视图' : '日视图',
+          ),
+          ListenableBuilder(
+            listenable: ClassReminderService.I,
+            builder: (_, __) => IconButton(
+              onPressed: _toggleReminder,
+              icon: Icon(ClassReminderService.I.enabled
+                  ? Icons.notifications_active
+                  : Icons.notifications_off_outlined),
+              tooltip: ClassReminderService.I.enabled
+                  ? '上课提醒已开启（课前 ${ClassReminderService.leadMinutes} 分钟）'
+                  : '开启上课提醒（课前 ${ClassReminderService.leadMinutes} 分钟）',
+            ),
           ),
           PopupMenuButton<String>(
             tooltip: '更多',
