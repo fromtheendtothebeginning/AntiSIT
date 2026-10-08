@@ -74,6 +74,7 @@ const List<AiProvider> aiProviders = [
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     models: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-4.7', 'glm-4.7-flash', 'glm-4.6', 'glm-4.5-air'],
     defaultModel: 'glm-4.6',
+    logo: 'assets/brands/glm.svg',
   ),
   AiProvider(
     id: 'qwen',
@@ -91,6 +92,7 @@ const List<AiProvider> aiProviders = [
     baseUrl: 'https://api.openai.com/v1',
     models: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4o'],
     defaultModel: 'gpt-5-mini',
+    logo: 'assets/brands/gpt.svg',
   ),
   AiProvider(
     id: 'gemini',
