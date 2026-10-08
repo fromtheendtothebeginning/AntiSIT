@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
@@ -809,6 +810,64 @@ class GlassPicker extends StatelessWidget {
         ],
       ],
     );
+  }
+}
+
+/// 提供商品牌 logo：simple-icons 的 CC0 单色 SVG，按当前主题着色（镂空线稿观感）。
+/// [asset] 为空（simple-icons 未收录，如 OpenAI / 智谱）时回退成字母徽章——
+/// 比随便挑个通用图标更好认。
+class BrandLogo extends StatelessWidget {
+  const BrandLogo({
+    super.key,
+    required this.asset,
+    required this.initial,
+    this.size = 20,
+  });
+
+  final String asset;
+  final String initial;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (asset.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: SemColors.neutralSoft,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: SemColors.border),
+        ),
+        child: Text(
+          _badgeText(initial),
+          style: TextStyle(
+              fontSize: size * 0.46,
+              fontWeight: FontWeight.w700,
+              height: 1,
+              letterSpacing: -0.2,
+              color: SemColors.textSecondary),
+        ),
+      );
+    }
+    return SvgPicture.asset(
+      asset,
+      width: size,
+      height: size,
+      colorFilter: ColorFilter.mode(SemColors.textPrimary, BlendMode.srcIn),
+    );
+  }
+
+  /// 徽章文字：取名称里的拉丁字母/数字前两位（GLM→GL、GPT→GP），否则用首字。
+  static String _badgeText(String label) {
+    final alnum = RegExp(r'[A-Za-z0-9]').allMatches(label).map((m) => m.group(0)!).join();
+    if (alnum.isNotEmpty) {
+      final n = alnum.length >= 2 ? 2 : 1;
+      return alnum.substring(0, n).toUpperCase();
+    }
+    final t = label.trim();
+    return t.isEmpty ? '?' : t.characters.first.toUpperCase();
   }
 }
 

@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.6.2+39
+version: 1.6.3+40
 
 environment:
   sdk: ^3.9.2
@@ -48,6 +48,8 @@ dependencies:
   timezone: ^0.10.0
   # 校历图片识别调休：从相册选一张校历截图
   image_picker: ^1.2.0
+  # AI 提供商 logo（simple-icons 的 CC0 单色 SVG，按主题着色）
+  flutter_svg: ^2.2.0
 
 dev_dependencies:
   flutter_test:
@@ -74,6 +76,7 @@ flutter:
 
   assets:
     - assets/sit-mark.png
+    - assets/brands/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

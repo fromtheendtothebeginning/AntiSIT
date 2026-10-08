@@ -108,7 +108,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           if (cur.isNotEmpty && !models.contains(cur))
             '当前模型 $cur 不在官方列表里（可能已下架或无权限），建议重新选择',
         ],
-        items: [for (final m in models) (value: m, title: m, subtitle: null)],
+        items: [for (final m in models) (value: m, title: m, subtitle: null, leading: null)],
       ),
     );
     if (picked != null && mounted) setState(() => _model.text = picked);
@@ -201,7 +201,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         current: _c.providerId,
         searchHint: null, // 提供商就 9 个，不需要筛选
         items: [
-          for (final p in aiProviders) (value: p.id, title: p.label, subtitle: p.desc),
+          for (final p in aiProviders)
+            (
+              value: p.id,
+              title: p.label,
+              subtitle: p.desc,
+              leading: BrandLogo(asset: p.logo, initial: p.label),
+            ),
         ],
       ),
     );
@@ -255,7 +261,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 GlassPicker(
                   label: '提供商',
                   value: p.label,
-                  prefixIcon: const Icon(Icons.dns_outlined),
+                  prefixIcon: BrandLogo(asset: p.logo, initial: p.label),
                   helperText: p.desc,
                   onTap: _busy || _fetching ? () {} : _pickProviderDialog,
                 ),
@@ -364,6 +370,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                     '识别失败或没配 AI 就回退到手输。'),
                 _bullet('识别校历调休：在课表「调休设置」里选一张校历截图，AI 提取放假 / 调休上课日并写入规则。'),
                 _bullet('必须选支持读图的模型；换提供商后 Key 各自独立保存，不用重填。'),
+                const SizedBox(height: 2),
+                Text('提供商图标来自 simple-icons（CC0），按主题单色着色；未收录的商标用名称缩写兜底。',
+                    style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.5)),
               ],
             ),
           ),
@@ -397,7 +406,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
 // ==================== 统一的选择弹窗（提供商 / 模型共用） ====================
 
-typedef _PickerItem = ({String value, String title, String? subtitle});
+typedef _PickerItem = ({String value, String title, String? subtitle, Widget? leading});
 
 /// 通用选择弹窗：提供商与模型共用同一形态，避免两处入口风格不一致。
 /// 样式走全局：主题对话框底（menuBg + 24 圆角）、Capsule 徽章标题、SemColors 配色。
@@ -519,6 +528,7 @@ class _PickerDialogState extends State<_PickerDialog> {
                         return ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
+                          leading: it.leading,
                           title: Text(it.title,
                               style: TextStyle(
                                   fontSize: 13,

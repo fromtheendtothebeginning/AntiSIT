@@ -11,6 +11,7 @@ class AiProvider {
     this.models = const [],
     this.defaultModel = '',
     this.docs = '',
+    this.logo = '',
   });
 
   final String id;
@@ -20,6 +21,9 @@ class AiProvider {
   final List<String> models;
   final String defaultModel;
   final String docs;
+
+  /// 品牌 logo（simple-icons 单色 SVG，assets/brands/ 下）；空 = 用字母徽章兜底。
+  final String logo;
 
   /// 自定义提供商：由用户填 Base URL。
   bool get isCustom => baseUrl.isEmpty;
@@ -35,6 +39,7 @@ const List<AiProvider> aiProviders = [
     // （deepseek-v4-flash-vision-exp 将下架，已从内置列表移除）
     models: ['deepseek-flash', 'deepseek-v4-pro'],
     defaultModel: 'deepseek-flash',
+    logo: 'assets/brands/deepseek.svg',
     docs: 'https://platform.deepseek.com/api_keys',
   ),
   AiProvider(
@@ -50,6 +55,7 @@ const List<AiProvider> aiProviders = [
       'hy3', 'ox-alpha-free',
     ],
     defaultModel: 'deepseek-v4-flash',
+    logo: 'assets/brands/opencode-go.svg',
     docs: 'https://opencode.ai/docs/go/',
   ),
   AiProvider(
@@ -59,6 +65,7 @@ const List<AiProvider> aiProviders = [
     baseUrl: 'https://api.moonshot.cn/v1',
     models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.7-code-highspeed', 'kimi-k2.6', 'kimi-k2.5'],
     defaultModel: 'kimi-k3',
+    logo: 'assets/brands/kimi.svg',
   ),
   AiProvider(
     id: 'glm',
@@ -75,6 +82,7 @@ const List<AiProvider> aiProviders = [
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     models: ['qwen3.8-max', 'qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-plus', 'qwen-max', 'qwen-plus', 'qwen-turbo'],
     defaultModel: 'qwen-max',
+    logo: 'assets/brands/qwen.svg',
   ),
   AiProvider(
     id: 'gpt',
@@ -91,6 +99,7 @@ const List<AiProvider> aiProviders = [
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: ['gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'],
     defaultModel: 'gemini-2.5-flash',
+    logo: 'assets/brands/gemini.svg',
   ),
   AiProvider(
     id: 'mimo',
@@ -99,6 +108,7 @@ const List<AiProvider> aiProviders = [
     baseUrl: 'https://api.xiaomimimo.com/v1',
     models: ['mimo-v2.5', 'mimo-v2.5-pro'],
     defaultModel: 'mimo-v2.5',
+    logo: 'assets/brands/mimo.svg',
   ),
   AiProvider(
     id: 'custom',
