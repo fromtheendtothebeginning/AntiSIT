@@ -62,8 +62,9 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _goLogin() {
+    // 登录页里可选直连 / 服务器两种方式，所以不再按当前模式分流到连接设置
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => AppState.I.direct ? const ConnectPage() : const LoginPage()),
+      MaterialPageRoute(builder: (_) => const LoginPage()),
       (route) => false,
     );
   }
@@ -210,15 +211,11 @@ class _ProfilePageState extends State<ProfilePage> {
                                   onPressed: st.demo
                                       ? null
                                       : () => Navigator.of(context).push(MaterialPageRoute(
-                                          builder: (_) => st.direct
-                                              ? const ConnectPage()
-                                              : const LoginPage())),
+                                          builder: (_) => const LoginPage())),
                                   style: FilledButton.styleFrom(
                                       visualDensity: VisualDensity.compact,
                                       padding: const EdgeInsets.symmetric(horizontal: 18)),
-                                  child: Text(st.demo
-                                      ? '演示数据，退出后可登录'
-                                      : (st.direct ? '去填写校园凭据' : '去登录')),
+                                  child: Text(st.demo ? '演示数据，退出后可登录' : '去登录'),
                                 ),
                               ],
                             ),
