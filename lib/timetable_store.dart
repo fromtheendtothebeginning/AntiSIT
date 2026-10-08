@@ -218,6 +218,26 @@ class TimetableStore {
       ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
   }
 
+  /// 某周某天「已经上完」的课，按上课时刻升序——顶部卡片里这些课淡显（透明度降低）。
+  /// 与 [upcomingOn] 互补：两者合起来就是当天全部课。
+  static List<TtCourse> pastOn(
+    List<TtCourse> courses, {
+    required String startDate,
+    required int week,
+    required int dayIndex,
+    required List<String> endTimes,
+    DateTime? now,
+  }) {
+    if (startDate.isEmpty) return const [];
+    final t = now ?? DateTime.now();
+    final colISO = iso(dateOfWeekDay(startDate, week, dayIndex));
+    return courses
+        .where((c) => lessonPassed(colISO, endTimes[c.slotEnd.clamp(0, endTimes.length - 1)],
+            now: t))
+        .toList()
+      ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
+  }
+
   static DateTime dateOfWeekDay(String startDate, int week, int dayIndex) {
     final start = DateTime.tryParse(startDate)!;
     return DateTime(start.year, start.month, start.day)

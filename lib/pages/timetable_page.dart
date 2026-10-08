@@ -1314,11 +1314,6 @@ class _TimetablePageState extends State<TimetablePage> {
               const SizedBox(height: 8),
               _nextClassRow(next, now),
             ],
-            const SizedBox(height: 6),
-            Text(
-              '现在时间 ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
-              style: TextStyle(fontSize: 10, color: SemColors.textMuted),
-            ),
           ],
         ),
       ),
@@ -1467,7 +1462,7 @@ class _TimetablePageState extends State<TimetablePage> {
     return Center(
       child: Container(
         decoration: BoxDecoration(
-          color: SemColors.cardElevated,
+          color: SemColors.navPill,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: SemColors.borderStrong),
           boxShadow: [
@@ -1531,7 +1526,7 @@ class _TimetablePageState extends State<TimetablePage> {
     return Center(
       child: Container(
         decoration: BoxDecoration(
-          color: SemColors.cardElevated,
+          color: SemColors.navPill,
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: SemColors.borderStrong),
           boxShadow: [
@@ -1633,7 +1628,7 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   Widget _dayCourseCard(TtCourse c, int week, String colISO) {
-    final past = _isPast(c, colISO);
+    final past = _isPast(c, colISO) && _dimPast;
     final rs = c.slotStart.clamp(0, 10);
     final re = c.slotEnd.clamp(0, 10);
     return Padding(
@@ -1682,7 +1677,7 @@ class _TimetablePageState extends State<TimetablePage> {
     final isExam = e.kind == 'exam';
     final now = DateTime.now();
     final hhmm = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    final past = isToday && e.end.isNotEmpty && hhmm.compareTo(e.end) > 0;
+    final past = isToday && e.end.isNotEmpty && hhmm.compareTo(e.end) > 0 && _dimPast;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Opacity(
@@ -2008,9 +2003,12 @@ class _TimetablePageState extends State<TimetablePage> {
   bool _isPast(TtCourse c, String colISO) =>
       TimetableStore.lessonPassed(colISO, _slotEndTimes[c.slotEnd.clamp(0, 10)]);
 
+  /// 是否淡化已上完的课（「我的 → 上完的课淡化显示」可关，关掉即按正常彩色、不透明显示）。
+  bool get _dimPast => AppState.I.dimCompleted;
+
   Widget _courseBlock(TtCourse c, int zs, String colISO) {
     final name = c.name;
-    final past = _isPast(c, colISO);
+    final past = _isPast(c, colISO) && _dimPast;
     // slotStart/slotEnd = 小节序号，直接定位到行
     final rowStart = c.slotStart.clamp(0, 10);
     final rowEnd = c.slotEnd.clamp(0, 10) + 1; // 半开区间

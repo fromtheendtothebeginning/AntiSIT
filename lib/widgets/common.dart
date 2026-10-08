@@ -181,6 +181,7 @@ class GlassPalette {
     required this.bg,
     required this.card,
     required this.cardElevated,
+    required this.navPill,
     required this.menuBg,
     required this.border,
     required this.borderStrong,
@@ -207,6 +208,7 @@ class GlassPalette {
   final Color bg; // 页面底色
   final Color card; // 玻璃卡面
   final Color cardElevated; // 次级玻璃面（嵌套控件底）
+  final Color navPill; // 底部悬浮导航条底（比 cardElevated 更实，保证压在内容上可读）
   final Color menuBg; // 弹窗/菜单近实底
   final Color border; // 玻璃描边
   final Color borderStrong; // 输入框/独立控件描边
@@ -233,6 +235,7 @@ class GlassPalette {
     bg: Color(0xFFE3E9F2),
     card: Color(0x8CFFFFFF), // 白 55%
     cardElevated: Color(0x66FFFFFF), // 白 40%
+    navPill: Color(0xC7FFFFFF), // 白 78%（底部悬浮导航条：要更实，压在课表上也读得清）
     menuBg: Color(0xF7FFFFFF), // 白 97%
     border: Color(0xB3FFFFFF), // 白 70%
     borderStrong: Color(0xF2FFFFFF), // 白 95%
@@ -260,6 +263,7 @@ class GlassPalette {
     bg: Color(0xFF0B1322),
     card: Color(0x14FFFFFF), // 白 8%
     cardElevated: Color(0x0FFFFFFF), // 白 6%
+    navPill: Color(0x2EFFFFFF), // 白 18%（底部悬浮导航条：深色下也要拉开层次）
     menuBg: Color(0xF5111A2B), // #111A2B 96%
     border: Color(0x26FFFFFF), // 白 15%
     borderStrong: Color(0x52FFFFFF), // 白 32%
@@ -309,6 +313,7 @@ class SemColors {
   static Color get bg => p.bg;
   static Color get card => p.card;
   static Color get cardElevated => p.cardElevated;
+  static Color get navPill => p.navPill;
   static Color get menuBg => p.menuBg;
   static Color get borderStrong => p.borderStrong;
   static Color get inputFill => p.inputFill;

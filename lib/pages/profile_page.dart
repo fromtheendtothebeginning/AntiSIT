@@ -456,6 +456,14 @@ class _ProfilePageState extends State<ProfilePage> {
                         onChanged: _onReminderToggle,
                       ),
                     ),
+                    SwitchListTile(
+                      secondary: const Icon(Icons.visibility_off_outlined),
+                      title: const Text('上完的课淡化显示'),
+                      subtitle: const Text('关闭后已上完的课与普通课一样显示正常彩色（需已设学期起点）',
+                          style: TextStyle(fontSize: 12)),
+                      value: st.dimCompleted,
+                      onChanged: (v) => AppState.I.setDimCompleted(v),
+                    ),
                     ListTile(
                       leading: const Icon(Icons.feedback_outlined),
                       title: const Text('提交反馈'),

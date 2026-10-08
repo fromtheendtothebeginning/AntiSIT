@@ -39,6 +39,9 @@ class AppState extends ChangeNotifier {
   /// 外观模式：跟随系统 / 浅色 / 深色（液态玻璃主题）。
   ThemeMode themeMode = ThemeMode.system;
 
+  /// 课表：是否把「已上完」的课淡化（关掉则与未上完的课一样显示正常彩色）。
+  bool dimCompleted = true;
+
   /// 直连模式：学校档案（可多个）+ 当前学校 + 校园凭据。
   List<SchoolProfile> schools = [];
   SchoolProfile school = SchoolProfile.sit();
@@ -63,6 +66,7 @@ class AppState extends ChangeNotifier {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
+    dimCompleted = sp.getBool('dim_completed') ?? true;
     mode = sp.getString('app_mode') == 'direct' ? AppMode.direct : AppMode.server;
     schools = SchoolProfile.decodeList(sp.getString('direct_schools'));
     if (schools.isEmpty) schools = [SchoolProfile.sit()];
@@ -95,6 +99,7 @@ class AppState extends ChangeNotifier {
     await sp.setBool('remember', remember);
     await sp.setString('theme_mode',
         switch (themeMode) { ThemeMode.light => 'light', ThemeMode.dark => 'dark', _ => 'system' });
+    await sp.setBool('dim_completed', dimCompleted);
     await sp.setString('app_mode', direct ? 'direct' : 'server');
     await sp.setString('direct_schools', SchoolProfile.encodeList(schools));
     await sp.setString('direct_school', school.name);
@@ -170,6 +175,13 @@ class AppState extends ChangeNotifier {
 
   Future<void> setThemeMode(ThemeMode m) async {
     themeMode = m;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 课表：是否淡化「已上完」的课（关掉则显示正常彩色）。
+  Future<void> setDimCompleted(bool v) async {
+    dimCompleted = v;
     await _persist();
     notifyListeners();
   }
