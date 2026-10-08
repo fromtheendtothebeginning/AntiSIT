@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'ai/ai_vision.dart';
 import 'app_state.dart';
 import 'class_reminder_service.dart';
 import 'direct/mock_campus_server.dart';
@@ -242,6 +243,8 @@ class _BootPageState extends State<BootPage> {
 
   Future<void> _boot() async {
     await AppState.I.load();
+    // AI 配置（自动识别验证码 / 校历调休）同样要早点读出来，设置页摘要才准
+    await AiVision.I.load();
     // 调试构建：学校档案指向本机回环时，拉起本地模拟校园服务（直连模式无校园网也能测）
     await MockCampusServer.instance.ensureIfConfigured();
     // 上课提醒：打开 App 就按当前课表重排未来若干天的定时通知（不阻塞进主页）

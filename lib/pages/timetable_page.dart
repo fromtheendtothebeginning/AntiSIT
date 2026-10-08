@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../ai/ai_tasks.dart';
+import '../ai/ai_vision.dart';
 import '../api_client.dart';
 import '../app_state.dart';
 import '../class_reminder_service.dart';
@@ -551,6 +554,10 @@ class _TimetablePageState extends State<TimetablePage> {
     DateTime? endDate;
     var type = 'off';
     var day = 0;
+    // AI 从校历图片识别调休的临时状态（只在本次弹窗内有效）
+    var aiBusy = false;
+    String? aiMsg;
+    var aiOk = false;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -602,6 +609,88 @@ class _TimetablePageState extends State<TimetablePage> {
                       ],
                     ),
                   ),
+                  const Divider(),
+                  // 从校历图片识别调休（需先在「我的 → AI 设置」配识图模型）
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: (aiBusy || tt.startDate.isEmpty)
+                            ? null
+                            : () async {
+                                final picked = await ImagePicker()
+                                    .pickImage(source: ImageSource.gallery);
+                                if (picked == null) return;
+                                final bytes = await picked.readAsBytes();
+                                setS(() {
+                                  aiBusy = true;
+                                  aiMsg = null;
+                                  aiOk = false;
+                                });
+                                try {
+                                  final rules = await parseHolidayImage(
+                                    bytes,
+                                    startDate: tt.startDate,
+                                    weekCount: tt.weekCount,
+                                    mime: picked.mimeType ?? 'image/png',
+                                  );
+                                  if (rules.isEmpty) {
+                                    setS(() {
+                                      aiMsg = '没能从图片里识别出调休安排，换个更清晰的校历截图试试';
+                                      aiOk = false;
+                                    });
+                                    return;
+                                  }
+                                  final entries = [
+                                    for (final r in rules)
+                                      TtAdjust(date: r.date, type: r.type, day: r.day ?? 0)
+                                  ];
+                                  setState(() => tt.adjustments = TimetableStore.mergeAdjustments(
+                                      tt.adjustments, entries));
+                                  TimetableStore.instance.save();
+                                  setS(() {
+                                    aiMsg = '已识别 ${rules.length} 条并写入规则';
+                                    aiOk = true;
+                                  });
+                                } catch (e) {
+                                  setS(() {
+                                    aiMsg = e is ApiError ? e.message : '$e';
+                                    aiOk = false;
+                                  });
+                                } finally {
+                                  setS(() => aiBusy = false);
+                                }
+                              },
+                        icon: aiBusy
+                            ? const SizedBox(
+                                width: 14, height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.image_search_outlined, size: 18),
+                        label: Text(aiBusy ? '识别中…' : '从校历图片识别'),
+                      ),
+                      const SizedBox(width: 8),
+                      if (!AiVision.I.available)
+                        Flexible(
+                          child: Text('未配置 AI：到「我的 → AI 设置」填识图模型后可用',
+                              style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                        ),
+                    ],
+                  ),
+                  if (aiMsg != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: aiOk ? SemColors.successSoft : SemColors.dangerSoft,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(aiMsg!,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: aiOk ? SemColors.success : SemColors.danger,
+                              height: 1.5)),
+                    ),
+                  ],
                   const Divider(),
                   Wrap(
                     spacing: 8,

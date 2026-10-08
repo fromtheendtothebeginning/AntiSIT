@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../ai/ai_tasks.dart';
+import '../ai/ai_vision.dart';
 import '../api_client.dart';
 import '../direct/campus_direct.dart';
 import 'common.dart';
@@ -18,11 +20,32 @@ Future<T> _serial<T>(Future<T> Function() task) {
 
 /// 注入验证码输入弹窗（App 启动时调用一次）：直连模式本机登录学校系统用；
 /// 服务器模式在自动识码走不通（未配识图模型等）回 need_captcha 时也用同一只弹窗。
+/// 配了「AI 设置」时先让 AI 读图（首次弹出、且上次没有报错时才试），
+/// 识别失败或有错误提示时回退手输——AI 只是省一步，永远不挡路。
 void installDirectCaptchaPrompt() {
   CampusDirect.I.captchaPrompt = (image, hint, refresh, {error}) =>
-      _serial(() => _showCaptcha(image, hint, refresh, error));
+      _serial(() => _aiThenManual(image, hint, refresh, error));
   ApiClient.I.captchaPrompt = (image, hint, refresh, {error}) =>
-      _serial(() => _showCaptcha(image, hint, refresh, error));
+      _serial(() => _aiThenManual(image, hint, refresh, error));
+}
+
+Future<String?> _aiThenManual(
+  Uint8List image,
+  String hint,
+  Future<Uint8List> Function() refresh,
+  String? error,
+) async {
+  await AiVision.I.load();
+  // 上一次已提示错误（多半是验证码错）时不再重复调 AI，直接让用户重输
+  final firstTry = error == null || error.isEmpty;
+  if (firstTry && AiVision.I.available) {
+    final text = await solveCaptcha(image);
+    if (text != null && text.isNotEmpty) {
+      debugPrint('[AI] 自动识别验证码（$hint）：$text');
+      return text;
+    }
+  }
+  return _showCaptcha(image, hint, refresh, error);
 }
 
 Future<String?> _showCaptcha(

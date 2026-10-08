@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../ai/ai_vision.dart';
 import '../api_client.dart';
 import '../app_state.dart';
 import '../class_reminder_service.dart';
 import '../widgets/common.dart';
+import 'ai_settings_page.dart';
 import 'connect_page.dart';
 import 'feedback_page.dart';
 import 'login_page.dart';
@@ -107,6 +109,16 @@ class _ProfilePageState extends State<ProfilePage> {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ConnectPage()));
     if (!mounted) return;
     _refreshAll();
+    setState(() {});
+  }
+
+  /// AI 设置摘要（列表副标题）。
+  String _aiSubtitle() =>
+      AiVision.I.available ? '已启用 · ${AiVision.I.config.summary}' : '未配置：自动识别验证码、识别校历调休';
+
+  Future<void> _openAiSettings() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AiSettingsPage()));
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -460,6 +472,15 @@ class _ProfilePageState extends State<ProfilePage> {
                           style: TextStyle(fontSize: 12)),
                       value: st.dimCompleted,
                       onChanged: (v) => AppState.I.setDimCompleted(v),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.auto_awesome_outlined),
+                      title: const Text('AI 设置'),
+                      subtitle: Text(
+                          _aiSubtitle(),
+                          style: const TextStyle(fontSize: 12)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _openAiSettings,
                     ),
                     ListTile(
                       leading: const Icon(Icons.feedback_outlined),
