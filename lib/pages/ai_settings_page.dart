@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../ai/ai_settings.dart';
@@ -92,8 +93,56 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     }
   }
 
-  void _pickProvider(String id) {
-    final p = aiProviderById(id)!;
+  /// 调试 Key 只露头尾，避免整串 key 出现在屏幕/截图里。
+  static String _maskKey(String k) {
+    final s = k.trim();
+    if (s.length <= 10) return '****';
+    return '${s.substring(0, 6)}…${s.substring(s.length - 4)}';
+  }
+
+  /// 开发期临时 Key：写本机 prefs（`ai_debug_api_key`），不进仓库、release 不读。
+  Future<void> _editDebugKey() async {
+    final ctrl = TextEditingController(text: _c.debugApiKey);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('调试 Key（仅 debug 构建）'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('临时 Key 只存本机、不会被提交到仓库；release 构建完全不读它。'
+                '清空即可移除。',
+                style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.5)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'API Key', isDense: true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('保存')),
+        ],
+      ),
+    );
+    if (ok != true) {
+      ctrl.dispose();
+      return;
+    }
+    _c.debugApiKey = ctrl.text.trim();
+    ctrl.dispose();
+    await AiVision.I.save(_c);
+    if (!mounted) return;
+    setState(() {
+      _msg = _c.debugApiKey.isEmpty ? '已清除调试 Key' : '调试 Key 已保存（仅本机）';
+      _ok = true;
+    });
+  }
+
+  void _pickProvider(String id) {    final p = aiProviderById(id)!;
     setState(() {
       _c.providerId = id;
       // 换提供商时把模型切到该提供商默认值，避免留着上一个提供商的模型名
@@ -190,6 +239,28 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   const SizedBox(height: 8),
                   SelectableText('申请 Key：${p.docs}',
                       style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                ],
+                // 开发期临时 Key：只写本机 prefs，不进仓库；仅 debug 构建显示
+                if (kDebugMode) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.bug_report_outlined, size: 14, color: SemColors.textMuted),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          _c.debugApiKey.isEmpty
+                              ? '调试 Key：未设置（仅 debug 构建生效）'
+                              : '调试 Key：已设置 ${_maskKey(_c.debugApiKey)}',
+                          style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _busy ? null : _editDebugKey,
+                        child: const Text('设置', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
                 ],
                 const SizedBox(height: 14),
                 Row(

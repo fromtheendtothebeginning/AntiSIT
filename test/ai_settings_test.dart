@@ -74,6 +74,31 @@ void main() {
     });
   });
 
+  group('开发期临时 Key（仅本机 prefs，不进仓库）', () {
+    test('调试 Key 不能让空配置变成就绪（开关/模型/地址仍必需）', () {
+      final c = AiConfig(providerId: 'deepseek', model: 'deepseek-v4-flash')
+        ..debugApiKey = 'sk-debug';
+      expect(c.effectiveApiKey, 'sk-debug');
+      expect(c.ready, isFalse, reason: '没启用就不能算就绪');
+
+      final on = AiConfig(enabled: true, providerId: 'deepseek', model: 'deepseek-v4-flash')
+        ..debugApiKey = 'sk-debug';
+      expect(on.ready, isTrue, reason: '启用 + 模型 + 默认地址 + 调试 Key 就够了');
+    });
+
+    test('用户自己填的 Key 优先于调试 Key', () {
+      final c = AiConfig(
+        enabled: true,
+        providerId: 'deepseek',
+        apiKey: 'sk-mine',
+        model: 'deepseek-v4-flash',
+      )..debugApiKey = 'sk-debug';
+      expect(c.effectiveApiKey, 'sk-mine');
+      // 调试 Key 不参与 JSON 持久化（避免随手被同步/导出）
+      expect(AiConfig.encode(c), isNot(contains('sk-debug')));
+    });
+  });
+
   group('识图调用', () {
     test('未配置时抛可读错误（引导去 AI 设置）', () async {
       await AiVision.I.save(AiConfig()); // 未启用

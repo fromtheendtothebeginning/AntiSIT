@@ -19,6 +19,9 @@ class AiVision {
 
   static const _spKey = 'ai_config';
 
+  /// 开发期临时 API Key 的本机存储键（不进仓库；仅 debug 构建读取）。
+  static const _debugKeyPref = 'ai_debug_api_key';
+
   AiConfig _config = AiConfig();
   bool _loaded = false;
 
@@ -28,6 +31,8 @@ class AiVision {
     if (_loaded) return _config;
     final sp = await SharedPreferences.getInstance();
     _config = AiConfig.decode(sp.getString(_spKey));
+    // 开发期临时 Key：只存在本机 prefs、不进仓库，且仅 debug 构建读取。
+    if (kDebugMode) _config.debugApiKey = sp.getString(_debugKeyPref) ?? '';
     _loaded = true;
     return _config;
   }
@@ -37,6 +42,10 @@ class AiVision {
     _loaded = true;
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_spKey, AiConfig.encode(c));
+    // debug 构建：顺手把调试 Key 记到本机，方便下次启动直接用（release 不写也不要）
+    if (kDebugMode && c.debugApiKey.trim().isNotEmpty) {
+      await sp.setString(_debugKeyPref, c.debugApiKey.trim());
+    }
   }
 
   /// 识图是否可用（已开启且参数齐全）。
@@ -79,12 +88,13 @@ class AiVision {
   }
 
   /// 「测试连接」：发一张极小的图问一句，确认 Key/模型/地址都通。
+  /// 未填 Key 但存在调试 Key 时用调试 Key 试（开发期临时 Key 的便利）。
   Future<String> testConnection() async {
     await load();
-    final c = _config;
-    // 测试时即便总开关没开也放行（用户正在配置）
-    final probe = c.copy()..enabled = true;
-    if (probe.apiKey.trim().isEmpty) throw ApiError('请先填写 API Key');
+    final probe = _config.copy()
+      ..enabled = true
+      ..apiKey = _config.effectiveApiKey;
+    if (probe.effectiveApiKey.isEmpty) throw ApiError('请先填写 API Key');
     if (probe.model.trim().isEmpty) throw ApiError('请先选择或填写模型');
     if (probe.baseUrl.isEmpty) throw ApiError('请先填写 Base URL');
     final saved = _config;
@@ -115,10 +125,10 @@ class AiVision {
 
   Map<String, String> _authHeaders(AiConfig c) => c.provider.api == 'anthropic'
       ? {
-          'x-api-key': c.apiKey.trim(),
+          'x-api-key': c.effectiveApiKey,
           'anthropic-version': '2023-06-01',
         }
-      : {'Authorization': 'Bearer ${c.apiKey.trim()}'};
+      : {'Authorization': 'Bearer ${c.effectiveApiKey}'};
 
   Map<String, dynamic> _payload(
     AiConfig c,

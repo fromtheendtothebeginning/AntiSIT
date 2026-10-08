@@ -161,19 +161,32 @@ class AiConfig {
   String get baseUrl =>
       customBaseUrl.trim().isNotEmpty ? customBaseUrl.trim() : provider.baseUrl;
 
+  /// 实际发请求用的 API Key：优先用用户填的；debug 构建下若本机存了开发期临时 Key
+  /// （`ai_debug_api_key`，由 [AiVision.load] 读入），且用户还没填，就用它——
+  /// 这样临时 Key 不必写进仓库（仓库是公开的）。release 构建永远不读该字段。
+  String get effectiveApiKey => apiKey.trim().isNotEmpty ? apiKey.trim() : debugApiKey.trim();
+
+  /// 开发期临时 Key（仅 debug 构建由 AiVision 注入，release 恒为空）。
+  String debugApiKey = '';
+
   /// 是否已配好（能发起请求）。
-  bool get ready => enabled && apiKey.trim().isNotEmpty && model.trim().isNotEmpty && baseUrl.isNotEmpty;
+  bool get ready =>
+      enabled && effectiveApiKey.isNotEmpty && model.trim().isNotEmpty && baseUrl.isNotEmpty;
 
   /// 用于「测试连接」/识图的简况文案。
   String get summary => '${provider.label} · ${model.isEmpty ? '未选模型' : model}';
 
-  AiConfig copy() => AiConfig(
-        enabled: enabled,
-        providerId: providerId,
-        apiKey: apiKey,
-        model: model,
-        customBaseUrl: customBaseUrl,
-      );
+  /// 复制（含调试 Key，便于测试连接时仍能用到临时 Key）。
+  AiConfig copy() {
+    final c = AiConfig(
+      enabled: enabled,
+      providerId: providerId,
+      apiKey: apiKey,
+      model: model,
+      customBaseUrl: customBaseUrl,
+    );
+    return c..debugApiKey = debugApiKey;
+  }
 
   Map<String, dynamic> toJson() => {
         'enabled': enabled,
