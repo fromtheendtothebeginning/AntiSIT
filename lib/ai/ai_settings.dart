@@ -6,7 +6,6 @@ class AiProvider {
   const AiProvider({
     required this.id,
     required this.label,
-    required this.desc,
     required this.baseUrl,
     this.models = const [],
     this.defaultModel = '',
@@ -16,7 +15,6 @@ class AiProvider {
 
   final String id;
   final String label;
-  final String desc;
   final String baseUrl;
   final List<String> models;
   final String defaultModel;
@@ -33,7 +31,6 @@ const List<AiProvider> aiProviders = [
   AiProvider(
     id: 'deepseek',
     label: 'DeepSeek',
-    desc: '知名推理模型；模型以官方 /models 列表为准',
     baseUrl: 'https://api.deepseek.com',
     // 内置列表仅作「拉取失败」兜底：实际以官方 /models 为准
     // （deepseek-v4-flash-vision-exp 将下架，已从内置列表移除）
@@ -45,7 +42,6 @@ const List<AiProvider> aiProviders = [
   AiProvider(
     id: 'opencode-go',
     label: 'OpenCode Go',
-    desc: '聚合订阅，一个 Key 用多家模型',
     baseUrl: 'https://opencode.ai/zen/go/v1',
     models: [
       'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp',
@@ -61,7 +57,6 @@ const List<AiProvider> aiProviders = [
   AiProvider(
     id: 'kimi',
     label: 'Kimi（月之暗面）',
-    desc: 'K3/K2.6 支持读图',
     baseUrl: 'https://api.moonshot.cn/v1',
     models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.7-code-highspeed', 'kimi-k2.6', 'kimi-k2.5'],
     defaultModel: 'kimi-k3',
@@ -69,8 +64,7 @@ const List<AiProvider> aiProviders = [
   ),
   AiProvider(
     id: 'glm',
-    label: 'GLM（智谱）',
-    desc: '识图用 GLM-4V 系列',
+    label: 'GLM（智谱 AI）',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     models: ['glm-5.3', 'glm-5.2', 'glm-5.1', 'glm-4.7', 'glm-4.7-flash', 'glm-4.6', 'glm-4.5-air'],
     defaultModel: 'glm-4.6',
@@ -78,8 +72,7 @@ const List<AiProvider> aiProviders = [
   ),
   AiProvider(
     id: 'qwen',
-    label: 'Qwen（通义）',
-    desc: '百炼兼容模式，qwen-vl 系列读图',
+    label: 'Qwen（通义千问）',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     models: ['qwen3.8-max', 'qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-plus', 'qwen-max', 'qwen-plus', 'qwen-turbo'],
     defaultModel: 'qwen-max',
@@ -88,7 +81,6 @@ const List<AiProvider> aiProviders = [
   AiProvider(
     id: 'gpt',
     label: 'GPT',
-    desc: 'OpenAI 官方，gpt-4o/gpt-5 可读图',
     baseUrl: 'https://api.openai.com/v1',
     models: ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4o'],
     defaultModel: 'gpt-5-mini',
@@ -97,7 +89,6 @@ const List<AiProvider> aiProviders = [
   AiProvider(
     id: 'gemini',
     label: 'Gemini',
-    desc: 'Google（OpenAI 兼容层），原生多模态',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     models: ['gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'],
     defaultModel: 'gemini-2.5-flash',
@@ -106,7 +97,6 @@ const List<AiProvider> aiProviders = [
   AiProvider(
     id: 'mimo',
     label: 'MiMo',
-    desc: '小米',
     baseUrl: 'https://api.xiaomimimo.com/v1',
     models: ['mimo-v2.5', 'mimo-v2.5-pro'],
     defaultModel: 'mimo-v2.5',
@@ -115,7 +105,6 @@ const List<AiProvider> aiProviders = [
   AiProvider(
     id: 'custom',
     label: '自定义',
-    desc: '自填 Base URL 与模型 ID',
     baseUrl: '',
     models: [],
     logo: 'assets/brands/custom.svg',

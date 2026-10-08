@@ -58,7 +58,7 @@ void main() {
       expect(back.providerId, 'glm');
       expect(back.apiKey, 'sk-test');
       expect(back.model, 'glm-4.6');
-      expect(back.summary, 'GLM（智谱） · glm-4.6');
+      expect(back.summary, 'GLM（智谱 AI） · glm-4.6');
     });
 
     test('缺字段/坏数据回落到默认值，不抛异常', () {

@@ -108,7 +108,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           if (cur.isNotEmpty && !models.contains(cur))
             '当前模型 $cur 不在官方列表里（可能已下架或无权限），建议重新选择',
         ],
-        items: [for (final m in models) (value: m, title: m, subtitle: null, leading: null)],
+        items: [for (final m in models) (value: m, title: m, leading: null)],
       ),
     );
     if (picked != null && mounted) setState(() => _model.text = picked);
@@ -205,7 +205,6 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             (
               value: p.id,
               title: p.label,
-              subtitle: p.desc,
               leading: BrandLogo(asset: p.logo, initial: p.label),
             ),
         ],
@@ -262,7 +261,6 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   label: '提供商',
                   value: p.label,
                   prefixIcon: BrandLogo(asset: p.logo, initial: p.label),
-                  helperText: p.desc,
                   onTap: _busy || _fetching ? () {} : _pickProviderDialog,
                 ),
                 const SizedBox(height: 14),
@@ -407,7 +405,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
 // ==================== 统一的选择弹窗（提供商 / 模型共用） ====================
 
-typedef _PickerItem = ({String value, String title, String? subtitle, Widget? leading});
+typedef _PickerItem = ({String value, String title, Widget? leading});
 
 /// 通用选择弹窗：提供商与模型共用同一形态，避免两处入口风格不一致。
 /// 样式走全局：主题对话框底（menuBg + 24 圆角）、Capsule 徽章标题、SemColors 配色。
@@ -457,10 +455,7 @@ class _PickerDialogState extends State<_PickerDialog> {
     final q = raw.toLowerCase();
     final list = q.isEmpty
         ? widget.items
-        : widget.items
-            .where((it) => it.title.toLowerCase().contains(q) ||
-                (it.subtitle ?? '').toLowerCase().contains(q))
-            .toList();
+        : widget.items.where((it) => it.title.toLowerCase().contains(q)).toList();
     // 允许手填时：筛选框里输入的内容若不是现成项，置顶一条「使用 …」
     final custom = widget.allowCustom && raw.isNotEmpty && !widget.items.any((it) => it.value == raw);
 
@@ -535,10 +530,6 @@ class _PickerDialogState extends State<_PickerDialog> {
                                   fontSize: 13,
                                   color: SemColors.textPrimary,
                                   fontWeight: sel ? FontWeight.w700 : FontWeight.w400)),
-                          subtitle: it.subtitle == null
-                              ? null
-                              : Text(it.subtitle!,
-                                  style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                           trailing: sel
                               ? Icon(Icons.check, size: 18, color: SemColors.accent)
                               : null,
