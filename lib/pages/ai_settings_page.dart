@@ -7,8 +7,9 @@ import '../api_error.dart';
 import '../widgets/common.dart';
 
 /// AI 设置：直连模式下 App 自己调用户的 AI 服务，用于
-/// ① 自动识别登录验证码；② 识别校历图片里的调休安排。
-/// 参数与网站在「我的 → AI 设置」里配的是同一套（提供商 / Key / 模型 / 自定义地址）。
+/// ① 自动识别登录验证码（关思考，只要几个字符）；② 识别校历图片里的调休安排。
+/// 模型配置与 index 一致：用 Key 调 `GET {base}/models` 拉真实可用模型，失败回退内置列表；
+/// 识图模型按能力特征筛一遍（选错模型会返回空内容再回退手输，很难排查）。
 class AiSettingsPage extends StatefulWidget {
   const AiSettingsPage({super.key});
 
@@ -23,6 +24,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   final _base = TextEditingController();
 
   bool _busy = false;
+  bool _fetching = false;
+  bool _onlyVision = true;
   String? _msg;
   bool _ok = false;
 
@@ -46,14 +49,23 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   AiConfig get _draft => AiConfig(
         enabled: _c.enabled,
         providerId: _c.providerId,
-        apiKey: _key.text,
         model: _model.text.trim(),
         customBaseUrl: _base.text.trim(),
+        keys: Map<String, String>.from(_c.keys),
       )
         // 调试 Key 不属于本页表单，但要原样带过去——否则保存草稿时会被冲掉
         ..debugApiKey = _c.debugApiKey;
 
+  /// 可选模型：拉取到的（缓存）∪ 注册表内置；默认只显示像支持识图的。
+  List<String> get _modelChoices {
+    final all = AiVision.I.selectableModels();
+    if (!_onlyVision) return all;
+    final vision = all.where(looksLikeVisionModel).toList();
+    return vision.isEmpty ? all : vision;
+  }
+
   Future<void> _save() async {
+    _c.setApiKey(_key.text);
     await AiVision.I.save(_draft);
     if (!mounted) return;
     setState(() {
@@ -62,26 +74,19 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
-  Future<void> _test() async {
+  Future<void> _fetchModels() async {
+    _c.setApiKey(_key.text);
     setState(() {
-      _busy = true;
+      _fetching = true;
       _msg = null;
     });
     try {
-      // 测试用当前草稿值（不必先保存）
-      final saved = AiVision.I.config;
-      await AiVision.I.save(_draft);
-      try {
-        final out = await AiVision.I.testConnection();
-        if (mounted) {
-          setState(() {
-            _msg = '连接成功，模型回复：${out.length > 40 ? '${out.substring(0, 40)}…' : out}';
-            _ok = true;
-          });
-        }
-      } finally {
-        // 测试只验证参数，不替用户决定是否启用
-        await AiVision.I.save(saved);
+      final list = await AiVision.I.listModels(cfg: _draft);
+      if (mounted) {
+        setState(() {
+          _msg = '拉取到 ${list.length} 个可用模型';
+          _ok = true;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -91,6 +96,36 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         });
       }
     } finally {
+      if (mounted) setState(() => _fetching = false);
+    }
+  }
+
+  Future<void> _test() async {
+    _c.setApiKey(_key.text);
+    setState(() {
+      _busy = true;
+      _msg = null;
+    });
+    final saved = AiVision.I.config;
+    try {
+      await AiVision.I.save(_draft);
+      final out = await AiVision.I.testConnection();
+      if (mounted) {
+        setState(() {
+          _msg = '连接成功，模型回复：${out.length > 40 ? '${out.substring(0, 40)}…' : out}';
+          _ok = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _msg = e is ApiError ? e.message : e.toString();
+          _ok = false;
+        });
+      }
+    } finally {
+      // 测试只验证参数，不替用户决定是否启用
+      await AiVision.I.save(saved);
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -113,8 +148,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('临时 Key 只存本机、不会被提交到仓库；release 构建完全不读它。'
-                '清空即可移除。',
+            Text('临时 Key 只存本机、不会被提交到仓库；release 构建完全不读它。清空即可移除。',
                 style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.5)),
             const SizedBox(height: 12),
             TextField(
@@ -146,11 +180,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
   void _pickProvider(String id) {
     if (id == _c.providerId) return; // 重选当前提供商不该把已选好的模型重置掉
+    _c.setApiKey(_key.text); // 先记住当前提供商的 Key
     final p = aiProviderById(id)!;
     setState(() {
       _c.providerId = id;
-      // 换提供商时把模型切到该提供商默认值，避免留着上一个提供商的模型名
-      _model.text = p.defaultModel;
+      _key.text = _c.apiKey; // 切到该提供商自己的 Key
+      _model.text = p.defaultModel; // 换提供商时模型也用它的默认值
+      _base.text = _c.customBaseUrl;
       _msg = null;
     });
   }
@@ -158,6 +194,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final p = _c.provider;
+    final choices = _modelChoices;
     return Scaffold(
       appBar: AppBar(title: const Text('AI 设置')),
       body: ListView(
@@ -176,10 +213,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   value: _c.enabled,
                   onChanged: (v) => setState(() => _c.enabled = v),
                 ),
-                Text(
-                  'Key 只保存在本机，直连模式下由 App 直接调用你填的 AI 服务（不经任何中转）。',
-                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
-                ),
+                Text('Key 只保存在本机，直连模式下由 App 直接调用你填的 AI 服务（不经任何中转）。',
+                    style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6)),
               ],
             ),
           ),
@@ -193,57 +228,102 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   value: _c.providerId,
                   items: [
                     for (final it in aiProviders)
-                      DropdownMenuItem(
-                        value: it.id,
-                        child: Text('${it.label} · ${it.desc}',
-                            overflow: TextOverflow.ellipsis),
-                      ),
+                      DropdownMenuItem(value: it.id, child: Text(it.label)),
                   ],
                   onChanged: (v) => v == null ? null : _pickProvider(v),
                 ),
+                const SizedBox(height: 4),
+                Text(p.desc, style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                 const SizedBox(height: 14),
                 GlassField(
-                  label: 'API Key',
+                  label: 'API Key（按提供商分别保存）',
                   controller: _key,
                   obscureText: true,
                   prefixIcon: const Icon(Icons.key_outlined),
-                  hintText: '粘贴你的 API Key',
+                  hintText: '粘贴 ${p.label} 的 API Key',
+                ),
+                if (p.isCustom) ...[
+                  const SizedBox(height: 14),
+                  GlassField(
+                    label: 'Base URL（OpenAI 兼容地址，必填）',
+                    controller: _base,
+                    prefixIcon: const Icon(Icons.link_outlined),
+                    hintText: 'https://your-host/v1',
+                  ),
+                ],
+                if (p.docs.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  SelectableText('申请 Key：${p.docs}',
+                      style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _fetching ? null : _fetchModels,
+                      icon: _fetching
+                          ? const SizedBox(
+                              width: 14, height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.download_outlined, size: 18),
+                      label: Text(_fetching ? '拉取中…' : '获取可用模型'),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                          '用当前 Key 调 ${p.label} 的 /models 拉取；失败则用内置列表',
+                          style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 14),
-                GlassDropdown<String>(
-                  label: p.models.isEmpty ? '模型（自定义提供商请直接填）' : '识图模型',
-                  value: p.models.contains(_model.text) ? _model.text : null,
-                  items: [
-                    for (final m in p.models) DropdownMenuItem(value: m, child: Text(m)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GlassDropdown<String>(
+                        label: '识图模型',
+                        value: choices.contains(_model.text) ? _model.text : null,
+                        items: [
+                          for (final m in choices) DropdownMenuItem(value: m, child: Text(m)),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _model.text = v);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('只看识图', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                        Switch(
+                          value: _onlyVision,
+                          onChanged: (v) => setState(() => _onlyVision = v),
+                        ),
+                      ],
+                    ),
                   ],
-                  onChanged: (v) {
-                    if (v != null) setState(() => _model.text = v);
-                  },
                 ),
                 const SizedBox(height: 10),
                 GlassField(
-                  label: '模型 ID（可手填，如 glm-4.6 / gpt-4o）',
+                  label: '模型 ID（也可手填，列表中未出现时用这个）',
                   controller: _model,
                   prefixIcon: const Icon(Icons.memory_outlined),
                 ),
-                if (p.models.isEmpty) ...[
+                if (!looksLikeVisionModel(_model.text) && _model.text.trim().isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text('该提供商没有内置模型列表，请直接填模型 ID。',
-                      style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                ],
-                const SizedBox(height: 14),
-                GlassField(
-                  label: p.needsBaseUrl
-                      ? 'Base URL（必填，OpenAI 兼容地址）'
-                      : 'Base URL（留空用默认：${p.baseUrl}）',
-                  controller: _base,
-                  prefixIcon: const Icon(Icons.link_outlined),
-                  hintText: p.baseUrl.isEmpty ? 'https://your-host/v1' : p.baseUrl,
-                ),
-                if (p.docs.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  SelectableText('申请 Key：${p.docs}',
-                      style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 14, color: SemColors.warning),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text('这个模型名不像支持读图的模型：识图可能返回空内容（那就回退手输）。'
+                            '建议选名字里带 vision / vl / 4o / gemini / gpt-5 / kimi 的。',
+                            style: TextStyle(fontSize: 11, color: SemColors.warning, height: 1.5)),
+                      ),
+                    ],
+                  ),
                 ],
                 // 开发期临时 Key：只写本机 prefs，不进仓库；仅 debug 构建显示
                 if (kDebugMode) ...[
@@ -267,7 +347,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                     ],
                   ),
                 ],
-                const SizedBox(height: 14),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     OutlinedButton.icon(
@@ -280,10 +360,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                       label: const Text('测试连接'),
                     ),
                     const SizedBox(width: 10),
-                    FilledButton(
-                      onPressed: _busy ? null : _save,
-                      child: const Text('保存'),
-                    ),
+                    FilledButton(onPressed: _busy ? null : _save, child: const Text('保存')),
                   ],
                 ),
                 if (_msg != null) ...[
@@ -297,7 +374,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                     ),
                     child: Text(_msg!,
                         style: TextStyle(
-                            fontSize: 12, color: _ok ? SemColors.success : SemColors.danger, height: 1.5)),
+                            fontSize: 12,
+                            color: _ok ? SemColors.success : SemColors.danger,
+                            height: 1.5)),
                   ),
                 ],
               ],
@@ -310,9 +389,10 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               children: [
                 Text('能做些什么', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
-                _bullet('自动识别验证码：直连登录教务/学工需要验证码时，先让 AI 读图；识别失败或没配 AI 就回退到手输。'),
+                _bullet('自动识别验证码：直连登录教务/学工需要验证码时，先让 AI 读图（已关闭思考，只取几个字符）；'
+                    '识别失败或没配 AI 就回退到手输。'),
                 _bullet('识别校历调休：在课表「调休设置」里选一张校历截图，AI 提取放假 / 调休上课日并写入规则。'),
-                _bullet('识别效果取决于模型是否支持读图；推理型模型建议开启思考更稳，但会慢一些。'),
+                _bullet('必须选支持读图的模型；换提供商后 Key 各自独立保存，不用重填。'),
               ],
             ),
           ),

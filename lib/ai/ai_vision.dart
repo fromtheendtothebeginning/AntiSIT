@@ -10,19 +10,22 @@ import 'ai_settings.dart';
 /// AI 识图（多模态对话）：直连模式下 App 自己调用户的 AI 服务，
 /// 用于自动识别登录验证码、识别校历图片里的调休安排。
 ///
-/// 请求形状与 index 后端 `deps.py: ai_vision_text` 对齐：
-/// - `openai` → POST {baseUrl}/chat/completions，Bearer 鉴权，content 里放 image_url(data:)
-/// - `anthropic` → POST {baseUrl}/v1/messages，x-api-key 鉴权，content 里放 base64 image
+/// 与 index 后端 `deps.py: ai_vision_text` 对齐（统一走 OpenAI 兼容接口）：
+/// - 对话：POST `{base}/chat/completions`，Bearer 鉴权，content 里放 image_url(data:)
+/// - 模型列表：GET `{base}/models`（用当前 Key 拉真实可用模型，失败回退注册表内置列表）
+/// - 关闭思考：按提供商写各自的「off」参数（见 [_thinkingOffPayload]，照抄 aisettings.apply_thinking）
 class AiVision {
   AiVision._();
   static final AiVision I = AiVision._();
 
   static const _spKey = 'ai_config';
+  static const _modelsCacheKey = 'ai_models_cache';
 
   /// 开发期临时 API Key 的本机存储键（不进仓库；仅 debug 构建读取）。
   static const _debugKeyPref = 'ai_debug_api_key';
 
   AiConfig _config = AiConfig();
+  final Map<String, List<String>> _modelsCache = {};
   bool _loaded = false;
 
   AiConfig get config => _config;
@@ -33,6 +36,7 @@ class AiVision {
     _config = AiConfig.decode(sp.getString(_spKey));
     // 开发期临时 Key：只存在本机 prefs、不进仓库，且仅 debug 构建读取。
     if (kDebugMode) _config.debugApiKey = sp.getString(_debugKeyPref) ?? '';
+    _loadModelsCache(sp);
     _loaded = true;
     return _config;
   }
@@ -50,7 +54,6 @@ class AiVision {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_spKey, AiConfig.encode(c)); // 调试 Key 不参与持久化 JSON
     if (kDebugMode) {
-      // 调试 Key 单独存本机：写/清都只在 debug 构建里做
       final k = c.debugApiKey.trim();
       if (k.isEmpty) {
         await sp.remove(_debugKeyPref);
@@ -63,7 +66,80 @@ class AiVision {
   /// 识图是否可用（已开启且参数齐全）。
   bool get available => _config.ready;
 
+  // ==================== 模型列表 ====================
+
+  void _loadModelsCache(SharedPreferences sp) {
+    final raw = sp.getString(_modelsCacheKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final j = jsonDecode(raw);
+      if (j is Map) {
+        j.forEach((k, v) {
+          if (v is List) _modelsCache[k.toString()] = v.map((e) => e.toString()).toList();
+        });
+      }
+    } catch (_) {}
+  }
+
+  /// 某提供商已缓存的模型列表（上次拉取成功的），没有则空。
+  List<String> cachedModels(String providerId) => _modelsCache[providerId] ?? const [];
+
+  Future<void> _saveModelsCache(String providerId, List<String> models) async {
+    _modelsCache[providerId] = models;
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_modelsCacheKey, jsonEncode(_modelsCache));
+  }
+
+  /// 用当前 Key 调 `GET {base}/models` 拉真实可用模型；失败抛 ApiError。
+  /// index 的实现失败时会回退注册表内置列表，这里把回退交给调用方（便于给出错误提示）。
+  Future<List<String>> listModels({AiConfig? cfg}) async {
+    await load();
+    final c = cfg ?? _config;
+    if (c.effectiveApiKey.isEmpty) throw ApiError('请先填写 API Key');
+    if (c.baseUrl.isEmpty) throw ApiError('请先填写 Base URL');
+    final url = '${c.baseUrl.replaceAll(RegExp(r'/+$'), '')}/models';
+    http.Response resp;
+    try {
+      resp = await http.get(Uri.parse(url), headers: {
+        'Authorization': 'Bearer ${c.effectiveApiKey}',
+      }).timeout(const Duration(seconds: 20));
+    } catch (e) {
+      throw ApiError('拉取模型列表失败：$e');
+    }
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      final detail = utf8.decode(resp.bodyBytes, allowMalformed: true);
+      throw ApiError('拉取模型列表失败（HTTP ${resp.statusCode}）：'
+          '${detail.length > 160 ? detail.substring(0, 160) : detail}');
+    }
+    final ids = <String>[];
+    try {
+      final j = jsonDecode(utf8.decode(resp.bodyBytes, allowMalformed: true));
+      final data = (j is Map) ? j['data'] : null;
+      if (data is List) {
+        for (final m in data) {
+          final id = (m is Map) ? '${m['id'] ?? ''}'.trim() : '';
+          if (id.isNotEmpty) ids.add(id);
+        }
+      }
+    } catch (_) {}
+    if (ids.isEmpty) throw ApiError('该提供商未返回可用模型（或返回格式不识别）');
+    ids.sort();
+    await _saveModelsCache(c.providerId, ids);
+    return ids;
+  }
+
+  /// 当前可选的模型：拉取到的（缓存）∪ 注册表内置，去重排序。
+  List<String> selectableModels() {
+    final p = _config.provider;
+    final all = <String>{...cachedModels(p.id), ...p.models};
+    final list = all.where((m) => m.trim().isNotEmpty).toList()..sort();
+    return list;
+  }
+
+  // ==================== 识图 ====================
+
   /// 让模型读图并返回文本。失败抛 ApiError（调用方决定是否降级）。
+  /// [thinkingOff] 为 true 时显式关闭思考（验证码识别用：只要短答案，思考纯属浪费）。
   Future<String> describeImage(
     Uint8List image, {
     required String prompt,
@@ -71,17 +147,18 @@ class AiVision {
     String mime = 'image/png',
     Duration timeout = const Duration(seconds: 60),
     int maxTokens = 1024,
+    bool thinkingOff = false,
   }) async {
     await load();
     final c = _config;
     if (!c.ready) {
       throw ApiError('尚未配置识图模型：请在「我的 → AI 设置」填写 API Key 与模型');
     }
-    final url = _endpoint(c);
-    final body = _payload(c, prompt, system, image, mime, maxTokens);
+    final url = '${c.baseUrl.replaceAll(RegExp(r'/+$'), '')}/chat/completions';
+    final body = _payload(c, prompt, system, image, mime, maxTokens, thinkingOff);
     final headers = {
       'Content-Type': 'application/json',
-      ..._authHeaders(c),
+      'Authorization': 'Bearer ${c.effectiveApiKey}',
     };
 
     http.Response resp;
@@ -94,53 +171,32 @@ class AiVision {
       final detail = utf8.decode(resp.bodyBytes, allowMalformed: true);
       throw ApiError('AI 返回 ${resp.statusCode}：${detail.length > 200 ? detail.substring(0, 200) : detail}');
     }
-    final text = _extractText(c, _decode(resp.bodyBytes));
+    final text = _extractText(_decode(resp.bodyBytes));
     if (text.trim().isEmpty) throw ApiError('AI 未返回内容（模型可能不支持识图）');
     return text.trim();
   }
 
   /// 「测试连接」：发一张极小的图问一句，确认 Key/模型/地址都通。
-  /// 未填 Key 但存在调试 Key 时用调试 Key 试（开发期临时 Key 的便利）。
   Future<String> testConnection() async {
     await load();
     final probe = _config.copy()
       ..enabled = true
-      ..apiKey = _config.effectiveApiKey;
-    if (probe.effectiveApiKey.isEmpty) throw ApiError('请先填写 API Key');
-    if (probe.model.trim().isEmpty) throw ApiError('请先选择或填写模型');
-    if (probe.baseUrl.isEmpty) throw ApiError('请先填写 Base URL');
+      ..setApiKey(_config.effectiveApiKey);
     final saved = _config;
     _config = probe;
     try {
-      final out = await describeImage(
+      return await describeImage(
         _tinyPng,
         prompt: '请只回复两个字：成功',
         timeout: const Duration(seconds: 30),
         maxTokens: 256,
       );
-      return out;
     } finally {
       _config = saved;
     }
   }
 
   // ==================== 请求构造 ====================
-
-  String _endpoint(AiConfig c) {
-    final base = c.baseUrl.replaceAll(RegExp(r'/+$'), '');
-    if (c.provider.api == 'anthropic') {
-      // Anthropic 的 base 不含 /v1，路径固定 /v1/messages
-      return base.endsWith('/v1') ? '$base/messages' : '$base/v1/messages';
-    }
-    return '$base/chat/completions';
-  }
-
-  Map<String, String> _authHeaders(AiConfig c) => c.provider.api == 'anthropic'
-      ? {
-          'x-api-key': c.effectiveApiKey,
-          'anthropic-version': '2023-06-01',
-        }
-      : {'Authorization': 'Bearer ${c.effectiveApiKey}'};
 
   Map<String, dynamic> _payload(
     AiConfig c,
@@ -149,34 +205,15 @@ class AiVision {
     Uint8List image,
     String mime,
     int maxTokens,
+    bool thinkingOff,
   ) {
     final b64 = base64Encode(image);
-    if (c.provider.api == 'anthropic') {
-      return {
-        'model': c.model.trim(),
-        'max_tokens': maxTokens,
-        'messages': [
-          {
-            'role': 'user',
-            'content': [
-              {
-                'type': 'image',
-                'source': {'type': 'base64', 'media_type': mime, 'data': b64},
-              },
-              {'type': 'text', 'text': prompt},
-            ],
-          }
-        ],
-        if (system != null && system.isNotEmpty) 'system': system,
-      };
-    }
-    return {
+    final payload = <String, dynamic>{
       'model': c.model.trim(),
       'max_tokens': maxTokens,
       'stream': false,
       'messages': [
-        if (system != null && system.isNotEmpty)
-          {'role': 'system', 'content': system},
+        if (system != null && system.isNotEmpty) {'role': 'system', 'content': system},
         {
           'role': 'user',
           'content': [
@@ -189,6 +226,35 @@ class AiVision {
         },
       ],
     };
+    if (thinkingOff) _applyThinkingOff(payload, c.providerId, c.model.trim());
+    return payload;
+  }
+
+  /// 关闭思考：照抄 index `aisettings.apply_thinking(level="off")` 的分厂商写法。
+  /// 未识别的提供商不加参数（乱加会 400）。
+  static void _applyThinkingOff(Map<String, dynamic> payload, String providerId, String model) {
+    final pid = providerId.toLowerCase();
+    switch (pid) {
+      case 'deepseek':
+        payload['thinking'] = {'type': 'disabled'};
+      case 'kimi':
+        if (model.startsWith('kimi-k3')) {
+          payload['reasoning_effort'] = 'none';
+        } else {
+          payload['thinking'] = {'type': 'disabled'};
+        }
+      case 'qwen':
+      case 'dashscope':
+        payload['enable_thinking'] = false;
+      case 'gpt':
+      case 'openai':
+      case 'gemini':
+      case 'google':
+      case 'mimo':
+        payload['reasoning_effort'] = 'none';
+      default:
+        break; // opencode-go / glm / custom：格式不确定，不加
+    }
   }
 
   dynamic _decode(Uint8List bytes) {
@@ -199,27 +265,15 @@ class AiVision {
     }
   }
 
-  /// 取模型输出文本：OpenAI `/chat/completions` 与 Anthropic `/messages` 分别解析。
-  String _extractText(AiConfig c, dynamic j) {
+  /// 取模型输出文本（OpenAI 兼容格式；兼容分段数组）。
+  String _extractText(dynamic j) {
     if (j is! Map) return '';
-    if (c.provider.api == 'anthropic') {
-      final content = j['content'];
-      if (content is List) {
-        final buf = StringBuffer();
-        for (final part in content) {
-          if (part is Map && part['type'] == 'text') buf.write(part['text'] ?? '');
-        }
-        return buf.toString();
-      }
-      return '';
-    }
     final choices = j['choices'];
     if (choices is List && choices.isNotEmpty) {
       final msg = (choices.first as Map)['message'];
       if (msg is Map) {
         final content = msg['content'];
         if (content is String) return content;
-        // 有的兼容层返回分段数组
         if (content is List) {
           final buf = StringBuffer();
           for (final part in content) {

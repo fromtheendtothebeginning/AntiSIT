@@ -13,8 +13,10 @@ Future<String?> solveCaptcha(Uint8List image) async {
       image,
       prompt: '请只输出图片中的验证码字符本身（区分大小写；不要空格、标点、引号，也不要任何解释或说明）。',
       timeout: const Duration(seconds: 30),
-      // 推理型视觉模型会先花 token 思考，太小会被 reasoning 吃光导致 content 为空
-      maxTokens: 1024,
+      // 验证码只要几个字符：显式关掉思考，省时间也省 token
+      // （思考型模型默认会先生成一大段推理，既慢又可能把 max_tokens 吃光）
+      thinkingOff: true,
+      maxTokens: 512,
     );
     final cleaned = text.replaceAll(RegExp(r'^["\s]+|["\s]+$'), '');
     return cleaned.isEmpty ? null : cleaned;

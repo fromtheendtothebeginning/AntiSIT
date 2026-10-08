@@ -28,8 +28,30 @@ void main() {
 
     test('按 id 取提供商；未知 id 取不到（由 AiConfig 兜底）', () {
       expect(aiProviderById('deepseek')?.label, 'DeepSeek');
-      expect(aiProviderById('claude')?.api, 'anthropic', reason: 'Claude 走 /v1/messages');
       expect(aiProviderById('nope'), isNull);
+    });
+
+    test('已移除 Claude 提供商（统一走 OpenAI 兼容接口）', () {
+      expect(aiProviderById('claude'), isNull);
+      expect(aiProviders.any((p) => p.id == 'claude'), isFalse);
+    });
+
+    test('识图模型特征识别（照 index 的 VISION_MODEL_PATTERNS）', () {
+      expect(looksLikeVisionModel('deepseek-v4-flash-vision-exp'), isTrue);
+      expect(looksLikeVisionModel('glm-4v'), isTrue);
+      expect(looksLikeVisionModel('gpt-4o'), isTrue);
+      expect(looksLikeVisionModel('gemini-2.5-flash'), isTrue);
+      expect(looksLikeVisionModel('kimi-k3'), isTrue);
+      expect(looksLikeVisionModel('deepseek-v4-flash'), isFalse, reason: '不带 vision 的不能识图');
+      expect(looksLikeVisionModel('qwen-turbo'), isFalse);
+    });
+
+    test('自定义提供商才需要用户填 Base URL', () {
+      expect(aiProviderById('custom')!.isCustom, isTrue);
+      for (final p in aiProviders.where((p) => p.id != 'custom')) {
+        expect(p.isCustom, isFalse, reason: '${p.id} 用注册表地址，界面不给填');
+        expect(p.baseUrl, isNotEmpty);
+      }
     });
   });
 
@@ -38,10 +60,9 @@ void main() {
       final c = AiConfig(
         enabled: true,
         providerId: 'glm',
-        apiKey: 'sk-test',
         model: 'glm-4.6',
         customBaseUrl: 'https://proxy.example/v1',
-      );
+      )..setApiKey('sk-test');
       final back = AiConfig.decode(AiConfig.encode(c));
       expect(back.enabled, isTrue);
       expect(back.providerId, 'glm');
@@ -60,16 +81,17 @@ void main() {
 
     test('自定义 Base URL 覆盖提供商默认；ready 需四项齐备', () {
       final c = AiConfig(
-          enabled: true, providerId: 'custom', apiKey: 'k', model: 'm',
-          customBaseUrl: 'https://my.host/v1');
+          enabled: true, providerId: 'custom', model: 'm',
+          customBaseUrl: 'https://my.host/v1')..setApiKey('k');
       expect(c.baseUrl, 'https://my.host/v1');
       expect(c.ready, isTrue);
 
       expect((c.copy()..enabled = false).ready, isFalse, reason: '没开启就不算就绪');
-      expect((c.copy()..apiKey = '  ').ready, isFalse, reason: '没 Key 不算就绪');
+      final noKey = c.copy()..keys = {};
+      expect(noKey.ready, isFalse, reason: '没 Key 不算就绪');
       expect((c.copy()..model = '').ready, isFalse, reason: '没模型不算就绪');
 
-      final noBase = AiConfig(enabled: true, providerId: 'custom', apiKey: 'k', model: 'm');
+      final noBase = AiConfig(enabled: true, providerId: 'custom', model: 'm')..setApiKey('k');
       expect(noBase.ready, isFalse, reason: '自定义提供商没填地址不算就绪');
     });
   });
@@ -87,12 +109,9 @@ void main() {
     });
 
     test('用户自己填的 Key 优先于调试 Key', () {
-      final c = AiConfig(
-        enabled: true,
-        providerId: 'deepseek',
-        apiKey: 'sk-mine',
-        model: 'deepseek-v4-flash',
-      )..debugApiKey = 'sk-debug';
+      final c = AiConfig(enabled: true, providerId: 'deepseek', model: 'deepseek-v4-flash')
+        ..setApiKey('sk-mine')
+        ..debugApiKey = 'sk-debug';
       expect(c.effectiveApiKey, 'sk-mine');
       // 调试 Key 不参与 JSON 持久化（避免随手被同步/导出）
       expect(AiConfig.encode(c), isNot(contains('sk-debug')));
