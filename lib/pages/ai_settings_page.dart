@@ -8,8 +8,8 @@ import '../widgets/common.dart';
 
 /// AI 设置：直连模式下 App 自己调用户的 AI 服务，用于
 /// ① 自动识别登录验证码（关思考，只要几个字符）；② 识别校历图片里的调休安排。
-/// 模型配置与 index 一致：用 Key 调 `GET {base}/models` 拉真实可用模型，失败回退内置列表；
-/// 识图模型按能力特征筛一遍（选错模型会返回空内容再回退手输，很难排查）。
+/// 模型选择：用 Key 调 `GET {base}/models` 拉真实可用模型（失败回退「缓存 ∪ 内置列表」），
+/// 再弹窗让用户挑一个——不按模型名猜能否识图（实测 deepseek-flash 能识图但没有 vision 字样）。
 class AiSettingsPage extends StatefulWidget {
   const AiSettingsPage({super.key});
 
@@ -25,7 +25,6 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
   bool _busy = false;
   bool _fetching = false;
-  bool _onlyVision = true;
   String? _msg;
   bool _ok = false;
 
@@ -34,7 +33,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     super.initState();
     _c = AiVision.I.config.copy();
     _key.text = _c.apiKey;
-    _model.text = _c.model;
+    // 还没选过模型时先填该提供商的默认值；用户可随时点「选择模型」换成别的
+    _model.text = _c.model.isNotEmpty ? _c.model : _c.provider.defaultModel;
     _base.text = _c.customBaseUrl;
   }
 
@@ -56,14 +56,6 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         // 调试 Key 不属于本页表单，但要原样带过去——否则保存草稿时会被冲掉
         ..debugApiKey = _c.debugApiKey;
 
-  /// 可选模型：拉取到的（缓存）∪ 注册表内置；默认只显示像支持识图的。
-  List<String> get _modelChoices {
-    final all = AiVision.I.selectableModels();
-    if (!_onlyVision) return all;
-    final vision = all.where(looksLikeVisionModel).toList();
-    return vision.isEmpty ? all : vision;
-  }
-
   Future<void> _save() async {
     _c.setApiKey(_key.text);
     await AiVision.I.save(_draft);
@@ -74,30 +66,44 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
-  Future<void> _fetchModels() async {
+  /// 选择模型：先用当前 Key 调官方 `/models` 拉真实可用列表，再弹窗让用户挑一个。
+  /// 拉取失败就退回「上次缓存 ∪ 注册表内置」，并在弹窗里说明原因——不让用户卡住。
+  /// 不用「按模型名猜能否识图」那套：实测 deepseek-flash 能识图但名字里没有 vision，
+  /// 猜错反而把能用的模型筛掉了。
+  Future<void> _pickModel() async {
     _c.setApiKey(_key.text);
     setState(() {
       _fetching = true;
       _msg = null;
     });
+    List<String> models = const [];
+    String? fetchError;
     try {
-      final list = await AiVision.I.listModels(cfg: _draft);
-      if (mounted) {
-        setState(() {
-          _msg = '拉取到 ${list.length} 个可用模型';
-          _ok = true;
-        });
-      }
+      models = await AiVision.I.listModels(cfg: _draft);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _msg = e is ApiError ? e.message : e.toString();
-          _ok = false;
-        });
-      }
+      fetchError = e is ApiError ? e.message : '$e';
+      models = AiVision.I.selectableModels(); // 缓存 ∪ 内置
     } finally {
       if (mounted) setState(() => _fetching = false);
     }
+    if (!mounted) return;
+    if (models.isEmpty) {
+      setState(() {
+        _msg = fetchError ?? '该提供商没有返回可用模型，请检查 Key / Base URL';
+        _ok = false;
+      });
+      return;
+    }
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => _ModelPickerDialog(
+        models: models,
+        current: _model.text.trim(),
+        providerLabel: _c.provider.label,
+        fetchError: fetchError,
+      ),
+    );
+    if (picked != null && mounted) setState(() => _model.text = picked);
   }
 
   Future<void> _test() async {
@@ -194,7 +200,6 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final p = _c.provider;
-    final choices = _modelChoices;
     return Scaffold(
       appBar: AppBar(title: const Text('AI 设置')),
       body: ListView(
@@ -260,70 +265,31 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 Row(
                   children: [
                     OutlinedButton.icon(
-                      onPressed: _fetching ? null : _fetchModels,
+                      onPressed: _fetching ? null : _pickModel,
                       icon: _fetching
                           ? const SizedBox(
                               width: 14, height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.download_outlined, size: 18),
-                      label: Text(_fetching ? '拉取中…' : '获取可用模型'),
+                          : const Icon(Icons.list_alt_outlined, size: 18),
+                      label: Text(_fetching ? '拉取中…' : '选择模型'),
                     ),
                     const SizedBox(width: 8),
                     Flexible(
-                      child: Text(
-                          '用当前 Key 调 ${p.label} 的 /models 拉取；失败则用内置列表',
+                      child: Text('用当前 Key 调 ${p.label} 的 /models 拉取列表后选择',
                           style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GlassDropdown<String>(
-                        label: '识图模型',
-                        value: choices.contains(_model.text) ? _model.text : null,
-                        items: [
-                          for (final m in choices) DropdownMenuItem(value: m, child: Text(m)),
-                        ],
-                        onChanged: (v) {
-                          if (v != null) setState(() => _model.text = v);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('只看识图', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                        Switch(
-                          value: _onlyVision,
-                          onChanged: (v) => setState(() => _onlyVision = v),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 GlassField(
-                  label: '模型 ID（也可手填，列表中未出现时用这个）',
+                  label: '模型 ID（上面选完会填到这里；也可手填）',
                   controller: _model,
                   prefixIcon: const Icon(Icons.memory_outlined),
                 ),
-                if (!looksLikeVisionModel(_model.text) && _model.text.trim().isNotEmpty) ...[
+                if (_model.text.trim().isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.warning_amber_rounded, size: 14, color: SemColors.warning),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text('这个模型名不像支持读图的模型：识图可能返回空内容（那就回退手输）。'
-                            '建议选名字里带 vision / vl / 4o / gemini / gpt-5 / kimi 的。',
-                            style: TextStyle(fontSize: 11, color: SemColors.warning, height: 1.5)),
-                      ),
-                    ],
-                  ),
+                  Text('当前模型：${_model.text.trim()}',
+                      style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary)),
                 ],
                 // 开发期临时 Key：只写本机 prefs，不进仓库；仅 debug 构建显示
                 if (kDebugMode) ...[
@@ -419,5 +385,132 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             ),
           ],
         ),
+      );
+}
+
+
+/// 模型选择弹窗：列出官方 `/models` 拉到的模型（拉取失败则是缓存 ∪ 内置兜底列表）。
+/// 顶部带筛选框——OpenAI 这类提供商的列表可能上百条，纯滚动不好找。
+/// 样式跟全局一致：用主题里的对话框底（menuBg + 24 圆角），配色一律走 SemColors。
+class _ModelPickerDialog extends StatefulWidget {
+  const _ModelPickerDialog({
+    required this.models,
+    required this.current,
+    required this.providerLabel,
+    this.fetchError,
+  });
+
+  final List<String> models;
+  final String current;
+  final String providerLabel;
+  final String? fetchError;
+
+  @override
+  State<_ModelPickerDialog> createState() => _ModelPickerDialogState();
+}
+
+class _ModelPickerDialogState extends State<_ModelPickerDialog> {
+  final _filter = TextEditingController();
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 官方列表为准。当前选中的模型若不在列表里（如已下架 / 该 Key 无权限），
+    // 单独提示一句——既不误导，也不硬塞回列表。
+    final currentMissing =
+        widget.current.isNotEmpty && !widget.models.contains(widget.current);
+    final q = _filter.text.trim().toLowerCase();
+    final list = q.isEmpty
+        ? widget.models
+        : widget.models.where((m) => m.toLowerCase().contains(q)).toList();
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          const Expanded(child: Text('选择模型')),
+          Capsule(widget.providerLabel, color: SemColors.accent),
+        ],
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+      content: SizedBox(
+        width: 380,
+        height: 400,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.fetchError != null) ...[
+              _note('拉取官方列表失败，下面是缓存 + 内置兜底列表：${widget.fetchError}',
+                  SemColors.warning),
+              const SizedBox(height: 10),
+            ],
+            if (currentMissing) ...[
+              _note('当前模型 ${widget.current} 不在官方列表里（可能已下架或无权限），建议重新选择',
+                  SemColors.warning),
+              const SizedBox(height: 10),
+            ],
+            TextField(
+              controller: _filter,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(fontSize: 13),
+              decoration: const InputDecoration(
+                hintText: '筛选模型名…',
+                isDense: true,
+                prefixIcon: Icon(Icons.search, size: 18),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              q.isEmpty ? '共 ${list.length} 个模型' : '匹配 ${list.length} / ${widget.models.length}',
+              style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+            ),
+            const SizedBox(height: 2),
+            Expanded(
+              child: list.isEmpty
+                  ? Center(
+                      child: Text('没有匹配的模型',
+                          style: TextStyle(fontSize: 13, color: SemColors.textMuted)))
+                  : ListView.builder(
+                      itemCount: list.length,
+                      itemBuilder: (_, i) {
+                        final m = list[i];
+                        final sel = m == widget.current;
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(m,
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color: SemColors.textPrimary,
+                                  fontWeight: sel ? FontWeight.w700 : FontWeight.w400)),
+                          trailing: sel
+                              ? Icon(Icons.check, size: 18, color: SemColors.accent)
+                              : null,
+                          onTap: () => Navigator.pop(context, m),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+      ],
+    );
+  }
+
+  Widget _note(String text, Color color) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(text, style: TextStyle(fontSize: 11, color: color, height: 1.5)),
       );
 }

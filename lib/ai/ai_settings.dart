@@ -29,10 +29,12 @@ const List<AiProvider> aiProviders = [
   AiProvider(
     id: 'deepseek',
     label: 'DeepSeek',
-    desc: '知名推理模型，Vision 需选 *-vision-exp',
+    desc: '知名推理模型；模型以官方 /models 列表为准',
     baseUrl: 'https://api.deepseek.com',
-    models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp'],
-    defaultModel: 'deepseek-v4-flash',
+    // 内置列表仅作「拉取失败」兜底：实际以官方 /models 为准
+    // （deepseek-v4-flash-vision-exp 将下架，已从内置列表移除）
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
+    defaultModel: 'deepseek-flash',
     docs: 'https://platform.deepseek.com/api_keys',
   ),
   AiProvider(
@@ -113,21 +115,6 @@ AiProvider? aiProviderById(String id) {
     if (p.id == id) return p;
   }
   return null;
-}
-
-/// 可读图的模型特征（照抄 index `backend/constants.py: VISION_MODEL_PATTERNS`）。
-/// 用于把模型列表按「能不能识图」筛一遍——选错模型会返回空内容再回退手输，很难排查。
-const List<String> visionModelPatterns = [
-  'vision', 'multimodal', 'gemini', 'gpt-4o', 'gpt-4-vision', 'gpt-5',
-  'grok', 'minimax-m3', 'minimax-vl', 'kimi', 'mimo',
-  'qwen3.8', 'qwen3.7',
-  'qwen3.5-omni', 'qwen-vl', 'qwen2.5-vl', '-vl', '4v', 'internvl',
-  'glm-5v', 'glm-4v', 'glm-ocr',
-];
-
-bool looksLikeVisionModel(String modelId) {
-  final m = modelId.toLowerCase();
-  return visionModelPatterns.any((p) => m.contains(p.toLowerCase()));
 }
 
 /// AI 配置（本机保存）：统一走 OpenAI 兼容接口。

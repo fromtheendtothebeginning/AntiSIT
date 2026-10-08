@@ -36,16 +36,6 @@ void main() {
       expect(aiProviders.any((p) => p.id == 'claude'), isFalse);
     });
 
-    test('识图模型特征识别（照 index 的 VISION_MODEL_PATTERNS）', () {
-      expect(looksLikeVisionModel('deepseek-v4-flash-vision-exp'), isTrue);
-      expect(looksLikeVisionModel('glm-4v'), isTrue);
-      expect(looksLikeVisionModel('gpt-4o'), isTrue);
-      expect(looksLikeVisionModel('gemini-2.5-flash'), isTrue);
-      expect(looksLikeVisionModel('kimi-k3'), isTrue);
-      expect(looksLikeVisionModel('deepseek-v4-flash'), isFalse, reason: '不带 vision 的不能识图');
-      expect(looksLikeVisionModel('qwen-turbo'), isFalse);
-    });
-
     test('自定义提供商才需要用户填 Base URL', () {
       expect(aiProviderById('custom')!.isCustom, isTrue);
       for (final p in aiProviders.where((p) => p.id != 'custom')) {
