@@ -1469,7 +1469,7 @@ class _TimetablePageState extends State<TimetablePage> {
         : '${int.tryParse(colISO.substring(5, 7)) ?? ''}月${int.tryParse(colISO.substring(8)) ?? ''}日';
 
     final items = <(int, Widget)>[
-      for (final c in courses) (_hm(_slotTimes[c.slotStart.clamp(0, 10)]), _dayCourseCard(c, week, isToday)),
+      for (final c in courses) (_hm(_slotTimes[c.slotStart.clamp(0, 10)]), _dayCourseCard(c, week, colISO)),
       for (final e in events) (_hm(e.start) < 0 ? 0 : _hm(e.start), _dayEventCard(e, isToday)),
     ]..sort((a, b) => a.$1.compareTo(b.$1));
 
@@ -1519,8 +1519,8 @@ class _TimetablePageState extends State<TimetablePage> {
     );
   }
 
-  Widget _dayCourseCard(TtCourse c, int week, bool isToday) {
-    final past = _isPast(c, isToday);
+  Widget _dayCourseCard(TtCourse c, int week, String colISO) {
+    final past = _isPast(c, colISO);
     final rs = c.slotStart.clamp(0, 10);
     final re = c.slotEnd.clamp(0, 10);
     return Padding(
@@ -1794,7 +1794,7 @@ class _TimetablePageState extends State<TimetablePage> {
                                   ),
                                   child: Stack(
                                     children: [
-                                      for (final c in dayCourses) _courseBlock(c, zs, di == todayIdx),
+                                      for (final c in dayCourses) _courseBlock(c, zs, _colISO(zs, di)),
                                       for (final e in dayEvents) ..._eventBlock(e),
                                     ],
                                   ),
@@ -1890,17 +1890,20 @@ class _TimetablePageState extends State<TimetablePage> {
         ),
       );
 
-  bool _isPast(TtCourse c, bool isTodayCol) {
-    if (!isTodayCol) return false;
-    final endStr = _slotEndTimes[c.slotEnd.clamp(0, 10)];
-    final now = DateTime.now();
-    final hhmm = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    return hhmm.compareTo(endStr) > 0;
+  /// 这节课是否已上完（置灰依据）：该列当天日期 + 实际下课时刻已过。
+  /// 不能只看「今天那一列」——本周周一~周三的课在周四看时早已上完，也该置灰（同网站 lessonPassed）。
+  bool _isPast(TtCourse c, String colISO) {
+    final d = DateTime.tryParse(colISO);
+    if (d == null) return false;
+    final end = _slotEndTimes[c.slotEnd.clamp(0, 10)];
+    final hhmm =
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    return hhmm.compareTo(end) > 0;
   }
 
-  Widget _courseBlock(TtCourse c, int zs, bool isTodayCol) {
+  Widget _courseBlock(TtCourse c, int zs, String colISO) {
     final name = c.name;
-    final past = _isPast(c, isTodayCol);
+    final past = _isPast(c, colISO);
     // slotStart/slotEnd = 小节序号，直接定位到行
     final rowStart = c.slotStart.clamp(0, 10);
     final rowEnd = c.slotEnd.clamp(0, 10) + 1; // 半开区间
