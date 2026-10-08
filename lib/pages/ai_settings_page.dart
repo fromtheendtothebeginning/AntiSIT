@@ -371,8 +371,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 _bullet('识别校历调休：在课表「调休设置」里选一张校历截图，AI 提取放假 / 调休上课日并写入规则。'),
                 _bullet('必须选支持读图的模型；换提供商后 Key 各自独立保存，不用重填。'),
                 const SizedBox(height: 2),
-                Text('提供商图标取自 simple-icons（CC0）与 Iconify 的品牌集合，按主题单色着色；'
-                    '无对应图标的（如自定义）用名称缩写兜底。',
+                Text('提供商图标取自 simple-icons（CC0）与 Iconify 的品牌集合，「自定义」为自绘插头图标；'
+                    '均按主题单色着色。',
                     style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.5)),
               ],
             ),

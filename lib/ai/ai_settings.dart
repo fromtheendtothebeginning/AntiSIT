@@ -118,6 +118,7 @@ const List<AiProvider> aiProviders = [
     desc: '自填 Base URL 与模型 ID',
     baseUrl: '',
     models: [],
+    logo: 'assets/brands/custom.svg',
     defaultModel: '',
   ),
 ];
