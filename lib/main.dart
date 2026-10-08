@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_state.dart';
 import 'class_reminder_service.dart';
@@ -9,6 +10,16 @@ import 'direct/mock_campus_server.dart';
 import 'pages/home_page.dart';
 import 'widgets/captcha_dialog.dart';
 import 'widgets/common.dart';
+
+/// 中文：日期/时间选择器、长按菜单等 Material 内置文案默认是英文，必须挂这些 delegates。
+/// 抽成常量便于单测直接复用（测试里自己搭 MaterialApp 时也要挂同一份）。
+const appLocale = Locale('zh');
+const appSupportedLocales = <Locale>[Locale('zh'), Locale('en')];
+const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
+  GlobalMaterialLocalizations.delegate,
+  GlobalWidgetsLocalizations.delegate,
+  GlobalCupertinoLocalizations.delegate,
+];
 
 /// fade-through 页面过渡：旧页在前 35% 快速淡出，新页在其后淡入；
 /// 被覆盖页不做位移缩放，玻璃透明面不会互相叠影。
@@ -200,6 +211,10 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
           theme: buildGlassTheme(palette),
           darkTheme: buildGlassTheme(GlassPalette.dark),
           themeMode: mode,
+          // 中文：日期/时间选择器、长按菜单等 Material 组件默认是英文，必须在这里挂 delegates
+          locale: appLocale,
+          supportedLocales: appSupportedLocales,
+          localizationsDelegates: appLocalizationsDelegates,
           // 全局液态玻璃场景底：Scaffold 全透明，光斑透出玻璃「折射」感
           builder: (context, child) => GlassBackground(child: child!),
           home: const BootPage(),

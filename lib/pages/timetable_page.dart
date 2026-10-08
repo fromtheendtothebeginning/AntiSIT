@@ -2097,36 +2097,40 @@ class _TimetablePageState extends State<TimetablePage> {
         height: height,
         left: 2,
         right: 2,
-        child: Container(
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: isExam ? SemColors.dangerSoft : SemColors.accentSoft,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: (isExam ? SemColors.danger : SemColors.accent).withValues(alpha: 0.4)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${e.start}${e.end.isNotEmpty ? '~${e.end}' : ''}',
-                  style: TextStyle(fontSize: 9, color: isExam ? SemColors.danger : SemColors.accent)),
-              Text(e.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      height: 1.2,
-                      color: isExam ? SemColors.danger : SemColors.textPrimary)),
-              const Spacer(),
-              if (e.place.isNotEmpty)
-                Text(e.place,
-                    maxLines: 1,
+        // 周视图的日程块原先没有点击手势，点它没反应（只有日视图能点开详情）
+        child: GestureDetector(
+          onTap: () => _showEventDetail(e),
+          child: Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: isExam ? SemColors.dangerSoft : SemColors.accentSoft,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: (isExam ? SemColors.danger : SemColors.accent).withValues(alpha: 0.4)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${e.start}${e.end.isNotEmpty ? '~${e.end}' : ''}',
+                    style: TextStyle(fontSize: 9, color: isExam ? SemColors.danger : SemColors.accent)),
+                Text(e.name,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 9.5, color: SemColors.textSecondary)),
-              if (e.seat.isNotEmpty)
-                Text('座位 ${e.seat}',
-                    style: TextStyle(fontSize: 9, color: SemColors.textSecondary)),
-            ],
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                        color: isExam ? SemColors.danger : SemColors.textPrimary)),
+                const Spacer(),
+                if (e.place.isNotEmpty)
+                  Text(e.place,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 9.5, color: SemColors.textSecondary)),
+                if (e.seat.isNotEmpty)
+                  Text('座位 ${e.seat}',
+                      style: TextStyle(fontSize: 9, color: SemColors.textSecondary)),
+              ],
+            ),
           ),
         ),
       ),
