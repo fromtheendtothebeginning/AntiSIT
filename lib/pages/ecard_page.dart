@@ -107,7 +107,8 @@ class _EcardPageState extends State<EcardPage> {
       } catch (_) {}
     }
     if (code.isNotEmpty) {
-      return QrImageView(data: code, size: 220, backgroundColor: Colors.white);
+      // 白底由外层圆角容器负责：QrImageView 自带白底是直角方块，会盖掉容器圆角
+      return QrImageView(data: code, size: 220, backgroundColor: Colors.transparent);
     }
     return const SizedBox(width: 220, height: 220, child: Center(child: Text('二维码获取失败')));
   }
