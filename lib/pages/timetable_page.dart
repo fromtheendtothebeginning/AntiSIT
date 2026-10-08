@@ -1178,14 +1178,12 @@ class _TimetablePageState extends State<TimetablePage> {
       body: ListenableBuilder(
         listenable: AppState.I,
         builder: (context, _) {
-          final loggedIn = AppState.I.loggedIn;
           return Stack(
             children: [
               Column(
                 children: [
-                  if (!loggedIn) _guestBanner(),
-                  _todayCard(),
-                  _examStrip(),
+                  // 顶部「今天」卡与近期日程条不再固定在这里——它们已挪进各自的滚动内容里
+                  // （_weekPage / _dayPage），这样整页一起上下滑，而不是只有课表格子滚。
                   Expanded(
                     child: _dayView
                         ? PageView.builder(
@@ -1584,6 +1582,10 @@ class _TimetablePageState extends State<TimetablePage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 90),
       children: [
+        // 与周视图一致：顶部「今天」卡、近期日程条跟本页内容一起上下滑
+        if (!AppState.I.loggedIn) _guestBanner(),
+        _todayCard(),
+        _examStrip(),
         Row(
           children: [
             Text('$dateText 周${'一二三四五六日'[day]}',
@@ -1800,16 +1802,22 @@ class _TimetablePageState extends State<TimetablePage> {
     }
 
     return SingleChildScrollView(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 80),
-            child: Container(
-              decoration: BoxDecoration(
-                color: SemColors.card,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: SemColors.border),
+      // 整页一起滚：顶部「今天」卡与近期日程条跟课程表在同一条滚动里（不再固定在上方）
+      child: Column(
+        children: [
+          if (!AppState.I.loggedIn) _guestBanner(),
+          _todayCard(),
+          _examStrip(),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 4, 10, 80),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: SemColors.card,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: SemColors.border),
               ),
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: SizedBox(
@@ -1923,7 +1931,9 @@ class _TimetablePageState extends State<TimetablePage> {
               ),
             ),
           ),
+          ),
         ),
+      ],
       ),
     );
   }
