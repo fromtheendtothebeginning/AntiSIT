@@ -97,6 +97,34 @@ void main() {
       // 调试 Key 不参与 JSON 持久化（避免随手被同步/导出）
       expect(AiConfig.encode(c), isNot(contains('sk-debug')));
     });
+
+    test('保存表单不会冲掉已有调试 Key（曾致「测试连接」报请先填写 API Key）', () async {
+      await AiVision.I.save(
+        AiConfig(enabled: true, providerId: 'deepseek', model: 'm')..debugApiKey = 'sk-keep',
+        touchDebugKey: true,
+      );
+      expect(AiVision.I.config.effectiveApiKey, 'sk-keep');
+
+      // 模拟设置页保存草稿：草稿里没有调试 Key
+      await AiVision.I.save(AiConfig(enabled: true, providerId: 'deepseek', model: 'm2'));
+      expect(AiVision.I.config.effectiveApiKey, 'sk-keep', reason: '应沿用内存里的调试 Key');
+      expect(AiVision.I.config.model, 'm2');
+    });
+
+    test('显式清空调试 Key 时不会又被填回来', () async {
+      await AiVision.I.save(
+        AiConfig(enabled: true, providerId: 'deepseek', model: 'm')..debugApiKey = 'sk-keep',
+        touchDebugKey: true,
+      );
+      await AiVision.I.save(
+        AiConfig(enabled: true, providerId: 'deepseek', model: 'm'),
+        touchDebugKey: true, // 显式管理且为空 = 清除
+      );
+      expect(AiVision.I.config.debugApiKey, isEmpty);
+      expect(AiVision.I.config.effectiveApiKey, isEmpty);
+      await AiVision.I.load();
+      expect(AiVision.I.config.debugApiKey, isEmpty, reason: '重载后也不该复活');
+    });
   });
 
   group('识图调用', () {

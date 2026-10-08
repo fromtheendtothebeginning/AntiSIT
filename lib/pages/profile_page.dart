@@ -301,7 +301,8 @@ class _ProfilePageState extends State<ProfilePage> {
                       border: Border.all(color: SemColors.accent.withValues(alpha: 0.3)),
                     ),
                     child: Text(
-                      '直连模式：数据由本机直接访问学校系统，不走任何服务器，需要在校园网 / 校内 VPN 内；登录验证码手动输入。',
+                      '直连模式：数据由本机直接访问学校系统，不走任何服务器，需要在校园网 / 校内 VPN 内；'
+                      '登录验证码由 AI 自动识别（可在「AI 设置」里配置），未配置则弹框手动输入。',
                       style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.6),
                     ),
                   ),

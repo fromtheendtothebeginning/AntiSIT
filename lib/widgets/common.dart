@@ -717,6 +717,8 @@ class GlassDropdown<T> extends StatelessWidget {
           initialValue: value,
           items: items,
           onChanged: onChanged,
+          // 展开占满整行：否则长选项（如「DeepSeek · deepseek.com（官方）」）会横向溢出
+          isExpanded: true,
           decoration: const InputDecoration(isDense: true),
         ),
       ],

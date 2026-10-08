@@ -37,14 +37,26 @@ class AiVision {
     return _config;
   }
 
-  Future<void> save(AiConfig c) async {
+  /// 保存配置。
+  /// [touchDebugKey] 为 true 表示调用方**显式管理**调试 Key（可设可清）；为 false 时
+  /// 若传入的配置没带调试 Key，就沿用内存里已有的——调试 Key 是设备级设置，
+  /// 不该被每次「保存表单」冲掉（曾因此让「测试连接」报「请先填写 API Key」）。
+  Future<void> save(AiConfig c, {bool touchDebugKey = false}) async {
+    if (!touchDebugKey && c.debugApiKey.trim().isEmpty) {
+      c.debugApiKey = _config.debugApiKey;
+    }
     _config = c;
     _loaded = true;
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_spKey, AiConfig.encode(c));
-    // debug 构建：顺手把调试 Key 记到本机，方便下次启动直接用（release 不写也不要）
-    if (kDebugMode && c.debugApiKey.trim().isNotEmpty) {
-      await sp.setString(_debugKeyPref, c.debugApiKey.trim());
+    await sp.setString(_spKey, AiConfig.encode(c)); // 调试 Key 不参与持久化 JSON
+    if (kDebugMode) {
+      // 调试 Key 单独存本机：写/清都只在 debug 构建里做
+      final k = c.debugApiKey.trim();
+      if (k.isEmpty) {
+        await sp.remove(_debugKeyPref);
+      } else {
+        await sp.setString(_debugKeyPref, k);
+      }
     }
   }
 

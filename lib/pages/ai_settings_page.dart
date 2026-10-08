@@ -49,7 +49,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         apiKey: _key.text,
         model: _model.text.trim(),
         customBaseUrl: _base.text.trim(),
-      );
+      )
+        // 调试 Key 不属于本页表单，但要原样带过去——否则保存草稿时会被冲掉
+        ..debugApiKey = _c.debugApiKey;
 
   Future<void> _save() async {
     await AiVision.I.save(_draft);
@@ -134,7 +136,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     }
     _c.debugApiKey = ctrl.text.trim();
     ctrl.dispose();
-    await AiVision.I.save(_c);
+    await AiVision.I.save(_c, touchDebugKey: true);
     if (!mounted) return;
     setState(() {
       _msg = _c.debugApiKey.isEmpty ? '已清除调试 Key' : '调试 Key 已保存（仅本机）';
@@ -142,12 +144,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
-  void _pickProvider(String id) {    final p = aiProviderById(id)!;
+  void _pickProvider(String id) {
+    if (id == _c.providerId) return; // 重选当前提供商不该把已选好的模型重置掉
+    final p = aiProviderById(id)!;
     setState(() {
       _c.providerId = id;
       // 换提供商时把模型切到该提供商默认值，避免留着上一个提供商的模型名
       _model.text = p.defaultModel;
-      if (p.needsBaseUrl) _base.text = _base.text;
       _msg = null;
     });
   }
@@ -185,14 +188,16 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('提供商', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
                 GlassDropdown<String>(
                   label: '提供商',
                   value: _c.providerId,
                   items: [
                     for (final it in aiProviders)
-                      DropdownMenuItem(value: it.id, child: Text('${it.label} · ${it.desc}')),
+                      DropdownMenuItem(
+                        value: it.id,
+                        child: Text('${it.label} · ${it.desc}',
+                            overflow: TextOverflow.ellipsis),
+                      ),
                   ],
                   onChanged: (v) => v == null ? null : _pickProvider(v),
                 ),
