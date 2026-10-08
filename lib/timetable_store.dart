@@ -182,6 +182,20 @@ class TimetableStore {
 
   static int todayDayIndex() => DateTime.now().weekday - 1; // 0=周一
 
+  /// 下课时刻是否已过（课表页「已上过的课置灰」依据；网站 lessonPassed 同款）。
+  /// [colISO] 是**纯日期**（yyyy-MM-dd）——直接 parse 出来是当天 00:00，
+  /// 必须把 hh:mm 拼上去再比，否则永远判成「还没下课」（曾因此整周全不置灰）。
+  static bool lessonPassed(String colISO, String endHHmm, {DateTime? now}) {
+    final day = DateTime.tryParse(colISO);
+    if (day == null) return false;
+    final parts = endHHmm.split(':');
+    if (parts.length != 2) return false;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return false;
+    return DateTime(day.year, day.month, day.day, h, m).isBefore(now ?? DateTime.now());
+  }
+
   static DateTime dateOfWeekDay(String startDate, int week, int dayIndex) {
     final start = DateTime.tryParse(startDate)!;
     return DateTime(start.year, start.month, start.day)

@@ -1087,7 +1087,6 @@ class _TimetablePageState extends State<TimetablePage> {
       appBar: AppBar(
         title: Text(_semesterTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
-          IconButton(onPressed: _courseFormAdd, icon: const Icon(Icons.add), tooltip: '添加课程'),
           IconButton(
             onPressed: () {
               if (!_dayView) {
@@ -1129,6 +1128,8 @@ class _TimetablePageState extends State<TimetablePage> {
             tooltip: '更多',
             onSelected: (v) {
               switch (v) {
+                case 'addCourse':
+                  _courseFormAdd();
                 case 'addEvent':
                   _eventForm();
                 case 'import':
@@ -1146,6 +1147,7 @@ class _TimetablePageState extends State<TimetablePage> {
               }
             },
             itemBuilder: (ctx) => [
+              const PopupMenuItem(value: 'addCourse', child: ListTile(leading: Icon(Icons.add), title: Text('添加课程'), contentPadding: EdgeInsets.zero, dense: true)),
               const PopupMenuItem(value: 'addEvent', child: ListTile(leading: Icon(Icons.schedule_rounded), title: Text('添加日程'), contentPadding: EdgeInsets.zero, dense: true)),
               const PopupMenuItem(value: 'import', child: ListTile(leading: Icon(Icons.cloud_download_outlined), title: Text('教务导入课表'), contentPadding: EdgeInsets.zero, dense: true)),
               const PopupMenuItem(value: 'exams', child: ListTile(leading: Icon(Icons.event_note_outlined), title: Text('导入考试安排'), contentPadding: EdgeInsets.zero, dense: true)),
@@ -1922,16 +1924,10 @@ class _TimetablePageState extends State<TimetablePage> {
         ),
       );
 
-  /// 这节课是否已上完（置灰依据）：该列当天日期 + 实际下课时刻已过。
+  /// 这节课是否已上完（置灰依据）：该列**当天日期 + 实际下课时刻**已过。
   /// 不能只看「今天那一列」——本周周一~周三的课在周四看时早已上完，也该置灰（同网站 lessonPassed）。
-  bool _isPast(TtCourse c, String colISO) {
-    final d = DateTime.tryParse(colISO);
-    if (d == null) return false;
-    final end = _slotEndTimes[c.slotEnd.clamp(0, 10)];
-    final hhmm =
-        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-    return hhmm.compareTo(end) > 0;
-  }
+  bool _isPast(TtCourse c, String colISO) =>
+      TimetableStore.lessonPassed(colISO, _slotEndTimes[c.slotEnd.clamp(0, 10)]);
 
   Widget _courseBlock(TtCourse c, int zs, String colISO) {
     final name = c.name;
