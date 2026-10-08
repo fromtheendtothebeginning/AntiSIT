@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api_client.dart';
 import '../app_state.dart';
+import '../class_reminder_service.dart';
 import '../widgets/common.dart';
 import 'connect_page.dart';
 import 'feedback_page.dart';
@@ -106,6 +107,22 @@ class _ProfilePageState extends State<ProfilePage> {
     if (!mounted) return;
     _refreshAll();
     setState(() {});
+  }
+
+  /// 上课提醒开关：打开时申请通知权限（必要时再要精确闹钟权限），并按当前课表排期。
+  Future<void> _onReminderToggle(bool v) async {
+    final messenger = ScaffoldMessenger.of(context);
+    String? tip;
+    if (v) {
+      tip = await ClassReminderService.I.enable();
+    } else {
+      await ClassReminderService.I.disable();
+      tip = '已关闭上课提醒';
+    }
+    if (!mounted) return;
+    if (tip != null) {
+      messenger.showSnackBar(SnackBar(content: Text(tip), behavior: SnackBarBehavior.floating));
+    }
   }
 
   @override
@@ -424,6 +441,21 @@ class _ProfilePageState extends State<ProfilePage> {
                           onChanged: (v) => AppState.I.setRemember(v),
                         ),
                       ),
+                    ListenableBuilder(
+                      listenable: ClassReminderService.I,
+                      builder: (_, __) => SwitchListTile(
+                        secondary: const Icon(Icons.notifications_active_outlined),
+                        title: const Text('上课提醒'),
+                        subtitle: Text(
+                            ClassReminderService.I.enabled
+                                ? '课前 ${ClassReminderService.leadMinutes} 分钟通知（'
+                                    '无需打开 App，重启后仍有效）'
+                                : '课前 ${ClassReminderService.leadMinutes} 分钟通知，后台也能收到',
+                            style: const TextStyle(fontSize: 12)),
+                        value: ClassReminderService.I.enabled,
+                        onChanged: _onReminderToggle,
+                      ),
+                    ),
                     ListTile(
                       leading: const Icon(Icons.feedback_outlined),
                       title: const Text('提交反馈'),

@@ -1,5 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 上课提醒（本地定时通知）：
+         POST_NOTIFICATIONS  Android 13+ 发通知需授权；
+         SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM 精确闹钟——上课提醒是按点触发的日历/闹钟类用途；
+         若要上架 Google Play，可只保留 SCHEDULE_EXACT_ALARM 并在应用内引导用户授权，以免审核争议；
+         RECEIVE_BOOT_COMPLETED 开机后由插件恢复已排期的提醒。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="AntiSIT"
         android:name="${applicationName}"
@@ -31,6 +41,21 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 本地定时通知（上课提醒）：ScheduledNotificationReceiver 到点弹出，
+             ScheduledNotificationBootReceiver 在开机 / 应用更新后恢复排期。 -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

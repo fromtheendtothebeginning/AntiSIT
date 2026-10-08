@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+import 'class_reminder_service.dart';
 import 'json_num.dart';
 import 'app_state.dart';
 
@@ -106,6 +108,8 @@ class TimetableStore {
     if (touch) updatedAt = DateTime.now().millisecondsSinceEpoch;
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_spKey, jsonEncode(toJson()));
+    // 课表变了，上课提醒随之重排（排期是幂等覆盖，未开启时不做事）
+    unawaited(ClassReminderService.I.reschedule());
   }
 
   /// 本地写入 + 登录状态下回推云端（网站同款 PUT /api/timetable {data}）。

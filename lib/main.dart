@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app_state.dart';
+import 'class_reminder_service.dart';
 import 'direct/mock_campus_server.dart';
 import 'pages/home_page.dart';
 import 'widgets/captcha_dialog.dart';
@@ -226,8 +229,19 @@ class _BootPageState extends State<BootPage> {
     await AppState.I.load();
     // 调试构建：学校档案指向本机回环时，拉起本地模拟校园服务（直连模式无校园网也能测）
     await MockCampusServer.instance.ensureIfConfigured();
+    // 上课提醒：打开 App 就按当前课表重排未来若干天的定时通知（不阻塞进主页）
+    unawaited(_initReminders());
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
+  }
+
+  Future<void> _initReminders() async {
+    try {
+      await ClassReminderService.I.loadEnabled();
+      await ClassReminderService.I.reschedule();
+    } catch (e) {
+      debugPrint('[上课提醒] 启动排期失败：$e');
+    }
   }
 
   @override
