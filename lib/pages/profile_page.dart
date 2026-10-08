@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../ai/ai_vision.dart';
 import '../api_client.dart';
@@ -24,6 +27,34 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _refreshAll();
+    _loadVersion();
+  }
+
+  /// 运行时版本号（读 APK 里的 versionName/versionCode，不用手写常量）。
+  String? _version;
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _version =
+            'v${info.version}${info.buildNumber.isEmpty ? '' : ' (${info.buildNumber})'}');
+      }
+    } catch (_) {
+      // 取不到就不显示，不影响页面
+    }
+  }
+
+  /// 打开 GPL-3.0 协议原文（失败则复制链接，与反馈页同一套兜底）。
+  Future<void> _openLicense() async {
+    const url = 'https://github.com/fromtheendtothebeginning/AntiSIT/blob/main/LICENSE';
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      await Clipboard.setData(const ClipboardData(text: url));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已复制协议链接'), behavior: SnackBarBehavior.floating));
+    }
   }
 
   void _refreshAll() {
@@ -529,6 +560,16 @@ class _ProfilePageState extends State<ProfilePage> {
                             ? 'AntiSIT · 服务器模式（地址未填写，见连接设置）'
                             : 'AntiSIT · 数据来自 ${st.serverUrl} 开放接口'),
                     style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+              ),
+              const SizedBox(height: 6),
+              Center(
+                child: GestureDetector(
+                  onTap: _openLicense,
+                  child: Text(
+                    [if (_version != null) _version!, 'GPL-3.0 开源协议'].join(' · '),
+                    style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.5),
+                  ),
+                ),
               ),
             ],
           ),
