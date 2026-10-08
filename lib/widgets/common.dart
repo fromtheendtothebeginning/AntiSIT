@@ -726,6 +726,92 @@ class GlassDropdown<T> extends StatelessWidget {
   }
 }
 
+/// 与 [GlassField] 同款的「点开选择」字段：外观就是输入框，但点它弹出选择器而不是下拉。
+/// 长列表（上百个模型）用弹窗 + 筛选才好找，又不想和输入框长得不一样，所以做成一族。
+class GlassPicker extends StatelessWidget {
+  const GlassPicker({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.hint,
+    this.prefixIcon,
+    this.helperText,
+    this.enabled = true,
+  });
+
+  final String label;
+
+  /// 当前值（空串时显示 [hint]）。
+  final String value;
+  final String? hint;
+  final VoidCallback onTap;
+  final Widget? prefixIcon;
+  final String? helperText;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final empty = value.trim().isEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label,
+            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w500)
+                .copyWith(color: SemColors.textSecondary)),
+        const SizedBox(height: 5),
+        Opacity(
+          opacity: enabled ? 1 : 0.55,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: enabled ? onTap : null,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+                decoration: BoxDecoration(
+                  color: SemColors.inputFill,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: SemColors.borderStrong),
+                ),
+                child: Row(
+                  children: [
+                    if (prefixIcon != null) ...[
+                      IconTheme.merge(
+                        data: IconThemeData(color: SemColors.textSecondary, size: 20),
+                        child: prefixIcon!,
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: Text(
+                        empty ? (hint ?? '未选择') : value,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: empty ? SemColors.textMuted : SemColors.textPrimary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Icon(Icons.expand_more_rounded,
+                        size: 20, color: SemColors.textSecondary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (helperText != null) ...[
+          const SizedBox(height: 4),
+          Text(helperText!,
+              style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.4)),
+        ],
+      ],
+    );
+  }
+}
+
 /// 底栏条目：普通态 / 激活态图标 + 标签。
 class GlassNavBarItem {
   const GlassNavBarItem(this.icon, this.activeIcon, this.label);

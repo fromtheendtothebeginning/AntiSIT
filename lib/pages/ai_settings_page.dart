@@ -94,13 +94,21 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       });
       return;
     }
+    final cur = _model.text.trim();
     final picked = await showDialog<String>(
       context: context,
-      builder: (_) => _ModelPickerDialog(
-        models: models,
-        current: _model.text.trim(),
-        providerLabel: _c.provider.label,
-        fetchError: fetchError,
+      builder: (_) => _PickerDialog(
+        title: '选择模型',
+        badge: _c.provider.label,
+        current: cur,
+        searchHint: '筛选或直接输入模型 ID…',
+        allowCustom: true,
+        notes: [
+          if (fetchError != null) '拉取官方列表失败，下面是缓存 + 内置兜底列表：$fetchError',
+          if (cur.isNotEmpty && !models.contains(cur))
+            '当前模型 $cur 不在官方列表里（可能已下架或无权限），建议重新选择',
+        ],
+        items: [for (final m in models) (value: m, title: m, subtitle: null)],
       ),
     );
     if (picked != null && mounted) setState(() => _model.text = picked);
@@ -184,7 +192,23 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
-  void _pickProvider(String id) {
+  /// 提供商也用同一个选择弹窗（与模型选择统一形态）。
+  Future<void> _pickProviderDialog() async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => _PickerDialog(
+        title: '选择提供商',
+        current: _c.providerId,
+        searchHint: null, // 提供商就 9 个，不需要筛选
+        items: [
+          for (final p in aiProviders) (value: p.id, title: p.label, subtitle: p.desc),
+        ],
+      ),
+    );
+    if (picked != null) _applyProvider(picked);
+  }
+
+  void _applyProvider(String id) {
     if (id == _c.providerId) return; // 重选当前提供商不该把已选好的模型重置掉
     _c.setApiKey(_key.text); // 先记住当前提供商的 Key
     final p = aiProviderById(id)!;
@@ -228,17 +252,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                GlassDropdown<String>(
+                GlassPicker(
                   label: '提供商',
-                  value: _c.providerId,
-                  items: [
-                    for (final it in aiProviders)
-                      DropdownMenuItem(value: it.id, child: Text(it.label)),
-                  ],
-                  onChanged: (v) => v == null ? null : _pickProvider(v),
+                  value: p.label,
+                  prefixIcon: const Icon(Icons.dns_outlined),
+                  helperText: p.desc,
+                  onTap: _busy || _fetching ? () {} : _pickProviderDialog,
                 ),
-                const SizedBox(height: 4),
-                Text(p.desc, style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                 const SizedBox(height: 14),
                 GlassField(
                   label: 'API Key（按提供商分别保存）',
@@ -261,36 +281,21 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   SelectableText('申请 Key：${p.docs}',
                       style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                 ],
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _fetching ? null : _pickModel,
-                      icon: _fetching
-                          ? const SizedBox(
-                              width: 14, height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.list_alt_outlined, size: 18),
-                      label: Text(_fetching ? '拉取中…' : '选择模型'),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text('用当前 Key 调 ${p.label} 的 /models 拉取列表后选择',
-                          style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                    ),
-                  ],
+                const SizedBox(height: 14),
+                GlassPicker(
+                  label: '模型',
+                  value: _model.text.trim(),
+                  hint: '未选择',
+                  prefixIcon: _fetching
+                      ? const SizedBox(
+                          width: 18, height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.memory_outlined),
+                  helperText: _fetching
+                      ? '正在拉取 ${p.label} 的官方模型列表…'
+                      : '点开用当前 Key 调 ${p.label} 的 /models 拉取后选择；列表里没有的模型可直接输入',
+                  onTap: _busy || _fetching ? () {} : _pickModel,
                 ),
-                const SizedBox(height: 12),
-                GlassField(
-                  label: '模型 ID（上面选完会填到这里；也可手填）',
-                  controller: _model,
-                  prefixIcon: const Icon(Icons.memory_outlined),
-                ),
-                if (_model.text.trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text('当前模型：${_model.text.trim()}',
-                      style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary)),
-                ],
                 // 开发期临时 Key：只写本机 prefs，不进仓库；仅 debug 构建显示
                 if (kDebugMode) ...[
                   const SizedBox(height: 6),
@@ -389,27 +394,45 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 }
 
 
-/// 模型选择弹窗：列出官方 `/models` 拉到的模型（拉取失败则是缓存 ∪ 内置兜底列表）。
-/// 顶部带筛选框——OpenAI 这类提供商的列表可能上百条，纯滚动不好找。
-/// 样式跟全局一致：用主题里的对话框底（menuBg + 24 圆角），配色一律走 SemColors。
-class _ModelPickerDialog extends StatefulWidget {
-  const _ModelPickerDialog({
-    required this.models,
+
+// ==================== 统一的选择弹窗（提供商 / 模型共用） ====================
+
+typedef _PickerItem = ({String value, String title, String? subtitle});
+
+/// 通用选择弹窗：提供商与模型共用同一形态，避免两处入口风格不一致。
+/// 样式走全局：主题对话框底（menuBg + 24 圆角）、Capsule 徽章标题、SemColors 配色。
+class _PickerDialog extends StatefulWidget {
+  const _PickerDialog({
+    required this.title,
+    required this.items,
     required this.current,
-    required this.providerLabel,
-    this.fetchError,
+    this.badge,
+    this.notes = const [],
+    this.searchHint,
+    this.allowCustom = false,
   });
 
-  final List<String> models;
-  final String current;
-  final String providerLabel;
-  final String? fetchError;
+  final String title;
+  final List<_PickerItem> items;
+  final String? current;
+
+  /// 右上角徽章（如提供商标识）。
+  final String? badge;
+
+  /// 需要额外说明的提示（拉取失败、当前值已失效等），用告警色。
+  final List<String> notes;
+
+  /// 非空时显示筛选框（长列表才好找）。
+  final String? searchHint;
+
+  /// 允许把筛选框里输入的任意字符串当作结果返回（用于手填模型 ID）。
+  final bool allowCustom;
 
   @override
-  State<_ModelPickerDialog> createState() => _ModelPickerDialogState();
+  State<_PickerDialog> createState() => _PickerDialogState();
 }
 
-class _ModelPickerDialogState extends State<_ModelPickerDialog> {
+class _PickerDialogState extends State<_PickerDialog> {
   final _filter = TextEditingController();
 
   @override
@@ -420,20 +443,22 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // 官方列表为准。当前选中的模型若不在列表里（如已下架 / 该 Key 无权限），
-    // 单独提示一句——既不误导，也不硬塞回列表。
-    final currentMissing =
-        widget.current.isNotEmpty && !widget.models.contains(widget.current);
-    final q = _filter.text.trim().toLowerCase();
+    final raw = _filter.text.trim();
+    final q = raw.toLowerCase();
     final list = q.isEmpty
-        ? widget.models
-        : widget.models.where((m) => m.toLowerCase().contains(q)).toList();
+        ? widget.items
+        : widget.items
+            .where((it) => it.title.toLowerCase().contains(q) ||
+                (it.subtitle ?? '').toLowerCase().contains(q))
+            .toList();
+    // 允许手填时：筛选框里输入的内容若不是现成项，置顶一条「使用 …」
+    final custom = widget.allowCustom && raw.isNotEmpty && !widget.items.any((it) => it.value == raw);
 
     return AlertDialog(
       title: Row(
         children: [
-          const Expanded(child: Text('选择模型')),
-          Capsule(widget.providerLabel, color: SemColors.accent),
+          Expanded(child: Text(widget.title)),
+          if (widget.badge != null) Capsule(widget.badge!, color: SemColors.accent),
         ],
       ),
       contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
@@ -443,54 +468,70 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.fetchError != null) ...[
-              _note('拉取官方列表失败，下面是缓存 + 内置兜底列表：${widget.fetchError}',
-                  SemColors.warning),
-              const SizedBox(height: 10),
+            for (final note in widget.notes) ...[
+              _note(note),
+              const SizedBox(height: 8),
             ],
-            if (currentMissing) ...[
-              _note('当前模型 ${widget.current} 不在官方列表里（可能已下架或无权限），建议重新选择',
-                  SemColors.warning),
-              const SizedBox(height: 10),
-            ],
-            TextField(
-              controller: _filter,
-              onChanged: (_) => setState(() {}),
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
-                hintText: '筛选模型名…',
-                isDense: true,
-                prefixIcon: Icon(Icons.search, size: 18),
+            if (widget.searchHint != null) ...[
+              TextField(
+                controller: _filter,
+                onChanged: (_) => setState(() {}),
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: widget.searchHint,
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              q.isEmpty ? '共 ${list.length} 个模型' : '匹配 ${list.length} / ${widget.models.length}',
-              style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-            ),
-            const SizedBox(height: 2),
+              const SizedBox(height: 10),
+              Text(
+                q.isEmpty
+                    ? '共 ${list.length} 项'
+                    : '匹配 ${list.length} / ${widget.items.length}',
+                style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+              ),
+              const SizedBox(height: 2),
+            ],
             Expanded(
-              child: list.isEmpty
+              // 列表为空但有「使用输入值」这条时也要渲染，否则手填入口会消失
+              child: (list.isEmpty && !custom)
                   ? Center(
-                      child: Text('没有匹配的模型',
+                      child: Text('没有匹配的项',
                           style: TextStyle(fontSize: 13, color: SemColors.textMuted)))
                   : ListView.builder(
-                      itemCount: list.length,
+                      itemCount: list.length + (custom ? 1 : 0),
                       itemBuilder: (_, i) {
-                        final m = list[i];
-                        final sel = m == widget.current;
+                        if (custom && i == 0) {
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.edit_outlined, size: 18, color: SemColors.accent),
+                            title: Text('使用「$raw」',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: SemColors.accent,
+                                    fontWeight: FontWeight.w600)),
+                            onTap: () => Navigator.pop(context, raw),
+                          );
+                        }
+                        final it = list[custom ? i - 1 : i];
+                        final sel = it.value == widget.current;
                         return ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
-                          title: Text(m,
+                          title: Text(it.title,
                               style: TextStyle(
                                   fontSize: 13,
                                   color: SemColors.textPrimary,
                                   fontWeight: sel ? FontWeight.w700 : FontWeight.w400)),
+                          subtitle: it.subtitle == null
+                              ? null
+                              : Text(it.subtitle!,
+                                  style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                           trailing: sel
                               ? Icon(Icons.check, size: 18, color: SemColors.accent)
                               : null,
-                          onTap: () => Navigator.pop(context, m),
+                          onTap: () => Navigator.pop(context, it.value),
                         );
                       },
                     ),
@@ -504,13 +545,16 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     );
   }
 
-  Widget _note(String text, Color color) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(text, style: TextStyle(fontSize: 11, color: color, height: 1.5)),
-      );
+  Widget _note(String text) {
+    final color = SemColors.warning;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(text, style: TextStyle(fontSize: 11, color: color, height: 1.5)),
+    );
+  }
 }

@@ -20,14 +20,20 @@ Future<T> _serial<T>(Future<T> Function() task) {
 
 /// 注入验证码输入弹窗（App 启动时调用一次）：直连模式本机登录学校系统用；
 /// 服务器模式在自动识码走不通（未配识图模型等）回 need_captcha 时也用同一只弹窗。
-/// 配了「AI 设置」时先让 AI 读图（首次弹出、且上次没有报错时才试），
-/// 识别失败或有错误提示时回退手输——AI 只是省一步，永远不挡路。
+/// 配了「AI 设置」时先让 AI 读图；识别失败、或上一次是「验证码错」（多半是 AI 认错字，
+/// 换了新码值得再试一次）时继续让 AI 试，直到 [maxAiTries] 次；仍不行就弹手输框。
+/// AI 只是省一步，永远不挡路。
 void installDirectCaptchaPrompt() {
   CampusDirect.I.captchaPrompt = (image, hint, refresh, {error}) =>
       _serial(() => _aiThenManual(image, hint, refresh, error));
   ApiClient.I.captchaPrompt = (image, hint, refresh, {error}) =>
       _serial(() => _aiThenManual(image, hint, refresh, error));
 }
+
+/// 一次登录流程里最多让 AI 试几次（含首次）。AI 认错字时会换新码重来，
+/// 给一次补救机会能把「认错就立刻要手输」的体验救回来；但不无限试——用户可能就想手输。
+const int maxAiTries = 2;
+int _aiTries = 0;
 
 Future<String?> _aiThenManual(
   Uint8List image,
@@ -36,12 +42,17 @@ Future<String?> _aiThenManual(
   String? error,
 ) async {
   await AiVision.I.load();
-  // 上一次已提示错误（多半是验证码错）时不再重复调 AI，直接让用户重输
-  final firstTry = error == null || error.isEmpty;
-  if (firstTry && AiVision.I.available) {
+  final noError = error == null || error.isEmpty;
+  if (noError) {
+    _aiTries = 0; // 新的一轮登录：重新计数
+  }
+  // 上次是密码类错误说明验证码本来就是对的，别再折腾 AI；验证码错则值得再试（换了新码）
+  final captchaWrong = error != null && error.contains('验证码');
+  if (AiVision.I.available && _aiTries < maxAiTries && (noError || captchaWrong)) {
+    _aiTries++;
     final text = await solveCaptcha(image);
     if (text != null && text.isNotEmpty) {
-      debugPrint('[AI] 自动识别验证码（$hint）：$text');
+      debugPrint('[AI] 自动识别验证码（$hint，第 $_aiTries 次）：$text');
       return text;
     }
   }
