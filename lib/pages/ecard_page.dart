@@ -97,21 +97,22 @@ class _EcardPageState extends State<EcardPage> {
       try {
         // 兼容 dataURI 前缀（data:image/png;base64,xxx）
         final b64 = img.contains(',') ? img.split(',').last : img;
-        return Image.memory(
-          base64Decode(b64),
-          width: 220,
-          height: 220,
-          gaplessPlayback: true,
-          fit: BoxFit.contain,
-        );
+        final bytes = base64Decode(b64);
+        if (bytes.length > 64) {
+          return Image.memory(bytes, gaplessPlayback: true, fit: BoxFit.contain);
+        }
       } catch (_) {}
     }
     if (code.isNotEmpty) {
-      // 白底由外层圆角容器负责：QrImageView 自带白底是直角方块，会盖掉容器圆角
+      // 透明底落在下方 _qrPlate 上（深色主题才需要白底，浅色直接压在浅色卡面上）
       return QrImageView(data: code, size: 220, backgroundColor: Colors.transparent);
     }
     return const SizedBox(width: 220, height: 220, child: Center(child: Text('二维码获取失败')));
   }
+
+  /// 二维码底板：浅色主题**不画白底**（否则玻璃卡上会露出一块白色方块），
+  /// 深色主题才给一块圆角白底——深色卡面上深色模块无法辨认，必须垫亮底才能扫。
+  Widget _qrPlate(Widget child) => QrPlate(child: child);
 
   @override
   Widget build(BuildContext context) {
@@ -148,17 +149,7 @@ class _EcardPageState extends State<EcardPage> {
                             child: Center(child: CircularProgressIndicator()),
                           )
                         else
-                          Container(
-                            width: 220,
-                            height: 220,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: SemColors.border),
-                            ),
-                            alignment: Alignment.center,
-                            child: _qr(),
-                          ),
+                          _qrPlate(_qr()),
                         const SizedBox(height: 16),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,

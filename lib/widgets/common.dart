@@ -145,6 +145,33 @@ class LoginGate extends StatelessWidget {
 
 const cardRadius = 16.0;
 
+/// 二维码 / 动态码底板（校园码用）：
+/// **浅色主题不画白底**——玻璃卡上再叠一块白方块就是用户报过的「背后一个白色正方形」；
+/// 深色主题垫圆角白底，否则深色模块在深色卡面上辨认不出、扫不出来。
+/// 两种主题都做圆角裁剪：万一服务端返回的是带白底的旧式 PNG，也只看到圆角而非方角。
+class QrPlate extends StatelessWidget {
+  const QrPlate({super.key, required this.child, this.side = 220});
+
+  final Widget child;
+  final double side;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: side,
+      height: side,
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark ? Colors.white : null,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      alignment: Alignment.center,
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.all(4),
+      child: child,
+    );
+  }
+}
+
 /// 液态玻璃色板（参照 anticlass「夜航玻璃拟态」：玻璃无色、颜色属于场景）。
 /// 浅色 = 晨光玻璃（#E3E9F2 底 + 白 55% 玻璃面）；深色 = 规范夜景色（#0B1322 底 + 白 8% 玻璃面）。
 /// 强调双色分工：钢蓝（链接/激活/次要高亮）+ 香槟金（主 CTA / 关键数字 / 待办警告语义）。
