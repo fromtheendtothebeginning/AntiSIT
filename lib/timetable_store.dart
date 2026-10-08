@@ -196,6 +196,28 @@ class TimetableStore {
     return DateTime(day.year, day.month, day.day, h, m).isBefore(now ?? DateTime.now());
   }
 
+  /// 某周某天「还没上完」的课，按上课时刻升序——课表顶部「今天最近一节课」用：
+  /// 已下课的不再返回（上完就从卡片上消失），第一门即最近的一节。
+  /// [endTimes] 是 11 节的下课时刻表（与课表页同一份），传入避免重复定义。
+  /// [startDate] 为空（未设置学期起点）时无从判断日期，原样返回。
+  static List<TtCourse> upcomingOn(
+    List<TtCourse> courses, {
+    required String startDate,
+    required int week,
+    required int dayIndex,
+    required List<String> endTimes,
+    DateTime? now,
+  }) {
+    if (startDate.isEmpty) return List.of(courses);
+    final t = now ?? DateTime.now();
+    final colISO = iso(dateOfWeekDay(startDate, week, dayIndex));
+    return courses
+        .where((c) => !lessonPassed(colISO, endTimes[c.slotEnd.clamp(0, endTimes.length - 1)],
+            now: t))
+        .toList()
+      ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
+  }
+
   static DateTime dateOfWeekDay(String startDate, int week, int dayIndex) {
     final start = DateTime.tryParse(startDate)!;
     return DateTime(start.year, start.month, start.day)

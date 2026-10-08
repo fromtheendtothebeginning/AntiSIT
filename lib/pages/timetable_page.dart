@@ -96,6 +96,21 @@ class _TimetablePageState extends State<TimetablePage> {
     super.dispose();
   }
 
+  /// 今天剩下还没上完的课（第一门即「最近的一节」）——实现在 TimetableStore.upcomingOn。
+  static List<TtCourse> upcomingToday(
+    List<TtCourse> courses, {
+    required String startDate,
+    required int week,
+    required int dayIndex,
+    DateTime? now,
+  }) =>
+      TimetableStore.upcomingOn(courses,
+          startDate: startDate,
+          week: week,
+          dayIndex: dayIndex,
+          endTimes: _slotEndTimes,
+          now: now);
+
   Future<void> _init({bool keepSemester = false}) async {
     if (mounted) setState(() => _booting = true);
     await TimetableStore.instance.load();
@@ -1250,6 +1265,12 @@ class _TimetablePageState extends State<TimetablePage> {
       courses = _coursesOf(tw).where((c) => c.day == effDay).toList()
         ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
     }
+    // 今天还没上完的课；第一门就是「最近的一节」。全部上完后为空 → 卡片显示「今天的课都上完了」。
+    final upcoming = (tw == null || effDay == null)
+        ? courses
+        : upcomingToday(courses,
+            startDate: tt.startDate, week: tw, dayIndex: effDay, now: now);
+    final next = upcoming.isEmpty ? null : upcoming.first;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
       child: AppCard(
@@ -1280,45 +1301,98 @@ class _TimetablePageState extends State<TimetablePage> {
                       adj?.type == 'off'
                           ? '放假（调休）'
                           : (adj?.type == 'follow'
-                              ? '按周${'一二三四五六日'[adj!.day]}上课 · ${courses.length} 节'
-                              : (courses.isEmpty ? '今天没有课' : '${courses.length} 节课')),
+                              ? '按周${'一二三四五六日'[adj!.day]}上课'
+                              : (courses.isEmpty
+                                  ? '今天没有课'
+                                  : (next == null ? '今天的课都上完了' : '还剩 ${upcoming.length} 节'))),
                       style: TextStyle(
                           fontSize: 12,
                           color: adj?.type == 'off' ? SemColors.danger : SemColors.textMuted)),
               ],
             ),
-            if (!noStart && tw != null && courses.isNotEmpty) ...[
+            if (!noStart && tw != null && next != null) ...[
               const SizedBox(height: 8),
-              SizedBox(
-                height: 32,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: courses.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) {
-                    final c = courses[i];
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: _courseColor(c.name),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${c.name} ${c.slotStart + 1}-${c.slotEnd + 1}节 @${c.place.isEmpty ? '-' : c.place}',
-                        style: TextStyle(fontSize: 12, color: SemColors.textSecondary),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  },
-                ),
-              ),
+              _nextClassRow(next, now),
             ],
+            const SizedBox(height: 6),
             Text(
               '现在时间 ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
               style: TextStyle(fontSize: 10, color: SemColors.textMuted),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 今天这一列的真实日期（yyyy-MM-dd）；学期起点未设置时返回空串。
+  String _todayISO() {
+    final tw = _todayWeek;
+    if (tw == null) return '';
+    return _colISO(tw, DateTime.now().weekday - 1);
+  }
+
+  /// 今天最近一节还没上完的课（时间、节次、地点；正在上的标「正在上课」）。
+  Widget _nextClassRow(TtCourse c, DateTime now) {
+    final from = _slotTimes[c.slotStart.clamp(0, 10)];
+    final to = _slotEndTimes[c.slotEnd.clamp(0, 10)];
+    final colISO = _todayISO();
+    final inClass = colISO.isEmpty || !TimetableStore.lessonPassed(colISO, from, now: now);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: _courseColor(c.name),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 86,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(from,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                Text(to, style: TextStyle(fontSize: 10, color: SemColors.textMuted)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(c.name,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    if (inClass) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: SemColors.accent.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text('正在上课',
+                            style: TextStyle(fontSize: 9.5, color: SemColors.accent)),
+                      ),
+                    ],
+                  ],
+                ),
+                Text(
+                  '第${c.slotStart + 1}-${c.slotEnd + 1}节'
+                  '${c.place.isEmpty ? '' : ' · ${c.place}'}'
+                  '${c.teachers.isEmpty ? '' : ' · ${c.teachers}'}',
+                  style: TextStyle(fontSize: 11, color: SemColors.textSecondary),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

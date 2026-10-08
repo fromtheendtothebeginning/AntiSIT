@@ -40,4 +40,69 @@ void main() {
       expect(TimetableStore.lessonPassed('2026-10-08', 'abc'), isFalse);
     });
   });
+
+  group('upcomingOn（顶部「今天最近一节课」：上完就消失）', () {
+    // 与课表页 _slotTimes/_slotEndTimes 同一份
+    const endTimes = [
+      '09:05', '09:55', '10:55', '11:45', '13:45', '14:35', '15:40', '16:30', '18:45', '19:35', '20:25',
+    ];
+    const start = '2026-03-02'; // 周一
+
+    TtCourse at(int slotStart, int slotEnd, String name) => TtCourse(
+          id: '$name-$slotStart',
+          name: name,
+          day: 0,
+          slotStart: slotStart,
+          slotEnd: slotEnd,
+          weekType: 'all',
+          weekStart: 1,
+          weekEnd: 20,
+          place: 'A101',
+        );
+
+    // 节次与下课时刻：第1节 09:05 / 第5节 13:45 / 第10节 19:35
+    final all = [at(0, 0, '高数'), at(4, 5, '英语'), at(8, 9, '晚课')];
+
+    test('早上：全部未上完，按时间升序，第一门是最近一节', () {
+      final left = TimetableStore.upcomingOn(all,
+          startDate: start, week: 1, dayIndex: 0, endTimes: endTimes,
+          now: DateTime(2026, 3, 2, 7, 0));
+      expect(left.map((c) => c.name).toList(), ['高数', '英语', '晚课']);
+    });
+
+    test('上午第一节课上完（09:05 后）→ 从列表里消失，最近一节变成英语', () {
+      final left = TimetableStore.upcomingOn(all,
+          startDate: start, week: 1, dayIndex: 0, endTimes: endTimes,
+          now: DateTime(2026, 3, 2, 9, 30));
+      expect(left.map((c) => c.name).toList(), ['英语', '晚课']);
+    });
+
+    test('正在上课的课仍算「还没上完」，留在列表里且排第一', () {
+      // 09:00 时正在上第一节课（08:20-09:05）
+      final during = TimetableStore.upcomingOn(all,
+          startDate: start, week: 1, dayIndex: 0, endTimes: endTimes,
+          now: DateTime(2026, 3, 2, 9, 0));
+      expect(during.map((c) => c.name).toList(), ['高数', '英语', '晚课']);
+      expect(during.first.name, '高数');
+      // 09:10 第一节已下课 → 英语成为最近一节，且它还没开始（10:00 前后的间隙里也算未上完）
+      final next = TimetableStore.upcomingOn(all,
+          startDate: start, week: 1, dayIndex: 0, endTimes: endTimes,
+          now: DateTime(2026, 3, 2, 9, 10));
+      expect(next.first.name, '英语');
+    });
+
+    test('今天的课全上完 → 列表为空', () {
+      final left = TimetableStore.upcomingOn(all,
+          startDate: start, week: 1, dayIndex: 0, endTimes: endTimes,
+          now: DateTime(2026, 3, 2, 21, 0));
+      expect(left, isEmpty);
+    });
+
+    test('未设置学期起点：无从判断日期，原样返回', () {
+      final left = TimetableStore.upcomingOn(all,
+          startDate: '', week: 1, dayIndex: 0, endTimes: endTimes,
+          now: DateTime(2026, 3, 2, 21, 0));
+      expect(left.length, all.length);
+    });
+  });
 }
