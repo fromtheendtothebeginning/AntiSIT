@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import '../api_error.dart';
 import 'crypto.dart';
@@ -103,18 +103,24 @@ class JwxtClient {
   /// `class="tipsqrcode"` 的微信扫码区块（命中 tips）和 `<!-- 0-弹出验证码-->` 这类模板
   /// 注释（尾巴 `验证码-->`），不过门槛就会被当成错误文案——前者被直接抛给用户，
   /// 后者因含「验证码」被误当成验证码错误白白重试三次。
+  /// 另外登录页普遍带 `style="display:none"` 的**静态**错误骨架（「请输入用户名 / 请输入密码 /
+  /// 请输入验证码」），它们是给 JS 改文案用的、永远不出现在屏幕上；服务端的判定结果一律渲染在
+  /// 可见元素里（如 `#tips`）。抓隐藏元素同样会误报（把「请输入密码」当成账号密码错误抛给用户），
+  /// 所以隐藏元素一律跳过。
   static String _schoolTip(String html) {
     // 注释先剥掉，别让 `<!-- 0-弹出验证码-->` 的尾巴混进下面的捕获
     final clean = html.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ');
     final obj = RegExp(r'验证码|密码|账号|用户名');
     final err = RegExp(r'错误|不正确|失效|过期|为空|不存在|无效|请输入');
+    final hidden = RegExp(r'display\s*:\s*none|visibility\s*:\s*hidden', caseSensitive: false);
     for (final re in <RegExp>[
-      RegExp(r'id="(?:tips|msg|tipsMsg|errorMsg|loginError)"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
+      RegExp(r'<[^>]*id="(?:tips|msg|tipsMsg|errorMsg|loginError)"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
           dotAll: true),
-      RegExp(r'class="[^"]*(?:tips|error|msg)[^"]*"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
+      RegExp(r'<[^>]*class="[^"]*(?:tips|error|msg)[^"]*"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
           dotAll: true),
     ]) {
       for (final m in re.allMatches(clean)) {
+        if (hidden.hasMatch(m.group(0)!)) continue;
         final t = m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
         if (t.isEmpty) continue;
         if (!obj.hasMatch(t) || !err.hasMatch(t)) continue;
@@ -137,6 +143,7 @@ class JwxtClient {
   /// 被当成验证码错误，白白重试三次。
   static String _loginError(HttpResult r) {
     final tip = _schoolTip(r.text);
+    debugPrint('[教务登录] HTTP ${r.status} tip=[$tip] ${_pageSnippet(r.text)}');
     if (tip.isNotEmpty) return tip;
     return '教务登录未通过（HTTP ${r.status}，学校登录页没有错误文案，可能是登录页改版）：'
         '${_pageSnippet(r.text)}';
@@ -144,13 +151,18 @@ class JwxtClient {
 
   /// 页面片段（压掉空白、限长）：给开发者定位用，别再猜。先去掉 HTML 注释——
   /// 注释里常留着 `<!--验证码-->` 这种模板垃圾，留着只会继续误导。
+  /// 窗口对准「错误 / 密码 / 验证码」这类关键词，学校把原因写在隐藏元素里时也能被带出来。
   static String _pageSnippet(String html) {
     final text = html
         .replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     if (text.isEmpty) return '（学校返回了空页面）';
-    final at = text.indexOf('验证码');
+    var at = -1;
+    for (final kw in ['错误', '不正确', '无效', '验证码', '失败']) {
+      at = text.indexOf(kw);
+      if (at >= 0) break;
+    }
     final start = (at < 0 ? 0 : at - 60).clamp(0, text.length);
     final end = (start + 160).clamp(0, text.length);
     return '${start > 0 ? '…' : ''}${text.substring(start, end).trim()}'

@@ -323,6 +323,7 @@ class MockCampusServer {
         : '<input type="hidden" id="pwdDefaultEncryptSalt" value="${s.casSalt}"/>';
     return '''
 <html><body>
+$casErrorSkeleton
 <form id="casLoginForm" method="post" action="/authserver/login">
   <input type="hidden" name="execution" value="${s.casExecution}"/>
   <input type="hidden" name="_eventId" value="submit"/>
@@ -339,10 +340,23 @@ class MockCampusServer {
 </body></html>''';
   }
 
-  /// 登录失败页：用 SIT 真实页面的错误元素（#cpatchaError / #usernameError / #passwordError），
-  /// 与浏览器版登录实现读的是同一套选择器——这样「客户端能否分辨验证码错/密码错」也就被测到了。
-  void _casError(HttpResponse res, String elementId, String msg) =>
-      _html(res, '<html><body><span id="$elementId" class="auth_error">$msg</span></body></html>');
+  /// SIT 真实 CAS 登录页的静态错误骨架（实测原文）：隐藏元素是给 JS 改文案用的，服务端判定结果
+  /// 一律渲染在**可见的** `#msg`（实测：未填验证码 → 「请输入验证码」、验证码无效 → 「无效的验证码」），
+  /// 且 `#msg` 在页面上排在骨架之后。客户端若抓隐藏元素，就会把「请输入密码」误报成账号密码错误——
+  /// 这里保留同款骨架与顺序，让回归用例覆盖这条误报路径。
+  static const String casErrorSkeleton = '''
+<span id="usernameError" style="display:none;" class="auth_error">请输入用户名</span>
+<span id="usernameSpecificError" style="display:none;" class="auth_error"></span>
+<span id="passwordError" style="display:none;" class="auth_error">请输入密码</span>
+<span id="cpatchaError" style="display:none;" class="auth_error">请输入验证码</span>''';
+
+  /// 登录失败页：按 SIT 真实页面形态返回——静态骨架原样保留（含隐藏的 error 元素），
+  /// 服务端判定结果渲染在可见的 `#msg`。客户端读的是可见元素，隐藏骨架不该被当成错误原因。
+  void _casError(HttpResponse res, String elementId, String msg) => _html(
+      res,
+      '<html><body>$casErrorSkeleton'
+      '<span id="msg" class="auth_error" style="top:-19px;">$msg</span>'
+      '</body></html>');
 
   // ==================== 学工（第二课堂） ====================
 

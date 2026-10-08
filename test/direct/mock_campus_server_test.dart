@@ -186,14 +186,14 @@ void main() {
       final c = XgClient(authBase: mock.profile().authBase, xgBase: mock.baseUrl);
       addTearDown(c.dispose);
 
-      // 验证码错：学校页面 #cpatchaError 的原文
+      // 验证码错：真实页面把判定结果放可见的 #msg（隐藏骨架的同名文案不算数）
       await c.prepareLogin(MockCampusServer.studentId, MockCampusServer.password);
       await expectLater(
         () => c.completeLogin('0000'),
         throwsA(isA<ApiError>().having((e) => e.message, 'message', contains('验证码'))),
       );
 
-      // 密码错：#passwordError 的原文（不能退化成笼统的「登录失败」）
+      // 密码错：可见元素里的原文（不能退化成笼统的「登录失败」，更不能拿隐藏骨架顶替）
       await c.prepareLogin(MockCampusServer.studentId, 'wrong-password');
       await expectLater(
         () => c.completeLogin(mock.debugAuthCaptcha!),

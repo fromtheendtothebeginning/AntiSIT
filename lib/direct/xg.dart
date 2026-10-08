@@ -1,4 +1,4 @@
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 
 import '../api_error.dart';
 import 'activities_util.dart';
@@ -113,18 +113,27 @@ class XgClient {
     // 解析不出就只能给笼统文案，分辨不出「验证码错」还是「密码错」，所以逐个试。
     // 页面里还留着 `<!-- 滑块验证码：-->` 这类模板注释，尾巴 `验证码：-->` 含「验证码」，
     // 被抓走会误触发验证码重试，所以先把注释剥掉再匹配。
+    // 服务端的判定结果固定在可见的 `#msg` / `*SpecificError`（SIT 实测：未填验证码 → #msg
+    // 「请输入验证码」、验证码无效 → #msg「无效的验证码」），而 `#usernameError` / `#passwordError`
+    // / `#cpatchaError` 是 `style="display:none"` 的静态骨架（「请输入用户名 / 请输入密码 /
+    // 请输入验证码」），只在屏幕上被 JS 改写前存在。抓隐藏元素会把「请输入密码」当成学校原文，
+    // 让用户以为账号密码错了——隐藏元素一律跳过。
     final clean = html.replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ');
+    final hidden = RegExp(r'display\s*:\s*none|visibility\s*:\s*hidden', caseSensitive: false);
     final rules = <RegExp>[
-      RegExp(r'id="msg"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
-      RegExp(r'id="(?:username|password|cpatcha|captcha|login)Error"[^>]*>(.*?)</(?:span|div)>',
+      RegExp(r'<[^>]*id="msg"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
+      RegExp(r'<[^>]*id="(?:username|password|cpatcha|captcha|login)Error"[^>]*>(.*?)</(?:span|div)>',
           dotAll: true),
-      RegExp(r'class="[^"]*auth_error[^"]*"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
+      RegExp(r'<[^>]*class="[^"]*auth_error[^"]*"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
     ];
     for (final re in rules) {
-      final m = re.firstMatch(clean);
-      final msg = m == null ? '' : m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
-      if (msg.isNotEmpty) return msg;
+      for (final m in re.allMatches(clean)) {
+        if (hidden.hasMatch(m.group(0)!)) continue;
+        final msg = m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
+        if (msg.isNotEmpty) return msg;
+      }
     }
+    debugPrint('[统一认证登录] 学校页面没有可读错误文案（${html.length} 字）');
     return fallback;
   }
 
