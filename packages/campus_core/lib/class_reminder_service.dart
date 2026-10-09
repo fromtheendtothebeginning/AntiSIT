@@ -453,4 +453,19 @@ class ReminderHealth {
   /// 三项都没问题。
   bool get allGood =>
       notifications != false && exactAlarm != false && batteryUnrestricted != false;
+
+  /// 需要用户去系统里处理的项数（探测不到的项不算，那不是问题）。
+  int get issueCount => [
+        notifications == false,
+        exactAlarm == false,
+        batteryUnrestricted == false,
+      ].where((bad) => bad).length;
+
+  /// 摘要用的第一处问题；都正常返回 null。
+  String? get firstIssue {
+    if (notifications == false) return '通知权限未允许';
+    if (exactAlarm == false) return '精确闹钟未允许';
+    if (batteryUnrestricted == false) return '后台运行受限制';
+    return null;
+  }
 }

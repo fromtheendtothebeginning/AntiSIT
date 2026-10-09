@@ -63,7 +63,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_activities` | `activities` | `network` | — | ✓ | 工具卡片 |
 | `plugin_electricity` | `electricity` | `network` | — | ✓ | 工具卡片（余额速览） |
 | `plugin_ai` | `ai` | `network` | — | ✓ | 设置条目 |
-| `plugin_reminder` | `reminder` | `timetable` | — | ✓ | 设置条目（开关 + 系统层自检：通知权限 / 精确闹钟 / 省电策略，一键跳设置页）+ 启动排期 |
+| `plugin_reminder` | `reminder` | `timetable` | — | ✓ | 设置条目（开关 + 一行自检摘要，详情与引导在二级页 `ReminderGuidePage`：通知权限 / 精确闹钟 / 省电策略，一键跳系统设置）+ 启动排期 |
 | `plugin_feedback` | `feedback` | — | — | ✓ | 设置条目 |
 | `plugin_theme_glass` | `theme.glass` | — | — | 主题只选不关 | 浅/深色板 + 场景光斑 |
 | `plugin_theme_ink` / `plugin_theme_bamboo` | `theme.ink` / `theme.bamboo` | — | — | 同上 | 浅/深色板 |

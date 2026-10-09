@@ -81,12 +81,33 @@ class _PredictiveOrFadeThrough extends StatefulWidget {
   State<_PredictiveOrFadeThrough> createState() => _PredictiveOrFadeThroughState();
 }
 
+/// 返回手势所处的阶段（决定画面由谁驱动）。
+enum _BackPhase {
+  /// 没参与这次手势：普通导航，走淡入淡出。
+  none,
+
+  /// 手指还在屏幕上：位移 1:1 跟手。
+  drag,
+
+  /// 松手提交：从松手位置继续滑出屏幕并淡出。
+  commit,
+
+  /// 松手取消：从松手位置滑回原位。
+  return_,
+}
+
 class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     with WidgetsBindingObserver {
   static const _fade = _FadeThroughTransitionsBuilder();
 
-  /// 正跟着手指做预测式返回（松手前一直为 true）。
-  bool _dragging = false;
+  /// 手势从哪边划进来：左边的往右推、右边的往左推。
+  SwipeEdge _edge = SwipeEdge.left;
+
+  _BackPhase _phase = _BackPhase.none;
+
+  /// 松手那一刻的动画值（= 1 - 手势进度）。提交 / 取消后的动画都从它续上，
+  /// 保证松手前后画面的位移、缩放是连续的，不会跳。
+  double _releaseV = 1;
 
   @override
   void initState() {
@@ -110,7 +131,12 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
       return false;
     }
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
-    if (mounted) setState(() => _dragging = true);
+    if (mounted) {
+      setState(() {
+        _phase = _BackPhase.drag;
+        _edge = backEvent.swipeEdge;
+      });
+    }
     return true;
   }
 
@@ -120,44 +146,97 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
 
   @override
   void handleCancelBackGesture() {
+    _releaseV = widget.animation.value;
     // 松手回弹：路由自己把动画走回去
     widget.route.handleCancelBackGesture();
-    if (mounted) setState(() => _dragging = false);
+    if (mounted) setState(() => _phase = _BackPhase.return_);
   }
 
   @override
-  void handleCommitBackGesture() => widget.route.handleCommitBackGesture();
+  void handleCommitBackGesture() {
+    _releaseV = widget.animation.value;
+    widget.route.handleCommitBackGesture();
+    if (mounted) setState(() => _phase = _BackPhase.commit);
+  }
+
+  static double _mix(double a, double b, double t) => a + (b - a) * t;
 
   @override
   Widget build(BuildContext context) {
-    if (!_dragging) {
+    // 回位动画走完（动画回到 1）就交还给淡入淡出，之后这页被盖住时还能正常淡出
+    if (_phase == _BackPhase.return_ && widget.animation.value >= 1.0) {
+      _phase = _BackPhase.none;
+    }
+    if (_phase == _BackPhase.none) {
       // 普通前进 / 点返回：沿用自家淡入淡出，玻璃观感不变
       return _fade.buildTransitions(widget.route, context, widget.animation,
           widget.secondaryAnimation, widget.child);
     }
-    // 手势进行中：当前页跟着手指缩小 + 收圆角 + 淡出，露出下面那一页。
-    // 玻璃页是半透明的，所以淡出比原样缩更要紧（否则两页内容会叠影）。
     return AnimatedBuilder(
       animation: widget.animation,
-      builder: (context, _) {
-        final v = widget.animation.value.clamp(0.0, 1.0); // 1 = 完整在前，0 = 已退出
+      builder: (context, _) => _gestureView(context),
+    );
+  }
+
+  /// 手势期间的画面。关键是位移：系统给的 progress 就是「手指从边缘走到对边的比例」，
+  /// 乘上屏宽即手指走过的距离，所以进度 × 屏宽 = 1:1 跟手（这也是之前不跟手的原因：
+  /// 只乘了 0.18）。缩放 / 圆角仍按手势进度走，提交与取消都从松手瞬间续上、不跳变。
+  Widget _gestureView(BuildContext context) {
+    final v = widget.animation.value.clamp(0.0, 1.0); // 1 = 完整在前，0 = 已退出
+    final width = MediaQuery.sizeOf(context).width;
+    final dir = _edge == SwipeEdge.right ? -1.0 : 1.0;
+
+    // 松手瞬间的状态（取消 / 提交后的动画都从这里插值，避免跳变）
+    final released = 1 - _releaseV;
+    final releaseShift = dir * released * width;
+    final releaseScale = 1 - 0.05 * released;
+    final releaseRadius = 16 * released;
+
+    final double shift;
+    final double opacity;
+    final double scale;
+    final double radius;
+    switch (_phase) {
+      case _BackPhase.drag:
         final gone = 1 - v;
-        final width = MediaQuery.sizeOf(context).width;
-        return Opacity(
-          opacity: v,
-          child: Transform.translate(
-            // 跟手右移一点：像原生那样把当前页「推走」，露出下面那一页
-            offset: Offset(gone * width * 0.18, 0),
-            child: Transform.scale(
-              scale: 0.90 + 0.10 * v,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24 * gone),
-                child: widget.child,
-              ),
-            ),
+        shift = dir * gone * width; // 1:1 跟手
+        // 不整页淡掉：拖动时要像「被手指推走」。玻璃页半透明，稍带一点淡出，
+        // 两页叠在一起时不至于互相透得太花。
+        opacity = 1 - 0.45 * gone;
+        scale = 1 - 0.05 * gone;
+        radius = 16 * gone;
+      case _BackPhase.commit:
+        final t = _releaseV <= 0 ? 1.0 : ((_releaseV - v) / _releaseV).clamp(0.0, 1.0);
+        shift = _mix(releaseShift, dir * width, t);
+        opacity = (1 - t).clamp(0.0, 1.0);
+        scale = _mix(releaseScale, 0.96, t);
+        radius = _mix(releaseRadius, 12, t);
+      case _BackPhase.return_:
+        final span = 1 - _releaseV;
+        final t = span <= 0 ? 1.0 : ((v - _releaseV) / span).clamp(0.0, 1.0);
+        shift = _mix(releaseShift, 0, t);
+        opacity = _mix(1 - 0.45 * released, 1, t);
+        scale = _mix(releaseScale, 1, t);
+        radius = _mix(releaseRadius, 0, t);
+      case _BackPhase.none:
+        shift = 0;
+        opacity = 1;
+        scale = 1;
+        radius = 0;
+    }
+
+    return Opacity(
+      opacity: opacity,
+      child: Transform.translate(
+        offset: Offset(shift, 0),
+        child: Transform.scale(
+          scale: scale,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(radius),
+            child: widget.child,
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

@@ -51,6 +51,42 @@ void main() {
         reason: '淡入淡出不该有位移（换成官方 FadeForwards 的横向滑动就会位移）');
   });
 
+  testWidgets('位移 1:1 跟手：进度每涨 0.2，页面就多移 0.2 个屏宽', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    final settled = tester.getTopLeft(find.text('第二页')).dx;
+
+    await backGesture(tester, 'startBackGesture', <String, Object?>{
+      'touchOffset': <double>[5.0, 300.0],
+      'progress': 0.0,
+      'swipeEdge': 0,
+    });
+
+    Future<double> shiftAt(double progress) async {
+      await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
+        'x': 5.0 + progress * width,
+        'y': 300.0,
+        'progress': progress,
+        'swipeEdge': 0,
+      });
+      return tester.getTopLeft(find.text('第二页')).dx - settled;
+    }
+
+    final at20 = await shiftAt(0.2);
+    final at40 = await shiftAt(0.4);
+    // 系统给的 progress 就是「手指从边缘走到对边的比例」，所以位移应当 ≈ 进度 × 屏宽。
+    // 允许 ±25px：还叠了一点缩放（0.99~0.98，居中内容几乎不动）。
+    expect(at20, closeTo(0.2 * width, 25), reason: '进度 0.2 时应位移 0.2 个屏宽');
+    expect(at40 - at20, closeTo(0.2 * width, 25), reason: '再涨 0.2 进度就再多移 0.2 个屏宽（跟手）');
+
+    await backGesture(tester, 'cancelBackGesture');
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('第二页')).dx, closeTo(settled, 1),
+        reason: '取消后要回到原位');
+  });
+
   testWidgets('系统返回手势：当前页跟着手势缩小（预测式动画），提交后才真正返回', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
