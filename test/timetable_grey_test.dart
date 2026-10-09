@@ -1,4 +1,4 @@
-import 'package:campus_service/timetable_store.dart';
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 课表「已上过的课置灰」的判断：该列当天日期 + 实际下课时刻已过。
@@ -103,6 +103,47 @@ void main() {
           startDate: '', week: 1, dayIndex: 0, endTimes: endTimes,
           now: DateTime(2026, 3, 2, 21, 0));
       expect(left.length, all.length);
+    });
+  });
+
+  group('调休补课当天：「上完没有」按今天真实日期算，不按被借那天的日期', () {
+    const endTimes = [
+      '09:05', '09:55', '10:55', '11:45', '13:45', '14:35', '15:40', '16:30', '18:45', '19:35', '20:25',
+    ];
+    const start = '2026-03-02'; // 周一
+
+    // 周三第 5 节（13:00-13:45）的一门课
+    final wed = TtCourse(
+      id: 'ds',
+      name: '数据结构',
+      day: 2,
+      slotStart: 4,
+      slotEnd: 4,
+      weekType: 'all',
+      weekStart: 1,
+      weekEnd: 20,
+      place: 'A101',
+    );
+
+    test('周六按周三的课表上课：周六 13:00 时这门课还没上完', () {
+      final now = DateTime(2026, 3, 7, 13, 0); // 周六 = 第 1 周第 6 列（索引 5）
+      // 正确姿势：日期用今天所在的列（索引 5 → 3/7）
+      final ok = TimetableStore.upcomingOn([wed],
+          startDate: start, week: 1, dayIndex: 5, endTimes: endTimes, now: now);
+      expect(ok.map((c) => c.name).toList(), ['数据结构']);
+
+      // 拿被借星期的日期（索引 2 → 3/4）去判，会被算成「3/4 的课早就下课了」→ 列表空
+      // （顶部卡「不显示今天的课」就是这么来的）
+      final wrong = TimetableStore.upcomingOn([wed],
+          startDate: start, week: 1, dayIndex: 2, endTimes: endTimes, now: now);
+      expect(wrong, isEmpty);
+    });
+
+    test('补课当天下课后仍照常消失', () {
+      final after = TimetableStore.upcomingOn([wed],
+          startDate: start, week: 1, dayIndex: 5, endTimes: endTimes,
+          now: DateTime(2026, 3, 7, 14, 30));
+      expect(after, isEmpty);
     });
   });
 }

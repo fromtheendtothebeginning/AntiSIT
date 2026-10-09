@@ -1,6 +1,5 @@
-import 'package:campus_service/app_state.dart';
-import 'package:campus_service/pages/timetable_page.dart';
-import 'package:campus_service/timetable_store.dart';
+import 'package:campus_core/campus_core.dart';
+import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

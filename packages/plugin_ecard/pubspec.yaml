@@ -1,0 +1,17 @@
+name: plugin_ecard
+description: "AntiSIT 插件包：ecard 功能插件"
+publish_to: 'none'
+version: 0.1.0
+environment:
+  sdk: ^3.9.2
+
+# 与宿主同属一个 pub workspace：根目录一次 `flutter pub get` 解析全部包
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  campus_core:
+    path: ../campus_core
+  qr_flutter: ^4.1.0
+  wakelock_plus: ^1.4.0

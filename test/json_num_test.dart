@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:campus_service/json_num.dart';
+import 'package:campus_core/campus_core.dart';
 
 void main() {
   test('asNum 兼容数字与字符串（服务器字段两种形态都出现）', () {

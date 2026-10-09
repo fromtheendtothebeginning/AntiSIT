@@ -1,5 +1,4 @@
-import 'package:campus_service/class_reminder_service.dart';
-import 'package:campus_service/timetable_store.dart';
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -138,6 +137,50 @@ void main() {
     });
   });
 
+  group('调休规则作用于提醒（与课表页渲染同规则）', () {
+    TimetableStore storeWithAdjust(List<TtCourse> courses, List<TtAdjust> adj) {
+      final s = TimetableStore.instance;
+      s.semesters = {
+        '2025-12': SemesterTt(
+            startDate: start, weekCount: 20, courses: courses, adjustments: adj),
+      };
+      return s;
+    }
+
+    test('放假（off）那天不排提醒', () {
+      // 2026-03-02 周一放假 → 该周周一的高数不提醒；3/9 正常上课照排
+      final s = storeWithAdjust([course()], [TtAdjust(date: '2026-03-02', type: 'off')]);
+      final planned = ClassReminderService.plan(s, DateTime(2026, 3, 1), horizonDays: 9);
+      expect(planned.map((r) => r.at).toList(), [DateTime(2026, 3, 9, 8, 5)]);
+    });
+
+    test('按周 X 上课（follow）那天，提醒的是被借星期的课', () {
+      // 3/2（周一）按周三的课表上课：应提醒周三的英语（13:00 前 15 分钟），而非周一自己的高数
+      final s = storeWithAdjust(
+        [course(), course(name: '英语', day: 2, slotStart: 4, place: 'B202')],
+        [TtAdjust(date: '2026-03-02', type: 'follow', day: 2)],
+      );
+      final planned = ClassReminderService.plan(s, DateTime(2026, 3, 1), horizonDays: 2);
+      expect(planned.length, 1);
+      expect(planned.single.course.name, '英语');
+      expect(planned.single.at, DateTime(2026, 3, 2, 12, 45));
+    });
+
+    test('effectiveDay：无规则按原列，off 为 null，follow 取被借的星期', () {
+      final tt = SemesterTt(
+        startDate: start,
+        weekCount: 20,
+        adjustments: [
+          TtAdjust(date: '2026-03-04', type: 'off'), // 周三
+          TtAdjust(date: '2026-03-05', type: 'follow', day: 0), // 周四按周一
+        ],
+      );
+      expect(ClassReminderService.effectiveDay(tt, 1, 0), 0); // 周一无规则
+      expect(ClassReminderService.effectiveDay(tt, 1, 2), isNull); // 周三放假
+      expect(ClassReminderService.effectiveDay(tt, 1, 3), 0); // 周四按周一
+    });
+  });
+
   group('开关状态', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -161,6 +204,40 @@ void main() {
       SharedPreferences.setMockInitialValues({'class_reminder_on': true});
       await ClassReminderService.I.loadEnabled();
       expect(ClassReminderService.I.enabled, isTrue);
+    });
+  });
+
+  group('排期打算（actionFor）', () {
+    test('正常：清空后按当前课表重排', () {
+      expect(
+          ClassReminderService.actionFor(
+              enabled: true, pluginEnabled: true, storeHasSemesters: true, planned: 5),
+          ReminderAction.reschedule);
+    });
+
+    test('关掉提醒 / 插件被停用：只清空', () {
+      expect(
+          ClassReminderService.actionFor(
+              enabled: false, pluginEnabled: true, storeHasSemesters: true, planned: 5),
+          ReminderAction.clearOnly);
+      expect(
+          ClassReminderService.actionFor(
+              enabled: true, pluginEnabled: false, storeHasSemesters: true, planned: 5),
+          ReminderAction.clearOnly);
+    });
+
+    test('课表还没读出来：什么都不做（回归：原来会把用户已排好的提醒清掉，之后再也排不回来）', () {
+      expect(
+          ClassReminderService.actionFor(
+              enabled: true, pluginEnabled: true, storeHasSemesters: false, planned: 0),
+          ReminderAction.skip);
+    });
+
+    test('课表读出来了但一节课都没有：照样重排（把过期排期清掉）', () {
+      expect(
+          ClassReminderService.actionFor(
+              enabled: true, pluginEnabled: true, storeHasSemesters: true, planned: 0),
+          ReminderAction.reschedule);
     });
   });
 }

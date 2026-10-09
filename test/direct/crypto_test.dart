@@ -2,8 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:campus_service/direct/crypto.dart';
-import 'package:campus_service/direct/sm4.dart';
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pointycastle/export.dart';
 

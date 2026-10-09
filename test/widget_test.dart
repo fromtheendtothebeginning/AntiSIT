@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:campus_service/app_state.dart';
+import 'package:campus_core/campus_core.dart';
 
 void main() {
   test('inferSemester 学年学期推算', () {

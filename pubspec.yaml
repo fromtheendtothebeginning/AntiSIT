@@ -16,17 +16,30 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.6.7+44
+version: 1.8.13+67
 
 environment:
   sdk: ^3.9.2
 
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
+# 多包工作区：宿主 + 契约层（campus_core）+ 每个插件一个包。
+# 根目录一次 `flutter pub get` 就能解析全部包（各包 pubspec 里写 resolution: workspace）。
+workspace:
+  - packages/plugin_feedback
+  - packages/plugin_electricity
+  - packages/plugin_activities
+  - packages/plugin_score
+  - packages/plugin_exams
+  - packages/plugin_grades
+  - packages/campus_core
+  - packages/plugin_timetable
+  - packages/plugin_ecard
+  - packages/plugin_tools
+  - packages/plugin_ai
+  - packages/plugin_reminder
+  - packages/plugin_theme_glass
+  - packages/plugin_theme_ink
+  - packages/plugin_theme_bamboo
+
 dependencies:
   flutter:
     sdk: flutter
@@ -37,25 +50,55 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  http: ^1.6.0
-  shared_preferences: ^2.5.5
-  qr_flutter: ^4.1.0
-  wakelock_plus: ^1.4.0
-  pointycastle: ^4.0.0
-  url_launcher: ^6.3.2
-  # 上课提醒：后台本地通知（不依赖进程存活 / 服务器）
-  flutter_local_notifications: ^19.5.0
-  timezone: ^0.10.0
-  # 校历图片识别调休：从相册选一张校历截图
-  image_picker: ^1.2.0
-  # AI 提供商 logo（simple-icons 的 CC0 单色 SVG，按主题着色）
-  flutter_svg: ^2.2.0
   # 「我的」页显示运行时版本号（原来只是传递依赖，显式声明才能直接用）
   package_info_plus: ^9.0.1
+  # 「我的」页打开 GPL 协议原文
+  url_launcher: ^6.3.2
+
+  # 契约层：所有服务、组件库、插件接口都在这里（插件包也依赖它）
+  campus_core:
+    path: packages/campus_core
+
+  # ---- 插件包 ----
+  plugin_feedback:
+    path: packages/plugin_feedback
+  plugin_electricity:
+    path: packages/plugin_electricity
+  plugin_activities:
+    path: packages/plugin_activities
+  plugin_score:
+    path: packages/plugin_score
+  plugin_exams:
+    path: packages/plugin_exams
+  plugin_grades:
+    path: packages/plugin_grades
+  # 导入插件 = 在这里加一行 + `dart run tool/gen_plugins.dart`；删掉这一行即下线。
+  # 每个包自动获得一个编译期剔除开关 EXCLUDE_<包名去掉 plugin_ 前缀大写>。
+  plugin_timetable:
+    path: packages/plugin_timetable
+  plugin_ecard:
+    path: packages/plugin_ecard
+  plugin_tools:
+    path: packages/plugin_tools
+  plugin_ai:
+    path: packages/plugin_ai
+  plugin_reminder:
+    path: packages/plugin_reminder
+  plugin_theme_glass:
+    path: packages/plugin_theme_glass
+  plugin_theme_ink:
+    path: packages/plugin_theme_ink
+  plugin_theme_bamboo:
+    path: packages/plugin_theme_bamboo
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # 测试里直接用到（应用代码本身已不依赖这两个包，见 packages/campus_core/pubspec.yaml）
+  shared_preferences: ^2.5.5
+  pointycastle: ^4.0.0
+  # 测试里注入假的 Android 通知平台实现，验证提醒自检的探测逻辑
+  flutter_local_notifications: ^19.5.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

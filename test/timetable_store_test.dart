@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:campus_service/timetable_store.dart';
+import 'package:campus_core/campus_core.dart';
 
 void main() {
   setUp(() {

@@ -1,4 +1,4 @@
-import 'package:campus_service/widgets/common.dart';
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 

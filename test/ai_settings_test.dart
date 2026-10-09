@@ -1,8 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:campus_service/ai/ai_settings.dart';import 'package:campus_service/ai/ai_tasks.dart';
-import 'package:campus_service/ai/ai_vision.dart';
-import 'package:campus_service/api_error.dart';
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

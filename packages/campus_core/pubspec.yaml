@@ -1,0 +1,25 @@
+name: campus_core
+description: "AntiSIT 宿主与插件包之间的契约层：服务、组件库、插件接口与注册表"
+publish_to: 'none'
+version: 0.1.0
+environment:
+  sdk: ^3.9.2
+
+# 与宿主同属一个 pub workspace：根目录一次 `flutter pub get` 解析全部包
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 数据来源与登录（服务器模式 / 直连模式）
+  http: ^1.6.0
+  shared_preferences: ^2.5.5
+  # 直连模式的国密 / RSA 实现
+  pointycastle: ^4.0.0
+  # AI 提供商 logo 与品牌图形
+  flutter_svg: ^2.2.0
+  # 连接设置页里的外链（协议原文 / 仓库）
+  url_launcher: ^6.3.2
+  # 上课提醒：后台本地通知（服务属于基础设施，见 class_reminder_service.dart）
+  flutter_local_notifications: ^19.5.0
+  timezone: ^0.10.0

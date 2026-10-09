@@ -1,8 +1,4 @@
-import 'package:campus_service/app_state.dart';
-import 'package:campus_service/direct/activities_util.dart';
-import 'package:campus_service/direct/epay.dart';
-import 'package:campus_service/direct/jwxt.dart';
-import 'package:campus_service/direct/school.dart';
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

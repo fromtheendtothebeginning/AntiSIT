@@ -1,13 +1,6 @@
 import 'dart:io';
 
-import 'package:campus_service/api_error.dart';
-import 'package:campus_service/app_state.dart';
-import 'package:campus_service/direct/campus_direct.dart';
-import 'package:campus_service/direct/epay.dart';
-import 'package:campus_service/direct/jwxt.dart';
-import 'package:campus_service/direct/mock_campus_server.dart';
-import 'package:campus_service/direct/school.dart';
-import 'package:campus_service/direct/xg.dart';
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

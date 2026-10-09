@@ -3,15 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../ai/ai_vision.dart';
-import '../api_client.dart';
-import '../app_state.dart';
-import '../class_reminder_service.dart';
-import '../widgets/common.dart';
-import 'ai_settings_page.dart';
-import 'connect_page.dart';
-import 'feedback_page.dart';
-import 'login_page.dart';
+import 'package:campus_core/campus_core.dart';
+import '../widgets/theme_picker.dart';
+import 'plugin_manager_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -143,37 +137,12 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() {});
   }
 
-  /// AI 设置摘要（列表副标题）。
-  String _aiSubtitle() =>
-      AiVision.I.available ? '已启用 · ${AiVision.I.config.summary}' : '未配置：自动识别验证码、识别校历调休';
-
-  Future<void> _openAiSettings() async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AiSettingsPage()));
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  /// 上课提醒开关：打开时申请通知权限（必要时再要精确闹钟权限），并按当前课表排期。
-  Future<void> _onReminderToggle(bool v) async {
-    final messenger = ScaffoldMessenger.of(context);
-    String? tip;
-    if (v) {
-      tip = await ClassReminderService.I.enable();
-    } else {
-      await ClassReminderService.I.disable();
-      tip = '已关闭上课提醒';
-    }
-    if (!mounted) return;
-    if (tip != null) {
-      messenger.showSnackBar(SnackBar(content: Text(tip), behavior: SnackBarBehavior.floating));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final st = AppState.I;
     return ListenableBuilder(
-      listenable: st,
+      // 注册表也要听：插件增删的设置条目 / 主题名 / 启用计数都来自它
+      listenable: Listenable.merge([st, PluginRegistry.I]),
       builder: (context, _) {
         final loggedIn = st.loggedIn;
         final info = st.studentInfo;
@@ -451,9 +420,10 @@ class _ProfilePageState extends State<ProfilePage> {
                       onTap: _openConnect,
                     ),
                     ListTile(
-                      leading: const Icon(Icons.auto_awesome_outlined),
+                      leading: const Icon(Icons.brightness_6_outlined),
                       title: const Text('外观'),
-                      subtitle: const Text('液态玻璃主题 · 跟随系统或手动指定', style: TextStyle(fontSize: 12)),
+                      subtitle: Text('${PluginRegistry.I.theme.name} · 跟随系统或手动指定',
+                          style: const TextStyle(fontSize: 12)),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -471,6 +441,14 @@ class _ProfilePageState extends State<ProfilePage> {
                         }),
                       ),
                     ),
+                    ListTile(
+                      leading: const Icon(Icons.palette_outlined),
+                      title: const Text('主题'),
+                      subtitle: Text(PluginRegistry.I.theme.description,
+                          style: const TextStyle(fontSize: 12)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => showThemePicker(context),
+                    ),
                     if (!st.direct)
                       ListenableBuilder(
                         listenable: AppState.I,
@@ -482,46 +460,18 @@ class _ProfilePageState extends State<ProfilePage> {
                           onChanged: (v) => AppState.I.setRemember(v),
                         ),
                       ),
-                    ListenableBuilder(
-                      listenable: ClassReminderService.I,
-                      builder: (_, __) => SwitchListTile(
-                        secondary: const Icon(Icons.notifications_active_outlined),
-                        title: const Text('上课提醒'),
-                        subtitle: Text(
-                            ClassReminderService.I.enabled
-                                ? '课前 ${ClassReminderService.leadMinutes} 分钟通知（'
-                                    '无需打开 App，重启后仍有效）'
-                                : '课前 ${ClassReminderService.leadMinutes} 分钟通知，后台也能收到',
-                            style: const TextStyle(fontSize: 12)),
-                        value: ClassReminderService.I.enabled,
-                        onChanged: _onReminderToggle,
-                      ),
-                    ),
-                    SwitchListTile(
-                      secondary: const Icon(Icons.visibility_off_outlined),
-                      title: const Text('上完的课淡化显示'),
-                      subtitle: const Text('关闭后已上完的课与普通课一样显示正常彩色（需已设学期起点）',
-                          style: TextStyle(fontSize: 12)),
-                      value: st.dimCompleted,
-                      onChanged: (v) => AppState.I.setDimCompleted(v),
-                    ),
+                    // 由各插件贡献（上课提醒 / 上完的课淡化 / AI 设置 / 提交反馈）：
+                    // 插件停用或从清单里删掉，这里的条目自动消失
+                    ...PluginRegistry.I.settingsTiles(context),
                     ListTile(
-                      leading: const Icon(Icons.auto_awesome_outlined),
-                      title: const Text('AI 设置'),
+                      leading: const Icon(Icons.extension_outlined),
+                      title: const Text('插件管理'),
                       subtitle: Text(
-                          _aiSubtitle(),
+                          '${PluginRegistry.I.enabled.length} 个功能插件启用中 · 查看依赖关系',
                           style: const TextStyle(fontSize: 12)),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: _openAiSettings,
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.feedback_outlined),
-                      title: const Text('提交反馈'),
-                      subtitle: const Text('Issue · PR · Fork · GitHub（GPL-3.0）',
-                          style: TextStyle(fontSize: 12)),
-                      trailing: const Icon(Icons.chevron_right),
                       onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const FeedbackPage())),
+                          MaterialPageRoute(builder: (_) => const PluginManagerPage())),
                     ),
                   ],
                 ),

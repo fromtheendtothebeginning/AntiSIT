@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:campus_service/direct/http_session.dart';
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 回归：重定向链上每一跳的 Set-Cookie 都必须进 Cookie 罐。
