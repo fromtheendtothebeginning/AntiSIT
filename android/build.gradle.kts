@@ -1,8 +1,14 @@
 allprojects {
+    // 与 settings.gradle.kts 同一套规则：本机用阿里云镜像加速，
+    // CI 的 runner 在境外，走镜像常超时（报 "error while downloading artifacts from the network"），
+    // 所以 CI 上直连官方源。
+    val onCi = !System.getenv("CI").isNullOrEmpty()
     repositories {
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
-        maven("https://maven.aliyun.com/repository/gradle-plugin")
+        if (!onCi) {
+            maven("https://maven.aliyun.com/repository/google")
+            maven("https://maven.aliyun.com/repository/public")
+            maven("https://maven.aliyun.com/repository/gradle-plugin")
+        }
         google()
         mavenCentral()
     }

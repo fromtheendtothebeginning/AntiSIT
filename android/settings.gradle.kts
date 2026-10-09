@@ -10,10 +10,17 @@ pluginManagement {
 
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
+    // 依赖仓库：本机（国内）先用阿里云镜像加速；CI 的 runner 在境外，
+    // 走镜像常超时 / 被拒，flutter 那边只会看到一句
+    // "Gradle threw an error while downloading artifacts from the network"，
+    // 所以 CI 上跳过镜像、直连官方源。
+    val onCi = !System.getenv("CI").isNullOrEmpty()
     repositories {
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
-        maven("https://maven.aliyun.com/repository/gradle-plugin")
+        if (!onCi) {
+            maven("https://maven.aliyun.com/repository/google")
+            maven("https://maven.aliyun.com/repository/public")
+            maven("https://maven.aliyun.com/repository/gradle-plugin")
+        }
         google()
         mavenCentral()
         gradlePluginPortal()

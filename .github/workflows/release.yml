@@ -45,7 +45,19 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: 构建 APK
-        run: flutter build apk --release
+        # runner 的网络偶尔抽风：依赖下载超时 / 连接被重置，flutter 只会给一句
+        # "Gradle threw an error while downloading artifacts from the network"。
+        # 这种抖动不该毁掉一次发布，重试几次（Gradle 会复用已下好的部分，越试越快）。
+        run: |
+          for attempt in 1 2 3; do
+            echo "--- 第 $attempt 次构建 ---"
+            if flutter build apk --release; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "连续 3 次构建失败，请看上面的 Gradle 日志定位原因" >&2
+          exit 1
 
       - name: 校验签名指纹
         run: |
