@@ -422,22 +422,29 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
         final dark = mode == ThemeMode.dark || (mode == ThemeMode.system && systemDark);
         final theme = PluginRegistry.I.theme;
         final brightness = dark ? Brightness.dark : Brightness.light;
-        final palette = theme.palette(brightness);
+        // 拖动「外观」滑块时整站配色在浅色板与深色板之间插值（松手落到所选那档）
+        final preview = AppState.I.appearancePreviewDark;
+        final palette = preview == null
+            ? theme.palette(brightness)
+            : GlassPalette.lerp(
+                theme.palette(Brightness.light), theme.palette(Brightness.dark), preview);
         SemColors.p = palette; // 全站 SemColors 引用随主题取值
         return MaterialApp(
           title: 'AntiSIT',
           navigatorKey: navKey,
-          theme: buildAppTheme(theme.palette(Brightness.light)),
-          darkTheme: buildAppTheme(theme.palette(Brightness.dark)),
-          themeMode: mode,
+          // 预览中：Material 那套（对话框 / 开关 / 水波纹）也跟着用混合色板
+          theme: buildAppTheme(preview == null ? theme.palette(Brightness.light) : palette),
+          darkTheme: buildAppTheme(preview == null ? theme.palette(Brightness.dark) : palette),
+          themeMode: preview == null ? mode : ThemeMode.light,
           // 中文：日期/时间选择器、长按菜单等 Material 组件默认是英文，必须在这里挂 delegates
           locale: appLocale,
           supportedLocales: appSupportedLocales,
           localizationsDelegates: appLocalizationsDelegates,
           onNavigationNotification: onNavigationNotification,
           // 全局场景底：Scaffold 全透明，光斑（由主题插件给）透出玻璃「折射」感
-          builder: (context, child) =>
-              GlassBackground(wells: theme.wells(brightness), child: child!),
+          builder: (context, child) => GlassBackground(
+              wells: theme.wells(preview == null ? brightness : (preview >= 0.5 ? Brightness.dark : Brightness.light)),
+              child: child!),
           home: const BootPage(),
         );
       },

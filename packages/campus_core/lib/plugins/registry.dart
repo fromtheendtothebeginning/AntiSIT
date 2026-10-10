@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../widgets/common.dart';
+import 'capability.dart';
 import 'plugin.dart';
 
 /// 插件注册表：插件集合 + 运行期启停状态 + 依赖关系查询 / 校验。
@@ -16,11 +17,19 @@ class PluginRegistry extends ChangeNotifier {
   PluginRegistry({
     List<FeaturePlugin> features = const <FeaturePlugin>[],
     List<ThemePlugin> themes = const <ThemePlugin>[],
+    List<AiProviderPlugin> providers = const <AiProviderPlugin>[],
+    Map<String, PluginCapability> capabilities = const {},
     this.defaultThemeId = PluginIds.themeGlass,
     String? themeId,
   })  : features = List<FeaturePlugin>.unmodifiable(features),
-        themes = List<ThemePlugin>.unmodifiable(themes) {
-    problems = validate(this.features);
+        themes = List<ThemePlugin>.unmodifiable(themes),
+        providers = List<AiProviderPlugin>.unmodifiable(providers),
+        capabilities = Map<String, PluginCapability>.unmodifiable(capabilities) {
+    problems = [
+      ...validate(this.features),
+      ...validateProviders(this.providers),
+      ...validateCapabilities(this),
+    ];
     _themeId = themeId ?? defaultThemeId;
   }
 
@@ -33,6 +42,13 @@ class PluginRegistry extends ChangeNotifier {
 
   final List<FeaturePlugin> features;
   final List<ThemePlugin> themes;
+
+  /// 已装进来的 AI 提供商（顺序 = 清单顺序，也就是 pubspec 里的书写顺序）。
+  /// 与主题一样是「只选不关」：没有停用开关，被删掉/被 EXCLUDE 的提供商压根不在这个列表里。
+  final List<AiProviderPlugin> providers;
+
+  /// 各插件对外提供的能力（key = 提供方的插件 id，见 [PluginBundle.capabilities]）。
+  final Map<String, PluginCapability> capabilities;
   final String defaultThemeId;
 
   final Set<String> _disabled = <String>{};
@@ -152,6 +168,100 @@ class PluginRegistry extends ChangeNotifier {
     return themes.isEmpty ? const FallbackTheme() : themes.first;
   }
 
+  // ==================== AI 提供商 ====================
+
+  /// 按 id 取提供商；没装这家（插件包被删 / 被 EXCLUDE 掉）时返回 null。
+  /// **停用的照样返回**（插件管理页要在停用状态下显示它），能不能用看 [isProviderEnabled]。
+  AiProviderPlugin? providerById(String id) {
+    for (final p in providers) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
+
+  /// 这家装着、且没被用户停用。停用 = 不出现在 AI 设置的选择器里、AI 视同没配这家。
+  bool isProviderEnabled(String id) => providerById(id) != null && !_disabled.contains(id);
+
+  /// 启用中的提供商（清单顺序）。停用记录与功能插件共用 `plugin_disabled` 这个键。
+  List<AiProviderPlugin> get enabledProviders =>
+      [for (final p in providers) if (isProviderEnabled(p.id)) p];
+
+  /// 界面里列提供商的顺序：普通提供商按清单顺序，内置的「自定义」（兜底入口）排最后。
+  static List<AiProviderPlugin> _customLast(List<AiProviderPlugin> list) => [
+        ...list.where((p) => !p.isCustom),
+        ...list.where((p) => p.isCustom),
+      ];
+
+  /// AI 设置的选择器用：只列启用中的——停用的就不该出现在那儿。
+  List<AiProviderPlugin> get providerChoices => _customLast(enabledProviders);
+
+  /// 插件管理页用：连被停用的一起列（那里要给每行开关）。
+  List<AiProviderPlugin> get providerList => _customLast(providers);
+
+  /// 停用 / 启用某家提供商（只影响它自己：提供商没有依赖，也没有连带）。
+  /// 当前正在用的那家被停用后，AI 按「未配置」处理——存档里的 Key 仍留着，开回来即可。
+  Future<void> setProviderEnabled(String id, bool enabled) async {
+    final p = providerById(id);
+    if (p == null || !p.removable) return;
+    if (_disabled.contains(id) == !enabled) return; // 状态没变，不必写盘
+    if (enabled) {
+      _disabled.remove(id);
+    } else {
+      _disabled.add(id);
+    }
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 解析配置里存的 providerId：**停用与没装都算不可用**，于是回退到第一个启用中的
+  /// 非自定义提供商（用户存档里那家用不了时，落到一个能真正用的地址而不是「自定义」），
+  /// 再退到第一个启用中的，一个都没有就用 [FallbackAiProvider]（空基址 →
+  /// `AiConfig.ready` 为假，表现为「未配置」而不是崩）。
+  AiProviderPlugin resolveProvider(String id) {
+    if (isProviderEnabled(id)) return providerById(id)!;
+    final usable = enabledProviders;
+    for (final p in usable) {
+      if (!p.isCustom) return p;
+    }
+    return usable.isEmpty ? const FallbackAiProvider() : usable.first;
+  }
+
+  /// 提供商 id 重复 → 人话描述；与 [validate] 的结果一起并进 [problems]。
+  static List<String> validateProviders(List<AiProviderPlugin> providers) {
+    final out = <String>[];
+    final ids = <String>{};
+    for (final p in providers) {
+      if (!ids.add(p.id)) out.add('AI 提供商 id 重复：${p.id}');
+    }
+    return out;
+  }
+
+  /// 能力必须挂在一个**真实存在的插件 id** 上（写错 id 就永远查不到，静默失效）。
+  static List<String> validateCapabilities(PluginRegistry r) {
+    final known = {
+      for (final p in r.features) p.id,
+      for (final t in r.themes) t.id,
+      for (final p in r.providers) p.id,
+    };
+    return [
+      for (final id in r.capabilities.keys)
+        if (!known.contains(id)) '能力挂在不存在的插件 id 上：$id',
+    ];
+  }
+
+  // ==================== 能力 ====================
+
+  /// 按「接口 + 提供方插件 id」取能力（见 [PluginCapability]）。
+  /// 提供方没装或被停用 → null；取到的实例不是 [T] → 也当没有（清单写错了，别崩）。
+  ///
+  /// 插件之间就靠它解耦：调用方只 import campus_core 里的接口，不 import 提供方的包；
+  /// 取用处写的这个 id 同时也是依赖关系（生成器会对账）。
+  T? capability<T extends PluginCapability>(String ownerId) {
+    if (!isEnabled(ownerId)) return null;
+    final c = capabilities[ownerId];
+    return c is T ? c : null;
+  }
+
   // ==================== 依赖 ====================
 
   /// 直接依赖 [id] 的插件（硬依赖，即关掉 [id] 会牵连谁）。
@@ -224,18 +334,26 @@ class PluginRegistry extends ChangeNotifier {
 
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
+    // 停用记录里混着功能插件与 AI 提供商的 id（同一个键 `plugin_disabled`）：
+    // 只留还装着的，已删插件留下的记录直接忽略
     _disabled
       ..clear()
       ..addAll((sp.getStringList(_kDisabled) ?? const <String>[])
-          .where((id) => byId(id) != null)); // 已删插件留下的记录直接忽略
-    _disabled.removeWhere((id) => byId(id)!.removable == false); // 核心插件不给关
+          .where((id) => byId(id) != null || providerById(id) != null));
+    // 声明不可停用的（核心功能插件 / 提供商）从记录里剔掉
+    _disabled.removeWhere((id) {
+      final f = byId(id);
+      if (f != null) return !f.removable;
+      final p = providerById(id);
+      return p != null && !p.removable;
+    });
     _toolOrder
       ..clear()
       ..addAll((sp.getStringList(_kToolOrder) ?? const <String>[])
           .where((id) => byId(id) != null));
     final savedTheme = sp.getString(_kTheme);
     if (savedTheme != null && themes.any((t) => t.id == savedTheme)) _themeId = savedTheme;
-    problems = validate(features);
+    problems = [...validate(features), ...validateProviders(providers), ...validateCapabilities(this)];
     _repair();
     loaded = true;
     notifyListeners();
@@ -355,4 +473,30 @@ class FallbackTheme extends ThemePlugin {
   @override
   List<GlassWell> wells(Brightness brightness) =>
       brightness == Brightness.dark ? kGlassWellsDark : kGlassWellsLight;
+}
+
+/// 一个提供商包都没装时的兜底（正常构建里不会用到，见 [PluginRegistry.resolveProvider]）。
+/// 放在 core 而不是某个提供商包里：core 不认识提供商包。基址为空 →
+/// `AiConfig.ready` 为假，界面表现为「未配置」，不会崩。
+class FallbackAiProvider extends AiProviderPlugin {
+  const FallbackAiProvider();
+
+  @override
+  String get id => 'none';
+  @override
+  String get label => '未选择提供商';
+  @override
+  String get description => '没有装入任何 AI 提供商插件';
+  @override
+  String get baseUrl => '';
+  @override
+  List<String> get models => const [];
+  @override
+  String get defaultModel => '';
+  @override
+  String get docs => '';
+  @override
+  String get applyLabel => '申请 API Key';
+  @override
+  String get logo => '';
 }

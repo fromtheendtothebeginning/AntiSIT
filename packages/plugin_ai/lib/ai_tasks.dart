@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:campus_core/campus_core.dart';
+
 import 'ai_vision.dart';
 
 /// 验证码自动识别：识别成功返回文字，失败返回 null（调用方回退到手动输入框）。
@@ -26,20 +28,8 @@ Future<String?> solveCaptcha(Uint8List image) async {
   }
 }
 
-/// 一条调休规则：与课表 store 的 TtAdjust 同形（date + type + day）。
-class HolidayRule {
-  const HolidayRule({required this.date, required this.type, this.day});
-
-  final String date; // yyyy-MM-dd
-  final String type; // off | follow
-  final int? day; // follow 时 0-6（0=周一）
-
-  Map<String, dynamic> toJson() => {
-        'date': date,
-        'type': type,
-        if (day != null) 'day': day,
-      };
-}
+/// 调休规则的类型 [HolidayRule] 定义在契约层（campus_core 的 ai_capability.dart）：
+/// 课表（消费方）也要用它，不能只藏在 AI 包里。
 
 /// 系统提示词（与 index 后端 timetable_holiday.PARSE_SYSTEM 同义）。
 const _holidaySystem = '你是校历解析助手。只输出 JSON，不要任何解释、前后缀或代码块标记。';

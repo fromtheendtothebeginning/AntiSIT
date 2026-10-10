@@ -1,5 +1,8 @@
 import 'package:campus_service/pages/plugin_manager_page.dart';
 import 'package:campus_core/campus_core.dart';
+import 'package:plugin_ai/plugin_ai.dart';
+import 'package:plugin_ai_deepseek/plugin_ai_deepseek.dart';
+import 'package:plugin_ai_minimax/plugin_ai_minimax.dart';
 import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_theme_ink/plugin_theme_ink.dart';
 import 'package:campus_service/widgets/plugin_graph.dart';
@@ -35,8 +38,19 @@ void main() {
         _Fake('lib'),
         _Fake('a', deps: ['lib']),
         _Fake('b', deps: ['a']),
+        // AI 插件也在：管理页那段「当前提供商」是从它提供的能力里读的
+        _Fake('ai'),
       ],
       themes: const [GlassTheme(), InkTheme()],
+      // 宿主不摸 AI 插件的内部，只按 id 取能力（读当前选中的提供商）
+      capabilities: const {PluginIds.ai: AiCapabilityImpl()},
+      // 提供商都是真实插件类（一家一个包）；自定义是内置的兜底入口，排在选单最后
+      providers: const [
+        CustomProvider(),
+        DeepSeekProvider(),
+        MiniMaxProvider(),
+        MiniMaxTokenPlanProvider(),
+      ],
     );
   });
 
@@ -54,7 +68,7 @@ void main() {
     await pumpPage(tester);
     expect(tester.widget<SwitchListTile>(switchTile('插件net')).onChanged, isNull);
     expect(tester.widget<SwitchListTile>(switchTile('插件a')).onChanged, isNotNull);
-    expect(find.text('4/4 已启用'), findsOneWidget);
+    expect(find.text('5/5 已启用'), findsOneWidget);
   });
 
   testWidgets('停用有下游的插件要先确认，取消则一点都不变', (tester) async {
@@ -113,6 +127,41 @@ void main() {
     await tester.tap(find.widgetWithText(ListTile, '墨白极简'));
     await tester.pumpAndSettle();
     expect(PluginRegistry.I.theme.id, InkTheme.themeId);
+  });
+
+  testWidgets('AI 提供商：逐家开关，停用当前那家会先确认', (tester) async {
+    await pumpPage(tester);
+
+    expect(find.text('AI 提供商'), findsOneWidget);
+    expect(find.text('4/4 已启用 · 当前「DeepSeek」'), findsOneWidget);
+    expect(find.text('当前'), findsOneWidget, reason: '只有当前那家带「当前」标记');
+    expect(tester.getTopLeft(find.text('自定义')).dy,
+        greaterThan(tester.getTopLeft(find.text('DeepSeek')).dy),
+        reason: '自定义（兜底入口）排在最后');
+
+    // 停用一个不是当前的：直接生效，行上出现「已停用」，计数跟着变
+    await tester.tap(find.widgetWithText(SwitchListTile, 'MiniMax Token Plan'));
+    await tester.pumpAndSettle();
+    expect(PluginRegistry.I.isProviderEnabled('minimaxtokenplan'), isFalse);
+    expect(find.text('已停用'), findsOneWidget);
+    expect(find.text('3/4 已启用 · 当前「DeepSeek」'), findsOneWidget);
+
+    // 停用当前正在用的那家：先弹确认，取消则一点都不变
+    await tester.tap(find.widgetWithText(SwitchListTile, 'DeepSeek'));
+    await tester.pumpAndSettle();
+    expect(find.text('停用正在使用的提供商'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(PluginRegistry.I.isProviderEnabled('deepseek'), isTrue);
+
+    await tester.tap(find.widgetWithText(SwitchListTile, 'DeepSeek'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('停用'));
+    await tester.pumpAndSettle();
+    expect(PluginRegistry.I.isProviderEnabled('deepseek'), isFalse);
+    expect(PluginRegistry.I.enabledProviders.map((p) => p.id).toSet(), {'minimax', 'custom'});
+    expect(PluginRegistry.I.providerChoices.map((p) => p.id).toList(), ['minimax', 'custom'],
+        reason: 'AI 设置里剩下可选的：自定义仍排最后');
   });
 
   testWidgets('清单写错时顶部给出告警，页面其余部分照常可用', (tester) async {

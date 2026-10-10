@@ -336,4 +336,166 @@ void main() {
       expect(ids.toSet().length, ids.length);
     });
   });
+
+  group('AI 提供商（一家一个包，只选不关）', () {
+    final reg = buildAppRegistry();
+
+    test('真实清单里装了提供商：id 不重复、都带说明与基址、自检无告警', () {
+      final providers = reg.providers;
+      expect(providers.length, greaterThanOrEqualTo(3));
+      expect(PluginRegistry.validateProviders(providers), isEmpty);
+      expect(reg.problems, isEmpty);
+      for (final p in providers.where((p) => !p.isCustom)) {
+        expect(p.baseUrl, isNotEmpty, reason: p.id);
+        expect(p.description, isNotEmpty, reason: p.id);
+      }
+    });
+
+    test('id 重复会被自检报出来', () {
+      final dup =
+          PluginRegistry.validateProviders(const [_FakeProvider('x'), _FakeProvider('x')]);
+      expect(dup, hasLength(1));
+      expect(dup.single, contains('id 重复'));
+    });
+
+    test('没装那家就回退：第一个非自定义 → 只剩下自定义 → 兜底', () {
+      final r = PluginRegistry(
+          providers: const [_FakeProvider('a'), _FakeProvider('custom', custom: true)]);
+      expect(r.resolveProvider('a').id, 'a');
+      expect(r.resolveProvider('ghost').id, 'a', reason: '回退到第一个能真正用的');
+      expect(r.providerById('ghost'), isNull);
+
+      final onlyCustom = PluginRegistry(providers: const [_FakeProvider('custom', custom: true)]);
+      expect(onlyCustom.resolveProvider('ghost').id, 'custom');
+
+      expect(PluginRegistry().resolveProvider('ghost').baseUrl, isEmpty,
+          reason: '一个都没装 → 兜底提供商的空基址，ready 为假而不是崩');
+    });
+
+    test('挑选用列表把内置的「自定义」排在最后', () {
+      final r = PluginRegistry(providers: const [
+        _FakeProvider('custom', custom: true),
+        _FakeProvider('a'),
+        _FakeProvider('b'),
+      ]);
+      expect(r.providerChoices.map((p) => p.id).toList(), ['a', 'b', 'custom']);
+      expect(r.providerList.map((p) => p.id).toList(), ['a', 'b', 'custom']);
+    });
+
+    test('停用 / 启用一家：只影响它自己，AI 设置里不再列出', () async {
+      final r = PluginRegistry(providers: const [
+        _FakeProvider('a'),
+        _FakeProvider('b'),
+        _FakeProvider('custom', custom: true),
+      ]);
+      expect(r.enabledProviders.map((p) => p.id).toList(), ['a', 'b', 'custom']);
+
+      await r.setProviderEnabled('a', false);
+      expect(r.isProviderEnabled('a'), isFalse);
+      expect(r.providerById('a'), isNotNull, reason: '停用 ≠ 没装：管理页还要显示这一行');
+      expect(r.enabledProviders.map((p) => p.id).toList(), ['b', 'custom']);
+      expect(r.providerChoices.map((p) => p.id).toList(), ['b', 'custom'],
+          reason: 'AI 设置的选择器里不该出现停用的那家');
+      expect(r.providerList.map((p) => p.id).toList(), ['a', 'b', 'custom'],
+          reason: '管理页连停用的一起列（那里要有开关）');
+      expect(r.resolveProvider('a').id, 'b', reason: '停用的当没装：回退到启用中的');
+
+      await r.setProviderEnabled('a', true);
+      expect(r.isProviderEnabled('a'), isTrue);
+      expect(r.resolveProvider('a').id, 'a');
+    });
+
+    test('停用状态会被持久化（与功能插件共用 plugin_disabled 键）', () async {
+      SharedPreferences.setMockInitialValues({
+        'plugin_disabled': ['a', 'ghost'],
+      });
+      final r = PluginRegistry(providers: const [_FakeProvider('a'), _FakeProvider('b')]);
+      await r.load();
+      expect(r.isProviderEnabled('a'), isFalse);
+      expect(r.isProviderEnabled('b'), isTrue);
+      expect(r.problems, isEmpty, reason: '残留的 ghost 不该报成清单问题');
+    });
+
+    test('全部停用 → 兜底提供商（空基址 → AI 判未配置，不崩）', () async {
+      final r = PluginRegistry(
+          providers: const [_FakeProvider('a'), _FakeProvider('custom', custom: true)]);
+      await r.setProviderEnabled('a', false);
+      await r.setProviderEnabled('custom', false);
+      expect(r.enabledProviders, isEmpty);
+      expect(r.providerChoices, isEmpty);
+      expect(r.resolveProvider('a').baseUrl, isEmpty);
+    });
+
+    test('声明 removable=false 的提供商不给停用', () async {
+      final r = PluginRegistry(providers: const [_FakeProvider('a', removable: false)]);
+      await r.setProviderEnabled('a', false);
+      expect(r.isProviderEnabled('a'), isTrue);
+    });
+  });
+
+group('能力注册表（插件之间只按 id 取能力）', () {
+  test('真实清单：课表能取到 ai / reminder 的能力，且都来自对的那家', () {
+    final r = buildAppRegistry();
+    expect(r.capability<AiCapability>(PluginIds.ai), isA<AiCapability>());
+    expect(r.capability<ReminderCapability>(PluginIds.reminder), isA<ReminderCapability>());
+    expect(r.capability<AiCapability>(PluginIds.reminder), isNull, reason: '类型对不上也当没有');
+    expect(r.capability<AiCapability>('ghost'), isNull, reason: 'id 写错就当没有，不崩');
+    expect(r.problems, isEmpty);
+  });
+
+  test('提供方被停用 / 没装：查不到能力（调用方据此降级）', () async {
+    final r = buildAppRegistry();
+    final reminder = r.capability<ReminderCapability>(PluginIds.reminder);
+    expect(reminder, isNotNull);
+
+    await r.disable('reminder');
+    expect(r.capability<ReminderCapability>(PluginIds.reminder), isNull,
+        reason: '停用后取不到 → 课表页铃铛消失、课表存储不再排期');
+
+    await r.enable('reminder');
+    expect(r.capability<ReminderCapability>(PluginIds.reminder), isNotNull, reason: '开回来就有');
+  });
+
+  test('能力挂在不存在的插件 id 上：清单自检报出来', () {
+    final r = PluginRegistry(
+      features: const [_Fake('lib')],
+      capabilities: const {PluginIds.ai: _FakeCapability()},
+    );
+    expect(r.problems, contains(contains('能力挂在不存在的插件 id 上：ai')));
+  });
+});
+}
+
+/// 测试用提供商：不碰任何真实包。
+class _FakeProvider extends AiProviderPlugin {
+  const _FakeProvider(this.id, {this.custom = false, this.removable = true});
+
+  @override
+  final String id;
+  final bool custom;
+
+  @override
+  final bool removable;
+
+  @override
+  String get label => id;
+  @override
+  String get description => '说明 $id';
+  @override
+  String get baseUrl => custom ? '' : 'https://$id.example/v1';
+  @override
+  List<String> get models => const ['m'];
+  @override
+  String get defaultModel => 'm';
+  @override
+  String get docs => '';
+  @override
+  String get applyLabel => '申请 API Key';
+  @override
+  String get logo => '';
+}
+
+/// 测试用能力（不碰真实 AI/提醒实现）。
+class _FakeCapability extends PluginCapability {
+  const _FakeCapability();
 }

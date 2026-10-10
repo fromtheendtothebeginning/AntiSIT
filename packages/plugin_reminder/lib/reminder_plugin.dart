@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'class_reminder_service.dart';
+import 'reminder_capability_impl.dart';
 import 'reminder_guide_page.dart';
 
 /// 上课提醒：课前 15 分钟的后台本地通知，App 没打开也能收到。
@@ -158,6 +160,12 @@ class _ReminderTileState extends State<_ReminderTile> with WidgetsBindingObserve
 }
 
 /// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_XXX=true），这一条连同包内代码
+/// `capabilities` 的 key 就是本插件 id：课表页（AppBar 铃铛）与课表存储（课表变更后
+/// 重排期）按「接口 + 这个 id」取用提醒能力，都不 import 本包；本插件被停用时查不到，
+/// 铃铛消失、也不再排期。通知权限自检与引导页属于本包自己的 UI，不进能力接口。
+/// 编译期常量开关为真时（--dart-define=EXCLUDE_REMINDER=true），这一条连同包内代码
 /// 一起变成不可达代码，被 AOT 摇树丢掉。
-const PluginBundle pluginBundle = PluginBundle(features: [ReminderPlugin()]);
+const PluginBundle pluginBundle = PluginBundle(
+  features: [ReminderPlugin()],
+  capabilities: {PluginIds.reminder: ReminderCapabilityImpl()},
+);

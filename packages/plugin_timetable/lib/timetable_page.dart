@@ -668,7 +668,8 @@ class _TimetablePageState extends State<TimetablePage> {
                                   aiOk = false;
                                 });
                                 try {
-                                  final rules = await parseHolidayImage(
+                                  final ai = _ai!;
+                                  final rules = await ai.parseHolidayImage(
                                     bytes,
                                     startDate: tt.startDate,
                                     weekCount: tt.weekCount,
@@ -709,7 +710,7 @@ class _TimetablePageState extends State<TimetablePage> {
                         label: Text(aiBusy ? '识别中…' : '从校历图片识别'),
                       ),
                       const SizedBox(width: 8),
-                      if (!AiVision.I.available)
+                      if (!(_ai?.available ?? false))
                         Flexible(
                           child: Text('未配置 AI：到「我的 → AI 设置」填识图模型后可用',
                               style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
@@ -1204,14 +1205,23 @@ class _TimetablePageState extends State<TimetablePage> {
 
   // ── 渲染 ──
 
+  /// 跨插件能力：都按「接口 + 提供方插件 id」从注册表取——课表不 import
+  /// plugin_ai / plugin_reminder；提供方被停用或没装时就取不到，对应 UI 自然退场
+  /// （AI 提示「未配置」、提醒铃铛整颗不出现）。取用处的这个 id 也是依赖关系。
+  AiCapability? get _ai => PluginRegistry.I.capability<AiCapability>(PluginIds.ai);
+  ReminderCapability? get _reminder =>
+      PluginRegistry.I.capability<ReminderCapability>(PluginIds.reminder);
+
   /// 上课提醒开关：打开时申请通知权限（必要时再要精确闹钟权限），并按当前课表排期。
   Future<void> _onReminderToggle(bool v) async {
+    final reminder = _reminder;
+    if (reminder == null) return;
     final messenger = ScaffoldMessenger.of(context);
     String? tip;
     if (v) {
-      tip = await ClassReminderService.I.enable();
+      tip = await reminder.enable();
     } else {
-      await ClassReminderService.I.disable();
+      await reminder.disable();
       tip = '已关闭上课提醒';
     }
     if (!mounted) return;
@@ -1221,7 +1231,7 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   /// 课表页 AppBar 的提醒图标：点击即开关（与「我的」页开关同一份状态）。
-  Future<void> _toggleReminder() => _onReminderToggle(!ClassReminderService.I.enabled);
+  Future<void> _toggleReminder() => _onReminderToggle(!(_reminder?.enabled ?? false));
 
   @override
   Widget build(BuildContext context) {
@@ -1230,9 +1240,28 @@ class _TimetablePageState extends State<TimetablePage> {
     }
     return Scaffold(
       appBar: AppBar(
-        // 学期名靠左：它是这张表的标识，左边更像「这一页的标题」；右侧留给三个操作按钮
+        // 学期名靠左：它是这张表的标识，左边更像「这一页的标题」；右侧留给三个操作按钮。
+        // 标题本身就是切换学期的入口（箭头暗示可点），右上角菜单里也留着同一项。
         centerTitle: false,
-        title: Text(_semesterTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: InkWell(
+          onTap: _pickSemester,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(_semesterTitle,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 2),
+                const Icon(Icons.arrow_drop_down, size: 22),
+              ],
+            ),
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: () {
@@ -1259,18 +1288,19 @@ class _TimetablePageState extends State<TimetablePage> {
             icon: Icon(_dayView ? Icons.calendar_view_week_rounded : Icons.calendar_view_day_rounded),
             tooltip: _dayView ? '周视图' : '日视图',
           ),
-          // 「上课提醒」插件停用后整颗按钮都不出现（提醒是插件提供的功能，不是课表的一部分）
-          if (PluginRegistry.I.isEnabled(PluginIds.reminder))
+          // 「上课提醒」插件停用/没装时取不到能力，整颗按钮都不出现
+          // （提醒是插件提供的功能，不是课表的一部分）
+          if (_reminder case final r?)
             ListenableBuilder(
-              listenable: ClassReminderService.I,
+              listenable: r.listenable,
               builder: (_, __) => IconButton(
                 onPressed: _toggleReminder,
-                icon: Icon(ClassReminderService.I.enabled
+                icon: Icon(r.enabled
                     ? Icons.notifications_active
                     : Icons.notifications_off_outlined),
-                tooltip: ClassReminderService.I.enabled
-                    ? '上课提醒已开启（课前 ${ClassReminderService.leadMinutes} 分钟）'
-                    : '开启上课提醒（课前 ${ClassReminderService.leadMinutes} 分钟）',
+                tooltip: r.enabled
+                    ? '上课提醒已开启（课前 ${r.leadMinutes} 分钟）'
+                    : '开启上课提醒（课前 ${r.leadMinutes} 分钟）',
               ),
             ),
           PopupMenuButton<String>(

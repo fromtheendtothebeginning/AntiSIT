@@ -4,10 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../api_error.dart';
-import '../plugins/plugin.dart';
-import '../plugins/registry.dart';
-import 'ai_settings.dart';
+import 'package:campus_core/campus_core.dart';
+
+import 'ai_config.dart';
 
 /// 「AI 设置」插件的 id（见 lib/plugins/features/ai_plugin.dart）。
 /// 这里用字面量而不是 import 那个文件：插件是可删的，基础设施不该依赖某个插件存在。
@@ -234,35 +233,18 @@ class AiVision {
         },
       ],
     };
-    if (thinkingOff) _applyThinkingOff(payload, c.providerId, c.model.trim());
+    if (thinkingOff) payload.addAll(applyThinkingOff(c.providerId, c.model.trim()));
     return payload;
   }
 
-  /// 关闭思考：照抄 index `aisettings.apply_thinking(level="off")` 的分厂商写法。
-  /// 未识别的提供商不加参数（乱加会 400）。
-  static void _applyThinkingOff(Map<String, dynamic> payload, String providerId, String model) {
-    final pid = providerId.toLowerCase();
-    switch (pid) {
-      case 'deepseek':
-        payload['thinking'] = {'type': 'disabled'};
-      case 'kimi':
-        if (model.startsWith('kimi-k3')) {
-          payload['reasoning_effort'] = 'none';
-        } else {
-          payload['thinking'] = {'type': 'disabled'};
-        }
-      case 'qwen':
-      case 'dashscope':
-        payload['enable_thinking'] = false;
-      case 'gpt':
-      case 'openai':
-      case 'gemini':
-      case 'google':
-      case 'mimo':
-        payload['reasoning_effort'] = 'none';
-      default:
-        break; // opencode-go / glm / custom：格式不确定，不加
-    }
+  /// 关闭思考要往请求体里加的字段：转发给这家提供商插件——**写法随包走**，
+  /// 各家协议、出处与实测结论都写在各自包里的注释上（不再集中在 core 里 if/switch）。
+  /// 没装这家 / 这家被停用 / 这家没写（opencode-go、glm、自定义）→ 空 Map = 不加字段：
+  /// 格式不确定时乱加会 400，而停用的那家本来也不该参与请求。
+  static Map<String, dynamic> applyThinkingOff(String providerId, String model) {
+    final r = PluginRegistry.I;
+    if (!r.isProviderEnabled(providerId)) return const {};
+    return r.providerById(providerId)!.thinkingOff(model);
   }
 
   dynamic _decode(Uint8List bytes) {

@@ -231,8 +231,7 @@ class GlassPalette {
   final Color danger;
   final Color dangerSoft;
 
-  static const light = GlassPalette(
-    isDark: false,
+  static const light = GlassPalette(    isDark: false,
     bg: Color(0xFFE3E9F2),
     card: Color(0x8CFFFFFF), // 白 55%
     cardElevated: Color(0x66FFFFFF), // 白 40%
@@ -286,6 +285,43 @@ class GlassPalette {
     danger: Color(0xFFFF6B5E),
     dangerSoft: Color(0x24FF5A4A), // 14%
   );
+
+  /// 两套色板按 [t] 插值（0 = [a] 原样、1 = [b] 原样）：拖动「外观」滑块时整站配色
+  /// 就靠它渐变——拖到 0.5 时页面底色/卡面/文字都是浅深各一半，松手落到所选那档。
+  /// 每个令牌一视同仁地 `Color.lerp`（含 alpha），`isDark` 取更近的那一档
+  /// （状态栏图标、场景光斑按它选）。
+  static GlassPalette lerp(GlassPalette a, GlassPalette b, double t) {
+    if (t <= 0) return a;
+    if (t >= 1) return b;
+    Color mix(Color x, Color y) => Color.lerp(x, y, t)!;
+    return GlassPalette(
+      isDark: t >= 0.5 ? b.isDark : a.isDark,
+      bg: mix(a.bg, b.bg),
+      card: mix(a.card, b.card),
+      cardElevated: mix(a.cardElevated, b.cardElevated),
+      navPill: mix(a.navPill, b.navPill),
+      menuBg: mix(a.menuBg, b.menuBg),
+      border: mix(a.border, b.border),
+      borderStrong: mix(a.borderStrong, b.borderStrong),
+      inputFill: mix(a.inputFill, b.inputFill),
+      stripe: mix(a.stripe, b.stripe),
+      thumb: mix(a.thumb, b.thumb),
+      overlay: mix(a.overlay, b.overlay),
+      shadow: mix(a.shadow, b.shadow),
+      textPrimary: mix(a.textPrimary, b.textPrimary),
+      textSecondary: mix(a.textSecondary, b.textSecondary),
+      textMuted: mix(a.textMuted, b.textMuted),
+      accent: mix(a.accent, b.accent),
+      accentSoft: mix(a.accentSoft, b.accentSoft),
+      accentStrong: mix(a.accentStrong, b.accentStrong),
+      gold: mix(a.gold, b.gold),
+      goldSoft: mix(a.goldSoft, b.goldSoft),
+      success: mix(a.success, b.success),
+      successSoft: mix(a.successSoft, b.successSoft),
+      danger: mix(a.danger, b.danger),
+      dangerSoft: mix(a.dangerSoft, b.dangerSoft),
+    );
+  }
 
   /// 由「底色 + 面底 + 强调色」派生整套令牌（透明/描边档位与原玻璃色板一致）。
   /// 非玻璃主题用它构造即可，不必手写 26 个令牌；液态玻璃仍保留上面手调的常量。
@@ -509,6 +545,16 @@ class AppCard extends StatelessWidget {
 /// 液态玻璃滑块 Tab（复刻 anticlass .glass-tabs + .slide-thumb-goo）：
 /// 玻璃轨道 + 等宽分栏。thumb 可直接拖拽，松手携带释放速度以弹簧动画
 /// 甩到目标段（动量）；点击同样以弹簧滑过去。
+/// 「外观」滑块（[GlassTabs]，三段：跟随系统 / 浅色 / 深色）的连续位置 → 当前该暗到什么程度：
+/// 浅色档 = 0、深色档 = 1；「跟随系统」那一端按系统的实际深浅，中间段线性插值。
+/// 拖到 1.5 就是浅色与深色各一半——整站色板按这个值做 [GlassPalette.lerp] 渐变。
+/// 静止时它正好等于该档对应的值（0 / 1 / 系统的深浅），所以松手不会跳色。
+double appearanceDarkness(double pos, {required bool systemDark}) {
+  if (pos >= 1) return (pos - 1).clamp(0.0, 1.0);
+  final base = systemDark ? 1.0 : 0.0;
+  return base * (1 - pos).clamp(0.0, 1.0);
+}
+
 class GlassTabs extends StatefulWidget {
   const GlassTabs({
     super.key,
@@ -517,6 +563,7 @@ class GlassTabs extends StatefulWidget {
     required this.onChanged,
     this.height = 34,
     this.fontSize = 12.5,
+    this.position,
   });
 
   final List<String> labels;
@@ -524,6 +571,10 @@ class GlassTabs extends StatefulWidget {
   final ValueChanged<int> onChanged;
   final double height;
   final double fontSize;
+
+  /// 把「当前连续位置」写出来（每帧都写，单位 = 段，1.5 = 第 2 段与第 3 段中间）：
+  /// 调用方据此算实时配色（如「外观」滑块拖到中间时浅深各一半）。弹簧仍藏在控件里。
+  final ValueNotifier<double>? position;
 
   @override
   State<GlassTabs> createState() => _GlassTabsState();
@@ -544,6 +595,15 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
     _ctrl.animateWith(SpringSimulation(_spring, _ctrl.value, target, velocity));
   }
 
+  void _publish() => widget.position?.value = _ctrl.value;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(_publish); // 所有位移都经过 _ctrl：弹簧、跟手、外部驱动
+    _publish();
+  }
+
   @override
   void didUpdateWidget(covariant GlassTabs old) {
     super.didUpdateWidget(old);
@@ -555,6 +615,7 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
 
   @override
   void dispose() {
+    _ctrl.removeListener(_publish);
     _ctrl.dispose();
     super.dispose();
   }
@@ -937,17 +998,29 @@ class GlassNavBarItem {
 }
 
 /// 液态玻璃底栏：thumb 可拖拽、带动量回弹（与 [GlassTabs] 同一物理）。
+/// 页面区域横滑时由外壳通过 [dragPosition] 驱动同一个位置，两者不会打架。
 class GlassNavBar extends StatefulWidget {
   const GlassNavBar({
     super.key,
     required this.items,
     required this.index,
     required this.onChanged,
+    this.dragPosition,
+    this.position,
   });
 
   final List<GlassNavBarItem> items;
   final int index;
   final ValueChanged<int> onChanged;
+
+  /// 页面区域横滑时外壳给的连续位置（单位 = 格：1.4 = 从第 2 格往第 3 格拖了 40%）。
+  /// 非 null（拖动中）滑块直接跟手、不跑自己的弹簧；松手时外壳置回 null，
+  /// 滑块从当前位置弹到落点（[index]）。
+  final ValueListenable<double?>? dragPosition;
+
+  /// 把「当前连续位置」写出来（每帧都写）：页面照着它位移，就能跟滑块**同一套弹簧**动，
+  /// 切页时不会突兀地跳。弹簧本身仍藏在底栏里（谁都不用在别处再实现一遍物理）。
+  final ValueNotifier<double>? position;
 
   @override
   State<GlassNavBar> createState() => _GlassNavBarState();
@@ -967,9 +1040,31 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
     _ctrl.animateWith(SpringSimulation(_spring, _ctrl.value, target, velocity));
   }
 
+  void _publish() => widget.position?.value = _ctrl.value;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.dragPosition?.addListener(_onExternalDrag);
+    _ctrl.addListener(_publish); // 所有位置变化都经过 _ctrl：弹簧、跟手、外部驱动
+    _publish();
+  }
+
+  /// 外壳在页面区域拖动：非 null → 滑块跟手；置回 null（松手）→ 从当前位置弹到落点。
+  void _onExternalDrag() {
+    final v = widget.dragPosition!.value;
+    if (v == null) {
+      _springTo(widget.index.toDouble());
+    } else {
+      _ctrl.value = v.clamp(0.0, (widget.items.length - 1).toDouble());
+    }
+  }
+
   @override
   void didUpdateWidget(covariant GlassNavBar old) {
     super.didUpdateWidget(old);
+    // 页面区域拖动中位置由外壳给，别在这儿再弹一次（会跟手指打架）
+    if (widget.dragPosition?.value != null) return;
     if (old.index != widget.index && widget.index != _target) {
       _springTo(widget.index.toDouble());
     }
@@ -977,6 +1072,8 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
 
   @override
   void dispose() {
+    widget.dragPosition?.removeListener(_onExternalDrag);
+    _ctrl.removeListener(_publish);
     _ctrl.dispose();
     super.dispose();
   }
@@ -1010,10 +1107,12 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
           child: LayoutBuilder(
             builder: (context, cons) {
               final segW = cons.maxWidth / n;
+              final drag = widget.dragPosition;
               return AnimatedBuilder(
-                animation: _ctrl,
+                animation: drag == null ? _ctrl : Listenable.merge([_ctrl, drag]),
                 builder: (context, _) {
-                  final pos = _ctrl.value.clamp(0.0, (n - 1).toDouble());
+                  // 页面区域拖动中滑块跟手（外壳给的位置）；否则用自身的弹簧位置
+                  final pos = (drag?.value ?? _ctrl.value).clamp(0.0, (n - 1).toDouble());
                   final visual = pos.round().clamp(0, n - 1);
                   return Stack(
                     children: [

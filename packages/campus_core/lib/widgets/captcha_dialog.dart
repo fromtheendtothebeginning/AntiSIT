@@ -2,10 +2,11 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
-import '../ai/ai_tasks.dart';
-import '../ai/ai_vision.dart';
 import '../api_client.dart';
 import '../direct/campus_direct.dart';
+import '../plugins/ai_capability.dart';
+import '../plugins/plugin.dart';
+import '../plugins/registry.dart';
 import 'common.dart';
 
 /// 弹窗串行队列：教务与学工可能同时要求登录，排队保证同一时刻只有一个弹窗，
@@ -20,9 +21,10 @@ Future<T> _serial<T>(Future<T> Function() task) {
 
 /// 注入验证码输入弹窗（App 启动时调用一次）：直连模式本机登录学校系统用；
 /// 服务器模式在自动识码走不通（未配识图模型等）回 need_captcha 时也用同一只弹窗。
-/// 配了「AI 设置」时先让 AI 读图；识别失败、或上一次是「验证码错」（多半是 AI 认错字，
-/// 换了新码值得再试一次）时继续让 AI 试，直到 [maxAiTries] 次；仍不行就弹手输框。
-/// AI 只是省一步，永远不挡路。
+/// 配了「AI 设置」时 **AI 识别与手输框并发**：弹窗先把图和输入框摆出来，AI 在后台读图，
+/// 识别出来而用户还没动手就自动填入并提交；用户自己先输完就用用户的，AI 结果作废。
+/// 上一次是「验证码错」（多半是 AI 认错字，换了新码值得再试）时继续让 AI 试，
+/// 一次登录流程里最多 [maxAiTries] 次；不试或没认出来就纯手输。AI 只是省一步，不挡路。
 void installDirectCaptchaPrompt() {
   CampusDirect.I.captchaPrompt = (image, hint, refresh, {error}) =>
       _serial(() => _aiThenManual(image, hint, refresh, error));
@@ -41,36 +43,46 @@ Future<String?> _aiThenManual(
   Future<Uint8List> Function() refresh,
   String? error,
 ) async {
-  await AiVision.I.load();
+  // AI 能力由「AI 设置」插件提供：core 只按 id 取，不 import 那个包。
+  // 没装 / 被停用 → 取不到，直接走手输（与「没配 AI」是同一条路）。
+  final ai = PluginRegistry.I.capability<AiCapability>(PluginIds.ai);
+  await ai?.load();
   final noError = error == null || error.isEmpty;
   if (noError) {
     _aiTries = 0; // 新的一轮登录：重新计数
   }
   // 上次是密码类错误说明验证码本来就是对的，别再折腾 AI；验证码错则值得再试（换了新码）
   final captchaWrong = error != null && error.contains('验证码');
-  if (AiVision.I.available && _aiTries < maxAiTries && (noError || captchaWrong)) {
-    _aiTries++;
-    final text = await solveCaptcha(image);
-    if (text != null && text.isNotEmpty) {
-      debugPrint('[AI] 自动识别验证码（$hint，第 $_aiTries 次）：$text');
-      return text;
-    }
+  if (!((ai?.available ?? false) && _aiTries < maxAiTries && (noError || captchaWrong))) {
+    return _showCaptcha(image, hint, refresh, error);
   }
-  return _showCaptcha(image, hint, refresh, error);
+  final attempt = ++_aiTries;
+  final pending = () async {
+    final text = await ai!.solveCaptcha(image);
+    if (text != null && text.isNotEmpty) {
+      debugPrint('[AI] 自动识别验证码（$hint，第 $attempt 次）：$text');
+    }
+    return text;
+  }();
+  // 界面弹不出来时（后台取数触发登录）没有并发可言，只能等 AI——与改造前一致
+  if (navKey.currentContext == null) return pending;
+  return _showCaptcha(image, hint, refresh, error, ai: pending);
 }
 
 Future<String?> _showCaptcha(
   Uint8List image,
   String hint,
   Future<Uint8List> Function() refresh,
-  String? error,
-) {
+  String? error, {
+  Future<String?>? ai,
+}) {
   final ctx = navKey.currentContext;
   if (ctx == null) return Future.value(null);
   return showDialog<String>(
     context: ctx,
     barrierDismissible: false,
-    builder: (_) => CaptchaDialog(image: image, hint: hint, onRefresh: refresh, error: error),
+    builder: (_) =>
+        CaptchaDialog(image: image, hint: hint, onRefresh: refresh, error: error, ai: ai),
   );
 }
 
@@ -82,6 +94,7 @@ class CaptchaDialog extends StatefulWidget {
     required this.hint,
     required this.onRefresh,
     this.error,
+    this.ai,
   });
 
   final Uint8List image;
@@ -91,6 +104,11 @@ class CaptchaDialog extends StatefulWidget {
   /// 上一次提交失败的原因（如「验证码错误」），首次弹出为 null。
   final String? error;
 
+  /// 后台并发跑的 AI 识别结果；null = 这次没让 AI 试（不可用 / 次数用完 / 上次是密码错）。
+  /// 识别出来后：用户还没动手就自动填入并提交；已经自己输上、或中途换了另一张图，
+  /// 就丢掉这个结果（认的是旧图）。
+  final Future<String?>? ai;
+
   @override
   State<CaptchaDialog> createState() => _CaptchaDialogState();
 }
@@ -99,6 +117,24 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
   final _ctrl = TextEditingController();
   late Uint8List _image = widget.image;
   bool _refreshing = false;
+  bool _aiPending = false;
+  bool _stale = false; // 用户换过图：AI 认的是上一张，结果不能再采用
+
+  @override
+  void initState() {
+    super.initState();
+    final ai = widget.ai;
+    if (ai == null) return;
+    _aiPending = true;
+    ai.then((text) {
+      if (!mounted) return;
+      final useIt = text != null && text.isNotEmpty && !_stale && _ctrl.text.trim().isEmpty;
+      setState(() => _aiPending = false);
+      if (!useIt) return;
+      _ctrl.text = text; // 认出来了：与「先识别再弹框」时一样，直接提交
+      _submit();
+    });
+  }
 
   @override
   void dispose() {
@@ -107,7 +143,10 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _refreshing = true);
+    setState(() {
+      _refreshing = true;
+      _stale = true;
+    });
     try {
       final img = await widget.onRefresh();
       if (mounted) setState(() => _image = img);
@@ -176,6 +215,21 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
             ],
           ),
           const SizedBox(height: 12),
+          if (_aiPending)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  const SizedBox(
+                      width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('AI 正在后台识别，认出来会自动提交；想自己输就直接输',
+                        style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                  ),
+                ],
+              ),
+            ),
           GlassField(
             label: '验证码',
             controller: _ctrl,

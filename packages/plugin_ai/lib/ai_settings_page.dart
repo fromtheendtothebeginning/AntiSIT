@@ -2,8 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:campus_core/campus_core.dart';
+
+import 'ai_config.dart';
+import 'ai_vision.dart';
 
 /// AI 设置：直连模式下 App 自己调用户的 AI 服务，用于
 /// ① 自动识别登录验证码（关思考，只要几个字符）；② 识别校历图片里的调休安排。
@@ -191,16 +196,30 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
+  /// 打开该提供商的开放平台（申请 / 管理 API Key、买订阅套餐的页面）。
+  /// 打不开浏览器（没有可用的浏览器 / 无网络）就把链接复制给用户，别让按钮白点。
+  Future<void> _openApplyPage(AiProviderPlugin p) async {
+    try {
+      await launchUrl(Uri.parse(p.docs), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: p.docs));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('打不开浏览器，申请链接已复制'), behavior: SnackBarBehavior.floating));
+    }
+  }
+
   /// 提供商也用同一个选择弹窗（与模型选择统一形态）。
+  /// 列表来自插件注册表——一家一个插件包，删包/EXCLUDE 掉的就不在这儿（顺序 = 清单顺序）。
   Future<void> _pickProviderDialog() async {
     final picked = await showDialog<String>(
       context: context,
       builder: (_) => _PickerDialog(
         title: '选择提供商',
         current: _c.providerId,
-        searchHint: null, // 提供商就 9 个，不需要筛选
+        searchHint: null, // 十几个提供商，一屏看得完，不需要筛选
         items: [
-          for (final p in aiProviders)
+          for (final p in PluginRegistry.I.providerChoices)
             (
               value: p.id,
               title: p.label,
@@ -214,8 +233,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
   void _applyProvider(String id) {
     if (id == _c.providerId) return; // 重选当前提供商不该把已选好的模型重置掉
+    final p = PluginRegistry.I.providerById(id);
+    if (p == null) return; // 刚被删掉的包里点进来的旧列表：忽略
     _c.setApiKey(_key.text); // 先记住当前提供商的 Key
-    final p = aiProviderById(id)!;
     setState(() {
       _c.providerId = id;
       _key.text = _c.apiKey; // 切到该提供商自己的 Key
@@ -225,9 +245,26 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
+  /// 正在编辑的那家：**按存档里的 id 取**（哪怕它已被停用——用户得看见自己选的是谁）；
+  /// 连包都没装进来时才退回解析结果。
+  AiProviderPlugin get _shown =>
+      PluginRegistry.I.providerById(_c.providerId) ?? _c.provider;
+
+  /// 需要提醒的地方（当前提供商被停用 / 家全都停用了），与底部 `_msg` 同一套配色。
+  Widget _notice(String text) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: SemColors.dangerSoft,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(text,
+            style: TextStyle(fontSize: 11.5, color: SemColors.danger, height: 1.6)),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final p = _c.provider;
+    final p = _shown;
     return Scaffold(
       appBar: AppBar(title: const Text('AI 设置')),
       body: ListView(
@@ -256,9 +293,16 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (!_c.providerUsable) ...[
+                  _notice(PluginRegistry.I.providerChoices.isEmpty
+                      ? '所有 AI 提供商都被停用了，AI 识别暂时不可用：去「插件管理 → AI 提供商」打开至少一家。'
+                      : '当前选的「${p.label}」已被停用或没装进来，AI 识别暂时不可用：'
+                          '在下面换一家，或去「插件管理 → AI 提供商」把它打开。'),
+                  const SizedBox(height: 12),
+                ],
                 GlassPicker(
                   label: '提供商',
-                  value: p.label,
+                  value: _c.providerUsable ? p.label : '${p.label}（已停用）',
                   prefixIcon: BrandLogo(asset: p.logo, initial: p.label),
                   onTap: _busy || _fetching ? () {} : _pickProviderDialog,
                 ),
@@ -280,9 +324,24 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   ),
                 ],
                 if (p.docs.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  SelectableText('申请 Key：${p.docs}',
-                      style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : () => _openApplyPage(p),
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        label: Text(p.applyLabel),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          Uri.tryParse(p.docs)?.host ?? p.docs,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
                 const SizedBox(height: 14),
                 GlassPicker(
@@ -363,8 +422,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               children: [
                 Text('能做些什么', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
-                _bullet('自动识别验证码：直连登录教务/学工需要验证码时，先让 AI 读图（已关闭思考，只取几个字符）；'
-                    '识别失败或没配 AI 就回退到手输。'),
+                _bullet('自动识别验证码：直连登录教务/学工需要验证码时，AI 读图与手输框同时开始'
+                    '（已关闭思考，只取几个字符）——你先输完就用你输的，AI 先认出来就自动提交；'
+                    '识别失败或没配 AI 就纯手输。'),
                 _bullet('识别校历调休：在课表「调休设置」里选一张校历截图，AI 提取放假 / 调休上课日并写入规则。'),
                 _bullet('必须选支持读图的模型；换提供商后 Key 各自独立保存，不用重填。'),
               ],

@@ -109,9 +109,79 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: const ThemePickerList(),
             ),
+            const SizedBox(height: 10),
+            _sectionTitle(
+                'AI 提供商',
+                '${_r.enabledProviders.length}/${_r.providers.length} 已启用 · '
+                    '当前「${_ai?.providerLabel ?? '未装 / 已停用'}」'),
+            AppCard(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(children: [for (final p in _r.providerList) _providerTile(p)]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+              child: Text('停用的提供商不会出现在「我的 → 设置 → AI 设置」的选择器里；'
+                  '要让一家从构建里彻底消失，才需要删掉它的包或 EXCLUDE_AI_XXX。',
+                  style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.5)),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  /// 启停一家提供商：停用**当前正在用的那家**时先确认——AI 会立刻变成未配置。
+  /// 提供商没有依赖，所以没有连带停用，只影响它自己。
+  Future<void> _setProviderEnabled(AiProviderPlugin p, bool on) async {
+    if (!on && _ai?.providerId == p.id) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('停用正在使用的提供商'),
+          content: Text('「${p.label}」是当前选中的 AI 提供商。停用后它不再出现在「AI 设置」里，'
+              'AI 识别按未配置处理（验证码退回手动输入、校历识别入口消失）。\n\n'
+              '已填的 Key 会留着，重新启用就能继续用；也可以在「AI 设置」里先换一家。'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('停用')),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    await _r.setProviderEnabled(p.id, on);
+    if (!mounted) return;
+    _toast(on ? '已启用「${p.label}」' : '已停用「${p.label}」');
+  }
+
+  /// 提供商：可停用（停用后不在 AI 设置里出现），当前选中的那家带「当前」标记。
+  Widget _providerTile(AiProviderPlugin p) {
+    final on = _r.isProviderEnabled(p.id);
+    final cur = _ai?.providerId == p.id;
+    return SwitchListTile(
+      secondary: BrandLogo(asset: p.logo, initial: p.label),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(p.label,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: cur ? FontWeight.w700 : FontWeight.w500,
+                    color: on ? null : SemColors.textMuted)),
+          ),
+          if (cur) ...[
+            const SizedBox(width: 6),
+            Capsule('当前', color: on ? SemColors.accent : const Color(0xFF8A8F98)),
+          ],
+          if (!on) ...[
+            const SizedBox(width: 6),
+            const Capsule('已停用', color: Color(0xFF8A8F98)),
+          ],
+        ],
+      ),
+      subtitle: Text(p.description, style: const TextStyle(fontSize: 11.5)),
+      value: on,
+      onChanged: p.removable ? (v) => _setProviderEnabled(p, v) : null,
     );
   }
 
@@ -194,6 +264,10 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
         ),
       );
 
+  /// AI 能力（提供方是 AI 设置插件）：宿主只按 id 取接口，不碰它包里的实现。
+  /// 插件没装/被停用时取不到——那几处显示「未装 / 已停用」即可。
+  AiCapability? get _ai => PluginRegistry.I.capability<AiCapability>(PluginIds.ai);
+
   Widget _graphCard() {
     final graph = PluginGraph.fromRegistry(_r);
     final layout = PluginGraphLayout.compute(graph);
@@ -217,7 +291,7 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
             borderRadius: BorderRadius.circular(12),
             child: Container(
               height: layout.size.height.clamp(180, 400).toDouble(),
-              color: SemColors.stripe,
+              color: pluginGraphCanvasFill(),
               child: PluginGraphView(
                 graph: graph,
                 layout: layout,

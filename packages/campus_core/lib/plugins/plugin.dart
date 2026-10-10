@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../widgets/common.dart';
+import 'capability.dart';
 // 只为贡献点方法的参数类型而引用（Dart 允许库之间循环 import：
 // 插件实现要拿到注册表判断「我有没有可用内容」，注册表要收集插件贡献）。
 import 'registry.dart';
@@ -109,6 +110,52 @@ abstract class ThemePlugin {
   List<GlassWell> wells(Brightness brightness) => const [];
 }
 
+/// AI 提供商插件——一条「OpenAI 兼容服务」的描述（基址 / 模型 / 申请页 / 关思考写法）。
+///
+/// **一个提供商 = 一个 Dart 包**（`packages/plugin_ai_xxx/`），只依赖 [campus_core]，
+/// 在 barrel 里暴露 `const PluginBundle pluginBundle = PluginBundle(providers: [...]);`。
+/// id 是持久化键（[AiConfig] 的 Key、模型缓存都按它存），**改名等于丢用户已填的 Key**。
+///
+/// **停用**：插件管理页逐家开关（与功能插件共用 `plugin_disabled` 键）。停用后它不再出现在
+/// AI 设置的选择器里，AI 也按「未配置」处理；存档里的 Key 留着，开回来就能继续用。
+/// **剔除 / 删除**：`--dart-define=EXCLUDE_AI_XXX=true` 构建时剔除，或去掉 pubspec 那两行
+/// ——连包里的 logo 一起从构建里消失。
+abstract class AiProviderPlugin {
+  const AiProviderPlugin();
+
+  String get id;
+  String get label;
+
+  /// 一句话说明（插件管理页的列表用）。
+  String get description;
+
+  /// OpenAI 兼容基址；空 = 自定义提供商（界面让用户自己填地址）。
+  String get baseUrl;
+
+  /// 内置模型列表——只在拉不到官方 `GET {base}/models` 时兜底。
+  /// 本 App 的两个功能都吃图片输入，所以只列能识图的模型。
+  List<String> get models;
+  String get defaultModel;
+
+  /// 申请（或订阅）页面：AI 设置页的按钮跳这里；空 = 不显示按钮。
+  String get docs;
+
+  /// 按钮文案：普通提供商「申请 API Key」，订阅套餐「订阅 Token Plan」。
+  String get applyLabel;
+
+  /// 品牌 logo：`packages/<包名>/assets/x.svg`（包自己声明 assets）；空 = 字母徽章兜底。
+  String get logo;
+
+  /// 关闭思考要加进请求体的字段。各家协议不同，未识别的一律返回空——
+  /// 乱加字段会 400（见各提供商包里的注释与 test/ai_settings_test.dart）。
+  Map<String, dynamic> thinkingOff(String model) => const {};
+
+  /// false = 界面上不给停用（核心提供商；目前没有用到，留给「这家必须能配」的场景）。
+  bool get removable => true;
+
+  bool get isCustom => baseUrl.isEmpty;
+}
+
 /// 跨包引用的插件 id。
 ///
 /// 插件之间**只按 id 声明依赖，不 import 彼此的包**——那样删掉一个插件包会让
@@ -123,11 +170,23 @@ abstract final class PluginIds {
   static const themeGlass = 'theme.glass';
 }
 
-/// 一个插件包交给宿主的东西：它的功能插件与主题插件。
+/// 一个插件包交给宿主的东西：它的功能插件、主题插件、AI 提供商与对外能力。
 /// 插件包的 barrel 里暴露一个 `pluginBundle` 常量，清单生成器按包名登记它。
 class PluginBundle {
-  const PluginBundle({this.features = const [], this.themes = const []});
+  const PluginBundle({
+    this.features = const [],
+    this.themes = const [],
+    this.providers = const [],
+    this.capabilities = const {},
+  });
 
   final List<FeaturePlugin> features;
   final List<ThemePlugin> themes;
+  final List<AiProviderPlugin> providers;
+
+  /// 本包对外提供的能力：key = **提供它的插件 id**（必须是本包贡献的插件 id），
+  /// value = 能力实例。别的插件按「接口 + 这个 id」取用（见 [PluginCapability]）。
+  /// 声明在这里而不是 `init()` 里注册：`init()` 只在启动时跑一次，运行期启用插件
+  /// 不会补跑，声明在清单里就是构建期就位、只按启停状态决定能不能查到。
+  final Map<String, PluginCapability> capabilities;
 }

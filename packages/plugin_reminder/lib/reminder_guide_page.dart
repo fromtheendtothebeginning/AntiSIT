@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'class_reminder_service.dart';
+
 /// 上课提醒的二级页：自检结果 + 引导。
 ///
 /// 为什么单独一页：排期成功 ≠ 能弹出来——通知权限、精确闹钟、厂商省电策略任意一项不对，

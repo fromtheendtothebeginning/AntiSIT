@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.8.15+69
+version: 1.9.8+78
 
 environment:
   sdk: ^3.9.2
@@ -35,6 +35,16 @@ workspace:
   - packages/plugin_ecard
   - packages/plugin_tools
   - packages/plugin_ai
+  # AI 提供商：一家一个包（各自的 logo 资产也在包里）
+  - packages/plugin_ai_deepseek
+  - packages/plugin_ai_opencode_go
+  - packages/plugin_ai_kimi
+  - packages/plugin_ai_glm
+  - packages/plugin_ai_qwen
+  - packages/plugin_ai_gpt
+  - packages/plugin_ai_gemini
+  - packages/plugin_ai_mimo
+  - packages/plugin_ai_minimax
   - packages/plugin_reminder
   - packages/plugin_theme_glass
   - packages/plugin_theme_ink
@@ -82,6 +92,26 @@ dependencies:
     path: packages/plugin_tools
   plugin_ai:
     path: packages/plugin_ai
+  # ---- AI 提供商插件（一家一个包；顺序 = AI 设置页里提供商列表的顺序）----
+  # 删掉一行 + 跑生成器 = 这个提供商从 App 里消失（代码与 logo 一起不进构建）。
+  plugin_ai_deepseek:
+    path: packages/plugin_ai_deepseek
+  plugin_ai_opencode_go:
+    path: packages/plugin_ai_opencode_go
+  plugin_ai_kimi:
+    path: packages/plugin_ai_kimi
+  plugin_ai_glm:
+    path: packages/plugin_ai_glm
+  plugin_ai_qwen:
+    path: packages/plugin_ai_qwen
+  plugin_ai_gpt:
+    path: packages/plugin_ai_gpt
+  plugin_ai_gemini:
+    path: packages/plugin_ai_gemini
+  plugin_ai_mimo:
+    path: packages/plugin_ai_mimo
+  plugin_ai_minimax:
+    path: packages/plugin_ai_minimax
   plugin_reminder:
     path: packages/plugin_reminder
   plugin_theme_glass:
@@ -121,7 +151,6 @@ flutter:
 
   assets:
     - assets/sit-mark.png
-    - assets/brands/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

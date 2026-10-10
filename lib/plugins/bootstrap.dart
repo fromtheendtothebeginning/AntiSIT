@@ -12,5 +12,7 @@ PluginRegistry buildAppRegistry() {
   return PluginRegistry(
     features: [for (final b in bundles) ...b.features],
     themes: [for (final b in bundles) ...b.themes],
+    providers: [for (final b in bundles) ...b.providers],
+    capabilities: {for (final b in bundles) ...b.capabilities},
   );
 }

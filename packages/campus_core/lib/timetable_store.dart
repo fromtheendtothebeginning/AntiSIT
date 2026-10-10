@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
-import 'class_reminder_service.dart';
 import 'json_num.dart';
 import 'app_state.dart';
+import 'plugins/plugin.dart';
+import 'plugins/registry.dart';
+import 'plugins/reminder_capability.dart';
 
 /// 本地课表存储：对齐 anticraft.top 网站课程表的数据模型与算法
 /// （多学期 store、手动课程、调休规则、教务原始周数据、考试日程）。
@@ -58,7 +60,7 @@ class TimetableStore {
     // 课表到位后重排提醒。
     // 启动早期提醒服务会先跑一遍（那时 store 还是空的，会主动跳过不排），
     // 只有在这里补一发，用户「不刷新课表的那次启动」才不会丢提醒。
-    unawaited(ClassReminderService.I.reschedule());
+    _rescheduleReminder();
     debugPrint('[课表] 载入完成 → 重排上课提醒');
   }
 
@@ -115,7 +117,14 @@ class TimetableStore {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_spKey, jsonEncode(toJson()));
     // 课表变了，上课提醒随之重排（排期是幂等覆盖，未开启时不做事）
-    unawaited(ClassReminderService.I.reschedule());
+    _rescheduleReminder();
+  }
+
+  /// 重排上课提醒：提醒能力由「上课提醒」插件提供——core 只按 id 取能力，
+  /// 不 import 那个包；没装 / 被停用时取不到，就当没有提醒这回事（课表照常用）。
+  static void _rescheduleReminder() {
+    final reminder = PluginRegistry.I.capability<ReminderCapability>(PluginIds.reminder);
+    if (reminder != null) unawaited(reminder.reschedule());
   }
 
   /// 本地写入 + 登录状态下回推云端（网站同款 PUT /api/timetable {data}）。

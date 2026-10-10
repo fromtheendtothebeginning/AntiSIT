@@ -1,0 +1,20 @@
+name: plugin_ai_kimi
+description: "AntiSIT 插件包：AI 提供商 Kimi（月之暗面）"
+publish_to: 'none'
+version: 0.1.0
+environment:
+  sdk: ^3.9.2
+
+# 与宿主同属一个 pub workspace：根目录一次 `flutter pub get` 解析全部包
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  campus_core:
+    path: ../campus_core
+
+# 品牌 logo 随包走：删掉这个包，它的图标也不再进构建（key = packages/<包名>/assets/x.svg）
+flutter:
+  assets:
+    - assets/

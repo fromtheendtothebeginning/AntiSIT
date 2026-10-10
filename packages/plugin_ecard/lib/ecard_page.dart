@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,19 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:campus_core/campus_core.dart';
+
+/// 校园码刷新间隔的上限（秒）：服务端 `refresh` 标的是**码的有效期**（现在回 55），
+/// 照它倒计时意味着屏幕上的码最长 52 秒才换一张——扫码慢一点、截图转发就可能扫到
+/// 快过期的码。客户端最多 [ecardMaxRefreshSeconds] 秒就重取一次。
+const int ecardMaxRefreshSeconds = 30;
+
+/// 校园码的刷新倒计时（秒）：取 `min(服务端 refresh, 30)`——仍然尊重「有效期更短」的
+/// 服务端（比如某校只给 20 秒），再提前 3 秒换码，免得扫码那一刻手里那张正好过期。
+int ecardCountdownSeconds(int? fromServer) {
+  final refresh = math.min(fromServer ?? ecardMaxRefreshSeconds, ecardMaxRefreshSeconds);
+  final left = refresh - 3;
+  return left < 5 ? 5 : left;
+}
 
 /// 校园码：复刻网站「校园卡动态码」排版
 /// （绿徽章 + 220px 二维码 + 余额/倒计时/立即刷新 + 防转发提示），亮码期间屏幕常亮。
@@ -66,8 +80,7 @@ class _EcardPageState extends State<EcardPage> {
       final r = await ApiClient.I.ecard();
       _data = r['data'] as Map<String, dynamic>?;
       _err = null;
-      final refresh = asInt(_data?['refresh']) ?? 55;
-      _countdown = refresh - 3 < 5 ? 5 : refresh - 3;
+      _countdown = ecardCountdownSeconds(asInt(_data?['refresh']));
     } catch (e) {
       _err = e is ApiError ? e.message : '加载失败';
       _countdown = 10;

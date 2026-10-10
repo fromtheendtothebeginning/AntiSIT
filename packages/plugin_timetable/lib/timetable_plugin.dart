@@ -17,9 +17,12 @@ class TimetablePlugin extends FeaturePlugin {
   String get description => '周 / 日视图、教务与考试导入、调休规则、学期起止设置';
   @override
   List<String> get dependencies => const [PluginIds.network];
-  /// AI 只用来「识别校历截图 / 自动过验证码」，没配就是人工输入，不算硬依赖。
+  /// 软依赖 = 可选增强：AI 只用来「识别校历截图 / 自动过验证码」（没配就人工输入）；
+  /// 上课提醒是课表页 AppBar 那颗铃铛（插件没装/停用就整颗不出现、课表照常用）。
+  /// 两者都通过注册表按 id 取能力，本包不 import 它们；这里声明是为了让依赖图上的边
+  /// 与代码耦合一致——生成器会把 `capability<...>(PluginIds.x)` 扫出来对账。
   @override
-  List<String> get optionalDependencies => const [PluginIds.ai];
+  List<String> get optionalDependencies => const [PluginIds.ai, PluginIds.reminder];
   @override
   int get settingsOrder => 45;
 

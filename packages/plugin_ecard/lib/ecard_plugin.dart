@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'ecard_page.dart';
 import 'package:campus_core/campus_core.dart';
 
-/// 校园码：动态付款码（55 秒自动刷新）+ 校园卡余额，仅在本页可见时刷新。
+/// 校园码：动态付款码（30 秒自动刷新）+ 校园卡余额，仅在本页可见时刷新。
 class EcardPlugin extends FeaturePlugin {
   const EcardPlugin();
 
@@ -14,7 +14,7 @@ class EcardPlugin extends FeaturePlugin {
   @override
   String get name => '校园码';
   @override
-  String get description => '动态付款码（55 秒自动刷新）与校园卡余额，亮码期间屏幕常亮';
+  String get description => '动态付款码（30 秒自动刷新）与校园卡余额，亮码期间屏幕常亮';
   @override
   List<String> get dependencies => const [PluginIds.network];
 

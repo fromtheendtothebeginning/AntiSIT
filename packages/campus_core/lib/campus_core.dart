@@ -11,13 +11,9 @@
 /// 需要「往上跳」的地方（如登录成功回主壳）由宿主注入回调，见 [hostShellBuilder]。
 library;
 
-export 'ai/ai_settings.dart';
-export 'ai/ai_tasks.dart';
-export 'ai/ai_vision.dart';
 export 'api_client.dart';
 export 'api_error.dart';
 export 'app_state.dart';
-export 'class_reminder_service.dart';
 export 'demo_data.dart';
 export 'direct/activities_util.dart';
 export 'direct/campus_direct.dart';
@@ -34,8 +30,11 @@ export 'host.dart';
 export 'json_num.dart';
 export 'pages/connect_page.dart';
 export 'pages/login_page.dart';
+export 'plugins/ai_capability.dart';
+export 'plugins/capability.dart';
 export 'plugins/plugin.dart';
 export 'plugins/registry.dart';
+export 'plugins/reminder_capability.dart';
 export 'timetable_store.dart';
 export 'widgets/balance_chart.dart';
 export 'widgets/captcha_dialog.dart';

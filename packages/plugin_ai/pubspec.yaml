@@ -13,3 +13,13 @@ dependencies:
     sdk: flutter
   campus_core:
     path: ../campus_core
+  # 「申请 API Key」按钮跳各家开放平台
+  url_launcher: ^6.3.2
+  # 识图调用与配置存储随实现一起搬进了本包（以前挂在 core 的依赖上）
+  http: ^1.5.0
+  shared_preferences: ^2.5.5
+
+# 本插件自己带的品牌图标（内置「自定义」提供商用）；其余提供商的 logo 各在自己的包里
+flutter:
+  assets:
+    - assets/

@@ -242,6 +242,16 @@ class PluginGraphView extends StatelessWidget {
   }
 }
 
+/// 关系图的画布底色：做成「内凹的井」（用页面底色，比卡面深），节点才有地方浮起来。
+Color pluginGraphCanvasFill() => SemColors.bg;
+
+/// 关系图里节点的底色＝画布上再叠一层卡面。
+///
+/// **别写成 `SemColors.card.withValues(alpha: …)`**：card 本身自带透明度
+/// （浅色白 55% / 深色白 8%），withValues 会把它**覆盖**掉——深色下节点会被刷成
+/// 近白色，而节点文字是 textPrimary（深色下＝白 95%），白底白字，整张图看不清。
+Color pluginGraphNodeFill() => Color.alphaBlend(SemColors.card, pluginGraphCanvasFill());
+
 class _NodeCard extends StatelessWidget {
   const _NodeCard({
     required this.node,
@@ -265,7 +275,7 @@ class _NodeCard extends StatelessWidget {
     final card = Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       decoration: BoxDecoration(
-        color: Color.alphaBlend(SemColors.card.withValues(alpha: 0.92), SemColors.bg),
+        color: pluginGraphNodeFill(),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: selected ? tint : SemColors.border,
@@ -323,7 +333,8 @@ class _EdgePainter extends CustomPainter {
       final b = layout.rects[e.to];
       if (a == null || b == null) continue;
       final focused = selected == null || selected == e.from || selected == e.to;
-      final base = e.optional ? SemColors.textMuted : SemColors.accent;
+      // 软依赖（虚线）用次要文字色：比 textMuted 亮一档，深色下才看得见虚线
+      final base = e.optional ? SemColors.textSecondary : SemColors.accent;
       final color = base.withValues(alpha: selected == null ? 0.5 : (focused ? 0.95 : 0.15));
       final forwards = b.center.dx >= a.center.dx;
       final start = Offset(forwards ? a.right : a.left, a.center.dy);

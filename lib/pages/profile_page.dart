@@ -17,11 +17,39 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   bool _statusLoading = false;
 
+  /// 「外观」滑块的连续位置（0=跟随系统 / 1=浅色 / 2=深色）：拖到中间时按它算
+  /// 当前该有多深，整站配色据此在浅色板与深色板之间插值（见 [appearanceDarkness]）。
+  final ValueNotifier<double> _appearancePos = ValueNotifier<double>(1);
+
   @override
   void initState() {
     super.initState();
+    _appearancePos.value = _appearanceIndex.toDouble();
+    _appearancePos.addListener(_previewAppearance);
     _refreshAll();
     _loadVersion();
+  }
+
+  @override
+  void dispose() {
+    _appearancePos.removeListener(_previewAppearance);
+    _appearancePos.dispose();
+    AppState.I.setAppearancePreview(null); // 离开页面就别留着预览
+    super.dispose();
+  }
+
+  int get _appearanceIndex => switch (AppState.I.themeMode) {
+        ThemeMode.light => 1,
+        ThemeMode.dark => 2,
+        _ => 0,
+      };
+
+  /// 滑块每动一点就更新整站配色的预览（量化在 AppState 里做，避免每帧重建）。
+  void _previewAppearance() {
+    final systemDark =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
+    AppState.I.setAppearancePreview(
+        appearanceDarkness(_appearancePos.value, systemDark: systemDark));
   }
 
   /// 运行时版本号（读 APK 里的 versionName/versionCode，不用手写常量）。
@@ -429,11 +457,9 @@ class _ProfilePageState extends State<ProfilePage> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: GlassTabs(
                         labels: const ['跟随系统', '浅色', '深色'],
-                        index: switch (st.themeMode) {
-                          ThemeMode.light => 1,
-                          ThemeMode.dark => 2,
-                          _ => 0,
-                        },
+                        index: _appearanceIndex,
+                        // 拖动（或点选后的弹簧）过程中把连续位置交出来，整站配色跟着渐变
+                        position: _appearancePos,
                         onChanged: (i) => AppState.I.setThemeMode(switch (i) {
                           1 => ThemeMode.light,
                           2 => ThemeMode.dark,

@@ -179,6 +179,26 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 「外观」滑块拖动中的实时深浅（0 = 全浅色、1 = 全深色，见 `appearanceDarkness`）；
+  /// null = 没在拖，按 [themeMode] 走。**不持久化**：它只是拖动时的预览，
+  /// 静止时其值与该档对应的配色一致，所以松手不会跳。
+  double? appearancePreviewDark;
+
+  /// 拖动「外观」滑块时更新预览。整站配色是全局的（`SemColors`），每帧重建界面太贵，
+  /// 所以**量化到 5% 一步**再通知：视觉上仍是连续渐变，重建次数少一个数量级。
+  void setAppearancePreview(double? v) {
+    if (v == null) {
+      if (appearancePreviewDark == null) return;
+      appearancePreviewDark = null;
+      notifyListeners();
+      return;
+    }
+    final q = (v * 20).round() / 20; // 0.05 一步
+    if (appearancePreviewDark == q) return;
+    appearancePreviewDark = q;
+    notifyListeners();
+  }
+
   /// 课表：是否淡化「已上完」的课（关掉则显示正常彩色）。
   Future<void> setDimCompleted(bool v) async {
     dimCompleted = v;

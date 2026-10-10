@@ -5,9 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-import '../timetable_store.dart';
-import 'plugins/plugin.dart';
-import 'plugins/registry.dart';
+import 'package:campus_core/campus_core.dart';
 
 /// 「上课提醒」插件的 id（见 lib/plugins/features/reminder_plugin.dart）。
 /// 用字面量而不是 import 插件文件：插件可删，服务是基础设施。
