@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.9.8+78
+version: 1.11.0+83
 
 environment:
   sdk: ^3.9.2
@@ -35,6 +35,7 @@ workspace:
   - packages/plugin_ecard
   - packages/plugin_tools
   - packages/plugin_ai
+  - packages/plugin_appearance
   # AI 提供商：一家一个包（各自的 logo 资产也在包里）
   - packages/plugin_ai_deepseek
   - packages/plugin_ai_opencode_go
@@ -92,6 +93,9 @@ dependencies:
     path: packages/plugin_tools
   plugin_ai:
     path: packages/plugin_ai
+  # 外观设置（主题 / 深浅色 / 界面跟随滑块）：整个包可以删掉或 EXCLUDE_APPEARANCE
+  plugin_appearance:
+    path: packages/plugin_appearance
   # ---- AI 提供商插件（一家一个包；顺序 = AI 设置页里提供商列表的顺序）----
   # 删掉一行 + 跑生成器 = 这个提供商从 App 里消失（代码与 logo 一起不进构建）。
   plugin_ai_deepseek:
