@@ -54,3 +54,5 @@ app.*.map.json
 /tt_dump.json
 # 机器相关 SDK 路径
 /android/local.properties
+
+TODO.md
