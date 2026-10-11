@@ -27,6 +27,15 @@ class ConnectPage extends StatefulWidget {
 class _ConnectPageState extends State<ConnectPage> {
   late AppMode _mode = AppState.I.mode;
 
+  /// 模式滑块的连续位置（0 = 服务器 / 1 = 直连）：下方两套设置跟着它一起左右滑动，
+  /// 做法与主界面底栏切页完全一样——弹簧留在 [GlassTabs] 里，这里只把位置接到内容上。
+  final ValueNotifier<double> _tabPos = ValueNotifier<double>(0);
+
+  /// 在页面区域横滑时写这里（非 null = 拖动中），交给 GlassTabs 驱动同一个位置。
+  final ValueNotifier<double?> _tabDrag = ValueNotifier<double?>(null);
+
+  int get _tabIndex => _mode == AppMode.server ? 0 : 1;
+
   final _server = TextEditingController();
   bool _serverTesting = false;
   String? _serverProbe;
@@ -53,6 +62,7 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void initState() {
     super.initState();
+    _tabPos.value = _tabIndex.toDouble();
     final st = AppState.I;
     _server.text = st.serverUrl;
     _loadSchool(st.school);
@@ -89,8 +99,86 @@ class _ConnectPageState extends State<ConnectPage> {
     ]) {
       c.dispose();
     }
+    _tabPos.dispose();
+    _tabDrag.dispose();
     super.dispose();
   }
+
+  void _setTab(int i) {
+    if (i == _tabIndex) return;
+    setState(() {
+      _mode = i == 0 ? AppMode.server : AppMode.direct;
+      _probes = null;
+      _error = null;
+      _ok = null;
+    });
+  }
+
+  // ── 页面区域左右滑动切模式（与主界面同一套：拖过一半就换；页面内部接住横滑的照旧优先） ──
+
+  void _onTabDragStart(DragStartDetails _) => _tabDrag.value = _tabPos.value;
+
+  void _onTabDragUpdate(DragUpdateDetails d) {
+    final w = MediaQuery.sizeOf(context).width;
+    if (w <= 0) return;
+    // 与内容方向一致：往左拖 = 去下一格
+    final next = ((_tabDrag.value ?? _tabPos.value) - d.delta.dx / w).clamp(0.0, 1.0);
+    _tabDrag.value = next;
+    // 「界面实时跟着滑块切换」关掉时不在拖动中换——等松手落位再换
+    if (AppState.I.followSlider) _setTab(next.round()); // 界面 = 最贴近滑块的那一格
+  }
+
+  void _onTabDragEnd(DragEndDetails d) {
+    final w = MediaQuery.sizeOf(context).width;
+    final v = (-d.velocity.pixelsPerSecond.dx / (w <= 0 ? 1 : w)).clamp(-8.0, 8.0);
+    var target = (_tabDrag.value ?? _tabPos.value).round().clamp(0, 1);
+    final next = target + (v > 0 ? 1 : -1);
+    if (v.abs() >= 5.0 && next >= 0 && next <= 1) target = next; // 甩动多滑一格
+    _tabDrag.value = null; // 交还弹簧：滑块从当前位置弹到落点
+    _setTab(target);
+  }
+
+  /// 两套设置并排放在同一个 Stack 里：最贴近滑块的那套决定高度，另一套跟着位置滑进滑出
+  /// （超出部分被 ClipRect 裁掉，不会把页面撑高）。行高变化用 AnimatedSize 过渡。
+  Widget _slidingSections(AppState st) => ValueListenableBuilder<double>(
+        valueListenable: _tabPos,
+        builder: (context, rawPos, _) {
+          // 开关关掉时两套设置不跟滑块连续滑，只按已落位的模式显示（松手才切）
+          final pos = AppState.I.followSlider ? rawPos : _tabIndex.toDouble();
+          final w = MediaQuery.sizeOf(context).width;
+          final active = pos.round().clamp(0, 1);
+          final other = 1 - active;
+          Widget panel(int i) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: i == 0 ? _serverSection(st) : _directSection(st),
+              );
+          return AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            // 顶部锚定：默认的居中会让内容在高度动画期间整体上下漂移
+            // （切换模式后「弹一下」的原因）；锚住顶边后只有框高在变。
+            alignment: Alignment.topCenter,
+            child: ClipRect(
+              child: Stack(
+                children: [
+                  // 当前这套：既是滑动的一方，也决定这块的高度
+                  Transform.translate(
+                      offset: Offset((active - pos) * w, 0), child: panel(active)),
+                  // 另一套按自身高度布局（不能 Positioned.fill：会被拉成当前那套的高度、内容溢出），
+                  // 滑出这块区域的部分由上面的 ClipRect 裁掉
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: Transform.translate(
+                        offset: Offset((other - pos) * w, 0), child: panel(other)),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
 
   // ==================== 服务器模式 ====================
 
@@ -317,7 +405,15 @@ class _ConnectPageState extends State<ConnectPage> {
     final st = AppState.I;
     return Scaffold(
       appBar: AppBar(title: const Text('连接设置')),
-      body: ListView(
+      body: GestureDetector(
+        // 页面区域横滑切模式；页面内部真接住横滑的组件（滑块自己）照旧优先——
+        // 和主界面底栏切页是同一套做法。
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: _onTabDragStart,
+        onHorizontalDragUpdate: _onTabDragUpdate,
+        onHorizontalDragEnd: _onTabDragEnd,
+        onHorizontalDragCancel: () => _tabDrag.value = null,
+        child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
         children: [
           AppCard(
@@ -328,13 +424,10 @@ class _ConnectPageState extends State<ConnectPage> {
                 const SizedBox(height: 10),
                 GlassTabs(
                   labels: const ['服务器模式', '直连模式'],
-                  index: _mode == AppMode.server ? 0 : 1,
-                  onChanged: (i) => setState(() {
-                    _mode = i == 0 ? AppMode.server : AppMode.direct;
-                    _probes = null;
-                    _error = null;
-                    _ok = null;
-                  }),
+                  index: _tabIndex,
+                  position: _tabPos,
+                  dragPosition: _tabDrag,
+                  onChanged: _setTab,
                 ),
                 const SizedBox(height: 10),
                 Text(
@@ -347,7 +440,8 @@ class _ConnectPageState extends State<ConnectPage> {
             ),
           ),
           const SizedBox(height: 10),
-          if (_mode == AppMode.server) ..._serverSection(st) else ..._directSection(st),
+          // 下方两套设置跟着滑块一起左右滑动（与主界面切页同一套观感）
+          _slidingSections(st),
           if (_error != null) ...[
             const SizedBox(height: 10),
             Container(
@@ -375,6 +469,7 @@ class _ConnectPageState extends State<ConnectPage> {
             ),
           ],
         ],
+        ),
       ),
     );
   }

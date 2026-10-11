@@ -8,6 +8,8 @@ class PluginGraph {
 
   /// 从注册表取：功能插件 + 主题插件都做节点；
   /// 硬依赖画实线（启停联动），软依赖画虚线（可选增强）。
+  /// 另有**挂载边**：贡献工具卡片的插件都「挂」在工具中心页上（卡片只在那一页显示，
+  /// 工具中心停用卡片就没地方出现）——通过注册表的 tools() 贡献点推出的隐式依附。
   factory PluginGraph.fromRegistry(PluginRegistry registry) => PluginGraph(
         nodes: [
           for (final p in registry.features)
@@ -20,6 +22,10 @@ class PluginGraph {
             for (final d in p.dependencies) PluginGraphEdge(p.id, d),
           for (final p in registry.features)
             for (final d in p.optionalDependencies) PluginGraphEdge(p.id, d, optional: true),
+          if (registry.byId(PluginIds.tools) != null)
+            for (final p in registry.features)
+              if (p.id != PluginIds.tools && p.tools(registry).isNotEmpty)
+                PluginGraphEdge(p.id, PluginIds.tools, host: true),
         ],
       );
 
@@ -48,12 +54,19 @@ class PluginGraphNode {
 }
 
 /// 一条依赖边：[from] 依赖 [to]，箭头指向被依赖方。
+/// [host] = 挂载关系（卡片显示在对方页面上），不参与启停联动。
 class PluginGraphEdge {
-  const PluginGraphEdge(this.from, this.to, {this.optional = false});
+  const PluginGraphEdge(this.from, this.to, {this.optional = false, this.host = false});
 
   final String from;
   final String to;
   final bool optional;
+
+  /// 挂载边（工具卡片 → 工具中心），与可选依赖一样画虚线、不联动启停。
+  final bool host;
+
+  /// 虚线边（可选依赖 / 挂载）不参与分层与启停联动。
+  bool get soft => optional || host;
 }
 
 /// 分层布局结果（画布坐标，纯数据）。
@@ -87,7 +100,7 @@ class PluginGraphLayout {
       for (final n in graph.nodes) n.id: <String>[],
     };
     for (final e in graph.edges) {
-      if (e.optional) continue;
+      if (e.soft) continue;
       hard[e.from]?.add(e.to);
     }
 
@@ -333,8 +346,9 @@ class _EdgePainter extends CustomPainter {
       final b = layout.rects[e.to];
       if (a == null || b == null) continue;
       final focused = selected == null || selected == e.from || selected == e.to;
-      // 软依赖（虚线）用次要文字色：比 textMuted 亮一档，深色下才看得见虚线
-      final base = e.optional ? SemColors.textSecondary : SemColors.accent;
+      // 虚线分两档：软依赖（可选增强）用次要文字色，挂载边（工具卡片挂在工具中心）
+      // 用更淡的 textMuted——挂载关系只是「卡片显示在那一页」，比可选依赖更弱
+      final base = e.optional ? SemColors.textSecondary : (e.host ? SemColors.textMuted : SemColors.accent);
       final color = base.withValues(alpha: selected == null ? 0.5 : (focused ? 0.95 : 0.15));
       final forwards = b.center.dx >= a.center.dx;
       final start = Offset(forwards ? a.right : a.left, a.center.dy);
@@ -354,14 +368,16 @@ class _EdgePainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = focused && selected != null ? 2 : 1.3
         ..color = color;
-      if (e.optional) {
-        // 虚线：软依赖
+      if (e.soft) {
+        // 虚线：软依赖（长虚线）/ 挂载（短虚线更淡）
+        final dash = e.host ? 3 : 5;
+        final gap = e.host ? 5 : 4;
         for (final metric in path.computeMetrics()) {
           var d = 0.0;
           while (d < metric.length) {
-            final next = (d + 5).clamp(0.0, metric.length);
+            final next = (d + dash).clamp(0.0, metric.length);
             canvas.drawPath(metric.extractPath(d, next), stroke);
-            d = next + 4;
+            d = next + gap;
           }
         }
       } else {

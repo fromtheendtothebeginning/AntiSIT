@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 import '../widgets/plugin_graph.dart';
-import '../widgets/theme_picker.dart';
 
 /// 插件管理：功能插件的启停、主题切换，以及依赖关系的可视化。
 /// 停用有连带效应（被依赖的插件一起停），所以确认弹窗会先把连带清单列出来。
@@ -78,6 +77,9 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
     if (p.dependencies.isNotEmpty) parts.add('依赖 ${p.dependencies.map(_name).join('、')}');
     if (p.optionalDependencies.isNotEmpty) {
       parts.add('可选 ${p.optionalDependencies.map(_name).join('、')}');
+    }
+    if (p.id != PluginIds.tools && p.tools(_r).isNotEmpty && _r.byId(PluginIds.tools) != null) {
+      parts.add('卡片挂在工具中心');
     }
     final dependents = _r.dependentsOf(p.id);
     if (dependents.isNotEmpty) parts.add('被 ${dependents.map(_name).join('、')} 依赖');
@@ -282,7 +284,8 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
           const Text('依赖关系', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(height: 4),
           Text(
-            '一列 = 一层依赖，基础插件在右、组合功能在左；箭头指向被依赖的一方，虚线是可选依赖。'
+            '一列 = 一层依赖，基础插件在右、组合功能在左；箭头指向被依赖的一方。'
+            '实线 = 启停联动，长虚线 = 可选依赖，短虚线 = 工具卡片挂在工具中心。'
             '点节点看详情，再点一次取消；图可拖动、双指缩放。',
             style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
           ),
