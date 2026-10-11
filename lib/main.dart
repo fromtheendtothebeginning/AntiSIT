@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -98,14 +97,18 @@ enum _BackPhase {
 }
 
 /// 预测式返回手势期间的「覆盖进度」（顶层页的动画值：1 = 全盖住，0 = 已滑走；
-/// null = 没有手势在进行）。被盖住的页据此做**渐进模糊**：
-/// 手势前 1/3 隔着重模糊，1/3 → 2/3 之间线性变清楚（插值），之后完全清晰。
+/// null = 没有手势在进行）。被盖住的页据此做**渐进磨砂**：
+/// 手势前 1/3 隔着重磨砂，1/3 → 2/3 之间线性变清楚（插值），之后完全清晰。
 final ValueNotifier<double?> predictiveBackCover = ValueNotifier(null);
 
-/// 覆盖进度 → 下层页的模糊半径。手势进度 g = 1 - v：
-/// g ≤ 1/3 时最糊（下层刚要露面），1/3 → 2/3 线性减到 0，之后不再模糊。
-double _coverBlurSigma(double v) =>
-    10 * (1 - (((1 - v) - 1 / 3) / (1 / 3)).clamp(0.0, 1.0));
+/// 覆盖进度 → 下层页的磨砂遮罩不透明度（0..0.45）。手势进度 g = 1 - v：
+/// g ≤ 1/3 时最「糊」（下层刚要露面），1/3 → 2/3 线性减到 0，之后不再磨砂。
+///
+/// **为什么是遮罩不是高斯模糊**：全屏 ImageFiltered 逐帧 saveLayer，
+/// 中低端机收尾掉帧、滤镜卸载时还会跳一帧（实测「最后卡顿一下、割裂」）；
+/// 磨砂遮罩是纯色填充，零合成层开销，观感同为「隔着一层看不清」。
+double _coverFrost(double v) =>
+    0.45 * (1 - (((1 - v) - 1 / 3) / (1 / 3)).clamp(0.0, 1.0));
 
 class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     with WidgetsBindingObserver {
@@ -214,17 +217,20 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
             }
             // 覆盖进度 cover = 顶层页动画值（1 = 全盖住，0 = 已滑走）。
             // 下层页透明度：cover 1 → 2/3 之间淡入（手势前 1/3），之后保持全可见，
-            // 隔着顶层页的半透明 + 模糊露出；模糊同前：前 1/3 重糊，1/3 → 2/3 变清楚。
+            // 隔着顶层页的半透明 + 磨砂露出；磨砂同前：前 1/3 最重，1/3 → 2/3 变清楚。
             final visible = 1 - ((cover - 2 / 3) / (1 / 3)).clamp(0.0, 1.0);
-            Widget content = Opacity(opacity: visible.clamp(0.0, 1.0), child: widget.child);
-            final sigma = _coverBlurSigma(cover);
-            if (sigma > 0.3) {
-              content = ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-                child: content,
-              );
-            }
-            return content;
+            final frost = _coverFrost(cover);
+            final content = frost > 0.01
+                ? Stack(children: [
+                    widget.child,
+                    // 磨砂遮罩：页面底色的半透明填充，纯色无合成层开销
+                    Positioned.fill(
+                      child: ColoredBox(
+                          color: SemColors.bg.withValues(alpha: frost)),
+                    ),
+                  ])
+                : widget.child;
+            return Opacity(opacity: visible.clamp(0.0, 1.0), child: content);
           },
         );
       }

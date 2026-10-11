@@ -262,7 +262,7 @@ void main() {
     expect(find.text('第二页'), findsNothing, reason: '松手提交仍要能返回（普通返回）');
   });
 
-  testWidgets('手势期间下层页渐进模糊：前 1/3 重糊，2/3 之后不再模糊', (tester) async {
+  testWidgets('手势期间下层页渐进磨砂：前 1/3 最重，2/3 之后不再磨砂', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
@@ -276,17 +276,20 @@ void main() {
       'swipeEdge': 0,
     });
 
-    await progress(0.3); // g ≤ 1/3：下层页被重模糊盖着
-    expect(find.byType(ImageFiltered), findsOneWidget, reason: '前 1/3 应隔着模糊看见下层页');
+    Finder frost() => find.byWidgetPredicate((w) =>
+        w is ColoredBox && w.color != GlassPalette.light.bg && w.color != GlassPalette.dark.bg);
+
+    await progress(0.3); // g ≤ 1/3：下层页隔着重磨砂
+    expect(frost(), findsOneWidget, reason: '前 1/3 应隔着磨砂看见下层页');
 
     await progress(0.7); // g ≥ 2/3：完全清楚
-    expect(find.byType(ImageFiltered), findsNothing, reason: '2/3 之后不应再模糊');
+    expect(frost(), findsNothing, reason: '2/3 之后不应再磨砂');
 
-    await progress(0.4); // 1/3 ~ 2/3 之间：插值中，模糊还在
-    expect(find.byType(ImageFiltered), findsOneWidget);
+    await progress(0.4); // 1/3 ~ 2/3 之间：插值中，磨砂还在
+    expect(frost(), findsOneWidget);
 
     await backGesture(tester, 'cancelBackGesture');
     await tester.pumpAndSettle();
-    expect(find.byType(ImageFiltered), findsNothing, reason: '手势结束后不再有模糊层');
+    expect(frost(), findsNothing, reason: '手势结束后不再有磨砂层');
   });
 }
