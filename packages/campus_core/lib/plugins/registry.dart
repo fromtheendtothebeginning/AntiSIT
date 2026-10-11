@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../widgets/common.dart';
 import 'capability.dart';
+import 'json_theme.dart';
 import 'plugin.dart';
 
 /// 插件注册表：插件集合 + 运行期启停状态 + 依赖关系查询 / 校验。
@@ -22,7 +25,7 @@ class PluginRegistry extends ChangeNotifier {
     this.defaultThemeId = PluginIds.themeGlass,
     String? themeId,
   })  : features = List<FeaturePlugin>.unmodifiable(features),
-        themes = List<ThemePlugin>.unmodifiable(themes),
+        _themes = List<ThemePlugin>.unmodifiable(themes),
         providers = List<AiProviderPlugin>.unmodifiable(providers),
         capabilities = Map<String, PluginCapability>.unmodifiable(capabilities) {
     problems = [
@@ -41,7 +44,14 @@ class PluginRegistry extends ChangeNotifier {
   static const String _kToolOrder = 'plugin_tool_order';
 
   final List<FeaturePlugin> features;
-  final List<ThemePlugin> themes;
+
+  /// 内置主题（清单里带来的）。运行期导入的自定义主题见 [_extraThemes]，
+  /// 读取方一律走 [themes]。
+  final List<ThemePlugin> _themes;
+  final List<ThemePlugin> _extraThemes = <ThemePlugin>[];
+
+  /// 全部可用主题 = 内置 + 运行期导入的自定义主题。
+  List<ThemePlugin> get themes => [..._themes, ..._extraThemes];
 
   /// 已装进来的 AI 提供商（顺序 = 清单顺序，也就是 pubspec 里的书写顺序）。
   /// 与主题一样是「只选不关」：没有停用开关，被删掉/被 EXCLUDE 的提供商压根不在这个列表里。
@@ -145,10 +155,19 @@ class PluginRegistry extends ChangeNotifier {
   }
 
   /// 「我的 → 设置」里由插件贡献的条目（按 [FeaturePlugin.settingsOrder]）。
-  List<Widget> settingsTiles(BuildContext context) {
+  List<Widget> settingsTiles(BuildContext context) =>
+      _tilesOrdered((p) => p.settingsTiles(context, this));
+
+  /// 「课程表设置」二级页里由插件贡献的条目（课表相关设置集中在这一页，别再往「我的」里撒）。
+  List<Widget> timetableSettingsTiles(BuildContext context) =>
+      _tilesOrdered((p) => p.timetableSettingsTiles(context, this));
+
+  /// 收集各插件贡献的设置条目：按 [FeaturePlugin.settingsOrder] 排，没贡献的插件跳过。
+  /// 两处宿主（「我的 → 设置」与「课程表设置」）共用它，排序规则才不会两边走偏。
+  List<Widget> _tilesOrdered(List<Widget> Function(FeaturePlugin) tilesOf) {
     final groups = <(int, List<Widget>)>[];
     for (final p in enabled) {
-      final tiles = p.settingsTiles(context, this);
+      final tiles = tilesOf(p);
       if (tiles.isNotEmpty) groups.add((p.settingsOrder, tiles));
     }
     groups.sort((a, b) => a.$1.compareTo(b.$1));
@@ -330,6 +349,43 @@ class PluginRegistry extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ==================== 自定义主题（导入 JSON）====================
+
+  static const String _kCustomThemes = 'plugin_custom_themes';
+
+  /// 导入（同 id 覆盖）一个自定义主题，并切换过去。
+  Future<void> addTheme(JsonThemePlugin theme) async {
+    final i = _extraThemes.indexWhere((t) => t.id == theme.id);
+    if (i >= 0) {
+      _extraThemes[i] = theme;
+    } else {
+      _extraThemes.add(theme);
+    }
+    await _persistCustomThemes();
+    _themeId = theme.id;
+    await _persist(); // 选中态也落盘：重启后还停在导入的主题上
+    notifyListeners();
+  }
+
+  /// 删除一个导入的主题；正在用它则回落默认主题。内置主题不受影响。
+  Future<void> removeTheme(String id) async {
+    if (!_extraThemes.any((t) => t.id == id)) return;
+    _extraThemes.removeWhere((t) => t.id == id);
+    if (_themeId == id) {
+      _themeId = defaultThemeId;
+      await _persist();
+    }
+    await _persistCustomThemes();
+    notifyListeners();
+  }
+
+  Future<void> _persistCustomThemes() async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setStringList(_kCustomThemes, [
+      for (final t in _extraThemes) jsonEncode((t as JsonThemePlugin).toJson()),
+    ]);
+  }
+
   // ==================== 持久化 / 生命周期 ====================
 
   Future<void> load() async {
@@ -351,6 +407,15 @@ class PluginRegistry extends ChangeNotifier {
       ..clear()
       ..addAll((sp.getStringList(_kToolOrder) ?? const <String>[])
           .where((id) => byId(id) != null));
+    // 运行期导入的自定义主题：逐条解析，坏的跳过（不影响其余主题）
+    _extraThemes.clear();
+    for (final raw in sp.getStringList(_kCustomThemes) ?? const <String>[]) {
+      try {
+        _extraThemes.add(JsonThemePlugin.parse(raw));
+      } catch (e) {
+        debugPrint('[registry] 自定义主题解析失败已跳过：$e');
+      }
+    }
     final savedTheme = sp.getString(_kTheme);
     if (savedTheme != null && themes.any((t) => t.id == savedTheme)) _themeId = savedTheme;
     problems = [...validate(features), ...validateProviders(providers), ...validateCapabilities(this)];

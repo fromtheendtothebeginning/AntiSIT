@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'package:campus_core/campus_core.dart';
+import '../plugins/json_theme.dart';
+import '../plugins/plugin.dart';
+import '../plugins/registry.dart';
+import 'common.dart';
 
 /// 主题选择列表（单选）。「我的 → 外观」的弹层与插件管理页共用这一份实现。
 class ThemePickerList extends StatelessWidget {
@@ -48,6 +51,27 @@ class ThemePickerList extends StatelessWidget {
                   color: t.id == active ? SemColors.accent : SemColors.textMuted,
                 ),
                 onTap: () => registry.setTheme(t.id),
+                // 导入的自定义主题可以长按删除（内置主题不受影响）
+                onLongPress: t is JsonThemePlugin
+                    ? () async {
+                        final ok = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text('删除主题「${t.name}」'),
+                            content: const Text('删除后选择器里不再出现；正在使用时会回落默认主题。'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('取消')),
+                              FilledButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('删除')),
+                            ],
+                          ),
+                        );
+                        if (ok == true) await registry.removeTheme(t.id);
+                      }
+                    : null,
               ),
             const SizedBox(height: 6),
           ],

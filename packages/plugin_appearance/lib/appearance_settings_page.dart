@@ -40,6 +40,68 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
         _ => 0,
       };
 
+  /// 导入主题：粘贴一份主题 JSON（底色 / 面底 / 强调色 / 文字色的浅深两档），
+  /// 校验通过即入列并切换过去；错误原因就地显示在输入框下面。
+  Future<void> _importTheme(BuildContext context) async {
+    final ctrl = TextEditingController();
+    String? error;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('导入主题'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('粘贴主题 JSON（bg / surface / accent / gold / text 的浅深两档）：',
+                    style: TextStyle(fontSize: 12.5)),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: ctrl,
+                  maxLines: 8,
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 12, height: 1.5),
+                  decoration: const InputDecoration(
+                    hintText: '{"name": "我的主题", "light": {...}, "dark": {...}}',
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(error!,
+                      style: TextStyle(
+                          fontSize: 12, color: SemColors.danger, height: 1.5)),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            FilledButton(
+              onPressed: () {
+                try {
+                  final t = JsonThemePlugin.parse(ctrl.text);
+                  PluginRegistry.I.addTheme(t);
+                  setD(() => error = null);
+                  Navigator.pop(ctx, true);
+                } on FormatException catch (e) {
+                  setD(() => error = e.message);
+                }
+              },
+              child: const Text('导入'),
+            ),
+          ],
+        ),
+      ),
+    );
+    ctrl.dispose();
+    if (ok == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('主题已导入并启用'), behavior: SnackBarBehavior.floating));
+    }
+  }
+
   /// 滑块每动一点就更新整站配色的预览（量化在 AppState 里做，避免每帧重建）。
   void _previewAppearance() {
     final systemDark =
@@ -65,6 +127,15 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                   Text('主题', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                   const SizedBox(height: 8),
                   const ThemePickerList(),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => _importTheme(context),
+                      icon: const Icon(Icons.file_open_outlined, size: 18),
+                      label: const Text('导入主题'),
+                    ),
+                  ),
                 ],
               ),
             ),

@@ -14,3 +14,5 @@ dependencies:
   campus_core:
     path: ../campus_core
   image_picker: ^1.2.0
+  # 课表自定义背景：把图库里的图拷进应用目录保存
+  path_provider: ^2.1.5
