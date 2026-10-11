@@ -115,8 +115,10 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   /// 上一页从左面露出来（用户要求：不跟着手势边换方向）。
   static const double _dir = 1;
 
-  /// 拖动期间当前页最多淡掉多少：见 [_gestureView]（越大越早看见要回撤到的界面）。
-  static const double _dragFade = 0.7;
+  /// 拖动期间当前页最多淡掉多少：见 [_gestureView]。1.0 = 进度 1/3 时顶层页只剩
+  /// 67% 不透明度——下层页（前 1/3 已淡入到位）隔着这层半透明 + 模糊刚好「看得见」，
+  /// 2/3 时只剩 33%，配合模糊已清完，与模糊插值的节奏对齐。
+  static const double _dragFade = 1.0;
 
   _BackPhase _phase = _BackPhase.none;
 
@@ -198,24 +200,37 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
       _phase = _BackPhase.none;
     }
     if (_phase == _BackPhase.none) {
-      // 普通前进 / 点返回：沿用自家淡入淡出，玻璃观感不变
-      final fade = _fade.buildTransitions(widget.route, context, widget.animation,
+      // 被盖住的页：预测式返回手势的另一面。手势进行中（cover 非 null）
+      // 下层页在**手势前 1/3** 就淡入到位并按覆盖进度模糊——
+      // 原来走淡入淡出的旧曲线，要到手势走完约 2/3 才开始出现，
+      // 用户实测「1/3 时完全看不到」。没有手势（null）时用普通淡入淡出。
+      if (!widget.route.isCurrent) {
+        return ValueListenableBuilder<double?>(
+          valueListenable: predictiveBackCover,
+          builder: (context, cover, _) {
+            if (cover == null) {
+              return _fade.buildTransitions(widget.route, context, widget.animation,
+                  widget.secondaryAnimation, widget.child);
+            }
+            // 覆盖进度 cover = 顶层页动画值（1 = 全盖住，0 = 已滑走）。
+            // 下层页透明度：cover 1 → 2/3 之间淡入（手势前 1/3），之后保持全可见，
+            // 隔着顶层页的半透明 + 模糊露出；模糊同前：前 1/3 重糊，1/3 → 2/3 变清楚。
+            final visible = 1 - ((cover - 2 / 3) / (1 / 3)).clamp(0.0, 1.0);
+            Widget content = Opacity(opacity: visible.clamp(0.0, 1.0), child: widget.child);
+            final sigma = _coverBlurSigma(cover);
+            if (sigma > 0.3) {
+              content = ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                child: content,
+              );
+            }
+            return content;
+          },
+        );
+      }
+      // 当前页（没参与手势）：沿用自家淡入淡出，玻璃观感不变
+      return _fade.buildTransitions(widget.route, context, widget.animation,
           widget.secondaryAnimation, widget.child);
-      // 被盖住的页：预测式返回手势进行中按覆盖进度做渐进模糊——
-      // 手势前 1/3 隔着重模糊看见下层，1/3 → 2/3 插值变清楚（见 predictiveBackCover）。
-      // 没有手势（null）时原样返回，不引入额外合成层。
-      if (widget.route.isCurrent) return fade;
-      return ValueListenableBuilder<double?>(
-        valueListenable: predictiveBackCover,
-        builder: (context, cover, _) {
-          final sigma = cover == null ? 0.0 : _coverBlurSigma(cover);
-          if (sigma <= 0.3) return fade;
-          return ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-            child: fade,
-          );
-        },
-      );
     }
     return AnimatedBuilder(
       animation: widget.animation,

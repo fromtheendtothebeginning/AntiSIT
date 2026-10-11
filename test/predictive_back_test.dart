@@ -192,6 +192,48 @@ void main() {
     expect(tester.getTopLeft(find.text('第二页')), isNotNull);
   });
 
+  testWidgets('下层页在手势前 1/3 就淡入到位：1/3 时已完整可见（模糊由模糊层负责）', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+
+    double underlyingOpacity() => tester
+        .widget<Opacity>(find
+            .ancestor(of: find.text('push'), matching: find.byType(Opacity))
+            .first)
+        .opacity;
+
+    await backGesture(tester, 'startBackGesture', <String, Object?>{
+      'touchOffset': <double>[5.0, 300.0],
+      'progress': 0.0,
+      'swipeEdge': 0,
+    });
+
+    await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
+      'x': 15.0,
+      'y': 300.0,
+      'progress': 0.1,
+      'swipeEdge': 0,
+    });
+    expect(underlyingOpacity(), greaterThan(0.0),
+        reason: '手势一开始下层页就开始淡入（原来要拖过 2/3 才出现，「1/3 时完全看不到」的根因）');
+    expect(underlyingOpacity(), lessThan(1.0));
+
+    await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
+      'x': 40.0,
+      'y': 300.0,
+      'progress': 0.4,
+      'swipeEdge': 0,
+    });
+    expect(underlyingOpacity(), 1.0, reason: '过了 1/3 下层页完整在场，之后只有模糊在退');
+
+    await backGesture(tester, 'cancelBackGesture');
+    await tester.pumpAndSettle();
+    expect(find.ancestor(of: find.text('push'), matching: find.byType(Opacity)),
+        findsNothing,
+        reason: '取消后回到普通淡入淡出路径（被盖住时按旧曲线隐藏）');
+  });
+
   testWidgets('关掉「预测式返回动画」：手势期间画面不动，松手按普通返回', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await AppState.I.setPredictiveBack(false);
