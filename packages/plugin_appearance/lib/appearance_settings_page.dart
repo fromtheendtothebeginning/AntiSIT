@@ -169,11 +169,8 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               child: SwitchListTile(
                 secondary: const Icon(Icons.swipe_outlined),
                 title: const Text('界面实时跟着滑块切换'),
-                subtitle: const Text(
-                    '打开：拖动滑块（或左右滑页面）时下方界面跟着实时滑动，拖过一半就换；\n'
-                    '关闭：松手落位后才切换（旧行为，少一点重绘）。',
-                    style: TextStyle(fontSize: 12, height: 1.5)),
-                isThreeLine: true,
+                subtitle: const Text('拖动滑块或左右滑页面时，界面实时跟滑、拖过一半即换',
+                    style: TextStyle(fontSize: 12)),
                 value: st.followSlider,
                 onChanged: (v) => st.setFollowSlider(v),
               ),

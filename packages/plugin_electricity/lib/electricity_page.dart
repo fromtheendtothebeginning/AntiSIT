@@ -242,7 +242,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
               const SizedBox(height: 8),
               Center(
                 child: Text(
-                  '余额低于 10 元、预计可用不足 5 天会标红；充值走校付宝公网直连',
+                  '余额低于 10 元、预计可用不足 5 天会标红；充值走校园卡公网直连',
                   style: TextStyle(fontSize: 11, color: SemColors.textMuted),
                 ),
               ),
