@@ -288,7 +288,10 @@ String _contributions(String body, _Kind kind) {
   final ui = <String>[
     if (body.contains('navItems(')) '底栏页',
     if (body.contains('tools(')) '工具卡片',
-    if (body.contains('settingsTiles(')) '设置条目',
+    // 两处宿主都算「设置条目」：`timetableSettingsTiles(` 收进「课程表设置」二级页，
+    // `settingsTiles(` 留在「我的 → 设置」。注意大小写——前者并不包含后者。
+    if (body.contains('settingsTiles(') || body.contains('timetableSettingsTiles('))
+      '设置条目',
   ];
   return [
     if (ui.isEmpty) '无界面' else ...ui,

@@ -15,11 +15,29 @@ const String reminderPluginId = PluginIds.reminder;
 /// 一条待排期的上课提醒（纯数据，便于单测）。
 @immutable
 class ClassReminder {
-  const ClassReminder({required this.id, required this.course, required this.at});
+  const ClassReminder({required this.id, required this.at, this.course, this.event})
+      : assert(course != null || event != null, '课程 / 日程二选一');
 
   final int id; // 通知 id（按课次去重、稳定）
-  final TtCourse course;
-  final DateTime at; // 15 分钟前的本机时刻
+  final DateTime at; // 提前 leadMinutes 的本机时刻
+
+  /// 课程提醒；与 [event] 二选一。
+  final TtCourse? course;
+
+  /// 日程 / 考试提醒；与 [course] 二选一。
+  final TtEvent? event;
+
+  bool get isEvent => event != null;
+  String get title => course?.name ?? event?.name ?? '';
+  String get place => course?.place ?? event?.place ?? '';
+
+  /// 日程备注（课程没有）：日程提醒的正文要把备注一起带上。
+  String get note => event?.note ?? '';
+
+  /// 开始时刻（分钟）：课程看小节，日程看它自己的 HH:MM。
+  int get startMinutes => course != null
+      ? ClassReminderService.classStartMinutes(course!)
+      : ClassReminderService.hhmm(event!.start);
 
   @override
   bool operator ==(Object other) => other is ClassReminder && other.id == id && other.at == at;
@@ -142,6 +160,32 @@ class ClassReminderService extends ChangeNotifier {
           }
         }
       }
+      // 日程 / 考试：有日期的按那天排一次；date 为空的按每周的 day 重复排。
+      // 没写开始时刻的（全天日程）不排——没有「提前多少分钟」可算。
+      for (final e in tt.events) {
+        if (e.name.trim().isEmpty) continue;
+        final sm = hhmm(e.start);
+        if (sm < 0) continue;
+        DateTime atOf(DateTime day) =>
+            day.add(Duration(minutes: sm)).subtract(Duration(minutes: leadMinutes));
+        if (e.date.isNotEmpty) {
+          final d = DateTime.tryParse(e.date);
+          if (d != null) {
+            final at = atOf(DateTime(d.year, d.month, d.day));
+            if (at.isBefore(from) || !at.isBefore(until)) continue;
+            if (!seen.add('${e.name}|${e.place}|${at.toIso8601String()}')) continue;
+            out.add(ClassReminder(id: notificationIdForEvent(e, at), at: at, event: e));
+          }
+          continue;
+        }
+        // 每周重复的日程不受调休影响：它是日历事件，不是课
+        for (var w = 1; w <= tt.weekCount; w++) {
+          final at = atOf(dateOfWeekWeek(start, w, e.day.clamp(0, 6)));
+          if (at.isBefore(from) || !at.isBefore(until)) continue;
+          if (!seen.add('${e.name}|${e.place}|${at.toIso8601String()}')) continue;
+          out.add(ClassReminder(id: notificationIdForEvent(e, at), at: at, event: e));
+        }
+      }
     }
     out.sort((a, b) => a.at.compareTo(b.at));
     return out.length > maxScheduled ? out.sublist(0, maxScheduled) : out;
@@ -159,9 +203,16 @@ class ClassReminderService extends ChangeNotifier {
     return dayIndex;
   }
 
-  static int notificationIdFor(TtCourse c, DateTime at) {
+  static int notificationIdFor(TtCourse c, DateTime at) =>
+      _hash('${c.name}|${c.day}|${c.slotStart}|${at.toIso8601String()}');
+
+  /// 日程的排期 id：按「名称 + 日期/星期 + 时刻」定，重排时稳定、不同场次不撞。
+  static int notificationIdForEvent(TtEvent e, DateTime at) =>
+      _hash('${e.name}|${e.date}|${e.day}|${e.start}|${at.toIso8601String()}');
+
+  static int _hash(String s) {
     var h = 17;
-    for (final unit in '${c.name}|${c.day}|${c.slotStart}|${at.toIso8601String()}'.codeUnits) {
+    for (final unit in s.codeUnits) {
       h = (h * 31 + unit) & 0x3fffffff;
     }
     return h;
@@ -240,8 +291,8 @@ class ClassReminderService extends ChangeNotifier {
       for (final r in reminders) {
         await _plugin.zonedSchedule(
           r.id,
-          '${r.course.name} 即将上课',
-          _body(r, leadMinutes),
+          '${r.title} ${r.isEvent ? '即将开始' : '即将上课'}',
+          body(r, leadMinutes),
           tz.TZDateTime.from(r.at, tz.local),
           const NotificationDetails(
             android: AndroidNotificationDetails(
@@ -293,13 +344,30 @@ class ClassReminderService extends ChangeNotifier {
     return AndroidScheduleMode.inexactAllowWhileIdle;
   }
 
-  static String _body(ClassReminder r, int lead) =>
-      '${_hhmm(classStartMinutes(r.course))} 上课'
-      '${r.course.place.isEmpty ? '' : ' · ${r.course.place}'}'
-      '（$lead 分钟后）';
+  /// 通知正文：「HH:MM 上课 / 开始 · 地点 · 备注（N 分钟后）」。
+  /// 日程的备注也要带上（「日程提醒要把备注也放到提醒里面」）。公开供测试同源断言。
+  static String body(ClassReminder r, int lead) {
+    final extra = [
+      if (r.place.isNotEmpty) r.place,
+      if (r.note.isNotEmpty) r.note,
+    ].join(' · ');
+    return '${_hhmm(r.startMinutes)} ${r.isEvent ? '开始' : '上课'}'
+        '${extra.isEmpty ? '' : ' · $extra'}'
+        '（$lead 分钟后）';
+  }
 
   static String _hhmm(int minutes) =>
       '${(minutes ~/ 60).toString().padLeft(2, '0')}:${(minutes % 60).toString().padLeft(2, '0')}';
+
+  /// 'HH:MM' → 分钟；空串 / 解析不出返回 -1。
+  static int hhmm(String v) {
+    final p = v.trim().split(':');
+    if (p.length != 2) return -1;
+    final h = int.tryParse(p[0]);
+    final m = int.tryParse(p[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) return -1;
+    return h * 60 + m;
+  }
 
   // ==================== 权限 + 开关 ====================
 

@@ -31,13 +31,85 @@ void main() {
         place: place,
       );
 
-  TimetableStore storeWith(List<TtCourse> courses, {int weekCount = 20}) {
+  TimetableStore storeWith(List<TtCourse> courses,
+      {int weekCount = 20, List<TtEvent> events = const []}) {
     final s = TimetableStore.instance;
     s.semesters = {
-      '2025-12': SemesterTt(startDate: start, weekCount: weekCount, courses: courses),
+      '2025-12': SemesterTt(startDate: start, weekCount: weekCount, courses: courses, events: events),
     };
     return s;
   }
+
+  TtEvent event({
+    String name = '数学竞赛培训',
+    String date = '2026-03-03',
+    int day = 1,
+    String start = '13:00',
+    String end = '14:30',
+    String place = '二教E101',
+    String note = '带计算器',
+    String kind = '',
+  }) =>
+      TtEvent(
+        id: 'e-$name-$date-$day',
+        name: name,
+        date: date,
+        day: day,
+        start: start,
+        end: end,
+        place: place,
+        note: note,
+        kind: kind,
+      );
+
+  group('日程提醒（含备注）', () {
+    final from = DateTime(2026, 3, 1);
+    final lead = ClassReminderService.leadMinutes;
+
+    test('有日期的日程按那天排，正文带上备注', () {
+      final planned = ClassReminderService.plan(
+          storeWith(const [], events: [event()]), from, horizonDays: 8);
+      expect(planned, hasLength(1));
+      final r = planned.single;
+      expect(r.isEvent, isTrue);
+      expect(r.title, '数学竞赛培训');
+      expect(r.note, '带计算器', reason: '备注要一起进提醒');
+      final body = ClassReminderService.body(r, lead);
+      expect(body, contains('13:00 开始'));
+      expect(body, contains('二教E101'));
+      expect(body, contains('带计算器'), reason: '日程提醒要把备注也放到提醒里面');
+      expect(body, contains('（$lead 分钟后）'));
+      // 开始前 lead 分钟响
+      expect(r.at, DateTime(2026, 3, 3, 13, 0).subtract(Duration(minutes: lead)));
+    });
+
+    test('date 为空的日程按每周的星期重复排', () {
+      final weekly = event(date: '', day: 3, start: '18:00'); // 每周四
+      final planned =
+          ClassReminderService.plan(storeWith(const [], weekCount: 3, events: [weekly]), from, horizonDays: 30);
+      expect(planned.length, 3, reason: '3 周就排 3 次');
+      expect(planned.first.at, DateTime(2026, 3, 5, 18, 0).subtract(Duration(minutes: lead)));
+      expect(planned[1].at.difference(planned.first.at).inDays, 7);
+    });
+
+    test('已经过去的日程不排；没写开始时刻（全天）也不排', () {
+      final past = event(date: '2026-02-10');
+      final allDay = event(name: '全天活动', date: '2026-03-04', start: '');
+      final planned = ClassReminderService.plan(
+          storeWith(const [], events: [past, allDay]), from, horizonDays: 30);
+      expect(planned, isEmpty);
+    });
+
+    test('同一场次的提醒 id 稳定（重排不会重复弹）', () {
+      final a = ClassReminderService.plan(storeWith(const [], events: [event()]), from).single;
+      final b = ClassReminderService.plan(storeWith(const [], events: [event()]), from).single;
+      expect(a.id, b.id);
+      final other = ClassReminderService
+          .plan(storeWith(const [], events: [event(name: '英语角')]), from)
+          .single;
+      expect(other.id, isNot(a.id));
+    });
+  });
 
   group('节次与周次', () {
     test('11 节上课时刻与课表页一致', () {
@@ -80,7 +152,7 @@ void main() {
 
       expect(planned.map((r) => r.at).toList(),
           [DateTime(2026, 3, 9, 8, 5), DateTime(2026, 3, 16, 8, 5)]);
-      expect(planned.first.course.name, '高等数学');
+      expect(planned.first.course!.name, '高等数学');
     });
 
     test('多个学期 / 多节课合并排序，同一时刻不重复', () {
@@ -163,7 +235,7 @@ void main() {
       );
       final planned = ClassReminderService.plan(s, DateTime(2026, 3, 1), horizonDays: 2);
       expect(planned.length, 1);
-      expect(planned.single.course.name, '英语');
+      expect(planned.single.course!.name, '英语');
       expect(planned.single.at, DateTime(2026, 3, 2, 12, 45));
     });
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_error.dart';
@@ -25,6 +26,18 @@ class ApiClient {
   final http.Client _http = http.Client();
   Future<void> _queue = Future.value();
   Future<bool>? _recoverInFlight; // 并发 401 时共享同一次 refresh/重登，防止登录请求风暴触发 429
+
+  /// 正卡在「202 = 服务器在建校园网隧道」等待里的请求数（>0 = 建隧道中）。
+  /// 服务器模式第一次查询要建隧道（几十秒），这期间界面不能只给一个光转的圈——
+  /// 页面拿它显示「正在建立校园网隧道…」（见 [PageStateView]）。
+  /// 计数而不是布尔：并发请求（工具页预取 + 我的页）可能同时在等。
+  static final ValueNotifier<int> tunnelWarmup = ValueNotifier<int>(0);
+
+  static void _warmupStart() => tunnelWarmup.value = tunnelWarmup.value + 1;
+
+  static void _warmupEnd() {
+    if (tunnelWarmup.value > 0) tunnelWarmup.value = tunnelWarmup.value - 1;
+  }
 
   /// 服务器模式的手动验证码弹窗：开放接口无法自动识码（未配识图模型等）时回 need_captcha，
   /// UI 层注入后弹出与直连模式同款的输入框（启动时与 CampusDirect 一起装一次）。
@@ -66,7 +79,7 @@ class ApiClient {
     if (st.demo) return DemoData.handle(method, path, body: body, query: query);
     _requireServer();
 
-    Future<Map<String, dynamic>> attempt() async {
+    Future<Map<String, dynamic>> attempt(void Function() onWarm) async {
       var recovered = false; // 每个请求只做一次鉴权恢复，防止 401→refresh→401 死循环
       var waited = 0;
       var captchaRounds = 0;
@@ -92,6 +105,7 @@ class ApiClient {
 
         if (resp.statusCode == 202 && !once) {
           if (waited > 120) throw ApiError('校园网隧道建立超时，请稍后重试');
+          onWarm(); // 建隧道中：界面据此显示「正在建立校园网隧道…」，别只给一个光转的圈
           var retryAfter = 5;
           try {
             final j = jsonDecode(utf8.decode(resp.bodyBytes));
@@ -141,7 +155,23 @@ class ApiClient {
       }
     }
 
-    return tunnel ? _serial(attempt) : attempt();
+    // 建隧道期间让界面有话可说：进过 202 等待的这轮结束后（成功 / 报错 / 超时）收掉计数
+    var warming = false;
+    Future<Map<String, dynamic>> run() async {
+      void onWarm() {
+        if (warming) return;
+        warming = true;
+        _warmupStart();
+      }
+
+      try {
+        return await attempt(onWarm);
+      } finally {
+        if (warming) _warmupEnd();
+      }
+    }
+
+    return tunnel ? _serial(run) : run();
   }
 
   /// need_captcha 手动验证码流程：弹输入框 → POST /api/campus-open/captcha 提交；

@@ -73,8 +73,11 @@ class _HomePageState extends State<HomePage> {
     // 与页面的直觉一致：content 往左拖 = 去下一格（像翻页），所以位置是「减去手指位移」
     final next = ((_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW).clamp(0.0, last);
     _dragPos.value = next;
-    final nearest = next.round();
-    if (nearest != tab.value) tab.value = nearest;
+    // 「界面实时跟着滑块切换」关掉时不在拖动中换页——等松手落位再换（见 AppState.followSlider）
+    if (AppState.I.followSlider) {
+      final nearest = next.round();
+      if (nearest != tab.value) tab.value = nearest;
+    }
   }
 
   void _onDragEnd(DragEndDetails d) {
@@ -137,7 +140,10 @@ class _HomePageState extends State<HomePage> {
                     // 校园码计时器这些「常驻」前提就没了。
                     child: ValueListenableBuilder<double>(
                       valueListenable: _pos,
-                      builder: (context, pos, _) {
+                      builder: (context, rawPos, _) {
+                        // 开关关掉时界面不跟滑块连续滑，只按「已落位的那一格」显示（松手才换）
+                        final pos =
+                            AppState.I.followSlider ? rawPos : tab.value.toDouble();
                         final w = MediaQuery.sizeOf(context).width;
                         return Stack(
                           children: [

@@ -146,6 +146,27 @@ void main() {
     });
   });
 
+  group('开关：界面是否实时跟着滑块切换', () {
+    testWidgets('关掉后拖动中界面不动，松手落位才换', (tester) async {
+      AppState.I.followSlider = false;
+      addTearDown(() => AppState.I.followSlider = true);
+      await pumpShell(tester, reg: _plainRegistry());
+      final w = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      double left() => tester.getTopLeft(find.text('页面课程表', skipOffstage: false)).dx;
+      final before = left();
+
+      final g = await begin(tester, const Offset(420, 600));
+      await g.moveBy(Offset(-w * 0.7, 0));
+      await tester.pump();
+      expect(left(), closeTo(before, 1), reason: '关掉实时跟随：拖动中界面不动');
+      expect(shownTab(tester), 0, reason: '也没换页');
+
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(shownTab(tester), 1, reason: '松手落位后才切');
+    });
+  });
+
   group('冲突时不抢手势', () {
     testWidgets('页面里有横向滚动组件：横滑它只滚内容，不切页', (tester) async {
       await pumpShell(tester, reg: _registryWithHorizontalStrip());

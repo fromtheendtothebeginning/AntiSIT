@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 需求：点课程表上方的「课程表 · 大X上/下」就能切换学期
+/// 需求：点课程表上方的「大X上/下」就能切换学期
 /// （打开的就是右上角菜单里那一项用的同一个学期选择器）。
 void main() {
   // 页面初始化会采用「按今天推断的学期」，所以课就放在那个学期里；
   // 拿它同年的另一个学期当「切过去的目标」（两个都取得到「大X上/下」的标签）。
   const nj = '2025';
   late String activeKey;
+  late String activeLabel;
   late String otherKey;
   late String otherLabel;
 
@@ -21,6 +22,7 @@ void main() {
 
     final (xnm, xqm) = AppState.inferSemester(DateTime.now());
     activeKey = '$xnm-$xqm';
+    activeLabel = TimetableStore.instance.semesterLabel(activeKey)!;
     otherKey = xqm == '12' ? '$xnm-3' : '$xnm-12';
     otherLabel = TimetableStore.instance.semesterLabel(otherKey)!;
 
@@ -59,7 +61,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
   }
 
-  /// 当前 AppBar 上的标题文字（=「课程表 · 学期」）
+  /// 当前 AppBar 上的标题文字（= 学期名，如「大二上」）
   String title(WidgetTester tester) => tester
       .widget<Text>(find.descendant(of: find.byType(AppBar), matching: find.byType(Text)).first)
       .data!;
@@ -79,7 +81,7 @@ void main() {
   testWidgets('标题本身就是入口：右边带箭头，点开「选择学期」', (tester) async {
     await pumpPage(tester);
 
-    expect(title(tester), startsWith('课程表'), reason: '标题还是那个标题');
+    expect(title(tester), activeLabel, reason: '标题只显示学期名，不带「课程表 ·」前缀');
     expect(find.byIcon(Icons.arrow_drop_down), findsOneWidget, reason: '暗示可点');
 
     await tapTitle(tester);
@@ -96,7 +98,7 @@ void main() {
     await tester.tap(find.text(genericLabel(otherKey)));
     await tester.pumpAndSettle();
 
-    expect(title(tester), '课程表 · $otherLabel');
+    expect(title(tester), otherLabel);
     expect(title(tester), isNot(before));
     expect(find.text('数据库原理及应用'), findsNothing, reason: '$otherLabel 是空学期');
   });
