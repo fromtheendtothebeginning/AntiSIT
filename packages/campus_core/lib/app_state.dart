@@ -42,6 +42,15 @@ class AppState extends ChangeNotifier {
   /// 课表：是否把「已上完」的课淡化（关掉则与未上完的课一样显示正常彩色）。
   bool dimCompleted = true;
 
+  /// 界面是否实时跟着滑块切换：开（默认）= 拖动时下方界面跟着滑块连续滑动、
+  /// 并在拖过一半时就换（主界面底栏切页 / 连接设置都算）；
+  /// 关 = 松手落位后才切换（旧行为，省一点重绘）。开关在「我的 → 设置 → 外观」里。
+  bool followSlider = true;
+
+  /// 预测式返回动画开关：开（默认）= 系统返回手势跟手预览、松手可反悔；
+  /// 关 = 手势期间画面不动，松手按普通返回（淡入淡出）。开关在「我的 → 设置 → 外观」里。
+  bool predictiveBack = true;
+
   /// 直连模式：学校档案（可多个）+ 当前学校 + 校园凭据。
   List<SchoolProfile> schools = [];
   SchoolProfile school = SchoolProfile.sit();
@@ -67,6 +76,8 @@ class AppState extends ChangeNotifier {
       _ => ThemeMode.system,
     };
     dimCompleted = sp.getBool('dim_completed') ?? true;
+    followSlider = sp.getBool('follow_slider') ?? true;
+    predictiveBack = sp.getBool('predictive_back') ?? true;
     mode = sp.getString('app_mode') == 'direct' ? AppMode.direct : AppMode.server;
     schools = SchoolProfile.decodeList(sp.getString('direct_schools'));
     if (schools.isEmpty) schools = [SchoolProfile.sit()];
@@ -100,6 +111,8 @@ class AppState extends ChangeNotifier {
     await sp.setString('theme_mode',
         switch (themeMode) { ThemeMode.light => 'light', ThemeMode.dark => 'dark', _ => 'system' });
     await sp.setBool('dim_completed', dimCompleted);
+    await sp.setBool('follow_slider', followSlider);
+    await sp.setBool('predictive_back', predictiveBack);
     await sp.setString('app_mode', direct ? 'direct' : 'server');
     await sp.setString('direct_schools', SchoolProfile.encodeList(schools));
     await sp.setString('direct_school', school.name);
@@ -202,6 +215,20 @@ class AppState extends ChangeNotifier {
   /// 课表：是否淡化「已上完」的课（关掉则显示正常彩色）。
   Future<void> setDimCompleted(bool v) async {
     dimCompleted = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 界面是否实时跟着滑块切换（见 [followSlider]）。
+  Future<void> setFollowSlider(bool v) async {
+    followSlider = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 预测式返回动画开关（见 [predictiveBack]）。
+  Future<void> setPredictiveBack(bool v) async {
+    predictiveBack = v;
     await _persist();
     notifyListeners();
   }

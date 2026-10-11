@@ -3,6 +3,7 @@ import 'package:campus_service/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 「安卓端增加可预测式返回动画」的验收：
 /// * 普通前进 / 普通返回仍旧是自家 fade-through（玻璃观的淡入淡出，内容不做位移）；
@@ -117,6 +118,57 @@ void main() {
     expect(find.text('push'), findsOneWidget);
   });
 
+  testWidgets('不论从哪条边划，一律按「从左边返回」：当前页往右滑出', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    final settled = tester.getTopLeft(find.text('第二页')).dx;
+
+    // 从右边缘划进来（swipeEdge: 1）
+    await backGesture(tester, 'startBackGesture', <String, Object?>{
+      'touchOffset': <double>[795.0, 300.0],
+      'progress': 0.0,
+      'swipeEdge': 1,
+    });
+    await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
+      'x': 600.0,
+      'y': 300.0,
+      'progress': 0.3,
+      'swipeEdge': 1,
+    });
+    final during = tester.getTopLeft(find.text('第二页')).dx;
+    expect(during, greaterThan(settled),
+        reason: '右侧划进来也按左边那套：当前页往右走、上一页从左面露出来');
+
+    await backGesture(tester, 'cancelBackGesture');
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('拖动早期就能看见要回撤到的那一页（当前页淡得更早）', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+
+    await backGesture(tester, 'startBackGesture', <String, Object?>{
+      'touchOffset': <double>[5.0, 300.0],
+      'progress': 0.0,
+      'swipeEdge': 0,
+    });
+    await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
+      'x': 110.0,
+      'y': 300.0,
+      'progress': 0.2,
+      'swipeEdge': 0,
+    });
+    final fade = tester.widget<Opacity>(
+        find.ancestor(of: find.text('第二页'), matching: find.byType(Opacity)).first);
+    expect(fade.opacity, lessThan(0.9),
+        reason: '进度才 0.2 就该明显淡下去，后面那页要露得出来（原来 0.45 系数时还有 0.91）');
+
+    await backGesture(tester, 'cancelBackGesture');
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('手势中途取消（松手回弹）不会返回，且动画不跳变', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
@@ -138,5 +190,61 @@ void main() {
 
     expect(find.text('第二页'), findsOneWidget, reason: '取消手势应当留在原页');
     expect(tester.getTopLeft(find.text('第二页')), isNotNull);
+  });
+
+  testWidgets('关掉「预测式返回动画」：手势期间画面不动，松手按普通返回', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await AppState.I.setPredictiveBack(false);
+    addTearDown(() => AppState.I.predictiveBack = true);
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    final settled = tester.getTopLeft(find.text('第二页'));
+
+    await backGesture(tester, 'startBackGesture', <String, Object?>{
+      'touchOffset': <double>[5.0, 300.0],
+      'progress': 0.0,
+      'swipeEdge': 0,
+    });
+    await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
+      'x': 300.0,
+      'y': 300.0,
+      'progress': 0.5,
+      'swipeEdge': 0,
+    });
+    expect(tester.getTopLeft(find.text('第二页')), settled,
+        reason: '开关关掉时手势不接管：页面不跟手位移');
+
+    await backGesture(tester, 'commitBackGesture');
+    await tester.pumpAndSettle();
+    expect(find.text('第二页'), findsNothing, reason: '松手提交仍要能返回（普通返回）');
+  });
+
+  testWidgets('手势期间下层页渐进模糊：前 1/3 重糊，2/3 之后不再模糊', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+
+    Future<void> progress(double p) => backGesture(tester, 'updateBackGestureProgress',
+        <String, Object?>{'x': 5.0 + p * 100, 'y': 300.0, 'progress': p, 'swipeEdge': 0});
+
+    await backGesture(tester, 'startBackGesture', <String, Object?>{
+      'touchOffset': <double>[5.0, 300.0],
+      'progress': 0.0,
+      'swipeEdge': 0,
+    });
+
+    await progress(0.3); // g ≤ 1/3：下层页被重模糊盖着
+    expect(find.byType(ImageFiltered), findsOneWidget, reason: '前 1/3 应隔着模糊看见下层页');
+
+    await progress(0.7); // g ≥ 2/3：完全清楚
+    expect(find.byType(ImageFiltered), findsNothing, reason: '2/3 之后不应再模糊');
+
+    await progress(0.4); // 1/3 ~ 2/3 之间：插值中，模糊还在
+    expect(find.byType(ImageFiltered), findsOneWidget);
+
+    await backGesture(tester, 'cancelBackGesture');
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageFiltered), findsNothing, reason: '手势结束后不再有模糊层');
   });
 }

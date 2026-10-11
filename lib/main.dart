@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -96,12 +97,26 @@ enum _BackPhase {
   return_,
 }
 
+/// 预测式返回手势期间的「覆盖进度」（顶层页的动画值：1 = 全盖住，0 = 已滑走；
+/// null = 没有手势在进行）。被盖住的页据此做**渐进模糊**：
+/// 手势前 1/3 隔着重模糊，1/3 → 2/3 之间线性变清楚（插值），之后完全清晰。
+final ValueNotifier<double?> predictiveBackCover = ValueNotifier(null);
+
+/// 覆盖进度 → 下层页的模糊半径。手势进度 g = 1 - v：
+/// g ≤ 1/3 时最糊（下层刚要露面），1/3 → 2/3 线性减到 0，之后不再模糊。
+double _coverBlurSigma(double v) =>
+    10 * (1 - (((1 - v) - 1 / 3) / (1 / 3)).clamp(0.0, 1.0));
+
 class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     with WidgetsBindingObserver {
   static const _fade = _FadeThroughTransitionsBuilder();
 
-  /// 手势从哪边划进来：左边的往右推、右边的往左推。
-  SwipeEdge _edge = SwipeEdge.left;
+  /// 一律按「从左边返回」那套走：不论手指从哪条边划进来，当前页都往右滑出、
+  /// 上一页从左面露出来（用户要求：不跟着手势边换方向）。
+  static const double _dir = 1;
+
+  /// 拖动期间当前页最多淡掉多少：见 [_gestureView]（越大越早看见要回撤到的界面）。
+  static const double _dragFade = 0.7;
 
   _BackPhase _phase = _BackPhase.none;
 
@@ -113,10 +128,23 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 手势期间把顶层页的动画值发布给被盖住的页（渐进模糊用）。
+    // 动画监听在帧调度阶段触发，不在 build 里改 ValueNotifier（会撞上 build 期重建）。
+    widget.animation.addListener(_publishCover);
+  }
+
+  void _publishCover() {
+    if (_phase == _BackPhase.none) return;
+    final v = widget.animation.value.clamp(0.0, 1.0);
+    final done = (_phase == _BackPhase.return_ && v >= 1.0) ||
+        (_phase == _BackPhase.commit && v <= 0.0);
+    predictiveBackCover.value = done ? null : v;
   }
 
   @override
   void dispose() {
+    widget.animation.removeListener(_publishCover);
+    if (_phase != _BackPhase.none) predictiveBackCover.value = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -127,15 +155,17 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     // 按键返回不接管；不能返回的页（首页 / 被压住的页）也返回 false，
     // 让事件继续往后传——观察者按注册顺序通知，只有当前那一页该接。
-    if (backEvent.isButtonEvent || !widget.route.isCurrent || !widget.route.popGestureEnabled) {
+    // 「预测式返回动画」关掉时同样不接管：框架对没人接的手势会在松手提交时
+    // 按普通返回 pop（走淡入淡出），手势期间画面不动。
+    if (backEvent.isButtonEvent ||
+        !AppState.I.predictiveBack ||
+        !widget.route.isCurrent ||
+        !widget.route.popGestureEnabled) {
       return false;
     }
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
     if (mounted) {
-      setState(() {
-        _phase = _BackPhase.drag;
-        _edge = backEvent.swipeEdge;
-      });
+      setState(() => _phase = _BackPhase.drag);
     }
     return true;
   }
@@ -169,8 +199,23 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     }
     if (_phase == _BackPhase.none) {
       // 普通前进 / 点返回：沿用自家淡入淡出，玻璃观感不变
-      return _fade.buildTransitions(widget.route, context, widget.animation,
+      final fade = _fade.buildTransitions(widget.route, context, widget.animation,
           widget.secondaryAnimation, widget.child);
+      // 被盖住的页：预测式返回手势进行中按覆盖进度做渐进模糊——
+      // 手势前 1/3 隔着重模糊看见下层，1/3 → 2/3 插值变清楚（见 predictiveBackCover）。
+      // 没有手势（null）时原样返回，不引入额外合成层。
+      if (widget.route.isCurrent) return fade;
+      return ValueListenableBuilder<double?>(
+        valueListenable: predictiveBackCover,
+        builder: (context, cover, _) {
+          final sigma = cover == null ? 0.0 : _coverBlurSigma(cover);
+          if (sigma <= 0.3) return fade;
+          return ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: fade,
+          );
+        },
+      );
     }
     return AnimatedBuilder(
       animation: widget.animation,
@@ -184,7 +229,7 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   Widget _gestureView(BuildContext context) {
     final v = widget.animation.value.clamp(0.0, 1.0); // 1 = 完整在前，0 = 已退出
     final width = MediaQuery.sizeOf(context).width;
-    final dir = _edge == SwipeEdge.right ? -1.0 : 1.0;
+    const dir = _dir;
 
     // 松手瞬间的状态（取消 / 提交后的动画都从这里插值，避免跳变）
     final released = 1 - _releaseV;
@@ -201,21 +246,23 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
         final gone = 1 - v;
         shift = dir * gone * width; // 1:1 跟手
         // 不整页淡掉：拖动时要像「被手指推走」。玻璃页半透明，稍带一点淡出，
-        // 两页叠在一起时不至于互相透得太花。
-        opacity = 1 - 0.45 * gone;
+        // 两页叠在一起时不至于互相透得太花；淡得多一点是为了让「回撤到的那一页」
+        // 早点露出来（原来 0.45 基本看不见后面那页）。
+        opacity = 1 - _dragFade * gone;
         scale = 1 - 0.05 * gone;
         radius = 16 * gone;
       case _BackPhase.commit:
         final t = _releaseV <= 0 ? 1.0 : ((_releaseV - v) / _releaseV).clamp(0.0, 1.0);
         shift = _mix(releaseShift, dir * width, t);
-        opacity = (1 - t).clamp(0.0, 1.0);
+        // 提前淡完（t≈0.7 就透明）：滑完前上一页已经完整在场
+        opacity = (1 - t * 1.45).clamp(0.0, 1.0);
         scale = _mix(releaseScale, 0.96, t);
         radius = _mix(releaseRadius, 12, t);
       case _BackPhase.return_:
         final span = 1 - _releaseV;
         final t = span <= 0 ? 1.0 : ((v - _releaseV) / span).clamp(0.0, 1.0);
         shift = _mix(releaseShift, 0, t);
-        opacity = _mix(1 - 0.45 * released, 1, t);
+        opacity = _mix(1 - _dragFade * released, 1, t);
         scale = _mix(releaseScale, 1, t);
         radius = _mix(releaseRadius, 0, t);
       case _BackPhase.none:
