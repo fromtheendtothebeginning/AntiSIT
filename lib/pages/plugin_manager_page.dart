@@ -284,16 +284,19 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
           const Text('依赖关系', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(height: 4),
           Text(
-            '一列 = 一层依赖，基础插件在右、组合功能在左；箭头指向被依赖的一方。'
-            '实线 = 启停联动，长虚线 = 可选依赖，短虚线 = 工具卡片挂在工具中心。'
-            '点节点看详情，再点一次取消；图可拖动、双指缩放。',
+            '力导向布局：连线是引力——关联的插件互相吸引，越远引力越大；'
+            '节点之间互相排斥，越近斥力越大；拖动节点松手后由物理规律决定去处。'
+            '箭头指向被依赖的一方，实线 = 启停联动，长虚线 = 可选依赖，'
+            '短虚线 = 工具卡片挂在工具中心。'
+            '双指缩放 / 自由拖动视角，单指左右拖空白处也可平移（上下滑动留给页面）。',
             style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
           ),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              height: layout.size.height.clamp(180, 400).toDouble(),
+              // 力导向布局需要排布空间：按初始排布高度放宽些
+              height: (layout.size.height * 1.2).clamp(240, 420).toDouble(),
               color: pluginGraphCanvasFill(),
               child: PluginGraphView(
                 graph: graph,

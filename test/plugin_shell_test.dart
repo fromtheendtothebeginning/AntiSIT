@@ -140,6 +140,10 @@ void main() {
   });
 
   testWidgets('管理页把启停的效果直接显示出来（底栏 / 工具宫格）', (tester) async {
+    // 图卡片变高后，默认 600 高的视口里功能列表在惰性构建窗口之外
+    tester.view.physicalSize = const Size(1000, 2600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(const MaterialApp(home: PluginManagerPage()));
     await tester.pumpAndSettle();
     expect(find.text('课程表 · 校园码 · 工具'), findsOneWidget);

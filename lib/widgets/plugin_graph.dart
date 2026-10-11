@@ -192,11 +192,18 @@ class PluginGraphLayout {
   }
 }
 
-/// 关系图：初始整图缩放进视口（只缩不放），之后视角可自由平移、双指缩放。
-/// 节点带弹簧物理：
-/// * **聚拢**——进场时节点从四周散点归位到布局位置；
-/// * **排斥**——拖动一个节点会推开靠得太近的邻居；
-/// * **回弹**——松手后所有节点带速度弹回原位。
+/// 关系图：真正的力导向物理布局。
+///
+/// 物理定律（每一帧都成立）：
+/// * **引力**——每条依赖边是一根胡克弹簧：F = kSpring × 距离，**越远引力越大**，
+///   把关联的插件往平衡间距拉；
+/// * **斥力**——所有节点两两互斥（库仑定律）：F = kRepel / 距离²，**越近斥力越大**；
+/// * **弱锚定**——每个节点另有一根很弱的弹簧拴在初始排布位：纯「引力+斥力」体系
+///   没有整体支点，会慢慢漂走，弱锚定防漂移、也保住图的大致可读性；
+/// * 阻尼 + 限速 + 限力保证收敛；静止后休眠省电，进场 / 拖动会唤醒。
+///
+/// 拖动节点 1:1 跟手，松手交给物理：被关联的引力拉回、被邻居的斥力推开，
+/// 落在新平衡点。视角可自由平移、双指缩放。
 class PluginGraphView extends StatefulWidget {
   const PluginGraphView({
     super.key,
@@ -220,22 +227,26 @@ class PluginGraphView extends StatefulWidget {
 }
 
 class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProviderStateMixin {
-  /// 弹簧参数：轻微欠阻尼（ratio < 1）带来一点过冲的回弹手感。
-  static const double _stiffness = 170;
-  static const double _dampingRatio = 0.72;
+  // ── 物理定律的系数（加速度单位：px/s²，节点质量按 1 处理）──
 
-  /// 中心距小于这个值就互相排斥（nodeW 92 + 余量）。
-  static const double _repelDist = 118;
-  static const double _repelStrength = 30;
+  /// 引力：边上的胡克弹簧（静止长度 0）→ F = kSpring × 距离，越远越大。
+  static const double _kSpring = 3.0;
 
-  /// 画布四周留白：散点进场 / 小幅排斥时节点画出布局框也还在画布内。
-  /// 只能小（画布 = 布局框 + 2×margin 要仍按原始大小装进「布局框 + 余量」的视口，
-  /// 见插件管理页「视口装得下时保持原始大小」的测试），节点被拖远时出框即出视角，
-  /// 松手弹簧会拉回来。
-  static const double _margin = 16;
+  /// 斥力：库仑定律 → F = kRepel / 距离²，越近越大。
+  /// 与 kSpring 共同决定相连节点的平衡间距：(kRepel / kSpring)^(1/3) ≈ 120px。
+  static const double _kRepel = 5.2e6;
 
-  /// 位移限幅：拖多远弹多远，别飞出图。
-  static const double _maxDisp = 120;
+  /// 弱锚定：拴在初始排布位的弱弹簧（约为引力的 1/5），防整体漂移。
+  static const double _kAnchor = 0.6;
+
+  /// 线性阻尼（1/s）与限幅：保证收敛、不爆炸。
+  static const double _damping = 4.0;
+  static const double _maxSpeed = 600;
+  static const double _maxAccel = 3000;
+  static const double _minDist = 30; // 斥力距离下限（除零保护）
+
+  /// 静止阈值：全体速度低于它就休眠（拖动 / 进场会唤醒）。
+  static const double _sleepSpeed = 8;
 
   late final Ticker _ticker = createTicker(_onTick);
 
@@ -244,19 +255,31 @@ class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProv
   final _TickSignal _physics = _TickSignal();
   Duration? _last;
 
-  /// 每个节点相对布局位置的位移与速度（弹簧物理的状态）。
-  final Map<String, Offset> _disp = <String, Offset>{};
+  /// 画布四周留白：节点被推/拖到画布边缘时留一点缓冲。
+  static const double _margin = 16;
+
+  /// 每个节点的**绝对画布位置**（节点矩形左上角）与速度。
+  final Map<String, Offset> _pos = <String, Offset>{};
   final Map<String, Offset> _vel = <String, Offset>{};
+
+  /// 物理画布 = **视口本身**（LayoutBuilder 给的尺寸）：初始矩阵恒为恒等，
+  /// 没有缩放适配/平移夹紧/裁剪这整类问题，命中测试不依赖变换。
+  /// 节点多时图会挤，双指缩小看全局即可。
+  Size _canvas = Size.zero;
+
+  /// 初始排布位（弱锚定的锚点）：分层布局给的网格位置。
+  Offset _home(String id) =>
+      (widget.layout.rects[id]?.topLeft ?? Offset.zero) + const Offset(_margin, _margin);
 
   @override
   void initState() {
     super.initState();
-    // 进场聚拢：从伪随机方位（按 id 散列，稳定可复现）的散点弹簧归位
+    // 进场：从伪随机方位（按 id 散列，稳定可复现）的散点出发，物理自己收敛成平衡布局
     for (final n in widget.graph.nodes) {
       final h = n.id.hashCode;
       final angle = (h % 360) * math.pi / 180;
-      final r = 42.0 + (h >> 4) % 48.0;
-      _disp[n.id] = Offset(math.cos(angle), math.sin(angle)) * r;
+      final r = 40.0 + (h >> 4) % 50.0;
+      _pos[n.id] = _home(n.id) + Offset(math.cos(angle), math.sin(angle)) * r;
       _vel[n.id] = Offset.zero;
     }
     _ticker.start();
@@ -269,12 +292,7 @@ class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProv
     super.dispose();
   }
 
-  Size get _canvasSize => Size(
-        widget.layout.size.width + _margin * 2,
-        widget.layout.size.height + _margin * 2,
-      );
-
-  // ── 弹簧物理 ──
+  // ── 力导向物理 ──
 
   void _onTick(Duration t) {
     final dt = _last == null ? 0.0 : ((t - _last!).inMicroseconds / 1e6).clamp(0.0, 0.033);
@@ -284,49 +302,65 @@ class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProv
     _physics.fire();
   }
 
-  /// 推进一步物理：弹簧归位 + （有节点在动时的）排斥 + 积分。
+  /// 推进一步物理：斥力（两两）+ 引力（沿边）+ 弱锚定 → 阻尼积分。
   void _step(double dt) {
-    final damping = 2 * math.sqrt(_stiffness) * _dampingRatio;
+    if (_canvas == Size.zero) return; // 视口还没量出来
     final ids = [for (final n in widget.graph.nodes) n.id];
-
-    // 排斥：靠得太近的节点互推（拖动中的节点按当前位置推别人，自己不被推）。
-    // 只在「有节点在动」时生效：布局本身按网格排（同列间距远小于排斥半径），
-    // 若静止时也算排斥，排斥会跟弹簧打架，节点永远停在布局位之外、动画收不了场。
-    final active = _dragging != null ||
-        ids.any((id) => (_vel[id]?.distance ?? 0) > 120);
     final accel = {for (final id in ids) id: Offset.zero};
-    if (active) {
-      for (var i = 0; i < ids.length; i++) {
+
+    // 斥力：所有节点两两互斥，F = kRepel / d²，沿连线向外（越近越大）。
+    // 拖动中的节点按当前位置推别人，自己不被推。
+    for (var i = 0; i < ids.length; i++) {
       for (var j = i + 1; j < ids.length; j++) {
         final a = ids[i], b = ids[j];
-        final pa = _target(a) + (_disp[a] ?? Offset.zero);
-        final pb = _target(b) + (_disp[b] ?? Offset.zero);
-        final d = pb - pa;
-        final dist = d.distance;
-        if (dist >= _repelDist || dist < 0.01) continue;
-        final f = d / dist * ((_repelDist - dist) * _repelStrength);
-          if (a != _dragging) accel[a] = accel[a]! - f;
-          if (b != _dragging) accel[b] = accel[b]! + f;
-        }
+        final d = (_pos[b] ?? Offset.zero) - (_pos[a] ?? Offset.zero);
+        final dist = math.max(d.distance, _minDist);
+        final f = (_kRepel / (dist * dist)).clamp(0.0, _maxAccel);
+        if (d.distance < 0.01) continue;
+        final dir = d / d.distance;
+        if (a != _dragging) accel[a] = accel[a]! - dir * f;
+        if (b != _dragging) accel[b] = accel[b]! + dir * f;
       }
     }
 
-    // 弹簧归位 + 积分
-    for (final id in ids) {
-      if (id == _dragging) continue; // 拖动中的节点 1:1 跟手，不受力
-      final x = _disp[id] ?? Offset.zero;
-      final v = _vel[id] ?? Offset.zero;
-      final nv = v + (x * -_stiffness + v * -damping + accel[id]!) * dt;
-      _vel[id] = nv;
-      _disp[id] = _clamp(x + nv * dt);
+    // 引力：每条边一根胡克弹簧，F = kSpring × 距离，越远越大，互相拉近。
+    for (final e in widget.graph.edges) {
+      final pa = _pos[e.from];
+      final pb = _pos[e.to];
+      if (pa == null || pb == null) continue;
+      final d = pb - pa;
+      final dist = d.distance;
+      if (dist < 0.5) continue;
+      final f = math.min(_kSpring * dist, _maxAccel);
+      final dir = d / dist;
+      if (e.from != _dragging) accel[e.from] = accel[e.from]! + dir * f;
+      if (e.to != _dragging) accel[e.to] = accel[e.to]! - dir * f;
     }
 
-    // 全部归位且无拖动 → 停表（省电，也让 pumpAndSettle 能停下来）
-    final settled = _dragging == null &&
-        ids.every((id) => (_disp[id]?.distance ?? 0) < 0.5 && (_vel[id]?.distance ?? 0) < 5);
-    if (settled) {
+    // 弱锚定 + 阻尼积分
+    final damp = math.exp(-_damping * dt);
+    var maxSpeed = 0.0;
+    for (final id in ids) {
+      if (id == _dragging) continue; // 拖动中的节点 1:1 跟手，不受力
+      final anchor = (_home(id) - (_pos[id] ?? Offset.zero)) * _kAnchor;
+      var v = (_vel[id] ?? Offset.zero) + (accel[id]! + anchor) * dt;
+      v = v * damp;
+      final speed = v.distance;
+      if (speed > _maxSpeed) v = v / speed * _maxSpeed;
+      final next = (_pos[id] ?? Offset.zero) + v * dt;
+      final clamped = _clampToCanvas(next);
+      // 撞墙：清掉指向墙外的速度分量（物理墙）。不清的话，压在墙上的节点
+      // 每帧都被斥力重新加速，速度永远降不下来，物理永远睡不了。
+      if (clamped.dx != next.dx) v = Offset(0, v.dy);
+      if (clamped.dy != next.dy) v = Offset(v.dx, 0);
+      _vel[id] = v;
+      _pos[id] = clamped;
+      if (v.distance > maxSpeed) maxSpeed = v.distance;
+    }
+
+    // 全场静止且无拖动 → 休眠（省电，也让 pumpAndSettle 能停下来）
+    if (_dragging == null && maxSpeed < _sleepSpeed) {
       for (final id in ids) {
-        _disp[id] = Offset.zero;
         _vel[id] = Offset.zero;
       }
       _ticker.stop();
@@ -334,16 +368,61 @@ class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProv
     }
   }
 
-  Offset _target(String id) => widget.layout.rects[id]?.topLeft ?? Offset.zero;
-
-  Offset _clamp(Offset o) =>
-      o.distance <= _maxDisp ? o : o / o.distance * _maxDisp;
+  /// 节点位置夹在画布内（留 8px 缓冲），别被推/拖出可视范围。
+  Offset _clampToCanvas(Offset o) => Offset(
+        o.dx.clamp(8.0, _canvas.width - PluginGraphLayout.nodeW - 8.0),
+        o.dy.clamp(8.0, _canvas.height - PluginGraphLayout.nodeH - 8.0),
+      );
 
   void _startTicker() {
     if (!_ticker.isActive) {
       _last = null;
       _ticker.start();
     }
+  }
+
+  // ── 节点拖动（节点自己的 Pan 手势，竞技场内层优先：拖节点不会滚动页面）──
+
+  void _onNodePanStart(String id) {
+    if (_pointers.length >= 2) return; // 双指手势进行中不抢
+    _dragging = id;
+    _dragStartPos = _pos[id] ?? Offset.zero;
+    _dragDelta = Offset.zero;
+    _startTicker(); // 拖动期间跑物理：邻居要被斥力推开
+  }
+
+  void _onNodePanUpdate(String id, DragUpdateDetails d) {
+    if (_dragging != id) return;
+    _dragDelta += d.delta;
+    // 屏幕位移 → 画布位移（视角缩放时按比例折算），1:1 跟手
+    _pos[id] = _clampToCanvas(_dragStartPos + _dragDelta / _scale);
+    _physics.fire(); // 指针事件在帧外，位移靠这次信号立即渲染
+  }
+
+  void _onNodePanEnd(String id, DragEndDetails d) {
+    if (_dragging != id) return;
+    _dragging = null;
+    final v = d.velocity.pixelsPerSecond / _scale; // 屏幕速度 → 画布速度
+    _vel[id] = v.distance > _maxSpeed ? v / v.distance * _maxSpeed : v;
+    _startTicker(); // 物理接管：引力 + 斥力找新平衡
+  }
+
+  void _onNodePanCancel(String id) {
+    if (_dragging != id) return;
+    _dragging = null;
+    _startTicker();
+  }
+
+  // ── 视角平移（空白处的**水平**拖动；竖直滑动让给页面滚动，互不冲突）──
+
+  void _onCanvasPanStart(DragStartDetails d) {
+    if (_pointers.length >= 2 || _dragging != null) return;
+    _panStartT = _translation;
+  }
+
+  void _onCanvasPanUpdate(DragUpdateDetails d) {
+    if (_pointers.length >= 2 || _dragging != null) return;
+    _apply(_panStartT + Offset(d.delta.dx, 0), _scale);
   }
 
   // ── 视口平移/缩放 + 节点拖动（顶层 raw Listener 统一处理）──
@@ -353,55 +432,43 @@ class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProv
   // 单指在节点上 = 拖节点，单指在空白处 = 平移视角，双指 = 以中点为锚缩放。
 
   final TransformationController _tc = TransformationController();
-  bool _fitted = false;
 
-  /// 进行中的指针（双指缩放时有两根）。
+  /// 进行中的指针（双指缩放/自由拖动时有两根）。
   final Map<int, Offset> _pointers = <int, Offset>{};
-  String? _dragging; // 正在拖动的节点；null + 单指 = 平移视角
-  Offset _downGlobal = Offset.zero;
-  Offset _prevGlobal = Offset.zero;
-  Duration _prevStamp = Duration.zero;
-  Offset _dragStartDisp = Offset.zero;
-  Offset _dragStartCanvas = Offset.zero;
+  String? _dragging; // 正在拖动的节点
+  Offset _dragStartPos = Offset.zero;
+  Offset _dragDelta = Offset.zero; // 节点拖动累计位移（屏幕坐标）
   Offset _panStartT = Offset.zero;
   double _zoomStartScale = 1;
   double _zoomStartSpan = 1;
   Offset _zoomStartT = Offset.zero;
 
-  /// 缩放范围：0.4 可以缩小看全局，4 放大看细节。
-  static const double _minScale = 0.4;
+  /// 缩放范围：0.25 可以缩小看全局（大图初始适配可能低于 0.4），4 放大看细节。
+  static const double _minScale = 0.25;
   static const double _maxScale = 4;
 
   double get _scale => _tc.value.getMaxScaleOnAxis();
   Offset get _translation =>
       Offset(_tc.value.getTranslation().x, _tc.value.getTranslation().y);
 
-  /// 首次拿到视口尺寸后，把整张图缩放居中放进视口（初始「看得全」）。
-  void _fitIfNeed(BoxConstraints cons) {
-    if (_fitted) return;
-    _fitted = true;
-    final canvas = _canvasSize;
-    if (canvas.width <= 0 || canvas.height <= 0 || !cons.hasBoundedWidth || !cons.hasBoundedHeight) {
-      return;
-    }
-    final s =
-        math.min(cons.maxWidth / canvas.width, cons.maxHeight / canvas.height).clamp(_minScale, 1.0);
-    _apply(Offset(
-      (cons.maxWidth - canvas.width * s) / 2,
-      (cons.maxHeight - canvas.height * s) / 2,
-    ), s.toDouble());
-  }
-
-  /// 写入「平移 + 缩放」矩阵（内容坐标 → 视口坐标：p' = p * s + t），并夹紧平移
-  /// 让画布至少留 48px 在视口里，不会把整张图拖丢。
+  /// 写入「平移 + 缩放」矩阵（内容坐标 → 视口坐标：p' = p * s + t）。
+  /// 平移夹紧：放大（内容 ≥ 视口）时内容必须**覆盖**视口，不留下空隙；
+  /// 缩小看全局时以居中为准、只允许 ±48px 的小幅滑动。
   void _apply(Offset t, double s) {
     final vw = _viewportSize?.width ?? 0;
     final vh = _viewportSize?.height ?? 0;
-    final w = _canvasSize.width * s;
-    final h = _canvasSize.height * s;
+    final w = _canvas.width * s;
+    final h = _canvas.height * s;
     const m = 48.0;
-    final tx = vw <= 0 ? t.dx : t.dx.clamp(m - w, vw - m);
-    final ty = vh <= 0 ? t.dy : t.dy.clamp(m - h, vh - m);
+    double clampT(double t, double content, double view) {
+      if (view <= 0) return t;
+      if (content >= view) return t.clamp(view - content, 0.0);
+      final c = (view - content) / 2;
+      return t.clamp(c - m, c + m);
+    }
+
+    final tx = clampT(t.dx, w, vw);
+    final ty = clampT(t.dy, h, vh);
     _tc.value = Matrix4.identity()
       ..translateByDouble(tx.toDouble(), ty.toDouble(), 0, 1)
       ..scaleByDouble(s, s, 1, 1);
@@ -418,39 +485,11 @@ class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProv
     return box?.localToGlobal(Offset.zero) ?? Offset.zero;
   }
 
-  /// 全局坐标 → 画布坐标。
-  Offset _toCanvas(Offset global) =>
-      MatrixUtils.transformPoint(Matrix4.inverted(_tc.value), global - _viewportOrigin);
-
-  /// 命中测试：画布坐标落在哪个节点（按位移后的实际位置）里。
-  String? _hitNode(Offset canvasPoint) {
-    for (final n in widget.graph.nodes) {
-      final rect = widget.layout.rects[n.id];
-      if (rect == null) continue;
-      final r =
-          rect.shift(const Offset(_margin, _margin)).shift(_disp[n.id] ?? Offset.zero);
-      if (r.contains(canvasPoint)) return n.id;
-    }
-    return null;
-  }
-
   void _onPointerDown(PointerDownEvent e) {
     _pointers[e.pointer] = e.position;
-    if (_pointers.length == 1) {
-      _downGlobal = e.position;
-      _prevGlobal = e.position;
-      _prevStamp = e.timeStamp;
-      final hit = _hitNode(_toCanvas(e.position));
-      if (hit != null) {
-        _dragging = hit;
-        _dragStartDisp = _disp[hit] ?? Offset.zero;
-        _dragStartCanvas = _toCanvas(e.position);
-        _startTicker(); // 拖动期间跑物理：邻居要被推开
-      } else {
-        _panStartT = _translation;
-      }
-    } else if (_pointers.length == 2) {
-      // 第二根手指按下：切到双指缩放，放弃节点拖动 / 平移
+    if (_pointers.length == 2) {
+      // 第二根手指按下：切到双指缩放 / 自由拖动，放弃节点拖动。
+      // （单指的手势归竞技场：节点拖动归节点，水平拖动归视角，竖直滑动归页面。）
       _dragging = null;
       _zoomStartScale = _scale;
       _zoomStartSpan = _spanOf(_pointers.values);
@@ -467,49 +506,23 @@ class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProv
     if (!_pointers.containsKey(e.pointer)) return;
     _pointers[e.pointer] = e.position;
     if (_pointers.length >= 2) {
-      // 双指缩放：保持两指中点下的画布点不动（focal 换成视口内坐标）
+      // 双指：以两指中点为锚缩放，中点位移即自由拖动（focal 换成视口内坐标）
       final pts = _pointers.values.toList();
       final span = _spanOf(pts);
       final focal = (pts[0] + pts[1]) / 2 - _viewportOrigin;
       final s = (_zoomStartScale * span / _zoomStartSpan).clamp(_minScale, _maxScale);
       final t0 = _zoomStartT;
       _apply(focal - (focal - t0) / _zoomStartScale * s, s);
-      return;
+      _physics.fire();
     }
-    final drag = _dragging;
-    if (drag != null) {
-      final d = _toCanvas(e.position) - _dragStartCanvas;
-      _disp[drag] = _clamp(_dragStartDisp + d);
-    } else {
-      _apply(_panStartT + (e.position - _downGlobal), _scale);
-    }
-    _prevGlobal = e.position;
-    _prevStamp = e.timeStamp;
-    _physics.fire(); // 指针事件在帧外，位移靠这次信号立即渲染
   }
 
   void _onPointerUp(PointerUpEvent e) {
     _pointers.remove(e.pointer);
-    if (_pointers.isEmpty) _release(e.timeStamp, e.position);
   }
 
   void _onPointerCancel(PointerCancelEvent e) {
     _pointers.remove(e.pointer);
-    if (_pointers.isEmpty) _release(e.timeStamp, e.position);
-  }
-
-  /// 松手：节点交还弹簧（带上最近一段速度，回弹更有手感），平移/缩放就地停住。
-  void _release(Duration stamp, Offset pos) {
-    final drag = _dragging;
-    if (drag != null) {
-      _dragging = null;
-      final dtMs = stamp - _prevStamp;
-      if (dtMs.inMilliseconds > 0) {
-        final v = (pos - _prevGlobal) * (1000 / dtMs.inMilliseconds);
-        _vel[drag] = v.distance > 800 ? v / v.distance * 800 : v; // 限幅，回弹别太猛
-      }
-      _startTicker(); // 全体弹簧回原位
-    }
   }
 
   @override
@@ -519,59 +532,63 @@ class _PluginGraphViewState extends State<PluginGraphView> with SingleTickerProv
     // 初始适配（整图缩放进视口）在 _fitIfNeed 里算好矩阵，之后自由平移缩放。
     return LayoutBuilder(
       builder: (context, cons) {
-        _fitIfNeed(cons);
-        // 视口铺满父给的空间：矩阵按 LayoutBuilder 的约束算平移，
-        // 若视口被画布子树反推大小（松约束下 SizedBox 的尺寸会往上顶），
-        // 内容就会整体错位出视口。
-        return SizedBox.expand(
-          child: ClipRect(
-            key: _viewportKey,
+        _canvas = cons.biggest;
+        return ClipRect(
+          key: _viewportKey,
           child: Listener(
             onPointerDown: _onPointerDown,
             onPointerMove: _onPointerMove,
             onPointerUp: _onPointerUp,
             onPointerCancel: _onPointerCancel,
-            child: AnimatedBuilder(
+            // 空白处的**水平**拖动 = 平移视角；竖直滑动不接（让给页面上下滚动）。
+            // 手势竞技场天然按方向分流：水平归这里，竖直归 ListView。
+            child: GestureDetector(
+              onHorizontalDragStart: _onCanvasPanStart,
+              onHorizontalDragUpdate: _onCanvasPanUpdate,
+              behavior: HitTestBehavior.translucent,
+              child: AnimatedBuilder(
               animation: Listenable.merge([_physics, _tc]),
               builder: (context, _) => Transform(
                 transform: _tc.value,
                 alignment: Alignment.topLeft,
                 child: SizedBox(
-                  width: _canvasSize.width,
-                  height: _canvasSize.height,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned.fill(
-                        child: CustomPaint(
-                          // _physics 当 repaint 信号：物理运行期间每帧重画连线，静止时不重画
-                          painter: _EdgePainter(
-                              graph: widget.graph,
-                              layout: widget.layout,
-                              selected: sel,
-                              disp: _disp,
-                              margin: _margin,
-                              repaint: _physics),
+                  width: _canvas.width,
+                  height: _canvas.height,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned.fill(
+                          child: CustomPaint(
+                            // _physics 当 repaint 信号：物理运行期间每帧重画连线，静止时不重画
+                            painter: _EdgePainter(
+                                graph: widget.graph,
+                                layout: widget.layout,
+                                selected: sel,
+                                pos: _pos,
+                                repaint: _physics),
+                          ),
                         ),
-                      ),
-                      for (final n in widget.graph.nodes)
-                        if (widget.layout.rects[n.id] != null)
-                          Positioned.fromRect(
-                            rect: widget.layout.rects[n.id]!.shift(const Offset(_margin, _margin)),
-                            child: Transform.translate(
-                              offset: _disp[n.id] ?? Offset.zero,
+                        for (final n in widget.graph.nodes)
+                          if (_pos[n.id] != null)
+                            Positioned.fromRect(
+                              rect: Rect.fromLTWH(_pos[n.id]!.dx, _pos[n.id]!.dy,
+                                  PluginGraphLayout.nodeW, PluginGraphLayout.nodeH),
                               child: _NodeCard(
                                 node: n,
                                 off: widget.off.contains(n.id),
                                 selected: sel == n.id,
                                 // 选中某个节点后，与它无关的节点压暗，连线才看得清
-                                dimmed: sel != null && sel != n.id && !widget.graph.linked(sel, n.id),
+                                dimmed:
+                                    sel != null && sel != n.id && !widget.graph.linked(sel, n.id),
                                 onTap: widget.onTap == null ? null : () => widget.onTap!(n.id),
+                                onPanStart: () => _onNodePanStart(n.id),
+                                onPanUpdate: (d) => _onNodePanUpdate(n.id, d),
+                                onPanEnd: (d) => _onNodePanEnd(n.id, d),
+                                onPanCancel: () => _onNodePanCancel(n.id),
                               ),
                             ),
-                          ),
-                    ],
-                  ),
+                      ],
+                    ),
                 ),
               ),
             ),
@@ -605,6 +622,10 @@ class _NodeCard extends StatelessWidget {
     required this.selected,
     required this.dimmed,
     this.onTap,
+    this.onPanStart,
+    this.onPanUpdate,
+    this.onPanEnd,
+    this.onPanCancel,
   });
 
   final PluginGraphNode node;
@@ -612,6 +633,10 @@ class _NodeCard extends StatelessWidget {
   final bool selected;
   final bool dimmed;
   final VoidCallback? onTap;
+  final VoidCallback? onPanStart;
+  final ValueChanged<DragUpdateDetails>? onPanUpdate;
+  final ValueChanged<DragEndDetails>? onPanEnd;
+  final VoidCallback? onPanCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -660,6 +685,11 @@ class _NodeCard extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
+      // 拖节点用节点自己的 Pan 手势：竞技场内层优先，拖节点时页面不会跟着滚
+      onPanStart: (_) => onPanStart?.call(),
+      onPanUpdate: onPanUpdate,
+      onPanEnd: onPanEnd,
+      onPanCancel: onPanCancel,
       child: Opacity(opacity: dimmed ? 0.35 : (off ? 0.7 : 1), child: card),
     );
   }
@@ -670,8 +700,7 @@ class _EdgePainter extends CustomPainter {
     required this.graph,
     required this.layout,
     this.selected,
-    this.disp = const {},
-    this.margin = 0,
+    this.pos = const {},
     super.repaint,
   });
 
@@ -679,35 +708,38 @@ class _EdgePainter extends CustomPainter {
   final PluginGraphLayout layout;
   final String? selected;
 
-  /// 节点当前位移（弹簧物理）：连线端点跟着节点走。运行期间由 ticker 触发重画。
-  final Map<String, Offset> disp;
-  final double margin;
+  /// 节点当前的绝对画布位置（物理状态）：连线端点跟着节点走。
+  /// 运行期间由 _physics 信号触发重画，静止时不重画。
+  final Map<String, Offset> pos;
 
-  /// 节点当前实际中心（布局位置 + 画布留白 + 位移）。
+  /// 节点当前实际中心与半宽（按物理位置）。
   Offset _centerOf(String id) {
-    final r = layout.rects[id];
-    if (r == null) return Offset.zero;
-    return r.shift(Offset(margin, margin)).center + (disp[id] ?? Offset.zero);
+    final p = pos[id];
+    if (p == null) return Offset.zero;
+    return p + const Offset(PluginGraphLayout.nodeW / 2, PluginGraphLayout.nodeH / 2);
   }
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final e in graph.edges) {
-      final a = layout.rects[e.from];
-      final b = layout.rects[e.to];
-      if (a == null || b == null) continue;
+      if (!pos.containsKey(e.from) || !pos.containsKey(e.to)) continue;
       final ca = _centerOf(e.from);
       final cb = _centerOf(e.to);
       final focused = selected == null || selected == e.from || selected == e.to;
       // 虚线分两档：软依赖（可选增强）用次要文字色，挂载边（工具卡片挂在工具中心）
       // 用更淡的 textMuted——挂载关系只是「卡片显示在那一页」，比可选依赖更弱
-      final base = e.optional ? SemColors.textSecondary : (e.host ? SemColors.textMuted : SemColors.accent);
+      final base = e.optional
+          ? SemColors.textSecondary
+          : (e.host ? SemColors.textMuted : SemColors.accent);
       final color = base.withValues(alpha: selected == null ? 0.5 : (focused ? 0.95 : 0.15));
       final forwards = cb.dx >= ca.dx;
-      // 端点从节点边缘出发：按位移后中心反推（节点尺寸不变）
+      // 端点从节点边缘出发（节点尺寸恒定）
       final start = Offset(
-          forwards ? ca.dx + a.width / 2 : ca.dx - a.width / 2, ca.dy);
-      final end = Offset(forwards ? cb.dx - b.width / 2 : cb.dx + b.width / 2, cb.dy);
+          forwards ? ca.dx + PluginGraphLayout.nodeW / 2 : ca.dx - PluginGraphLayout.nodeW / 2,
+          ca.dy);
+      final end = Offset(
+          forwards ? cb.dx - PluginGraphLayout.nodeW / 2 : cb.dx + PluginGraphLayout.nodeW / 2,
+          cb.dy);
       final bend = (end.dx - start.dx).abs() * 0.45 + 10;
       final path = Path()
         ..moveTo(start.dx, start.dy)
@@ -753,5 +785,5 @@ class _EdgePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _EdgePainter old) =>
-      old.graph != graph || old.layout != layout || old.selected != selected || old.disp != disp;
+      old.graph != graph || old.layout != layout || old.selected != selected || old.pos != pos;
 }
