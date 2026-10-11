@@ -42,8 +42,10 @@ class ReminderPlugin extends FeaturePlugin {
     }
   }
 
+  /// 提醒是课表的一部分，设置收在「课程表设置」二级页里（课表页 → 更多 → 课程表设置，
+  /// 或「我的 → 设置 → 课程表设置」），不再单独占「我的」的一行。
   @override
-  List<Widget> settingsTiles(BuildContext context, PluginRegistry registry) =>
+  List<Widget> timetableSettingsTiles(BuildContext context, PluginRegistry registry) =>
       const [_ReminderTile()];
 }
 
@@ -118,9 +120,7 @@ class _ReminderTileState extends State<_ReminderTile> with WidgetsBindingObserve
             secondary: const Icon(Icons.notifications_active_outlined),
             title: const Text('上课提醒'),
             subtitle: Text(
-              svc.enabled
-                  ? '课前 ${ClassReminderService.leadMinutes} 分钟通知（无需打开 App，重启后仍有效）'
-                  : '课前 ${ClassReminderService.leadMinutes} 分钟通知，后台也能收到',
+              svc.enabled ? '已开启 · 课前 ${ClassReminderService.leadMinutes} 分钟' : '已关闭',
               style: const TextStyle(fontSize: 12),
             ),
             value: svc.enabled,
@@ -140,14 +140,14 @@ class _ReminderTileState extends State<_ReminderTile> with WidgetsBindingObserve
         issue == null ? Icons.fact_check_outlined : Icons.error_outline_rounded,
         color: issue == null ? SemColors.accent : SemColors.danger,
       ),
-      title: const Text('提醒自检与引导',
+      title: const Text('提醒状态',
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
       subtitle: Text(
         h == null
             ? '检查中…'
             : issue == null
-                ? '状态正常 · 未来 ${ClassReminderService.horizonDays} 天 ${h.planned} 条'
-                : '$issue（${h.issueCount} 项待处理）',
+                ? '正常 · 未来 ${ClassReminderService.horizonDays} 天 ${h.planned} 条'
+                : '$issue（${h.issueCount} 项未就绪）',
         style: TextStyle(
           fontSize: 12,
           color: issue == null ? SemColors.textMuted : SemColors.danger,

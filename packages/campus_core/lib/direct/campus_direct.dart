@@ -245,7 +245,7 @@ class CampusDirect {
         return xm;
       }
     } catch (_) {}
-    throw ApiError('校付宝登录需要真实姓名：请在「连接设置 → 直连模式」填写姓名'
+    throw ApiError('校园卡登录需要真实姓名：请在「连接设置 → 直连模式」填写姓名'
         '（或在校园网下先查询第二课堂分数自动补全）');
   }
 
@@ -409,7 +409,7 @@ class CampusDirect {
         c.dispose();
       }
     }));
-    out.add(await _probe('校付宝', () async {
+    out.add(await _probe('校园卡', () async {
       final c = EpayClient(s.ecardBase);
       try {
         return await c.probe();

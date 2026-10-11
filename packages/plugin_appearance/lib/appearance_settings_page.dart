@@ -63,10 +63,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('主题', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  const SizedBox(height: 4),
-                  Text('主题也是插件：可在「我的 → 插件管理」里查看它们的来源',
-                      style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6)),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   const ThemePickerList(),
                 ],
               ),
@@ -76,9 +73,9 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('深浅色', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  Text('夜间模式', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                   const SizedBox(height: 4),
-                  Text('拖动时整个界面的配色会跟着在浅色与深色之间渐变，松手落到所选那档。',
+                  Text('拖动时配色在浅色与深色之间渐变，松手落到所选档；「跟随系统」随系统切换。',
                       style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6)),
                   const SizedBox(height: 12),
                   GlassTabs(

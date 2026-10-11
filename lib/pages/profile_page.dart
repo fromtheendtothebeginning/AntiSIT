@@ -4,7 +4,6 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:campus_core/campus_core.dart';
-import '../widgets/theme_picker.dart';
 import 'plugin_manager_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -17,39 +16,15 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   bool _statusLoading = false;
 
-  /// 「外观」滑块的连续位置（0=跟随系统 / 1=浅色 / 2=深色）：拖到中间时按它算
-  /// 当前该有多深，整站配色据此在浅色板与深色板之间插值（见 [appearanceDarkness]）。
-  final ValueNotifier<double> _appearancePos = ValueNotifier<double>(1);
+  /// 学籍信息 / 服务状态默认展开，点标题收起（两张卡都挺长，想只看头部提要时收掉）。
+  bool _infoOpen = true;
+  bool _statusOpen = true;
 
   @override
   void initState() {
     super.initState();
-    _appearancePos.value = _appearanceIndex.toDouble();
-    _appearancePos.addListener(_previewAppearance);
     _refreshAll();
     _loadVersion();
-  }
-
-  @override
-  void dispose() {
-    _appearancePos.removeListener(_previewAppearance);
-    _appearancePos.dispose();
-    AppState.I.setAppearancePreview(null); // 离开页面就别留着预览
-    super.dispose();
-  }
-
-  int get _appearanceIndex => switch (AppState.I.themeMode) {
-        ThemeMode.light => 1,
-        ThemeMode.dark => 2,
-        _ => 0,
-      };
-
-  /// 滑块每动一点就更新整站配色的预览（量化在 AppState 里做，避免每帧重建）。
-  void _previewAppearance() {
-    final systemDark =
-        WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
-    AppState.I.setAppearancePreview(
-        appearanceDarkness(_appearancePos.value, systemDark: systemDark));
   }
 
   /// 运行时版本号（读 APK 里的 versionName/versionCode，不用手写常量）。
@@ -202,31 +177,23 @@ class _ProfilePageState extends State<ProfilePage> {
                           CircleAvatar(
                             radius: 28,
                             backgroundColor: SemColors.accentSoft,
-                            child: Text(
-                              (st.direct ? st.school.name : (st.username ?? '校'))
-                                  .characters
-                                  .first
-                                  .toUpperCase(),
-                              style: TextStyle(
-                                  fontSize: 22, fontWeight: FontWeight.bold,
-                                  color: SemColors.accent),
-                            ),
+                            child: st.direct
+                                ? Text(
+                                    st.school.name.characters.first.toUpperCase(),
+                                    style: TextStyle(
+                                        fontSize: 22, fontWeight: FontWeight.bold,
+                                        color: SemColors.accent),
+                                  )
+                                // 用户名 / 学号不外显（截图隐私）：服务器模式放通用人像
+                                : Icon(Icons.person_outline, size: 30, color: SemColors.accent),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(st.direct ? '直连模式 · ${st.school.name}' : (st.username ?? '-'),
-                                    style: TextStyle(
-                                        fontSize: 18, fontWeight: FontWeight.bold,
-                                        color: SemColors.textPrimary)),
-                                const SizedBox(height: 3),
-                                Text('${status?['student_id_masked'] ?? '学号未配置'}',
-                                    style: TextStyle(
-                                        fontSize: 13, color: SemColors.textMuted)),
-                              ],
-                            ),
+                            child: Text(
+                                st.direct ? '直连模式 · ${st.school.name}' : '服务器模式',
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold,
+                                    color: SemColors.textPrimary)),
                           ),
                         ],
                       )
@@ -337,24 +304,33 @@ class _ProfilePageState extends State<ProfilePage> {
 
                 // 学籍信息
                 AppCard(
+                  onTap: () => setState(() => _infoOpen = !_infoOpen),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('学籍信息', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                      const SizedBox(height: 6),
-                      if (info == null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                              configured ? '打开「工具 → 二课分数」后自动获取' : '配置校园凭据后自动获取',
-                              style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
-                        )
-                      else ...[
-                        _kv('年级', '${info['nj'] ?? '-'}'),
-                        _kv('学院', '${info['bmmc'] ?? '-'}'),
-                        _kv('专业', '${info['zymc'] ?? '-'}'),
-                        _kv('班级', '${info['bjmc'] ?? '-'}'),
-                      ],
+                      _sectionHeader('学籍信息', _infoOpen),
+                      _collapsible(
+                        _infoOpen,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 6),
+                            if (info == null)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                    configured ? '打开「工具 → 二课分数」后自动获取' : '配置校园凭据后自动获取',
+                                    style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                              )
+                            else ...[
+                              _kv('年级', '${info['nj'] ?? '-'}'),
+                              _kv('学院', '${info['bmmc'] ?? '-'}'),
+                              _kv('专业', '${info['zymc'] ?? '-'}'),
+                              _kv('班级', '${info['bjmc'] ?? '-'}'),
+                            ],
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -362,6 +338,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
                 // 服务状态
                 AppCard(
+                  onTap: () => setState(() => _statusOpen = !_statusOpen),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -394,37 +371,48 @@ class _ProfilePageState extends State<ProfilePage> {
                                         : SemColors.warning),
                               ),
                             ),
+                          const SizedBox(width: 4),
+                          Icon(_statusOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                              size: 20, color: SemColors.textMuted),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 14,
-                        runSpacing: 6,
-                        children: [
-                          _readyChip('学工登录', status?['cas_ready'] as bool?),
-                          _readyChip('教务登录', status?['jwxt_ready'] as bool?),
-                          _readyChip('支付密码', status?['has_pay_password'] as bool?),
-                          _readyChip('默认寝室', status?['has_dorm'] as bool?),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                          st.direct
-                              ? '登录态失效会在下次查询时重新登录（需输入验证码）'
-                              : '登录态失效会在下次查询时自动重登',
-                          style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                      if (connected || st.direct)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: _disconnectVpn,
-                            style: TextButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                                foregroundColor: SemColors.textSecondary),
-                            child: Text(st.direct ? '清除直连会话' : '断开 VPN',
-                                style: const TextStyle(fontSize: 12)),
-                          ),
+                      _collapsible(
+                        _statusOpen,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 14,
+                              runSpacing: 6,
+                              children: [
+                                _readyChip('学工登录', status?['cas_ready'] as bool?),
+                                _readyChip('教务登录', status?['jwxt_ready'] as bool?),
+                                _readyChip('支付密码', status?['has_pay_password'] as bool?),
+                                _readyChip('默认寝室', status?['has_dorm'] as bool?),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                                st.direct
+                                    ? '登录态失效会在下次查询时重新登录（需输入验证码）'
+                                    : '登录态失效会在下次查询时自动重登',
+                                style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                            if (connected || st.direct)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: _disconnectVpn,
+                                  style: TextButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      foregroundColor: SemColors.textSecondary),
+                                  child: Text(st.direct ? '清除直连会话' : '断开 VPN',
+                                      style: const TextStyle(fontSize: 12)),
+                                ),
+                              ),
+                          ],
                         ),
+                      ),
                     ],
                   ),
                 ),
@@ -447,47 +435,20 @@ class _ProfilePageState extends State<ProfilePage> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: _openConnect,
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.brightness_6_outlined),
-                      title: const Text('外观'),
-                      subtitle: Text('${PluginRegistry.I.theme.name} · 跟随系统或手动指定',
-                          style: const TextStyle(fontSize: 12)),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: GlassTabs(
-                        labels: const ['跟随系统', '浅色', '深色'],
-                        index: _appearanceIndex,
-                        // 拖动（或点选后的弹簧）过程中把连续位置交出来，整站配色跟着渐变
-                        position: _appearancePos,
-                        onChanged: (i) => AppState.I.setThemeMode(switch (i) {
-                          1 => ThemeMode.light,
-                          2 => ThemeMode.dark,
-                          _ => ThemeMode.system,
-                        }),
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.palette_outlined),
-                      title: const Text('主题'),
-                      subtitle: Text(PluginRegistry.I.theme.description,
-                          style: const TextStyle(fontSize: 12)),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => showThemePicker(context),
-                    ),
                     if (!st.direct)
                       ListenableBuilder(
                         listenable: AppState.I,
                         builder: (_, __) => SwitchListTile(
                           secondary: const Icon(Icons.lock_outline),
                           title: const Text('记住密码并自动重登'),
-                          subtitle: const Text('token 失效时无需重新输入', style: TextStyle(fontSize: 12)),
                           value: st.remember,
                           onChanged: (v) => AppState.I.setRemember(v),
                         ),
                       ),
-                    // 由各插件贡献（上课提醒 / 上完的课淡化 / AI 设置 / 提交反馈）：
-                    // 插件停用或从清单里删掉，这里的条目自动消失
+                    // 由各插件贡献（课程表设置 / AI 设置 / 外观 / 提交反馈）：
+                    // 插件停用或从清单里删掉，这里的条目自动消失。
+                    // 课表相关的那几项（学期 / 调休 / 上课提醒 / 淡化）收在自己的二级页里，
+                    // 这里只留一行「课程表设置」入口，见 plugin_timetable。
                     ...PluginRegistry.I.settingsTiles(context),
                     ListTile(
                       leading: const Icon(Icons.extension_outlined),
@@ -553,6 +514,25 @@ class _ProfilePageState extends State<ProfilePage> {
       },
     );
   }
+
+  /// 可收起卡片的标题行：右边的箭头表示「点一下收起 / 展开」（整张卡都是热区）。
+  Widget _sectionHeader(String title, bool open) => Row(
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const Spacer(),
+          Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              size: 20, color: SemColors.textMuted),
+        ],
+      );
+
+  /// 可收起内容的高度过渡：顶部锚定的 AnimatedSize（默认居中会让内容在动画期间
+  /// 整体上下漂移），收起时留一个零高占位保持宽度。
+  Widget _collapsible(bool open, Widget content) => AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: open ? content : const SizedBox(width: double.infinity, height: 0),
+      );
 
   Widget _readyChip(String label, bool? ready) {
     final color = ready == true ? SemColors.success : SemColors.textMuted;

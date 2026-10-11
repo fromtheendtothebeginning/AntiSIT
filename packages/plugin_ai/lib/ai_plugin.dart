@@ -51,7 +51,7 @@ class _AiSettingsTileState extends State<_AiSettingsTile> {
       leading: const Icon(Icons.auto_awesome_outlined),
       title: const Text('AI 设置'),
       subtitle: Text(
-        vision.available ? '已启用 · ${vision.config.summary}' : '未配置：自动识别验证码、识别校历调休',
+        vision.available ? '已启用 · ${vision.config.summary}' : '未配置',
         style: const TextStyle(fontSize: 12),
       ),
       trailing: const Icon(Icons.chevron_right),

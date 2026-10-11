@@ -37,7 +37,7 @@ class EpayClient {
   /// 可达性探测（连接设置页「测试连接」）：校付宝公网可达，无需校园网。
   Future<String?> probe() async {
     final r = await _http.get('$base/epeortal/pages/h5/elecCharge');
-    if (r.status >= 400) throw ApiError('校付宝返回 HTTP ${r.status}，请核对该校校付宝域名');
+    if (r.status >= 400) throw ApiError('校园卡返回 HTTP ${r.status}，请核对该校校园卡域名');
     return '可达（公网直连，无需校园网）';
   }
 
@@ -58,21 +58,21 @@ class EpayClient {
   /// 登录换 accessToken：custname 必须是真实姓名（用学号会被拒）。
   Future<void> _login(String studentId, String realName, String payPassword) async {
     if (studentId.isEmpty) throw ApiError('缺少学号，请在连接设置里填写校园凭据');
-    if (realName.isEmpty) throw ApiError('缺少姓名：校付宝登录需要真实姓名，请在连接设置里填写');
-    if (payPassword.isEmpty) throw ApiError('缺少校付宝支付密码，请在连接设置里填写');
+    if (realName.isEmpty) throw ApiError('缺少姓名：校园卡登录需要真实姓名，请在连接设置里填写');
+    if (payPassword.isEmpty) throw ApiError('缺少校园卡支付密码，请在连接设置里填写');
     final resp = await _http.postJson(_u('/epeortalAuth/login').toString(), {
       'custname': realName,
       'pwd': sm4Encrypt(payPassword),
       'stuempno': studentId,
     });
     final obj = resp.json;
-    if (obj is! Map) throw ApiError('校付宝系统返回异常（HTTP ${resp.status}）');
+    if (obj is! Map) throw ApiError('校园卡系统返回异常（HTTP ${resp.status}）');
     if ('${obj['retcode']}' != '0') {
       final msg = (obj['retmsg'] ?? '').toString();
-      throw ApiError(msg.isEmpty ? '校付宝自动登录失败（姓名或支付密码错误）' : msg);
+      throw ApiError(msg.isEmpty ? '校园卡自动登录失败（姓名或支付密码错误）' : msg);
     }
     final token = ((obj['data'] as Map?)?['token'] ?? '').toString();
-    if (token.isEmpty) throw ApiError('校付宝自动登录未返回令牌');
+    if (token.isEmpty) throw ApiError('校园卡自动登录未返回令牌');
     _token = token;
   }
 
@@ -95,7 +95,7 @@ class EpayClient {
     if (obj is! Map) throw ApiError('校园卡系统返回异常（HTTP ${resp.status}）');
     if ('${obj['retcode']}' != '0') {
       final msg = (obj['retmsg'] ?? '').toString();
-      throw ApiError(msg.isEmpty ? '校付宝接口调用失败' : msg);
+      throw ApiError(msg.isEmpty ? '校园卡接口调用失败' : msg);
     }
     return ((obj['data'] as Map?) ?? const {}).cast<String, dynamic>();
   }
@@ -183,7 +183,7 @@ class EpayClient {
   ) async {
     final data = await _osPost('/miniprogram/offline', {}, studentId, realName, payPassword);
     final code = (data['qrcode'] ?? '').toString();
-    if (code.isEmpty) throw ApiError('校付宝未返回校园码');
+    if (code.isEmpty) throw ApiError('校园卡未返回校园码');
     return {'code': code};
   }
 }

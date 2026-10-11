@@ -155,7 +155,7 @@ class MockCampusServer {
       if (path.startsWith('/authserver')) return await _cas(req, res, s, path, form);
       if (path.startsWith('/zftal-xgxt-web')) return await _xg(req, res, s, path, form);
       if (path.startsWith('/openservice')) return await _epay(req, res, s, path, json);
-      if (path.startsWith('/epeortal')) return _html(res, '<html><body>校付宝 H5（mock）</body></html>');
+      if (path.startsWith('/epeortal')) return _html(res, '<html><body>校园卡 H5（mock）</body></html>');
       _text(res, 404, 'mock: 未实现的路径 $path', 'text/plain; charset=utf-8');
     } catch (e) {
       debugPrint('[mock] 处理 $path 出错：$e');
@@ -556,7 +556,7 @@ $casErrorSkeleton
           },
         });
     }
-    _text(res, 404, 'mock: 未实现的校付宝路径 $path', 'text/plain; charset=utf-8');
+    _text(res, 404, 'mock: 未实现的校园卡路径 $path', 'text/plain; charset=utf-8');
   }
 
   // ==================== 响应工具 ====================

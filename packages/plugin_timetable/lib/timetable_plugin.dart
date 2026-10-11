@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 import 'timetable_page.dart';
+import 'timetable_settings_page.dart';
 
 /// 课程表：周 / 日视图、教务与考试导入、调休规则、学期设置（底栏第 1 页）。
 class TimetablePlugin extends FeaturePlugin {
@@ -37,13 +38,26 @@ class TimetablePlugin extends FeaturePlugin {
         ),
       ];
 
+  /// 「我的 → 设置」里只留一行入口：课表相关的设置都收进「课程表设置」二级页
+  /// （课表页 → 更多 → 课程表设置 也能进，两处进的是同一页）。
   @override
   List<Widget> settingsTiles(BuildContext context, registry) => [
+        ListTile(
+          leading: const Icon(Icons.event_note_outlined),
+          title: const Text('课程表设置'),
+          subtitle: const Text('学期 / 调休 / 上课提醒 / 上完的课淡化', style: TextStyle(fontSize: 12)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const TimetableSettingsPage())),
+        ),
+      ];
+
+  /// 课表自己的设置条目放进那个二级页（提醒插件的条目也投在这里）。
+  @override
+  List<Widget> timetableSettingsTiles(BuildContext context, registry) => [
         SwitchListTile(
           secondary: const Icon(Icons.visibility_off_outlined),
           title: const Text('上完的课淡化显示'),
-          subtitle: const Text('关闭后已上完的课与普通课一样显示正常彩色（需已设学期起点）',
-              style: TextStyle(fontSize: 12)),
           value: AppState.I.dimCompleted,
           onChanged: (v) => AppState.I.setDimCompleted(v),
         ),

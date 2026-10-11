@@ -67,7 +67,7 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
                         _StatusRow(
                           ok: h.notifications == true,
                           label: '通知权限',
-                          value: h.notifications == true ? '已允许' : '未允许：通知根本不会出现',
+                          value: h.notifications == true ? '已允许' : '未允许',
                           action: h.notifications == true
                               ? null
                               : ('去开启', ClassReminderService.I.openNotificationSettings),
@@ -76,9 +76,7 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
                         _StatusRow(
                           ok: h.exactAlarm == true,
                           label: '精确闹钟',
-                          value: h.exactAlarm == true
-                              ? '已允许，准点触发'
-                              : '未允许：只能不精确触发，可能晚几分钟',
+                          value: h.exactAlarm == true ? '已允许' : '未允许',
                           action: h.exactAlarm == true
                               ? null
                               : ('去允许', ClassReminderService.I.openExactAlarmSettings),
@@ -87,9 +85,7 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
                         _StatusRow(
                           ok: h.batteryUnrestricted == true,
                           label: '后台运行',
-                          value: h.batteryUnrestricted == true
-                              ? '已排除电池优化'
-                              : '受省电策略限制：后台可能被掐掉',
+                          value: h.batteryUnrestricted == true ? '不受限' : '受限',
                           action: h.batteryUnrestricted == true ? null : ('去设置', _openBattery),
                         ),
                     ],
@@ -105,30 +101,24 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
                         ok: h.planned > 0,
                         muted: h.planned == 0,
                         label: '未来 ${ClassReminderService.horizonDays} 天',
-                        value: h.planned > 0 ? '${h.planned} 条' : '没有要提醒的课',
+                        value: h.planned > 0 ? '${h.planned} 条' : '无',
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '按当前课表算，每次打开 App 或改动课表都会重排。'
-                        '排期成功只说明「闹钟已交给系统」，能不能弹出来还要看上面三项。',
+                        '按当前课表排期；打开 App 或修改课表时重新排。',
                         style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 10),
-                _sectionTitle('提醒不来的常见原因'),
+                _sectionTitle('常见原因'),
                 AppCard(
                   child: Text(
-                    '1. 通知权限没给（Android 13 起要手动允许）→ 通知不会出现。\n'
-                    '2. 精确闹钟没允许（Android 12 起）→ 只能不精确触发，可能晚几分钟。\n'
-                    '3. 后台被省电策略掐掉：小米 / 华为 / OPPO / vivo 等机型会把后台闹钟一起清掉。'
-                    '到「应用信息 → 电池 / 省电策略」设为无限制、允许自启动，'
-                    '或者把 App 锁在后台，提醒才稳定。\n\n'
-                    '这三项都只有系统设置页能改（App 无权代劳），所以上面每项都给了入口；'
-                    '打开设置改完返回，本页会自动重查。\n\n'
-                    '顺带一提：把 App 从最近任务里划掉、或系统的「强行停止」，'
-                    'Android 会连已排的闹钟一起取消，这是系统行为，需要重新打开一次 App。',
+                    '· 未允许通知权限：提醒不会出现。\n'
+                    '· 未允许精确闹钟：可能在原定时间之后触发。\n'
+                    '· 部分机型的省电策略会拦截后台提醒，需在系统设置中允许后台运行。\n'
+                    '· 从最近任务划除或强行停止会取消已排提醒，重新打开 App 即恢复。',
                     style: TextStyle(
                         fontSize: 12, color: SemColors.textSecondary, height: 1.75),
                   ),
@@ -153,7 +143,7 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    h.allGood ? '提醒状态正常' : '还有 ${h.issueCount} 项需要处理',
+                    h.allGood ? '状态正常' : '${h.issueCount} 项未就绪',
                     style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
@@ -162,8 +152,8 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
                   const SizedBox(height: 3),
                   Text(
                     h.allGood
-                        ? '课前 ${ClassReminderService.leadMinutes} 分钟会按时弹出'
-                        : '下面标红的地方点一下就能去系统里开',
+                        ? '课前 ${ClassReminderService.leadMinutes} 分钟提醒'
+                        : '按下方状态逐项开启',
                     style: TextStyle(fontSize: 12, color: SemColors.textMuted, height: 1.5),
                   ),
                 ],

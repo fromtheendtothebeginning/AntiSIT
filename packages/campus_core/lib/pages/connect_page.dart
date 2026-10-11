@@ -54,6 +54,12 @@ class _ConnectPageState extends State<ConnectPage> {
   final _realName = TextEditingController();
 
   bool _hidePwd = true;
+  bool _hidePayPwd = true;
+
+  /// 「校园凭据」默认展开（最常填），「学校信息」默认收起（添加学校时才展开）。
+  bool _credsOpen = true;
+  bool _schoolOpen = false;
+
   bool _testing = false;
   List<ProbeResult>? _probes;
   String? _error;
@@ -269,7 +275,7 @@ class _ConnectPageState extends State<ConnectPage> {
         _dorm.text = MockCampusServer.dorm;
         _realName.text = MockCampusServer.realName;
         _ok = '已切换到本地模拟服务（${MockCampusServer.instance.baseUrl}）：'
-            '教务 / 统一认证 / 学工 / 校付宝都在本机模拟。返回首页查询会弹出验证码，'
+            '教务 / 统一认证 / 学工 / 校园卡都在本机模拟。返回首页查询会弹出验证码，'
             '图片上的数字就是答案（日志里也会打印）。';
       });
     } catch (e) {
@@ -377,7 +383,7 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     final school = _draftSchool();
     if (!school.isComplete) {
-      setState(() => _error = '直连模式需要四个学校系统地址（教务 / 学工 / 统一认证 / 校付宝）');
+      setState(() => _error = '直连模式需要四个学校系统地址（教务 / 学工 / 统一认证 / 校园卡）');
       return;
     }
     await st.upsertSchool(school);
@@ -597,163 +603,220 @@ class _ConnectPageState extends State<ConnectPage> {
         ),
         const SizedBox(height: 10),
         if (kDebugMode) ...[_mockCard(), const SizedBox(height: 10)],
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _sectionTitle(Icons.dns_outlined, '学校信息', actions: [
-                TextButton.icon(
-                  onPressed: _addSchool,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('添加', style: TextStyle(fontSize: 13)),
-                ),
-                if (st.schools.length > 1)
-                  TextButton.icon(
-                    onPressed: _removeSchool,
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('删除', style: TextStyle(fontSize: 13)),
-                  ),
-              ]),
-              GlassDropdown<String>(
-                label: '当前学校',
-                value: st.school.name,
-                items: [
-                  for (final s in st.schools)
-                    DropdownMenuItem(value: s.name, child: Text(s.name)),
-                ],
-                onChanged: (v) async {
-                  if (v == null) return;
-                  final s = st.schools.firstWhere((e) => e.name == v);
-                  await st.setSchool(s);
-                  CampusDirect.I.forgetLoginState();
-                  if (!mounted) return;
-                  setState(() {
-                    _loadSchool(s);
-                    _probes = null;
-                  });
-                },
-              ),
-              const SizedBox(height: 12),
-              GlassField(label: '学校名称', controller: _schoolName),
-              const SizedBox(height: 10),
-              _addrField(_jwxtBase, '教务系统', 'https://jwxt.example.edu.cn'),
-              const SizedBox(height: 10),
-              _addrField(_xgBase, '学工系统（第二课堂）', 'https://xg.example.edu.cn'),
-              const SizedBox(height: 10),
-              _addrField(_authBase, '统一身份认证', 'https://authserver.example.edu.cn/authserver'),
-              const SizedBox(height: 10),
-              _addrField(_ecardBase, '校付宝（校园码 / 电费）', 'https://ecard.example.edu.cn'),
-              const SizedBox(height: 10),
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.only(bottom: 8),
-                title: const Text('高级', style: TextStyle(fontSize: 13.5)),
-                children: [
-                  GlassField(
-                    label: '响应解密密钥（留空即可）',
-                    controller: _aesKey,
-                    helperText: '个别学校接口返回 isEncrypt 加密数据时需要，向学校系统维护方索取',
-                    helperMaxLines: 2,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+        // 校园凭据在前（最常填、默认展开），学校信息在后（默认收起）
+        _credsCard(st),
         const SizedBox(height: 10),
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _sectionTitle(Icons.badge_outlined, '校园凭据'),
-              const SizedBox(height: 6),
-              Text('仅保存在本机，用于直连学校系统；不会上传到任何服务器。',
-                  style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary, height: 1.6)),
-              const SizedBox(height: 12),
-              GlassField(
-                label: '学号',
-                controller: _sid,
-                prefixIcon: const Icon(Icons.badge_outlined),
-              ),
-              const SizedBox(height: 10),
-              GlassField(
-                label: '统一身份认证密码（= 校园网 / VPN 密码）',
-                controller: _pwd,
-                obscureText: _hidePwd,
-                prefixIcon: const Icon(Icons.lock_outline),
-                suffixIcon: IconButton(
-                  onPressed: () => setState(() => _hidePwd = !_hidePwd),
-                  icon: Icon(
-                      _hidePwd ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                ),
-              ),
-              const SizedBox(height: 10),
-              GlassField(
-                label: '校付宝支付密码（校园码 / 电费）',
-                controller: _payPwd,
-                obscureText: true,
-                prefixIcon: const Icon(Icons.credit_card_outlined),
-              ),
-              const SizedBox(height: 10),
-              GlassField(
-                label: '寝室号（电费查询 / 充值）',
-                controller: _dorm,
-                hintText: '如 24号楼1016',
-                prefixIcon: const Icon(Icons.house_outlined),
-              ),
-              const SizedBox(height: 10),
-              GlassField(
-                label: '姓名（可留空，校付宝登录用；查学工会自动补全）',
-                controller: _realName,
-                prefixIcon: const Icon(Icons.person_outline),
-              ),
-              const SizedBox(height: 12),
-              Row(
+        _schoolCard(st),
+      ];
+
+  /// 可收起卡片：标题行整行可点，内容高度用顶部锚定的 AnimatedSize 过渡
+  /// （内容不上下漂移），收起时留零高占位。
+  Widget _collapsibleCard({
+    required IconData icon,
+    required String title,
+    required bool open,
+    required VoidCallback onToggle,
+    required Widget content,
+    List<Widget> actions = const [],
+  }) =>
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onToggle,
+              child: Row(
                 children: [
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _save,
-                      child: const Text('保存'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: _testing ? null : _testDirect,
-                      child: _testing
-                          ? const SizedBox(
-                              width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text('测试连接'),
-                    ),
-                  ),
+                  Expanded(child: _sectionTitle(icon, title)),
+                  ...actions,
+                  const SizedBox(width: 4),
+                  Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                      size: 20, color: SemColors.textMuted),
                 ],
               ),
-              if (_probes != null) ...[
-                const SizedBox(height: 10),
-                for (final p in _probes!)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(p.ok ? Icons.check_circle : Icons.error_outline,
-                            size: 16, color: p.ok ? SemColors.success : SemColors.danger),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text('${p.name}：${p.detail}',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: p.ok ? SemColors.textSecondary : SemColors.danger,
-                                  height: 1.5)),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ],
-          ),
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: open
+                  ? content
+                  : const SizedBox(width: double.infinity, height: 0),
+            ),
+          ],
         ),
-      ];
+      );
+
+  Widget _credsCard(AppState st) => _collapsibleCard(
+        icon: Icons.badge_outlined,
+        title: '校园凭据',
+        open: _credsOpen,
+        onToggle: () => setState(() => _credsOpen = !_credsOpen),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 6),
+            Text('仅保存在本机，用于直连学校系统；不会上传到任何服务器。',
+                style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary, height: 1.6)),
+            const SizedBox(height: 12),
+            GlassField(
+              label: '学号',
+              controller: _sid,
+              prefixIcon: const Icon(Icons.badge_outlined),
+            ),
+            const SizedBox(height: 10),
+            GlassField(
+              label: '统一身份认证密码（= 校园网 / VPN 密码）',
+              controller: _pwd,
+              obscureText: _hidePwd,
+              prefixIcon: const Icon(Icons.lock_outline),
+              suffixIcon: IconButton(
+                onPressed: () => setState(() => _hidePwd = !_hidePwd),
+                icon: Icon(
+                    _hidePwd ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+              ),
+            ),
+            const SizedBox(height: 10),
+            GlassField(
+              label: '校园卡支付密码（校园码 / 电费）',
+              controller: _payPwd,
+              obscureText: _hidePayPwd,
+              prefixIcon: const Icon(Icons.credit_card_outlined),
+              suffixIcon: IconButton(
+                onPressed: () => setState(() => _hidePayPwd = !_hidePayPwd),
+                icon: Icon(
+                    _hidePayPwd ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+              ),
+            ),
+            const SizedBox(height: 10),
+            GlassField(
+              label: '寝室号（电费查询 / 充值）',
+              controller: _dorm,
+              hintText: '如 24号楼1016',
+              prefixIcon: const Icon(Icons.house_outlined),
+            ),
+            const SizedBox(height: 10),
+            GlassField(
+              label: '姓名（可留空，校园卡登录用；查学工会自动补全）',
+              controller: _realName,
+              prefixIcon: const Icon(Icons.person_outline),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _save,
+                    child: const Text('保存'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _testing ? null : _testDirect,
+                    child: _testing
+                        ? const SizedBox(
+                            width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('测试连接'),
+                  ),
+                ),
+              ],
+            ),
+            if (_probes != null) ...[
+              const SizedBox(height: 10),
+              for (final p in _probes!)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(p.ok ? Icons.check_circle : Icons.error_outline,
+                          size: 16, color: p.ok ? SemColors.success : SemColors.danger),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text('${p.name}：${p.detail}',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: p.ok ? SemColors.textSecondary : SemColors.danger,
+                                height: 1.5)),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ],
+        ),
+      );
+
+  Widget _schoolCard(AppState st) => _collapsibleCard(
+        icon: Icons.dns_outlined,
+        title: '学校信息',
+        open: _schoolOpen,
+        onToggle: () => setState(() => _schoolOpen = !_schoolOpen),
+        actions: [
+          TextButton.icon(
+            onPressed: _addSchool,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('添加', style: TextStyle(fontSize: 13)),
+          ),
+          if (st.schools.length > 1)
+            TextButton.icon(
+              onPressed: _removeSchool,
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text('删除', style: TextStyle(fontSize: 13)),
+            ),
+        ],
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 6),
+            GlassDropdown<String>(
+              label: '当前学校',
+              value: st.school.name,
+              items: [
+                for (final s in st.schools)
+                  DropdownMenuItem(value: s.name, child: Text(s.name)),
+              ],
+              onChanged: (v) async {
+                if (v == null) return;
+                final s = st.schools.firstWhere((e) => e.name == v);
+                await st.setSchool(s);
+                CampusDirect.I.forgetLoginState();
+                if (!mounted) return;
+                setState(() {
+                  _loadSchool(s);
+                  _probes = null;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            GlassField(label: '学校名称', controller: _schoolName),
+            const SizedBox(height: 10),
+            _addrField(_jwxtBase, '教务系统', 'https://jwxt.example.edu.cn'),
+            const SizedBox(height: 10),
+            _addrField(_xgBase, '学工系统（第二课堂）', 'https://xg.example.edu.cn'),
+            const SizedBox(height: 10),
+            _addrField(_authBase, '统一身份认证', 'https://authserver.example.edu.cn/authserver'),
+            const SizedBox(height: 10),
+            _addrField(_ecardBase, '校园卡（校园码 / 电费）', 'https://ecard.example.edu.cn'),
+            const SizedBox(height: 10),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              title: const Text('高级', style: TextStyle(fontSize: 13.5)),
+              children: [
+                GlassField(
+                  label: '响应解密密钥（留空即可）',
+                  controller: _aesKey,
+                  helperText: '个别学校接口返回 isEncrypt 加密数据时需要，向学校系统维护方索取',
+                  helperMaxLines: 2,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
 
   /// 分区标题：玻璃风图标章 + 标题（+ 可选右侧按钮），让卡片头部与液态玻璃面融合。
   Widget _sectionTitle(IconData icon, String title, {List<Widget> actions = const []}) => Row(
@@ -803,7 +866,7 @@ class _ConnectPageState extends State<ConnectPage> {
           Text(
             '在 App 内监听 127.0.0.1 起一套与学校系统行为一致的模拟服务：'
             '正方教务（RSA 加密 + 图形验证码）、统一认证 CAS（AES 加密 + 图形验证码）、'
-            '学工二课、校付宝（SM4 支付密码）。没有校园网也能把直连链路跑通。',
+            '学工二课、校园卡（SM4 支付密码）。没有校园网也能把直连链路跑通。',
             style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.7),
           ),
           const SizedBox(height: 10),
