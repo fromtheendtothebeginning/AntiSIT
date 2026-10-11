@@ -126,7 +126,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 children: [
                   Text('主题', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                   const SizedBox(height: 8),
-                  const ThemePickerList(),
+                  const ThemePickerList(showDescriptions: false),
                   const SizedBox(height: 4),
                   Align(
                     alignment: Alignment.centerRight,
@@ -145,9 +145,6 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('夜间模式', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  const SizedBox(height: 4),
-                  Text('拖动时配色在浅色与深色之间渐变，松手落到所选档；「跟随系统」随系统切换。',
-                      style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6)),
                   const SizedBox(height: 12),
                   GlassTabs(
                     labels: const ['跟随系统', '浅色', '深色'],
@@ -169,8 +166,6 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               child: SwitchListTile(
                 secondary: const Icon(Icons.swipe_outlined),
                 title: const Text('界面实时跟着滑块切换'),
-                subtitle: const Text('拖动滑块或左右滑页面时，界面实时跟滑、拖过一半即换',
-                    style: TextStyle(fontSize: 12)),
                 value: st.followSlider,
                 onChanged: (v) => st.setFollowSlider(v),
               ),
@@ -181,8 +176,6 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               child: SwitchListTile(
                 secondary: const Icon(Icons.keyboard_backspace_rounded),
                 title: const Text('预测式返回动画'),
-                subtitle: const Text('返回手势跟手预览上一层页面，松手前可反悔',
-                    style: TextStyle(fontSize: 12)),
                 value: st.predictiveBack,
                 onChanged: (v) => st.setPredictiveBack(v),
               ),

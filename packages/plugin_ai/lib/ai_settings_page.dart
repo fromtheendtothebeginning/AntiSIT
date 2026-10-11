@@ -278,13 +278,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.auto_awesome_outlined),
                   title: const Text('启用 AI 识别'),
-                  subtitle: const Text('自动识别登录验证码、识别校历图片里的调休',
-                      style: TextStyle(fontSize: 12)),
                   value: _c.enabled,
                   onChanged: (v) => setState(() => _c.enabled = v),
                 ),
-                Text('Key 只保存在本机，直连模式下由 App 直接调用你填的 AI 服务（不经任何中转）。',
-                    style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6)),
               ],
             ),
           ),
@@ -430,6 +426,10 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               ],
             ),
           ),
+          // 从组件边上挪下来的说明，统一沉到页底
+          const PageNotes(lines: [
+            'Key 只保存在本机，直连模式下由 App 直接调用你填的 AI 服务（不经任何中转）。',
+          ]),
         ],
       ),
     );

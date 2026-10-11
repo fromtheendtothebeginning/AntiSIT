@@ -435,13 +435,6 @@ class _ConnectPageState extends State<ConnectPage> {
                   dragPosition: _tabDrag,
                   onChanged: _setTab,
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  _mode == AppMode.server
-                      ? '服务器代连校园内网：填任意服务器地址（IP 或域名，可带端口）+ 该服务器的账号密码即可使用，同一套开放接口。'
-                      : '本机直连学校系统：填学校系统地址 + 校园凭据，数据不经过任何服务器，需要设备在校园网 / 校内 VPN 内。',
-                  style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.7),
-                ),
               ],
             ),
           ),
@@ -474,6 +467,14 @@ class _ConnectPageState extends State<ConnectPage> {
                   style: TextStyle(fontSize: 12.5, color: SemColors.success, height: 1.6)),
             ),
           ],
+          // 从组件边上挪下来的说明，统一沉到页底
+          const PageNotes(lines: [
+            '服务器模式：由服务器代连校园内网；登录用该服务器的账号密码，'
+                '校园凭据（学号 / 校园网密码）在该服务器的网站「我的 → 校园服务」配置一次。',
+            '直连模式：本机凭据直连学校系统，数据不经过任何服务器；需设备在校园网 / 校内 VPN 内。',
+            '校园凭据仅保存在本机，不会上传到任何服务器。',
+            '直连模式的「姓名」留空时查学工会自动补全（校园卡登录用）。',
+          ]),
         ],
         ),
       ),
@@ -495,11 +496,6 @@ class _ConnectPageState extends State<ConnectPage> {
                 keyboardType: TextInputType.url,
                 hintText: '192.168.1.10:8000 / my.server.cn:8443',
                 prefixIcon: const Icon(Icons.dns_outlined),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '登录时用该服务器上的账号密码；校园凭据（学号 / 校园网密码）在该服务器的网站「我的 → 校园服务」配置一次。',
-                style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
               ),
               const SizedBox(height: 6),
               Wrap(
@@ -656,9 +652,6 @@ class _ConnectPageState extends State<ConnectPage> {
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 6),
-            Text('仅保存在本机，用于直连学校系统；不会上传到任何服务器。',
-                style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary, height: 1.6)),
             const SizedBox(height: 12),
             GlassField(
               label: '学号',
@@ -698,7 +691,7 @@ class _ConnectPageState extends State<ConnectPage> {
             ),
             const SizedBox(height: 10),
             GlassField(
-              label: '姓名（可留空，校园卡登录用；查学工会自动补全）',
+              label: '姓名（可留空）',
               controller: _realName,
               prefixIcon: const Icon(Icons.person_outline),
             ),

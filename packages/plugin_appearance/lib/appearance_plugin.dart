@@ -22,7 +22,10 @@ class AppearancePlugin extends FeaturePlugin {
   String get name => '外观设置';
   @override
   String get description =>
-      '主题与夜间模式；界面是否实时跟着滑块切换；预测式返回动画开关';
+      '主题与夜间模式：拖动「夜间模式」滑块时整站配色在浅色与深色之间渐变，'
+      '松手落到所选档，「跟随系统」随系统切换；「界面实时跟着滑块切换」= '
+      '拖动滑块或左右滑页面时界面实时跟滑、拖过一半即换；「预测式返回动画」= '
+      '返回手势跟手预览上一层页面，松手前可反悔';
   @override
   int get settingsOrder => 55; // 课表淡化 45 · 提醒 40 · AI 60 之间
 

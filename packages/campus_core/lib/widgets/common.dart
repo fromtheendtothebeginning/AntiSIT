@@ -44,7 +44,31 @@ class PageStateView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Center(child: Padding(padding: EdgeInsets.all(48), child: CircularProgressIndicator()));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(48),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              // 服务器模式第一次查询要建校园网隧道（几十秒）：只给一个转圈会被当成卡死，
+              // 这里把「在等什么」说出来（见 ApiClient.tunnelWarmup）。
+              ValueListenableBuilder<int>(
+                valueListenable: ApiClient.tunnelWarmup,
+                builder: (_, waiting, __) => waiting == 0
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: Text('正在建立校园网隧道…首次查询可能要几十秒，请稍候',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 12.5, color: SemColors.textMuted, height: 1.6)),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     if (error != null) {
       return Center(
@@ -564,6 +588,7 @@ class GlassTabs extends StatefulWidget {
     this.height = 34,
     this.fontSize = 12.5,
     this.position,
+    this.dragPosition,
   });
 
   final List<String> labels;
@@ -573,8 +598,12 @@ class GlassTabs extends StatefulWidget {
   final double fontSize;
 
   /// 把「当前连续位置」写出来（每帧都写，单位 = 段，1.5 = 第 2 段与第 3 段中间）：
-  /// 调用方据此算实时配色（如「外观」滑块拖到中间时浅深各一半）。弹簧仍藏在控件里。
+  /// 调用方据此算实时配色（「外观」滑块）、或让下方内容跟着一起滑动（连接设置）。弹簧仍藏在控件里。
   final ValueNotifier<double>? position;
+
+  /// 页面区域（不是滑块本身）横滑时，调用方通过它驱动同一个位置：
+  /// 非 null（拖动中）滑块跟手、不跑自己的弹簧；置回 null（松手）时从当前位置弹到落点。
+  final ValueListenable<double?>? dragPosition;
 
   @override
   State<GlassTabs> createState() => _GlassTabsState();
@@ -597,16 +626,29 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
 
   void _publish() => widget.position?.value = _ctrl.value;
 
+  /// 调用方在页面区域拖动：非 null → 滑块跟手；置回 null（松手）→ 从当前位置弹到落点。
+  void _onExternalDrag() {
+    final v = widget.dragPosition!.value;
+    if (v == null) {
+      _springTo(widget.index.toDouble());
+    } else {
+      _ctrl.value = v.clamp(0.0, (widget.labels.length - 1).toDouble());
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _ctrl.addListener(_publish); // 所有位移都经过 _ctrl：弹簧、跟手、外部驱动
+    widget.dragPosition?.addListener(_onExternalDrag);
     _publish();
   }
 
   @override
   void didUpdateWidget(covariant GlassTabs old) {
     super.didUpdateWidget(old);
+    // 页面区域拖动中位置由调用方给，别在这儿又弹一次（会跟手指打架）
+    if (widget.dragPosition?.value != null) return;
     // 外部状态变化驱动滑动；自身触发的回调已在动量动画中，不重启
     if (old.index != widget.index && widget.index != _target) {
       _springTo(widget.index.toDouble());
@@ -615,6 +657,7 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
 
   @override
   void dispose() {
+    widget.dragPosition?.removeListener(_onExternalDrag);
     _ctrl.removeListener(_publish);
     _ctrl.dispose();
     super.dispose();
@@ -633,12 +676,14 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
       child: LayoutBuilder(
         builder: (context, cons) {
           final segW = cons.maxWidth / n;
+          final drag = widget.dragPosition;
           return SizedBox(
             height: widget.height,
             child: AnimatedBuilder(
-              animation: _ctrl,
+              animation: drag == null ? _ctrl : Listenable.merge([_ctrl, drag]),
               builder: (context, _) {
-                final pos = _ctrl.value.clamp(0.0, (n - 1).toDouble());
+                // 页面区域拖动中滑块跟手（调用方给的位置）；否则用自身的弹簧位置
+                final pos = (drag?.value ?? _ctrl.value).clamp(0.0, (n - 1).toDouble());
                 final visual = pos.round().clamp(0, n - 1);
                 return Stack(
                   children: [
@@ -1208,6 +1253,33 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 页面底部的备注区（细字、次要色）：从组件边上挪下来的解释文案归这儿，
+/// 组件本身只留标题与状态；更次要的介绍放进「插件管理」的对应插件下方。
+class PageNotes extends StatelessWidget {
+  const PageNotes({super.key, required this.lines});
+
+  final List<String> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final line in lines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(line,
+                  style: TextStyle(
+                      fontSize: 11, color: SemColors.textMuted, height: 1.6)),
+            ),
+        ],
       ),
     );
   }

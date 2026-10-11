@@ -6,10 +6,13 @@ import '../plugins/registry.dart';
 import 'common.dart';
 
 /// 主题选择列表（单选）。「我的 → 外观」的弹层与插件管理页共用这一份实现。
+/// [showDescriptions] = 是否显示每个主题的介绍（组件边上不放解释文案：
+/// 外观选择器里关掉，介绍看「插件管理」的主题插件）。
 class ThemePickerList extends StatelessWidget {
-  const ThemePickerList({super.key, this.showHeader = false});
+  const ThemePickerList({super.key, this.showHeader = false, this.showDescriptions = true});
 
   final bool showHeader;
+  final bool showDescriptions;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +37,7 @@ class ThemePickerList extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                             color: SemColors.textPrimary)),
                     const SizedBox(height: 2),
-                    Text('主题也是插件：可在「我的 → 插件管理」里查看它们的来源',
+                    Text('主题也是插件：可在「我的 → 插件管理」里查看它们的介绍',
                         style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
                   ],
                 ),
@@ -44,7 +47,9 @@ class ThemePickerList extends StatelessWidget {
                 leading: _Swatch(theme: t),
                 title: Text(t.name,
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                subtitle: Text(t.description, style: const TextStyle(fontSize: 12)),
+                subtitle: showDescriptions
+                    ? Text(t.description, style: const TextStyle(fontSize: 12))
+                    : null,
                 trailing: Icon(
                   t.id == active ? Icons.radio_button_checked : Icons.radio_button_unchecked,
                   size: 20,

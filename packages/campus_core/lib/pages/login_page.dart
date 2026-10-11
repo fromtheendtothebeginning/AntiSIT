@@ -190,25 +190,6 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     const SizedBox(height: 16),
 
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: SemColors.accentSoft,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: SemColors.accent.withValues(alpha: 0.35)),
-                      ),
-                      child: Text(
-                        direct
-                            ? '用学号和统一身份认证密码直接连学校系统（教务 / 学工 / 校园卡），'
-                                '需手机处于校园网或校内 VPN；凭据只存本机。'
-                            : '填写服务器域名或 IP，登录该服务器上的 anticraft 账号；'
-                                '校园凭据在服务器端配置，服务器会代为连接校园内网。',
-                        style: TextStyle(
-                            fontSize: 12, color: SemColors.textSecondary, height: 1.6),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
                     if (direct) ..._directFields(st) else ..._serverFields(),
 
                     if (_error != null) ...[
@@ -292,6 +273,15 @@ class _LoginPageState extends State<LoginPage> {
                         ],
                       ],
                     ),
+                    const SizedBox(height: 10),
+                    // 从组件边上挪下来的说明，统一沉到页底
+                    PageNotes(lines: [
+                      direct
+                          ? '直连模式：用学号和统一身份认证密码直接连学校系统'
+                              '（教务 / 学工 / 校园卡），需手机处于校园网或校内 VPN；凭据只存本机。'
+                          : '服务器模式：填写服务器域名或 IP，登录该服务器上的 anticraft 账号；'
+                              '校园凭据在服务器端配置，服务器会代为连接校园内网。',
+                    ]),
                   ],
                 ),
               ),

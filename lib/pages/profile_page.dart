@@ -286,21 +286,6 @@ class _ProfilePageState extends State<ProfilePage> {
                       style: TextStyle(fontSize: 12.5, color: SemColors.warning, height: 1.6),
                     ),
                   ),
-                if (st.direct)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(
-                      color: SemColors.accentSoft,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: SemColors.accent.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      '直连模式：数据由本机直接访问学校系统，不走任何服务器，需要在校园网 / 校内 VPN 内；'
-                      '登录验证码由 AI 自动识别（可在「AI 设置」里配置），未配置则弹框手动输入。',
-                      style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.6),
-                    ),
-                  ),
 
                 // 学籍信息
                 AppCard(
@@ -392,12 +377,6 @@ class _ProfilePageState extends State<ProfilePage> {
                                 _readyChip('默认寝室', status?['has_dorm'] as bool?),
                               ],
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                                st.direct
-                                    ? '登录态失效会在下次查询时重新登录（需输入验证码）'
-                                    : '登录态失效会在下次查询时自动重登',
-                                style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
                             if (connected || st.direct)
                               Align(
                                 alignment: Alignment.centerRight,
@@ -489,6 +468,17 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
               const SizedBox(height: 14),
+              // 从组件边上挪下来的说明，统一沉到页底
+              PageNotes(lines: [
+                if (st.direct)
+                  '直连模式：数据由本机直接访问学校系统，不走任何服务器，'
+                      '需在校园网 / 校内 VPN 内；登录验证码由 AI 自动识别'
+                      '（可在「AI 设置」里配置），未配置则弹框手动输入。'
+                else if (loggedIn)
+                  '登录态失效会在下次查询时自动重登'
+                      '${st.direct ? '（需输入验证码）' : ''}。',
+              ]),
+              const SizedBox(height: 6),
               Center(
                 child: Text(
                     st.direct
