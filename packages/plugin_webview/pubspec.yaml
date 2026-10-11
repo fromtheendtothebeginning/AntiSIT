@@ -1,0 +1,18 @@
+name: plugin_webview
+description: "AntiSIT 插件包：webview 内核（网页形态热插拔插件的运行基座）"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.2
+
+# 与宿主同属一个 pub workspace：根目录一次 `flutter pub get` 解析全部包
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  campus_core:
+    path: ../campus_core
+  # WebView 引擎（内核本体）：Android 用系统 WebView，iOS 用 WKWebView
+  webview_flutter: ^4.10.0

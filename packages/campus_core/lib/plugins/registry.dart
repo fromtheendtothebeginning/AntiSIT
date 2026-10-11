@@ -43,6 +43,10 @@ class PluginRegistry extends ChangeNotifier {
   static const String _kTheme = 'plugin_theme';
   static const String _kToolOrder = 'plugin_tool_order';
 
+  /// 「默认关闭」的插件里被用户**显式打开**过的 id：
+  /// 默认关闭的插件只有出现在这里（且不在 [PluginRegistry._disabled]）才算启用。
+  static const String _kUserEnabled = 'plugin_user_enabled';
+
   final List<FeaturePlugin> features;
 
   /// 内置主题（清单里带来的）。运行期导入的自定义主题见 [_extraThemes]，
@@ -62,6 +66,9 @@ class PluginRegistry extends ChangeNotifier {
   final String defaultThemeId;
 
   final Set<String> _disabled = <String>{};
+
+  /// 用户显式打开过的「默认关闭」插件（见 [_kUserEnabled]）。
+  final Set<String> _userEnabled = <String>{};
 
   /// 用户排过的工具顺序（插件 id；没列到的按清单顺序排在后面）。
   final List<String> _toolOrder = <String>[];
@@ -83,7 +90,14 @@ class PluginRegistry extends ChangeNotifier {
 
   /// 插件存在且没被停用。清单里根本没有这个 id 时返回 false——
   /// 「功能被删掉」和「功能被关掉」对被依赖方是同一件事：别干活。
-  bool isEnabled(String id) => byId(id) != null && !_disabled.contains(id);
+  /// 「默认关闭」的插件（[FeaturePlugin.defaultEnabled] == false）还要求
+  /// 用户显式打开过（[_userEnabled]），否则视为关闭。
+  bool isEnabled(String id) {
+    final p = byId(id);
+    if (p == null || _disabled.contains(id)) return false;
+    if (!p.defaultEnabled && !_userEnabled.contains(id)) return false;
+    return true;
+  }
 
   bool isDisabled(String id) => byId(id) != null && _disabled.contains(id);
 
@@ -316,6 +330,8 @@ class PluginRegistry extends ChangeNotifier {
       final p = byId(x);
       if (p == null) return;
       if (_disabled.remove(x)) turned.add(x);
+      // 默认关闭的插件：显式打开 = 记进 userEnabled（否则 isEnabled 永远为假）
+      if (!p.defaultEnabled && _userEnabled.add(x)) turned.add(x);
       for (final d in p.dependencies) {
         open(d);
       }
@@ -334,8 +350,10 @@ class PluginRegistry extends ChangeNotifier {
     if (p == null || !p.removable) return const [];
     final turned = <String>[];
     if (_disabled.add(id)) turned.add(id);
+    _userEnabled.remove(id); // 关掉就回到默认关闭状态
     for (final d in disableClosure(id)) {
       if (_disabled.add(d)) turned.add(d);
+      _userEnabled.remove(d);
     }
     await _persist();
     notifyListeners();
@@ -407,6 +425,11 @@ class PluginRegistry extends ChangeNotifier {
       ..clear()
       ..addAll((sp.getStringList(_kToolOrder) ?? const <String>[])
           .where((id) => byId(id) != null));
+    // 用户显式打开过的默认关闭插件：只留还装着且仍是默认关闭的
+    _userEnabled
+      ..clear()
+      ..addAll((sp.getStringList(_kUserEnabled) ?? const <String>[])
+          .where((id) => byId(id)?.defaultEnabled == false));
     // 运行期导入的自定义主题：逐条解析，坏的跳过（不影响其余主题）
     _extraThemes.clear();
     for (final raw in sp.getStringList(_kCustomThemes) ?? const <String>[]) {
@@ -444,15 +467,17 @@ class PluginRegistry extends ChangeNotifier {
     }
   }
 
-  /// 启用的插件其硬依赖却关着（清单改动 / 旧版本数据）→ 关掉依赖它的插件，
-  /// 别让界面停在「一半有、一半没有」的半残状态。
+  /// 启用的插件其硬依赖却不可用（清单改动 / 旧版本数据 / 依赖是默认关闭插件）→
+  /// 关掉依赖它的插件，别让界面停在「一半有、一半没有」的半残状态。
   void _repair() {
     var changed = true;
     while (changed) {
       changed = false;
       for (final p in features) {
         if (!isEnabled(p.id)) continue;
-        if (p.dependencies.any(isDisabled)) {
+        // 注意用 isEnabled 而不是 isDisabled：依赖可能是「默认关闭」——
+        // 它不在 _disabled 里，但同样不可用。
+        if (p.dependencies.any((d) => !isEnabled(d))) {
           _disabled.add(p.id);
           changed = true;
         }
@@ -465,6 +490,7 @@ class PluginRegistry extends ChangeNotifier {
     await sp.setStringList(_kDisabled, _disabled.toList());
     await sp.setString(_kTheme, _themeId);
     await sp.setStringList(_kToolOrder, _toolOrder);
+    await sp.setStringList(_kUserEnabled, _userEnabled.toList());
   }
 
   // ==================== 清单自检 ====================

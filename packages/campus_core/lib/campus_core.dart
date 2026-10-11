@@ -36,6 +36,7 @@ export 'plugins/plugin.dart';
 export 'plugins/json_theme.dart';
 export 'plugins/registry.dart';
 export 'plugins/reminder_capability.dart';
+export 'plugins/webview_capability.dart';
 export 'timetable_store.dart';
 export 'widgets/balance_chart.dart';
 export 'widgets/captcha_dialog.dart';

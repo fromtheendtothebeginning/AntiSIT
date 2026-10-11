@@ -77,6 +77,10 @@ abstract class FeaturePlugin {
   /// false = 核心插件（壳 / 登录 / 设置宿主），界面上不给关。
   bool get removable => true;
 
+  /// 默认启停：false = 装进清单后**默认关闭**（内核类插件：就绪但暂无消费方时用，
+  /// 用户在插件管理里手动打开）。用户的开关选择会被记住（注册表 `plugin_user_enabled`）。
+  bool get defaultEnabled => true;
+
   /// 底栏页面；返回空列表 = 不是导航页（也可能因为没有可用内容而隐藏自己）。
   List<PluginNavItem> navItems(PluginRegistry registry, ValueListenable<int> tab) => const [];
 
@@ -173,6 +177,7 @@ abstract final class PluginIds {
   static const ai = 'ai';
   static const reminder = 'reminder';
   static const tools = 'tools';
+  static const webview = 'webview';
   static const themeGlass = 'theme.glass';
 }
 

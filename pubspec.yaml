@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.11.0+83
+version: 1.11.1+84
 
 environment:
   sdk: ^3.9.2
@@ -32,6 +32,7 @@ workspace:
   - packages/plugin_grades
   - packages/campus_core
   - packages/plugin_timetable
+  - packages/plugin_webview
   - packages/plugin_ecard
   - packages/plugin_tools
   - packages/plugin_ai
@@ -87,6 +88,9 @@ dependencies:
   # 每个包自动获得一个编译期剔除开关 EXCLUDE_<包名去掉 plugin_ 前缀大写>。
   plugin_timetable:
     path: packages/plugin_timetable
+  # WebView 内核（网页形态热插拔插件的运行基座）：默认关闭，可 EXCLUDE_WEBVIEW
+  plugin_webview:
+    path: packages/plugin_webview
   plugin_ecard:
     path: packages/plugin_ecard
   plugin_tools:

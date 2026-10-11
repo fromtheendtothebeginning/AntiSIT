@@ -75,10 +75,12 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_exams` | `exams` | `network` | — | — | ✓ | 工具卡片 |
 | `plugin_grades` | `grades` | `network` | — | — | ✓ | 工具卡片 |
 | `plugin_timetable` | `timetable` | `network` | `ai`、`reminder` | `ai`、`reminder` | ✓ | 底栏页 + 设置条目 |
+| `plugin_webview` | `webview` | — | — | — | ✓ | 无界面 |
 | `plugin_ecard` | `ecard` | `network` | — | — | ✓ | 底栏页 |
 | `plugin_tools` | `tools` | — | — | — | ✓ | 底栏页 |
 | `plugin_ai` | `ai` | `network` | — | — | ✓ | 设置条目 + 启动初始化 |
 | `plugin_ai` | `custom` | — | — | — | ✓ | AI 提供商（一家一个包） |
+| `plugin_appearance` | `appearance` | — | — | — | ✓ | 设置条目 |
 | `plugin_ai_deepseek` | `deepseek` | — | — | — | ✓ | AI 提供商（一家一个包） |
 | `plugin_ai_opencode_go` | `opencode-go` | — | — | — | ✓ | AI 提供商（一家一个包） |
 | `plugin_ai_kimi` | `kimi` | — | — | — | ✓ | AI 提供商（一家一个包） |
@@ -98,9 +100,12 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 
 生成不出来的人话细节（手写）：
 
-- `timetable` 的设置条目 =「上完的课淡化显示」。
+- 课表相关的设置收在「课程表设置」二级页（`plugin_timetable` 的 `TimetableSettingsPage`）：
+  课表自己的「学期设置 / 调休设置 / 上完的课淡化显示」写死在页面里，`reminder` 用
+  `timetableSettingsTiles` 贡献「上课提醒」那两行。入口两处——课表页右上角菜单、
+  「我的 → 设置 → 课程表设置」——进的是同一页；两处宿主共用一套排序（`settingsOrder`）。
 - `score` 的工具卡片顺带缓存学籍给「我的」页；`tools` 的底栏页在没有工具启用时自动隐藏。
-- `reminder` 的设置条目带一行自检摘要，详情与引导在二级页 `ReminderGuidePage`
+- `reminder` 的「上课提醒」开关带一行自检摘要，详情与引导在二级页 `ReminderGuidePage`
   （通知权限 / 精确闹钟 / 省电策略，一键跳系统设置），启动时还负责排期。
 
 `network` 与 `profile` 是**核心插件**，留在宿主里不可停用：前者是登录与数据来源（所有取数
