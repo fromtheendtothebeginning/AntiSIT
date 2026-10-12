@@ -96,9 +96,10 @@ enum _BackPhase {
   return_,
 }
 
-/// 预测式返回手势期间的「覆盖进度」（顶层页的动画值：1 = 全盖住，0 = 已滑走；
+/// 预测式返回手势期间的「覆盖率」（1 = 顶层页全盖住下层页，0 = 已滑走；
 /// null = 没有手势在进行）。被盖住的页据此做**渐进磨砂**：
 /// 手势前 1/3 隔着重磨砂，1/3 → 2/3 之间线性变清楚（插值），之后完全清晰。
+/// 拖动时它就是顶层页的动画值；提交后按实际滑出进度提前归零（见 [_commitT]）。
 final ValueNotifier<double?> predictiveBackCover = ValueNotifier(null);
 
 /// 覆盖进度 → 下层页的磨砂遮罩不透明度（0..0.45）。手势进度 g = 1 - v：
@@ -123,17 +124,26 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   /// 2/3 时只剩 33%，配合模糊已清完，与模糊插值的节奏对齐。
   static const double _dragFade = 1.0;
 
+  /// 松手提交后，滑出 / 淡出只用框架反向窗口的前 60%（≈180ms）走完。
+  /// 不能等 controller 自己降回松手值：框架在提交时先把它拉回 1.0 再线性反向，
+  /// 拖得越深等得越久（实测拖到 0.8 松手要先冻 240ms 才动）——用户反馈
+  /// 「松开后没有继续滑，要先停一下」。用前 60% 则一松手就走，且整体更快。
+  static const double _commitSpan = 0.6;
+
   _BackPhase _phase = _BackPhase.none;
 
   /// 松手那一刻的动画值（= 1 - 手势进度）。提交 / 取消后的动画都从它续上，
   /// 保证松手前后画面的位移、缩放是连续的，不会跳。
   double _releaseV = 1;
 
+  /// 提交后 controller 反弹到的最大值（正常就是 1.0，见 [_commitT]）。
+  double _commitFrom = 0;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // 手势期间把顶层页的动画值发布给被盖住的页（渐进模糊用）。
+    // 手势期间把覆盖率发布给被盖住的页（渐进磨砂 / 揭露用）。
     // 动画监听在帧调度阶段触发，不在 build 里改 ValueNotifier（会撞上 build 期重建）。
     widget.animation.addListener(_publishCover);
   }
@@ -143,7 +153,26 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     final v = widget.animation.value.clamp(0.0, 1.0);
     final done = (_phase == _BackPhase.return_ && v >= 1.0) ||
         (_phase == _BackPhase.commit && v <= 0.0);
-    predictiveBackCover.value = done ? null : v;
+    if (done) {
+      predictiveBackCover.value = null;
+    } else if (_phase == _BackPhase.commit) {
+      if (v > _commitFrom) _commitFrom = v;
+      // 下层页的揭露按「实际滑出进度」（1 - 位移/屏宽）走：等于拖动时的 v，
+      // 提交后又跟着加快后的滑出一起归零。框架把动画值拉回 1.0 的那一跳
+      // 不能外漏——漏出去下层页会先瞬间消失再罩上磨砂，闪一下。
+      predictiveBackCover.value = _releaseV * (1 - _commitT(v));
+    } else {
+      predictiveBackCover.value = v;
+    }
+  }
+
+  /// 提交后滑出的进度（0 = 刚松手，1 = 滑完）：起点取 [_commitFrom]——
+  /// 框架提交时把 controller 拉回 1.0，它就是 1.0；若哪天框架改成从松手值
+  /// 反向，起点自然是松手值，公式同样从 0 起算。只用窗口前 [_commitSpan] 走完。
+  double _commitT(double v) {
+    if (_commitFrom <= 0) return 0;
+    final u = ((_commitFrom - v) / _commitFrom).clamp(0.0, 1.0);
+    return (u / _commitSpan).clamp(0.0, 1.0);
   }
 
   @override
@@ -190,8 +219,11 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   @override
   void handleCommitBackGesture() {
     _releaseV = widget.animation.value;
-    widget.route.handleCommitBackGesture();
+    _commitFrom = 0;
+    // 相位要先切：route.handleCommitBackGesture() 内部会把动画值拉回 1.0，
+    // 那一跳会同步通知 [_publishCover]，相位还是 drag 的话会被当成拖动值发布。
     if (mounted) setState(() => _phase = _BackPhase.commit);
+    widget.route.handleCommitBackGesture();
   }
 
   static double _mix(double a, double b, double t) => a + (b - a) * t;
@@ -207,7 +239,11 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
       // 下层页在**手势前 1/3** 就淡入到位并按覆盖进度模糊——
       // 原来走淡入淡出的旧曲线，要到手势走完约 2/3 才开始出现，
       // 用户实测「1/3 时完全看不到」。没有手势（null）时用普通淡入淡出。
-      if (!widget.route.isCurrent) {
+      //
+      // 「手势还在进行」也要走这条：提交后本页立刻变成 current（route 已被 pop），
+      // 但手势的退场动画还在放。若此刻切回旧淡入淡出曲线，secondary 还是 1
+      // （被盖住的起点）→ 该曲线直接给整页不可见，画面会闪一下（实测有）。
+      if (!widget.route.isCurrent || predictiveBackCover.value != null) {
         return ValueListenableBuilder<double?>(
           valueListenable: predictiveBackCover,
           builder: (context, cover, _) {
@@ -215,7 +251,7 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
               return _fade.buildTransitions(widget.route, context, widget.animation,
                   widget.secondaryAnimation, widget.child);
             }
-            // 覆盖进度 cover = 顶层页动画值（1 = 全盖住，0 = 已滑走）。
+            // 覆盖率 cover（1 = 全盖住，0 = 已滑走）。
             // 下层页透明度：cover 1 → 2/3 之间淡入（手势前 1/3），之后保持全可见，
             // 隔着顶层页的半透明 + 磨砂露出；磨砂同前：前 1/3 最重，1/3 → 2/3 变清楚。
             final visible = 1 - ((cover - 2 / 3) / (1 / 3)).clamp(0.0, 1.0);
@@ -273,10 +309,14 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
         scale = 1 - 0.05 * gone;
         radius = 16 * gone;
       case _BackPhase.commit:
-        final t = _releaseV <= 0 ? 1.0 : ((_releaseV - v) / _releaseV).clamp(0.0, 1.0);
+        // 松手后继续往右滑出去：一松手就走（[_commitT] 从 0 起算），
+        // 并在框架窗口的前 [_commitSpan] 内滑完，比原来的 300ms 窗口快。
+        final t = _commitT(v);
         shift = _mix(releaseShift, dir * width, t);
-        // 提前淡完（t≈0.7 就透明）：滑完前上一页已经完整在场
-        opacity = (1 - t * 1.45).clamp(0.0, 1.0);
+        // 从松手那一刻的实际透明度（= _releaseV）继续淡出，不能从 1 拉回：
+        // 拖得深时松手页面已接近全透明，跳回 1 用户会看到「不透明度突然上升」。
+        // 仍按 t≈0.7 提前淡完：滑完前上一页已经完整在场。
+        opacity = (_releaseV * (1 - t * 1.45)).clamp(0.0, 1.0);
         scale = _mix(releaseScale, 0.96, t);
         radius = _mix(releaseRadius, 12, t);
       case _BackPhase.return_:
