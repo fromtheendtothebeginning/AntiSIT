@@ -176,6 +176,9 @@ abstract final class PluginIds {
   static const timetable = 'timetable';
   static const ai = 'ai';
   static const reminder = 'reminder';
+
+  /// 风险提醒（`packages/plugin_risk`）：付款码 / 电费充值前面的拦截闸。
+  static const risk = 'risk';
   static const tools = 'tools';
   static const webview = 'webview';
   static const themeGlass = 'theme.glass';

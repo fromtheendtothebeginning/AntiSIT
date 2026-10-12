@@ -54,6 +54,13 @@ class _ElectricityPageState extends State<ElectricityPage> {
   }
 
   Future<void> _recharge() async {
+    // 风险提醒（默认开启）拦在充值前面：点击只弹提醒，引导去插件管理关掉它
+    // （查余额、看历史不受影响）。没装 / 被停用时取不到能力 = 没有这道闸。
+    final risk = PluginRegistry.I.capability<RiskNoticeCapability>(PluginIds.risk);
+    if (risk != null) {
+      await risk.warnBlocked(context, feature: '宿舍电费充值');
+      return;
+    }
     final balance = asDouble(_data?['balance']);
     final controller = TextEditingController();
     final confirmed = await showDialog<bool>(

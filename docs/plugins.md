@@ -69,18 +69,19 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | （宿主） | `network` | — | — | — | ✗ 核心 | 无界面 + 启动初始化 |
 | （宿主） | `profile` | `network` | — | — | ✗ 核心 | 底栏页 |
 | `plugin_feedback` | `feedback` | — | — | — | ✓ | 设置条目 |
-| `plugin_electricity` | `electricity` | `network` | — | — | ✓ | 工具卡片 + 卡面预取 |
+| `plugin_electricity` | `electricity` | `network` | `risk` | `risk` | ✓ | 工具卡片 + 卡面预取 |
 | `plugin_activities` | `activities` | `network` | — | — | ✓ | 工具卡片 |
 | `plugin_score` | `score` | `network` | — | — | ✓ | 工具卡片 + 卡面预取 |
 | `plugin_exams` | `exams` | `network` | — | — | ✓ | 工具卡片 |
 | `plugin_grades` | `grades` | `network` | — | — | ✓ | 工具卡片 |
 | `plugin_timetable` | `timetable` | `network` | `ai`、`reminder` | `ai`、`reminder` | ✓ | 底栏页 + 设置条目 |
 | `plugin_webview` | `webview` | — | — | — | ✓ | 无界面 |
-| `plugin_ecard` | `ecard` | `network` | — | — | ✓ | 底栏页 |
+| `plugin_ecard` | `ecard` | `network` | `risk` | `risk` | ✓ | 底栏页 |
 | `plugin_tools` | `tools` | — | — | — | ✓ | 底栏页 |
 | `plugin_ai` | `ai` | `network` | — | — | ✓ | 设置条目 + 启动初始化 |
 | `plugin_ai` | `custom` | — | — | — | ✓ | AI 提供商（一家一个包） |
 | `plugin_appearance` | `appearance` | — | — | — | ✓ | 设置条目 |
+| `plugin_risk` | `risk` | — | — | — | ✓ | 设置条目 |
 | `plugin_ai_deepseek` | `deepseek` | — | — | — | ✓ | AI 提供商（一家一个包） |
 | `plugin_ai_opencode_go` | `opencode-go` | — | — | — | ✓ | AI 提供商（一家一个包） |
 | `plugin_ai_kimi` | `kimi` | — | — | — | ✓ | AI 提供商（一家一个包） |

@@ -66,6 +66,10 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
       );
       if (ok != true || !mounted) return;
     }
+    // 有些插件关掉前要用户先过条款（风险提醒：关闭即自担风险）：
+    // 它提供对应能力就请它确认一次，取消就不关。
+    final guard = _r.capability<RiskNoticeCapability>(p.id);
+    if (guard != null && !await guard.confirmDisable(context)) return;
     final off = await _r.disable(p.id);
     if (!mounted || off.isEmpty) return;
     _toast('已停用：${off.map(_name).join('、')}');

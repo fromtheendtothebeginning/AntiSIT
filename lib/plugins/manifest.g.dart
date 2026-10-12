@@ -22,6 +22,7 @@ import 'package:plugin_ecard/plugin_ecard.dart' as plugin_ecard;
 import 'package:plugin_tools/plugin_tools.dart' as plugin_tools;
 import 'package:plugin_ai/plugin_ai.dart' as plugin_ai;
 import 'package:plugin_appearance/plugin_appearance.dart' as plugin_appearance;
+import 'package:plugin_risk/plugin_risk.dart' as plugin_risk;
 import 'package:plugin_ai_deepseek/plugin_ai_deepseek.dart' as plugin_ai_deepseek;
 import 'package:plugin_ai_opencode_go/plugin_ai_opencode_go.dart' as plugin_ai_opencode_go;
 import 'package:plugin_ai_kimi/plugin_ai_kimi.dart' as plugin_ai_kimi;
@@ -50,6 +51,7 @@ List<PluginBundle> get pluginBundles => [
       if (!const bool.fromEnvironment('EXCLUDE_TOOLS')) plugin_tools.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_AI')) plugin_ai.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_APPEARANCE')) plugin_appearance.pluginBundle,
+      if (!const bool.fromEnvironment('EXCLUDE_RISK')) plugin_risk.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_AI_DEEPSEEK')) plugin_ai_deepseek.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_AI_OPENCODE_GO')) plugin_ai_opencode_go.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_AI_KIMI')) plugin_ai_kimi.pluginBundle,

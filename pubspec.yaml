@@ -37,6 +37,7 @@ workspace:
   - packages/plugin_tools
   - packages/plugin_ai
   - packages/plugin_appearance
+  - packages/plugin_risk
   # AI 提供商：一家一个包（各自的 logo 资产也在包里）
   - packages/plugin_ai_deepseek
   - packages/plugin_ai_opencode_go
@@ -100,6 +101,9 @@ dependencies:
   # 外观设置（主题 / 深浅色 / 界面跟随滑块）：整个包可以删掉或 EXCLUDE_APPEARANCE
   plugin_appearance:
     path: packages/plugin_appearance
+  # 风险提醒（默认开启）：付款码 / 电费充值前面的拦截闸，关闭前需同意条款
+  plugin_risk:
+    path: packages/plugin_risk
   # ---- AI 提供商插件（一家一个包；顺序 = AI 设置页里提供商列表的顺序）----
   # 删掉一行 + 跑生成器 = 这个提供商从 App 里消失（代码与 logo 一起不进构建）。
   plugin_ai_deepseek:

@@ -43,27 +43,50 @@ class _EcardPageState extends State<EcardPage> {
   Timer? _ticker;
   bool _active = true;
 
+  /// 风险提醒（默认开启）拦在付款码前面：开着就**不请求**、不显示码，原位给引导
+  /// （引导里可跳插件管理关掉它）。没装 / 被停用时取不到能力 = 没有这道闸。
+  RiskNoticeCapability? get _risk =>
+      PluginRegistry.I.capability<RiskNoticeCapability>(PluginIds.risk);
+  bool get _blocked => _risk != null;
+
+  /// 上一次看到的拦截状态：注册表一变就回调，只在「拦 ↔ 放行」翻转时动手。
+  bool _blockedSeen = false;
+
   @override
   void initState() {
     super.initState();
     widget.activeTab?.addListener(_onTabChanged);
+    PluginRegistry.I.addListener(_onRegistryChanged);
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     _active = (widget.activeTab?.value ?? widget.myTab) == widget.myTab;
-    if (AppState.I.loggedIn && _active) {
+    _blockedSeen = _blocked;
+    if (AppState.I.loggedIn && _active && !_blocked) {
       WakelockPlus.enable();
       _fetch();
     }
   }
 
+  /// 风险提醒被关掉 / 开回来：立刻恢复取码或停下刷新（用户从管理页关完返回就该生效）。
+  void _onRegistryChanged() {
+    if (!mounted || _blocked == _blockedSeen) return;
+    _blockedSeen = _blocked;
+    if (_blocked) {
+      WakelockPlus.disable(); // 不再亮着屏等一张不会显示的码
+    } else if (_active && !_loading) {
+      _fetch();
+    }
+    setState(() {});
+  }
+
   void _onTabChanged() {
     final v = widget.activeTab?.value ?? widget.myTab;
     _active = v == widget.myTab;
-    if (_active && _countdown <= 0 && !_loading) _fetch();
+    if (_active && !_blocked && _countdown <= 0 && !_loading) _fetch();
     if (mounted) setState(() {});
   }
 
   void _tick() {
-    if (!_active || _loading) return;
+    if (_blocked || !_active || _loading) return;
     if (_countdown > 0) {
       if (mounted) setState(() => _countdown--);
       return;
@@ -93,10 +116,35 @@ class _EcardPageState extends State<EcardPage> {
   @override
   void dispose() {
     widget.activeTab?.removeListener(_onTabChanged);
+    PluginRegistry.I.removeListener(_onRegistryChanged);
     _ticker?.cancel();
     WakelockPlus.disable();
     super.dispose();
   }
+
+  /// 风险提醒开着时的卡片：二维码区域换成引导，这一页**不请求**任何付款码数据。
+  Widget _blockedCard() => AppCard(
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.topLeft,
+              child: Capsule('校园卡动态码', color: SemColors.textMuted),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: 220,
+              height: 220,
+              child: Center(child: _risk!.blockedNotice(context, feature: '校园码付款码')),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '关闭「风险提醒」后自动恢复；此期间本页不会请求付款码。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+            ),
+          ],
+        ),
+      );
 
   Widget _qr() {
     final d = _data;
@@ -137,7 +185,9 @@ class _EcardPageState extends State<EcardPage> {
               constraints: const BoxConstraints(maxWidth: 420),
             child: Column(
               children: [
-                if (_err != null && _data == null) ...[
+                if (_blocked)
+                  _blockedCard()
+                else if (_err != null && _data == null) ...[
                   Icon(Icons.error_outline, size: 44, color: SemColors.danger),
                   const SizedBox(height: 10),
                   Text(_err!, textAlign: TextAlign.center),
