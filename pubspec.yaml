@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.12.1+86
+version: 1.15.0+94
 
 environment:
   sdk: ^3.9.2
@@ -38,6 +38,8 @@ workspace:
   - packages/plugin_ai
   - packages/plugin_appearance
   - packages/plugin_risk
+  # 拓展（网页形态小功能的前端）：跑在 webview 内核上，默认关闭
+  - packages/plugin_ext
   # AI 提供商：一家一个包（各自的 logo 资产也在包里）
   - packages/plugin_ai_deepseek
   - packages/plugin_ai_opencode_go
@@ -65,8 +67,12 @@ dependencies:
   cupertino_icons: ^1.0.8
   # 「我的」页显示运行时版本号（原来只是传递依赖，显式声明才能直接用）
   package_info_plus: ^9.0.1
-  # 「我的」页打开 GPL 协议原文
+  # 「我的」页打开 GPL 协议原文；更新引导里打开下载链接
   url_launcher: ^6.3.2
+  # 更新检查：读 GitHub Release 接口（见 lib/update_check.dart）
+  http: ^1.6.0
+  # 更新检查：记住点过「稍后」的版本，同一个版本不再重复弹
+  shared_preferences: ^2.5.5
 
   # 契约层：所有服务、组件库、插件接口都在这里（插件包也依赖它）
   campus_core:
@@ -92,6 +98,9 @@ dependencies:
   # WebView 内核（网页形态热插拔插件的运行基座）：默认关闭，可 EXCLUDE_WEBVIEW
   plugin_webview:
     path: packages/plugin_webview
+  # 拓展（网页形态小功能的前端，底栏「拓展」页）：默认关闭，硬依赖 WebView 内核
+  plugin_ext:
+    path: packages/plugin_ext
   plugin_ecard:
     path: packages/plugin_ecard
   plugin_tools:
@@ -136,11 +145,12 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  # 测试里直接用到（应用代码本身已不依赖这两个包，见 packages/campus_core/pubspec.yaml）
-  shared_preferences: ^2.5.5
+  # 测试里直接用到（应用代码本身已不依赖，见 packages/campus_core/pubspec.yaml）
   pointycastle: ^4.0.0
   # 测试里注入假的 Android 通知平台实现，验证提醒自检的探测逻辑
   flutter_local_notifications: ^19.5.0
+  # 拓展的压缩包导入测试要现造一个 zip（见 test/extensions_test.dart）
+  archive: ^4.0.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
