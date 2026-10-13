@@ -4,6 +4,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:campus_core/campus_core.dart';
+import '../update_check.dart';
+import '../widgets/update_dialog.dart';
 import 'plugin_manager_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -25,6 +27,7 @@ class _ProfilePageState extends State<ProfilePage> {
     super.initState();
     _refreshAll();
     _loadVersion();
+    UpdateChecker.I.load(); // 本机版本 + 上次点过「稍后」的版本
   }
 
   /// 运行时版本号（读 APK 里的 versionName/versionCode，不用手写常量）。
@@ -53,6 +56,50 @@ class _ProfilePageState extends State<ProfilePage> {
           const SnackBar(content: Text('已复制协议链接'), behavior: SnackBarBehavior.floating));
     }
   }
+
+  /// 手动检查更新：有新版就弹引导，否则给一句结果（已是最新 / 失败原因）。
+  Future<void> _checkUpdate() async {
+    await UpdateChecker.I.load();
+    await UpdateChecker.I.check();
+    if (!mounted) return;
+    final uc = UpdateChecker.I;
+    final info = uc.available;
+    if (info != null) {
+      await showUpdateDialog(context, info);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(uc.error != null ? '检查更新失败：${uc.error}' : '已是最新版本'),
+        behavior: SnackBarBehavior.floating));
+  }
+
+  /// 「设置」卡里的「检查更新」条目：平时显示当前版本，查到新版本就地标出来。
+  Widget _updateTile() => ListenableBuilder(
+        listenable: UpdateChecker.I,
+        builder: (context, _) {
+          final uc = UpdateChecker.I;
+          final info = uc.available;
+          return ListTile(
+            leading: const Icon(Icons.system_update_alt_outlined),
+            title: const Text('检查更新'),
+            subtitle: Text(
+              info != null
+                  ? '发现新版本 v${info.version}'
+                  : (uc.error != null
+                      ? '检查失败：${uc.error}'
+                      : (_version == null ? '看看 GitHub 上有没有新版本' : '当前 $_version')),
+              style: TextStyle(
+                  fontSize: 12, color: info != null ? SemColors.accent : null),
+            ),
+            trailing: uc.checking
+                ? const SizedBox(
+                    width: 14, height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.chevron_right),
+            onTap: uc.checking ? null : _checkUpdate,
+          );
+        },
+      );
 
   void _refreshAll() {
     if (!AppState.I.loggedIn) return;
@@ -439,6 +486,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       onTap: () => Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => const PluginManagerPage())),
                     ),
+                    _updateTile(),
                   ],
                 ),
               ),

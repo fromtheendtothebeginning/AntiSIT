@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import '../update_check.dart';
+import '../widgets/update_dialog.dart';
+
 /// 主导航壳：底栏与页面**全部由插件注册表组装**——插件被停用（或被构建期剔除）后，
 /// 这里既不会剩下空 tab，也不会引用到不存在的页面。
 class HomePage extends StatefulWidget {
@@ -29,6 +32,20 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     // 插件启停会改变底栏格数，当前下标可能越界
     PluginRegistry.I.addListener(_clampTab);
+    _checkUpdateOnStart();
+  }
+
+  /// 启动后静默查一次新版本：有就弹一次引导更新（点过「稍后」的版本不再弹，
+  /// 手动检查照旧能看到）。检查失败 / 读不到本机版本都直接放过，不打扰启动。
+  Future<void> _checkUpdateOnStart() async {
+    await UpdateChecker.I.load();
+    if (UpdateChecker.I.current.isEmpty) return; // 没有本机版本就没什么可比的
+    await UpdateChecker.I.check();
+    if (!mounted) return;
+    final info = UpdateChecker.I.available;
+    if (info != null && UpdateChecker.I.shouldPrompt) {
+      await showUpdateDialog(context, info);
+    }
   }
 
   @override
