@@ -131,14 +131,15 @@ class _EcardPageState extends State<EcardPage> {
               child: Capsule('校园卡动态码', color: SemColors.textMuted),
             ),
             const SizedBox(height: 14),
-            SizedBox(
-              width: 220,
-              height: 220,
+            // 引导放在二维码原来的位置：至少 220×220（与二维码同尺寸），
+            // 内容更高时让框长高，不裁不溢出。
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 220, minHeight: 220),
               child: Center(child: _risk!.blockedNotice(context, feature: '校园码付款码')),
             ),
             const SizedBox(height: 10),
             Text(
-              '关闭「风险提醒」后自动恢复；此期间本页不会请求付款码。',
+              '本组件停用后，受拦截行为即行恢复；本组件启用期间，本应用不请求付款码。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 11, color: SemColors.textMuted),
             ),
@@ -174,7 +175,6 @@ class _EcardPageState extends State<EcardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final balance = asDouble(_data?['card_balance']);
     return Scaffold(
       appBar: AppBar(title: const Text('校园码')),
       body: LoginGate(
@@ -183,74 +183,92 @@ class _EcardPageState extends State<EcardPage> {
             padding: const EdgeInsets.all(20),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              children: [
-                if (_blocked)
-                  _blockedCard()
-                else if (_err != null && _data == null) ...[
-                  Icon(Icons.error_outline, size: 44, color: SemColors.danger),
-                  const SizedBox(height: 10),
-                  Text(_err!, textAlign: TextAlign.center),
-                  const SizedBox(height: 14),
-                  FilledButton.tonal(onPressed: _fetch, child: const Text('重试')),
-                ] else
-                  AppCard(
-                    child: Column(
-                      children: [
-                        Align(
-                          alignment: Alignment.topLeft,
-                          child: Capsule('校园卡动态码', color: SemColors.success),
-                        ),
-                        const SizedBox(height: 14),
-                        if (_data == null)
-                          const SizedBox(
-                            width: 220,
-                            height: 220,
-                            child: Center(child: CircularProgressIndicator()),
-                          )
-                        else
-                          _qrPlate(_qr()),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('卡余额 ', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
-                            Text(
-                              balance == null ? '—' : '¥${balance.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.w600, color: SemColors.textPrimary),
-                            ),
-                            const SizedBox(width: 14),
-                            Text(
-                              _loading ? '刷新中…' : '$_countdown 秒后自动刷新',
-                              style: TextStyle(fontSize: 12, color: SemColors.textMuted),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        OutlinedButton(
-                          onPressed: _loading ? null : _fetch,
-                          style: OutlinedButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            side: BorderSide(color: SemColors.border),
-                            foregroundColor: SemColors.textSecondary,
-                          ),
-                          child: Text(_loading ? '刷新中…' : '立即刷新'),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          '动态码仅供本人付款使用，请勿截图转发',
-                          style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-                        ),
-                      ],
-                    ),
+              child: Column(
+                children: [
+                  // 拦截 / 失败 / 正常三张卡片之间的切换走全站同一条高度过渡：
+                  // AnimatedSize 顶部锚定 + 220ms easeOutCubic（与「我的」页可收起内容一致；
+                  // 默认居中会让内容在高度动画期间整体上下漂移）。
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: _blocked
+                        ? _blockedCard()
+                        : (_err != null && _data == null ? _errorCard() : _codeCard()),
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// 正常态：动态码 + 余额 + 倒计时 + 立即刷新。
+  Widget _codeCard() {
+    final balance = asDouble(_data?['card_balance']);
+    return AppCard(
+      child: Column(
+        children: [
+          Align(
+            alignment: Alignment.topLeft,
+            child: Capsule('校园卡动态码', color: SemColors.success),
+          ),
+          const SizedBox(height: 14),
+          if (_data == null)
+            const SizedBox(
+              width: 220,
+              height: 220,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
+            _qrPlate(_qr()),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('卡余额 ', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+              Text(
+                balance == null ? '—' : '¥${balance.toStringAsFixed(2)}',
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: SemColors.textPrimary),
+              ),
+              const SizedBox(width: 14),
+              Text(
+                _loading ? '刷新中…' : '$_countdown 秒后自动刷新',
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: _loading ? null : _fetch,
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              side: BorderSide(color: SemColors.border),
+              foregroundColor: SemColors.textSecondary,
+            ),
+            child: Text(_loading ? '刷新中…' : '立即刷新'),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '动态码仅供本人付款使用，请勿截图转发',
+            style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+          ),
+        ],
       ),
     );
   }
+
+  /// 取码失败且还没有任何数据时的兜底：错误提示 + 重试。
+  Widget _errorCard() => Column(
+        children: [
+          Icon(Icons.error_outline, size: 44, color: SemColors.danger),
+          const SizedBox(height: 10),
+          Text(_err!, textAlign: TextAlign.center),
+          const SizedBox(height: 14),
+          FilledButton.tonal(onPressed: _fetch, child: const Text('重试')),
+        ],
+      );
 }

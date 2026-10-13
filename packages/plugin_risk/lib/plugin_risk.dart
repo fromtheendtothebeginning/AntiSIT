@@ -4,3 +4,4 @@ library;
 export 'risk_capability_impl.dart';
 export 'risk_notice_page.dart';
 export 'risk_plugin.dart';
+export 'risk_terms.dart';

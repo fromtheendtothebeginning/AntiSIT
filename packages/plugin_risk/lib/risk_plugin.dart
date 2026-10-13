@@ -4,14 +4,17 @@ import 'package:campus_core/campus_core.dart';
 
 import 'risk_capability_impl.dart';
 import 'risk_notice_page.dart';
+import 'risk_terms.dart';
 
-/// 风险提醒：高风险功能（校园码付款码 / 宿舍电费充值）前面的**默认开启**的一道闸。
+/// 风险提醒：受拦截行为（校园码付款码 / 宿舍电费充值）前面的**默认启用**的一道闸。
 ///
-/// * **开启（默认）**：那两项功能不直接放行——付款码的位置换成引导、充值按钮改成
-///   提醒，都指向「插件管理里关掉它」；关之前还要过一遍条款（见 [RiskNoticeCapability]）。
-/// * **关闭**：视为用户自担风险，两项功能立即恢复；插件管理里随时能再开回来。
+/// * **启用（默认）**：那两项行为不予执行——付款码的位置换成引导、充值入口改成
+///   提醒，都指向「插件管理页停用」；停用之前还要经一遍条款确认（见 [RiskNoticeCapability]）。
+/// * **停用**：依《[RiskTerms.title]》第五条，视为用户已同意全部条款，两项行为即行恢复；
+///   插件管理里随时能再启用。
 ///
-/// 自己不联网、不上传任何数据，也不改变账号或卡片状态，只做本机拦截。
+/// 本组件不发起网络请求、不传输用户数据，也不改变账号、卡片与账务，只做本机拦截。
+/// 用户可见的措辞一律取自 [RiskTerms]（法律条文，先定义后使用），本文件不放文案。
 class RiskPlugin extends FeaturePlugin {
   const RiskPlugin();
 
@@ -22,10 +25,10 @@ class RiskPlugin extends FeaturePlugin {
   @override
   String get name => '风险提醒';
   @override
-  String get description => '默认开启：付款码与电费充值先拦一道，关闭前需阅读风险条款';
+  String get description => '默认启用：依《${RiskTerms.title}》不予执行受拦截行为（校园码付款码、宿舍电费充值）';
 
   /// 装进清单就生效。默认值本来就是 true，这里写出来是为了把语义钉死：
-  /// 用户关掉之后由注册表记住这个选择，不会自己再开回来。
+  /// 用户停用之后由注册表记住这个选择，不会自己再启用。
   @override
   bool get defaultEnabled => true;
 
@@ -38,7 +41,7 @@ class RiskPlugin extends FeaturePlugin {
         ListTile(
           leading: const Icon(Icons.shield_outlined),
           title: const Text('风险提醒'),
-          subtitle: const Text('付款码 / 电费充值的拦截与免责声明',
+          subtitle: const Text('受拦截行为的拦截规则与责任条款（全文）',
               style: TextStyle(fontSize: 12)),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context)
