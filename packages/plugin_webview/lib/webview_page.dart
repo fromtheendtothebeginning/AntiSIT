@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -5,17 +7,52 @@ import 'package:campus_core/campus_core.dart';
 
 /// 内核自带的整页浏览器：加载 [url] 或 [html]，带加载进度与出错提示。
 /// 供 [WebViewCapabilityImpl.openPage] 推入导航栈。
+///
+/// 带 [bridge] 时给页面注入一条网页 ↔ App 的通道：内核只管收发（垫片 `antiSIT`
+/// + 原始通道 `antiSITBridge` + Promise 回填），支持哪些方法由 [bridge] 决定。
 class WebViewPage extends StatefulWidget {
-  const WebViewPage({super.key, this.url, this.html, this.title = ''});
+  const WebViewPage({super.key, this.url, this.html, this.title = '', this.bridge});
 
   /// 二选一：[url] 优先；都为空就是空白页。
   final String? url;
   final String? html;
   final String title;
 
+  /// 非空时注入 JS 通道（见 [WebBridge]）。
+  final WebBridge? bridge;
+
   @override
   State<WebViewPage> createState() => _WebViewPageState();
 }
+
+/// 网页里的接口垫片：把 `antiSIT.call/post` 变成一次消息 + 等 Promise 回填。
+///
+/// * 原始通道叫 `antiSITBridge`（内核 `addJavaScriptChannel` 给的名字，**不能**与
+///   垫片自己定义的 `antiSIT` 重名），网页只该用 `antiSIT`；
+/// * 每次导航加载完成后都要重注入（换页后旧上下文连同垫片一起没了）；
+/// * 与 App 的调用约定：`{id, method, args}` → App 回 `__antiSITResolve(id, 值)`
+///   或 `__antiSITReject(id, 错误文案)`。
+const String _kBridgeShim = r'''
+(function () {
+  if (window.antiSIT) return;
+  var seq = 0, waits = {};
+  window.__antiSITResolve = function (id, v) { var w = waits[id]; if (w) { delete waits[id]; w.ok(v); } };
+  window.__antiSITReject = function (id, e) { var w = waits[id]; if (w) { delete waits[id]; w.fail(new Error(e)); } };
+  window.antiSIT = {
+    call: function (method, args) {
+      return new Promise(function (ok, fail) {
+        var id = ++seq;
+        waits[id] = { ok: ok, fail: fail };
+        window.antiSITBridge.postMessage(JSON.stringify({
+          id: id, method: String(method), args: args === undefined ? null : args
+        }));
+      });
+    },
+    // 不需要返回值时用它（内部吞掉错误，别让没接的 Promise 冒到控制台）
+    post: function (method, args) { this.call(method, args).catch(function () {}); }
+  };
+})();
+''';
 
 class _WebViewPageState extends State<WebViewPage> {
   late final WebViewController _controller;
@@ -29,6 +66,7 @@ class _WebViewPageState extends State<WebViewPage> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (p) => mounted ? setState(() => _progress = p / 100) : null,
+        onPageFinished: (_) => _injectBridge(),
         onWebResourceError: (e) {
           // 主文档失败才提示；子资源（图片等）失败不打扰
           if (e.isForMainFrame ?? false) {
@@ -36,6 +74,9 @@ class _WebViewPageState extends State<WebViewPage> {
           }
         },
       ));
+    if (widget.bridge != null) {
+      _controller.addJavaScriptChannel('antiSITBridge', onMessageReceived: _onBridgeCall);
+    }
     _load();
   }
 
@@ -50,6 +91,42 @@ class _WebViewPageState extends State<WebViewPage> {
       await _controller.loadRequest(uri);
     } else if (widget.html != null) {
       await _controller.loadHtmlString(widget.html!);
+    }
+  }
+
+  /// 页面加载完成后注入垫片：网页里才有 `window.antiSIT` 可用。
+  Future<void> _injectBridge() async {
+    if (widget.bridge == null) return;
+    try {
+      await _controller.runJavaScript(_kBridgeShim);
+    } catch (_) {
+      // 注入失败（页面拒绝执行脚本之类）不该把整页搞崩：网页仍可正常使用
+    }
+  }
+
+  /// 网页发来的一次调用：分发 → 把结果（或错误）回填给它那个 Promise。
+  Future<void> _onBridgeCall(JavaScriptMessage message) async {
+    final bridge = widget.bridge;
+    if (bridge == null) return;
+    Object? id;
+    try {
+      final req = jsonDecode(message.message);
+      if (req is! Map) throw const FormatException('调用格式不对');
+      id = req['id'];
+      final result = await bridge.call('${req['method']}', req['args']);
+      await _reply('__antiSITResolve', id, result);
+    } catch (e) {
+      // 分发出错（未知方法 / 参数不对）也要回给网页，否则它的 Promise 永远悬着
+      await _reply('__antiSITReject', id, '$e');
+    }
+  }
+
+  Future<void> _reply(String fn, Object? id, Object? payload) async {
+    try {
+      await _controller
+          .runJavaScript('window.$fn(${jsonEncode(id)}, ${jsonEncode(payload)})');
+    } catch (_) {
+      // 页面已经走了：没人接就没人接
     }
   }
 

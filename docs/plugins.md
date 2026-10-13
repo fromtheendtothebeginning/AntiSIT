@@ -76,6 +76,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_grades` | `grades` | `network` | — | — | ✓ | 工具卡片 |
 | `plugin_timetable` | `timetable` | `network` | `ai`、`reminder` | `ai`、`reminder` | ✓ | 底栏页 + 设置条目 |
 | `plugin_webview` | `webview` | — | — | — | ✓ | 无界面 |
+| `plugin_ext` | `ext` | `webview` | — | `webview` | ✓ | 底栏页 |
 | `plugin_ecard` | `ecard` | `network` | `risk` | `risk` | ✓ | 底栏页 |
 | `plugin_tools` | `tools` | — | — | — | ✓ | 底栏页 |
 | `plugin_ai` | `ai` | `network` | — | — | ✓ | 设置条目 + 启动初始化 |
@@ -193,6 +194,16 @@ const PluginBundle pluginBundle = PluginBundle(providers: [DeepSeekProvider()]);
   对账——**用了却没声明就报错退出**（依赖图上的边因此与代码耦合一一对应）；
   生成的关系表里也有「用到的能力」一列。能力挂在不存在的插件 id 上时，
   由 `PluginRegistry.validateCapabilities` 报成管理页顶部的一条告警。
+
+## 拓展（网页形态的小功能）
+
+「拓展」（`plugin_ext`，**默认关闭**、硬依赖 WebView 内核 `webview`）把网页当小功能挂进
+底栏：用户填网址、导入 html/js/css 压缩包（自动解压 + 内联成自包含页面）或粘贴 JSON 添加，
+发行方还能在源码里放**编译前固定的内置拓展**（用户端只读）。打开网页时内核会注入
+`antiSIT` 通道，网页据此读 App 配色、用自己（按拓展 id 隔离）的本地存储、弹提示、
+关页面——通道契约 `WebBridge` 在 campus_core，内核（`plugin_webview`）只管收发，
+支持哪些方法由前端（`plugin_ext`）决定。写法、接口表与最小示例见
+[拓展（网页形态的小功能）](extensions.md)。
 
 ## 导入一个插件
 

@@ -1,0 +1,22 @@
+name: plugin_ext
+description: "AntiSIT 插件包：ext 功能插件"
+publish_to: 'none'
+version: 0.1.0
+environment:
+  sdk: ^3.9.2
+
+# 与宿主同属一个 pub workspace：根目录一次 `flutter pub get` 解析全部包
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  campus_core:
+    path: ../campus_core
+  # 拓展清单与每个拓展自己的存储都落在本地（plugin.ext.* 前缀）
+  shared_preferences: ^2.5.5
+  # 导入 html/js/css 压缩包：解压到本地后内联成一份自包含页面
+  archive: ^4.0.0
+  path_provider: ^2.1.5
+  # 选压缩包文件
+  file_selector: ^1.0.3

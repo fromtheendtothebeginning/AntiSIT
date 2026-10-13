@@ -31,10 +31,11 @@ class WebViewCapabilityImpl extends WebViewCapability {
     String? url,
     String? html,
     String title = '',
+    WebBridge? bridge,
   }) {
     return Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => WebViewPage(url: url, html: html, title: title),
+        builder: (_) => WebViewPage(url: url, html: html, title: title, bridge: bridge),
       ),
     );
   }
