@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:campus_core/campus_core.dart';
 
 import 'timetable_background.dart';
+import 'timetable_ics_page.dart';
 import 'timetable_settings_page.dart';
 
 /// 课程表：周视图，复刻 anticraft.top 课程表的 Corporate Clean 排版
@@ -65,14 +66,7 @@ class _TimetablePageState extends State<TimetablePage> {
 
   /// 课程/日程的 slotStart/slotEnd = 小节序号（0 起，0-10），与网站渲染一致。
   /// 教务数据实测值域 0-7（含 4-6 这种三节连上），不能按「大节」理解。
-
-  /// 与网站一致的 11 节上课时间（展示用）。
-  static const _slotTimes = [
-    '08:20', '09:10', '10:10', '11:00', '13:00', '13:50', '14:55', '15:45', '18:00', '18:50', '19:40',
-  ];
-  static const _slotEndTimes = [
-    '09:05', '09:55', '10:55', '11:45', '13:45', '14:35', '15:40', '16:30', '18:45', '19:35', '20:25',
-  ];
+  /// 各节上下课时刻见 `TimetableStore.slotStarts` / `slotEnds`（导出日历经同一份表）。
 
   SemesterTt get tt => TimetableStore.instance.semester(xnm, xqm);
   bool _isImported(TtCourse c) => c.id.startsWith('jw-');
@@ -111,7 +105,7 @@ class _TimetablePageState extends State<TimetablePage> {
   void _scheduleFlip() {
     _flip?.cancel();
     final now = DateTime.now();
-    final next = TimetablePage.nextSlotEndAfter(now, _slotEndTimes);
+    final next = TimetablePage.nextSlotEndAfter(now, TimetableStore.slotEnds);
     // 今天剩下的课都结束了就不排（明天的事交给心跳）
     if (next == null) return;
     _flip = Timer(next.difference(now) + const Duration(seconds: 1), () {
@@ -157,7 +151,7 @@ class _TimetablePageState extends State<TimetablePage> {
           startDate: startDate,
           week: week,
           dayIndex: dayIndex,
-          endTimes: _slotEndTimes,
+          endTimes: TimetableStore.slotEnds,
           now: now);
 
   Future<void> _init({bool keepSemester = false}) async {
@@ -536,6 +530,13 @@ class _TimetablePageState extends State<TimetablePage> {
   Future<void> _openSettings() async {
     await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => TimetableSettingsPage(semesterKey: '$xnm-$xqm')));
+    if (mounted) setState(() {});
+  }
+
+  /// 「导出 / 导入日历」：把课表导成 .ics，或把日历文件导进来当日程。
+  Future<void> _openCalendarIo() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => TimetableIcsPage(xnm: xnm, xqm: xqm)));
     if (mounted) setState(() {});
   }
 
@@ -1052,6 +1053,8 @@ class _TimetablePageState extends State<TimetablePage> {
                   _importAll();
                 case 'exams':
                   _importExams();
+                case 'ical':
+                  _openCalendarIo();
                 case 'settings':
                   _openSettings();
                 case 'switch':
@@ -1065,6 +1068,7 @@ class _TimetablePageState extends State<TimetablePage> {
               const PopupMenuItem(value: 'addEvent', child: ListTile(leading: Icon(Icons.schedule_rounded), title: Text('添加日程'), contentPadding: EdgeInsets.zero, dense: true)),
               const PopupMenuItem(value: 'import', child: ListTile(leading: Icon(Icons.cloud_download_outlined), title: Text('教务导入课表'), contentPadding: EdgeInsets.zero, dense: true)),
               const PopupMenuItem(value: 'exams', child: ListTile(leading: Icon(Icons.event_note_outlined), title: Text('导入考试安排'), contentPadding: EdgeInsets.zero, dense: true)),
+              const PopupMenuItem(value: 'ical', child: ListTile(leading: Icon(Icons.ios_share_rounded), title: Text('导出 / 导入日历'), contentPadding: EdgeInsets.zero, dense: true)),
               const PopupMenuItem(value: 'settings', child: ListTile(leading: Icon(Icons.settings_outlined), title: Text('课程表设置'), contentPadding: EdgeInsets.zero, dense: true)),
               const PopupMenuItem(value: 'switch', child: ListTile(leading: Icon(Icons.calendar_month_outlined), title: Text('切换学期'), contentPadding: EdgeInsets.zero, dense: true)),
               if (AppState.I.loggedIn)
@@ -1299,8 +1303,8 @@ class _TimetablePageState extends State<TimetablePage> {
 
   /// 今天最近一节还没上完的课（时间、节次、地点；正在上的标「正在上课」）。
   Widget _nextClassRow(TtCourse c, DateTime now) {
-    final from = _slotTimes[c.slotStart.clamp(0, 10)];
-    final to = _slotEndTimes[c.slotEnd.clamp(0, 10)];
+    final from = TimetableStore.slotStarts[c.slotStart.clamp(0, 10)];
+    final to = TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)];
     final colISO = _todayISO();
     // 正在上课 = 已到上课时刻且还没下课。原来看的是「没下课」这一个条件，于是凌晨/早读前
     // 也会给今天第一节课挂上「正在上课」——课还没开始却写着正在上。
@@ -1558,7 +1562,7 @@ class _TimetablePageState extends State<TimetablePage> {
         : '${int.tryParse(colISO.substring(5, 7)) ?? ''}月${int.tryParse(colISO.substring(8)) ?? ''}日';
 
     final items = <(int, Widget)>[
-      for (final c in courses) (_hm(_slotTimes[c.slotStart.clamp(0, 10)]), _dayCourseCard(c, week, colISO)),
+      for (final c in courses) (_hm(TimetableStore.slotStarts[c.slotStart.clamp(0, 10)]), _dayCourseCard(c, week, colISO)),
       for (final e in events) (_hm(e.start) < 0 ? 0 : _hm(e.start), _dayEventCard(e, isToday, colISO)),
     ]..sort((a, b) => a.$1.compareTo(b.$1));
 
@@ -1631,8 +1635,8 @@ class _TimetablePageState extends State<TimetablePage> {
                 decoration: BoxDecoration(color: _courseColor(c.name), borderRadius: BorderRadius.circular(8)),
                 child: Column(
                   children: [
-                    Text(_slotTimes[rs], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                    Text(_slotEndTimes[re.clamp(0, 10)], style: TextStyle(fontSize: 10, color: SemColors.textSecondary)),
+                    Text(TimetableStore.slotStarts[rs], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                    Text(TimetableStore.slotEnds[re.clamp(0, 10)], style: TextStyle(fontSize: 10, color: SemColors.textSecondary)),
                   ],
                 ),
               ),
@@ -1847,7 +1851,7 @@ class _TimetablePageState extends State<TimetablePage> {
                                               style: TextStyle(
                                                   fontSize: 11, fontWeight: FontWeight.w600,
                                                   color: SemColors.textMuted)),
-                                          Text(_slotTimes[row],
+                                          Text(TimetableStore.slotStarts[row],
                                               style: TextStyle(
                                                   fontSize: 7.5, color: SemColors.textMuted)),
                                         ],
@@ -1988,7 +1992,7 @@ class _TimetablePageState extends State<TimetablePage> {
   /// 这节课是否已上完（置灰依据）：该列**当天日期 + 实际下课时刻**已过。
   /// 不能只看「今天那一列」——本周周一~周三的课在周四看时早已上完，也该置灰（同网站 lessonPassed）。
   bool _isPast(TtCourse c, String colISO) =>
-      TimetableStore.lessonPassed(colISO, _slotEndTimes[c.slotEnd.clamp(0, 10)]);
+      TimetableStore.lessonPassed(colISO, TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)]);
 
   /// 是否淡化已上完的课 / 已结束的日程（「课程表设置 → 上完的课淡化显示」可关）。
   bool get _dimPast => AppState.I.dimCompleted;
@@ -2036,7 +2040,7 @@ class _TimetablePageState extends State<TimetablePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_slotTimes[rowStart.clamp(0, 10)],
+                  Text(TimetableStore.slotStarts[rowStart.clamp(0, 10)],
                       style: TextStyle(
                           fontSize: 9,
                           color: past ? SemColors.textMuted : SemColors.textSecondary)),
@@ -2078,8 +2082,8 @@ class _TimetablePageState extends State<TimetablePage> {
     var first = -1;
     var last = -1;
     for (var s = 0; s <= 10; s++) {
-      final bMin = _hm(_slotTimes[s]);
-      final eMin = _hm(_slotEndTimes[s]);
+      final bMin = _hm(TimetableStore.slotStarts[s]);
+      final eMin = _hm(TimetableStore.slotEnds[s]);
       if (em > bMin && sm < eMin) {
         if (first < 0) first = s;
         last = s;

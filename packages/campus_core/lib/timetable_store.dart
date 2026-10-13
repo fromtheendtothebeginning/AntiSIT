@@ -21,6 +21,15 @@ class TimetableStore {
 
   static const _spKey = 'campus_timetable';
 
+  /// 与网站一致的 11 节上课 / 下课时刻（索引 = 节次序号，0 起）。
+  /// 课表页拿它画节次轴，导出日历拿它算每次课的时刻——必须是同一份表。
+  static const List<String> slotStarts = [
+    '08:20', '09:10', '10:10', '11:00', '13:00', '13:50', '14:55', '15:45', '18:00', '18:50', '19:40',
+  ];
+  static const List<String> slotEnds = [
+    '09:05', '09:55', '10:55', '11:45', '13:45', '14:35', '15:40', '16:30', '18:45', '19:35', '20:25',
+  ];
+
   /// 学期 key：`学年-学期码`（正方：3=第一学期 / 12=第二学期 / 16=短学期）
   Map<String, SemesterTt> semesters = {};
   String active = '';
