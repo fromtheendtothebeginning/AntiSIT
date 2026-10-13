@@ -376,6 +376,50 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('拉到一半再拉回起点松手（取消）：覆盖率要清干净，之后不能留成空白页', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+
+    await backGesture(tester, 'startBackGesture', <String, Object?>{
+      'touchOffset': <double>[5.0, 300.0],
+      'progress': 0.0,
+      'swipeEdge': 0,
+    });
+    await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
+      'x': 5.0 + 0.5 * width,
+      'y': 300.0,
+      'progress': 0.5,
+      'swipeEdge': 0,
+    });
+    // 拉回起点再松手：框架这时不会再跑回位动画，动画通知也就不会再来一次
+    await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
+      'x': 5.0,
+      'y': 300.0,
+      'progress': 0.0,
+      'swipeEdge': 0,
+    });
+    await backGesture(tester, 'cancelBackGesture');
+    await tester.pumpAndSettle();
+
+    expect(predictiveBackCover.value, isNull,
+        reason: '手势结束就得自己把覆盖率清掉，不能停在被盖时那个旧值上');
+
+    // 之后正常退回上一页：上一页必须是正常渲染，而不是「被盖住」那套全透明
+    Navigator.of(tester.element(find.text('第二页'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('第二页'), findsNothing);
+    expect(find.text('push'), findsOneWidget);
+    expect(
+        tester
+            .widgetList<Opacity>(find.ancestor(
+                of: find.text('push'), matching: find.byType(Opacity)))
+            .where((w) => w.opacity == 0),
+        isEmpty,
+        reason: '覆盖率残留会把上一页整页渲染成全透明 —— 那就是用户看到的空白界面');
+  });
+
   testWidgets('手势期间下层页渐进磨砂：前 1/3 最重，2/3 之后不再磨砂', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));

@@ -215,6 +215,10 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     // 松手回弹：路由自己把动画走回去
     widget.route.handleCancelBackGesture();
     if (mounted) setState(() => _phase = _BackPhase.return_);
+    // 兜底收尾：拖回起点才松手时动画值已经是 1.0，框架不会再跑回位动画、
+    // 动画通知也就不会再来——覆盖率会停在被盖时那个旧值上。之后这页（或被盖的
+    // 那一页）一旦成为当前页，就会按「被盖住」渲染成全透明，用户看到的是空白界面。
+    _publishCover();
   }
 
   @override
@@ -225,6 +229,9 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     // 那一跳会同步通知 [_publishCover]，相位还是 drag 的话会被当成拖动值发布。
     if (mounted) setState(() => _phase = _BackPhase.commit);
     widget.route.handleCommitBackGesture();
+    // 兜底收尾：松手时动画值已经在终点（拖到底才松手）时框架不会再跑动画，
+    // 通知也不会再来一次，覆盖率就得在这里自己清掉。
+    _publishCover();
   }
 
   static double _mix(double a, double b, double t) => a + (b - a) * t;
