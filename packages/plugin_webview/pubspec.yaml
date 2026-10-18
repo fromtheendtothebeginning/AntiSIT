@@ -16,3 +16,5 @@ dependencies:
     path: ../campus_core
   # WebView 引擎（内核本体）：Android 用系统 WebView，iOS 用 WKWebView
   webview_flutter: ^4.10.0
+  # 内联页里的外链交给系统浏览器打开（内核不做应用内浏览器）
+  url_launcher: ^6.3.2

@@ -185,6 +185,35 @@ void main() {
           reason: '没写到目标目录外面');
       expect(File(bundle.entry).existsSync(), isTrue);
     });
+
+    test('市场装的拓展：注入的 CSP 默认禁网，声明 network 才放开', () {
+      const page = '<!doctype html><html><head><title>x</title></head><body>hi</body></html>';
+
+      final closed = applyExtensionCsp(page, allowNetwork: false);
+      expect(closed, contains('Content-Security-Policy'));
+      expect(closed, contains("connect-src 'none'"));
+      expect(closed, contains("script-src 'unsafe-inline'"), reason: '内联进来的脚本要能跑');
+      expect(closed, contains("img-src data:"));
+      // 插在 head 之后：CSP 只从它出现的位置往后生效
+      expect(closed.indexOf('<meta http-equiv'), lessThan(closed.indexOf('<title>')));
+      expect(closed.startsWith('<!doctype html>'), isTrue, reason: '别把 doctype 顶掉');
+
+      final open = applyExtensionCsp(page, allowNetwork: true);
+      expect(open, contains('connect-src https:'));
+      expect(open, contains('img-src data: https:'));
+      expect(open, isNot(contains("connect-src 'none'")));
+    });
+
+    test('作者自己写了 CSP 就不动它（不跟人打架）', () {
+      const page = '<html><head><meta http-equiv="Content-Security-Policy" content="default-src self"></head></html>';
+      expect(applyExtensionCsp(page, allowNetwork: false), page);
+    });
+
+    test('没有 head 也插得进去（插在 doctype 之后）', () {
+      final out = applyExtensionCsp('<!doctype html><body>x</body>', allowNetwork: false);
+      expect(out.indexOf('<meta http-equiv'), lessThan(out.indexOf('<body>')));
+      expect(out.startsWith('<!doctype html>'), isTrue);
+    });
   });
 
   testWidgets('三种加法：填网址能加一条，网址不合法就不入列', (tester) async {
@@ -363,6 +392,74 @@ void main() {
     expect(await ExtensionStore.I.dataGet('x1', 'k'), {'n': 1});
     expect(await ExtensionStore.I.dataGet('别的拓展', 'k'), isNull,
         reason: '存储按拓展 id 隔离');
+  });
+
+  group('市场装的拓展（版本 / 来源 / 权限）', () {
+    final installed = ExtensionItem(
+      id: 'sit.demo-counter',
+      name: '记一笔',
+      url: '/data/ext/sit.demo-counter/index.html',
+      desc: '数数小工具',
+      bundled: true,
+      version: '1.0.0',
+      sha256: 'a' * 64,
+      permissions: ['storage'],
+      fromMarket: true,
+    );
+
+    test('市场字段落盘后读得回（重启后还知道自己是市场装的、装的是哪版）', () async {
+      final store = ExtensionStore.I;
+      await store.load();
+      await store.add(installed);
+
+      ExtensionStore.I = ExtensionStore();
+      await ExtensionStore.I.load();
+      final back = ExtensionStore.I.items.single;
+      expect(back.version, '1.0.0');
+      expect(back.sha256, 'a' * 64);
+      expect(back.permissions, ['storage']);
+      expect(back.fromMarket, isTrue);
+      expect(back.urlLine, '插件市场 · v1.0.0', reason: '卡片上写清来源与版本');
+    });
+
+    test('老版本落盘数据（没这些字段）照旧读得回，且不被当成市场装的', () {
+      final old = ExtensionItem.parse(
+          jsonDecode('{"id":"e1","name":"甲","url":"https://a.example.com"}'));
+      expect(old.version, isEmpty);
+      expect(old.permissions, isEmpty);
+      expect(old.fromMarket, isFalse, reason: '来源是你自己填的 → 接口照旧全量');
+      expect(old.urlLine, 'https://a.example.com');
+    });
+
+    test('在 App 里改名 / 接口改卡片，都不该把市场字段弄丢', () async {
+      final store = ExtensionStore.I;
+      await store.load();
+      await store.add(installed);
+
+      await store.update(store.items.single
+          .copyWith(name: '我改的名字', desc: '改过的简介'));
+      await store.setCard('sit.demo-counter', icon: '🧮');
+
+      final after = store.items.single;
+      expect(after.name, '我改的名字');
+      expect(after.version, '1.0.0');
+      expect(after.sha256, 'a' * 64);
+      expect(after.permissions, ['storage'], reason: '权限声明丢了 = 权限门失效');
+      expect(after.fromMarket, isTrue);
+    });
+
+    test('删除拓展把它的键值数据一起清掉（删除弹窗就是这么承诺的）', () async {
+      final store = ExtensionStore.I;
+      await store.load();
+      await store.add(installed);
+      await store.dataSet(installed.id, 'count', 7);
+      await store.dataSet('sit.other', 'count', 9);
+
+      await store.remove(installed.id);
+      expect(await store.dataGet(installed.id, 'count'), isNull);
+      expect(await store.dataGet('sit.other', 'count'), 9, reason: '别的拓展不受影响');
+      expect(store.items, isEmpty);
+    });
   });
 
   testWidgets('给拓展的接口：配色 / 存储 / 未知方法报错', (tester) async {

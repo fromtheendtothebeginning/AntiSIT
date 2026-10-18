@@ -1,15 +1,22 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:campus_core/campus_core.dart';
+
+import 'webview_policy.dart';
 
 /// 内核自带的整页浏览器：加载 [url] 或 [html]，带加载进度与出错提示。
 /// 供 [WebViewCapabilityImpl.openPage] 推入导航栈。
 ///
 /// 带 [bridge] 时给页面注入一条网页 ↔ App 的通道：内核只管收发（垫片 `antiSIT`
 /// + 原始通道 `antiSITBridge` + Promise 回填），支持哪些方法由 [bridge] 决定。
+///
+/// **导航**：内联 html（压缩包拓展）是一份自包含页面，主框架只许走本地方案，
+/// 点到 http(s) 外链会拦下来交给系统浏览器（见 [decideMainFrameNavigation]）；
+/// 网址形态就是普通浏览，不拦。
 class WebViewPage extends StatefulWidget {
   const WebViewPage({super.key, this.url, this.html, this.title = '', this.bridge});
 
@@ -59,6 +66,10 @@ class _WebViewPageState extends State<WebViewPage> {
   double _progress = 0; // 0 = 没在加载
   String? _error;
 
+  /// 这份内容是「内联 html」（压缩包拓展）还是「网址」——导航判定按它分岔。
+  bool get _inline =>
+      widget.html != null && (widget.url == null || widget.url!.trim().isEmpty);
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +78,7 @@ class _WebViewPageState extends State<WebViewPage> {
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (p) => mounted ? setState(() => _progress = p / 100) : null,
         onPageFinished: (_) => _injectBridge(),
+        onNavigationRequest: _onNavigationRequest,
         onWebResourceError: (e) {
           // 主文档失败才提示；子资源（图片等）失败不打扰
           if (e.isForMainFrame ?? false) {
@@ -80,6 +92,36 @@ class _WebViewPageState extends State<WebViewPage> {
     _load();
   }
 
+  /// 导航守卫：内联页里的外链不在这儿加载，交给系统浏览器。
+  Future<NavigationDecision> _onNavigationRequest(NavigationRequest req) async {
+    switch (decideMainFrameNavigation(
+      req.url,
+      isMainFrame: req.isMainFrame,
+      fromInlineHtml: _inline,
+    )) {
+      case NavAction.allow:
+        return NavigationDecision.navigate;
+      case NavAction.openExternal:
+        await _openExternally(req.url);
+        return NavigationDecision.prevent;
+      case NavAction.block:
+        return NavigationDecision.prevent;
+    }
+  }
+
+  /// 用系统浏览器打开（不是应用内）——内联页不做浏览器。
+  Future<void> _openExternally(String url) async {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return;
+    var ok = false;
+    try {
+      ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      ok = false;
+    }
+    if (!ok && mounted) setState(() => _error = '打不开这个链接：$url');
+  }
+
   Future<void> _load() async {
     final url = widget.url;
     if (url != null && url.trim().isNotEmpty) {
@@ -90,7 +132,11 @@ class _WebViewPageState extends State<WebViewPage> {
       }
       await _controller.loadRequest(uri);
     } else if (widget.html != null) {
-      await _controller.loadHtmlString(widget.html!);
+      // 内联页：垫片写进 html 本身，网页第一个同步脚本就能用 antiSIT
+      final html = widget.bridge == null
+          ? widget.html!
+          : injectBridgeShim(widget.html!, _kBridgeShim);
+      await _controller.loadHtmlString(html);
     }
   }
 

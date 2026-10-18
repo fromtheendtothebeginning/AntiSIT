@@ -20,3 +20,10 @@ dependencies:
   path_provider: ^2.1.5
   # 选压缩包文件
   file_selector: ^1.0.3
+  # 插件市场：拉目录 / 下载拓展包
+  http: ^1.5.0
+  # 校验拓展包内容与市场目录签名（sha256 + Ed25519）
+  crypto: ^3.0.0
+  cryptography: ^2.9.0
+  # 市场里「需要升级 App」判断：拿本机版本号跟条目的 minAppVersion 比
+  package_info_plus: ^9.0.1

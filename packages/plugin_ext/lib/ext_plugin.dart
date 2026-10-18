@@ -11,7 +11,8 @@ import 'extensions_page.dart';
 ///   自己打开；打开与否会被记住。
 /// * **依赖 WebView 内核**（[dependencies]）：拓展跑在内核上，所以启用本插件会
 ///   连带启用 `webview`，停用内核会把本插件一起停掉（关系图上是一条实线）。
-/// * 初始**没有任何内置拓展**，清单从空开始，全靠用户自己加（见 [ExtensionStore]）。
+/// * 初始**没有任何内置拓展**，清单从空开始，全靠用户自己加（见 [ExtensionStore]）
+///   或从**插件市场**装（见 `market/`）。
 class ExtPlugin extends FeaturePlugin {
   const ExtPlugin();
 
@@ -22,7 +23,7 @@ class ExtPlugin extends FeaturePlugin {
   @override
   String get name => '拓展';
   @override
-  String get description => '网页形态的小功能：自己填网址或导入 JSON 添加，点开就是对应网页';
+  String get description => '网页形态的小功能：从市场装、自己填网址或导入压缩包，点开就是对应网页';
   @override
   List<String> get dependencies => const [PluginIds.webview];
   @override

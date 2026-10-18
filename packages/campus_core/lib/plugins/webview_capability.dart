@@ -25,7 +25,11 @@ abstract class WebViewCapability extends PluginCapability {
 
   /// 整页打开网页（应用内浏览器样式：标题 + 加载进度 + 出错提示）。
   /// [url] 与 [html] 都为空时直接打开空白页。
-  /// [bridge] 非空时给这页注入 JS 通道：网页里能用内核垫片提供的 `antiSIT` 与 App 通话。
+  /// [bridge] 非空时给这页注入 JS 通道：网页里能用内核垫片提供的 `antiSIT` 与 App 通话
+  /// （给 [html] 时垫片直接写进 html，网页第一个同步脚本就能用；给 [url] 时在加载完成后注入）。
+  ///
+  /// **导航**：[html]（压缩包拓展那种自包含页面）里点到 http(s) 外链不会在应用内加载——
+  /// 拦下来交给系统浏览器，免得通道跟着跳到别人的页面上；[url] 形态就是普通浏览，不拦。
   Future<void> openPage(
     BuildContext context, {
     String? url,

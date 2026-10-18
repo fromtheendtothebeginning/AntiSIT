@@ -4,3 +4,4 @@ library;
 export 'webview_capability_impl.dart';
 export 'webview_page.dart';
 export 'webview_plugin.dart';
+export 'webview_policy.dart';

@@ -205,6 +205,12 @@ const PluginBundle pluginBundle = PluginBundle(providers: [DeepSeekProvider()]);
 支持哪些方法由前端（`plugin_ext`）决定。写法、接口表与最小示例见
 [拓展（网页形态的小功能）](extensions.md)。
 
+同一页里还有第二个标签**「市场」**：从插件市场（网页形态拓展的目录，单独一个仓库）
+发现并安装拓展——装的是同一套 zip，装完就出现在「我的」里。目录必须过**签名校验**
+（公钥内置在 App 里），包必须对得上 sha256 才解压；敏感接口（`storage` / `network`）
+要在清单里声明，安装时列给用户看。目录格式、投稿流程与权限表见
+[拓展 → 插件市场](extensions.md)。
+
 ## 导入一个插件
 
 ```

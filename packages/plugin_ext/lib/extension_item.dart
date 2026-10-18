@@ -3,7 +3,7 @@ import 'dart:convert';
 /// 一条拓展：名字 + 打开内容（远程网址，或导入的压缩包入口）。
 ///
 /// App 端不内置拓展——清单默认只有 [kBuiltinExtensions]（编译前固定，默认为空），
-/// 其余全靠用户自己加（见 [ExtensionStore]）。
+/// 其余全靠用户自己加（见 [ExtensionStore]）或从插件市场装（[fromMarket]）。
 class ExtensionItem {
   const ExtensionItem({
     required this.id,
@@ -13,6 +13,10 @@ class ExtensionItem {
     this.icon = '',
     this.bundled = false,
     this.builtin = false,
+    this.version = '',
+    this.sha256 = '',
+    this.permissions = const [],
+    this.fromMarket = false,
   });
 
   /// 稳定 id：生成一次就跟着数据走（存储、每个拓展的键值数据隔离都按它）。
@@ -42,25 +46,65 @@ class ExtensionItem {
   /// 见 [ExtensionStore.setCard]）。
   final bool builtin;
 
+  /// 市场里装的才有：清单里的版本号（`''` = 不是市场装的 / 没写版本）。
+  /// 更新判定看它——版本变了，或者同版本但 [sha256] 变了（作者重发了同一版），
+  /// 都算「有更新」。
+  final String version;
+
+  /// 市场里装的才有：这份内容的 sha256（清单里记的那个值，装的时候校验过）。
+  final String sha256;
+
+  /// 市场清单里声明的权限（`storage` / `network` 这类敏感接口）。
+  /// **只对 [fromMarket] 的拓展生效**：声明了才放行，没声明就拒（见 `ExtBridge`）。
+  final List<String> permissions;
+
+  /// 来自插件市场。市场装的拓展内容来自别人，接口按 [permissions] 放行；
+  /// 用户自己填网址 / 自己挑压缩包装的照旧能用全套接口（来源是他自己选的）。
+  final bool fromMarket;
+
   /// 自定义图标是不是图片网址（否则按文字 / emoji 渲染）。
   bool get iconIsImage =>
       icon.startsWith('http://') || icon.startsWith('https://');
 
-  /// 换掉卡片上的显示值（网页用 `card.setName` / `setDesc` / `setIcon` 接口改，
-  /// 见 [ExtensionStore.setCard]）；只传要换的字段，null = 保持原值。
-  ExtensionItem withCard({String? name, String? desc, String? icon}) => ExtensionItem(
+  /// 换几个字段（其余原样带走）——[withCard] 与编辑弹窗都走它，
+  /// 免得新增字段时漏掉某处拷贝（市场字段就是这么丢过一次也不该丢）。
+  ExtensionItem copyWith({
+    String? name,
+    String? url,
+    String? desc,
+    String? icon,
+    bool? bundled,
+    String? version,
+    String? sha256,
+    List<String>? permissions,
+    bool? fromMarket,
+  }) =>
+      ExtensionItem(
         id: id,
         name: name ?? this.name,
-        url: url,
+        url: url ?? this.url,
         desc: desc ?? this.desc,
         icon: icon ?? this.icon,
-        bundled: bundled,
+        bundled: bundled ?? this.bundled,
         builtin: builtin,
+        version: version ?? this.version,
+        sha256: sha256 ?? this.sha256,
+        permissions: permissions ?? this.permissions,
+        fromMarket: fromMarket ?? this.fromMarket,
       );
 
-  /// 卡片副标题那行：本地包说明来源，远程拓展直接写网址
+  /// 换掉卡片上的显示值（网页用 `card.setName` / `card.setDesc` / `card.setIcon` 接口改，
+  /// 见 [ExtensionStore.setCard]）；只传要换的字段，null = 保持原值。
+  ExtensionItem withCard({String? name, String? desc, String? icon}) =>
+      copyWith(name: name, desc: desc, icon: icon);
+
+  /// 卡片副标题那行：市场装的写来源与版本、本地包说明来源，远程拓展直接写网址
   /// （要不要显示这一行由「拓展」页右上角的总开关决定，见 ExtensionStore.hideUrls）。
-  String get urlLine => bundled ? '本地导入的压缩包' : url;
+  String get urlLine {
+    if (!bundled) return url;
+    if (!fromMarket) return '本地导入的压缩包';
+    return version.isEmpty ? '插件市场' : '插件市场 · v$version';
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -69,6 +113,10 @@ class ExtensionItem {
         if (desc.isNotEmpty) 'desc': desc,
         if (icon.isNotEmpty) 'icon': icon,
         if (bundled) 'bundled': true,
+        if (version.isNotEmpty) 'version': version,
+        if (sha256.isNotEmpty) 'sha256': sha256,
+        if (permissions.isNotEmpty) 'permissions': permissions,
+        if (fromMarket) 'market': true,
         // builtin 不落盘：只有编译前的固定清单能置这个标记
       };
 
@@ -89,6 +137,8 @@ class ExtensionItem {
 
   /// 解析一条（导入 / 落盘回读）：缺 id 现生成、缺名字用域名、网址必须合法；
   /// `builtin` 一律忽略（只有编译前的固定清单能是内置）。
+  /// 市场字段（version / sha256 / permissions / market）缺省即为「不是市场装的」——
+  /// 老版本的落盘数据就是这么读回来的。
   static ExtensionItem parse(Object? raw) {
     if (raw is! Map) throw const FormatException('每条拓展要是一个 JSON 对象');
     final bundled = raw['bundled'] == true;
@@ -100,6 +150,7 @@ class ExtensionItem {
     }
     final name = '${raw['name'] ?? ''}'.trim();
     final id = '${raw['id'] ?? ''}'.trim();
+    final perms = raw['permissions'];
     return ExtensionItem(
       id: id.isEmpty ? newId() : id,
       name: name.isEmpty ? (bundled ? '本地拓展' : Uri.parse(url).host) : name,
@@ -107,6 +158,10 @@ class ExtensionItem {
       desc: '${raw['desc'] ?? ''}'.trim(),
       icon: '${raw['icon'] ?? ''}'.trim(),
       bundled: bundled,
+      version: '${raw['version'] ?? ''}'.trim(),
+      sha256: '${raw['sha256'] ?? ''}'.trim(),
+      permissions: perms is List ? [for (final p in perms) '$p'] : const [],
+      fromMarket: raw['market'] == true,
     );
   }
 

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -8,13 +7,17 @@ import 'package:campus_core/campus_core.dart';
 
 import 'bundle_import.dart';
 import 'ext_bridge.dart';
+import 'ext_icon.dart';
+import 'ext_open.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
-import 'site_icon.dart';
+import 'market/market_source.dart';
+import 'market/market_view.dart';
 
 /// 「拓展」页：网页形态的小功能，用户自己加进来。
 ///
-/// 三种加法：**填写网址**、**导入压缩包**（html/js/css 三件套，导入后解压成
+/// 两个标签：**我的**（自己加的与装进来的）与**市场**（[MarketView]，从插件市场装）。
+/// 自己加有三种加法：**填写网址**、**导入压缩包**（html/js/css 三件套，导入后解压成
 /// 一份自包含页面）、**导入 JSON**；发行方还能在源码里放编译前固定的内置拓展
 /// （见 [kBuiltinExtensions]，用户端只读）。
 ///
@@ -31,6 +34,9 @@ class ExtensionsPage extends StatefulWidget {
 
 class _ExtensionsPageState extends State<ExtensionsPage> {
   ExtensionStore get _store => ExtensionStore.I;
+
+  /// 0 = 我的，1 = 市场。
+  int _tab = 0;
 
   @override
   void initState() {
@@ -49,9 +55,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     super.dispose();
   }
 
-  /// 内核能力（网页运行基座）：拓展依赖它，停用内核会连带停用本插件。
-  WebViewCapability? get _kernel =>
-      PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
+  // ==================== 打开 ====================
+
+  Future<void> _open(ExtensionItem e) => openExtension(context, e, onMessage: _toast);
+
+  // ==================== 添加 ====================
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -62,39 +70,6 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         behavior: SnackBarBehavior.floating,
       ));
   }
-
-  // ==================== 打开 ====================
-
-  Future<void> _open(ExtensionItem e) async {
-    final kernel = _kernel;
-    if (kernel == null) {
-      _toast('WebView 内核没启用：到「插件管理」里打开它');
-      return;
-    }
-    if (!kernel.available) {
-      _toast('当前平台不支持网页拓展（内核只覆盖 Android / iOS）');
-      return;
-    }
-    // 压缩包导入的：把入口页读出来、同目录 css/js 内联成自包含页面再交给内核
-    String? html;
-    if (e.bundled) {
-      try {
-        html = bundlePageHtml(e.url);
-      } catch (err) {
-        _toast('这个压缩包的内容读不到了（可能被清理过），重新导入一次即可');
-        return;
-      }
-    }
-    await kernel.openPage(
-      context,
-      url: e.bundled ? null : e.url,
-      html: html,
-      title: e.name,
-      bridge: ExtBridge(extId: e.id, context: context),
-    );
-  }
-
-  // ==================== 添加 ====================
 
   Future<void> _addMenu() async {
     final pick = await showModalBottomSheet<String>(
@@ -255,26 +230,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
       case 'edit':
         await _edit(item: e, isNew: false);
       case 'delete':
-        final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('删除「${e.name}」？'),
-            content: Text(
-                e.bundled
-                    ? '会连同导入时解压出来的文件一起删掉，它的本地存储也会清掉。'
-                    : '只是从列表里去掉，网页本身不受影响；它的本地存储也会一起清掉。',
-                style: const TextStyle(fontSize: 13, height: 1.6)),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: SemColors.danger),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('删除'),
-              ),
-            ],
-          ),
-        );
-        if (ok != true) return;
+        if (!await confirmRemoveExtension(context, e)) return;
         await _store.remove(e.id);
         _toast('已删除「${e.name}」');
     }
@@ -290,21 +246,46 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   Widget build(BuildContext context) {
     final items = _store.items;
     final hide = _store.hideUrls;
+    final market = _tab == 1;
     return Scaffold(
       appBar: AppBar(
         title: const Text('拓展'),
-        actions: [
-          IconButton(
-            tooltip: hide ? '显示全部网址' : '隐藏全部网址',
-            onPressed: items.isEmpty ? null : _toggleHideUrls,
-            // 开着时用强调色 + 闭眼图标，一眼看得出当前状态
-            color: hide ? SemColors.accent : null,
-            icon: Icon(hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+        actions: market
+            ? [
+                IconButton(
+                  tooltip: '重新拉市场目录',
+                  onPressed: () => unawaited(MarketSource.I.load(force: true)),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ]
+            : [
+                IconButton(
+                  tooltip: hide ? '显示全部网址' : '隐藏全部网址',
+                  onPressed: items.isEmpty ? null : _toggleHideUrls,
+                  // 开着时用强调色 + 闭眼图标，一眼看得出当前状态
+                  color: hide ? SemColors.accent : null,
+                  icon: Icon(hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                ),
+                IconButton(tooltip: '添加拓展', onPressed: _addMenu, icon: const Icon(Icons.add)),
+              ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: GlassTabs(
+              labels: const ['我的', '市场'],
+              index: _tab,
+              onChanged: (i) => setState(() => _tab = i),
+            ),
           ),
-          IconButton(tooltip: '添加拓展', onPressed: _addMenu, icon: const Icon(Icons.add)),
+          Expanded(
+            child: market
+                ? MarketView(onInstalled: _toast)
+                : (items.isEmpty ? _empty() : _grid(items)),
+          ),
         ],
       ),
-      body: items.isEmpty ? _empty() : _grid(items),
     );
   }
 
@@ -333,7 +314,9 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                     runSpacing: 8,
                     alignment: WrapAlignment.center,
                     children: [
-                      FilledButton.tonal(onPressed: () => _edit(), child: const Text('填写网址')),
+                      FilledButton.tonal(
+                          onPressed: () => setState(() => _tab = 1), child: const Text('去市场看看')),
+                      OutlinedButton(onPressed: () => _edit(), child: const Text('填写网址')),
                       OutlinedButton(onPressed: _importBundle, child: const Text('导入压缩包')),
                       OutlinedButton(onPressed: _importJson, child: const Text('导入 JSON')),
                     ],
@@ -372,7 +355,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
           children: [
             Row(
               children: [
-                _ExtIcon(item: e),
+                ExtIcon(item: e),
                 const Spacer(),
                 if (e.builtin)
                   Padding(
@@ -425,61 +408,6 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
       );
 }
 
-/// 卡片图标：自定义的 emoji / 图片网址优先，其次是网站图标（[SiteIcon]），
-/// 都没有（或拿不到 / 本地压缩包）就用名称首字。
-/// 尺寸与「工具」宫格一致：8 内边距的圆角色块 + 24 的图标。
-class _ExtIcon extends StatelessWidget {
-  const _ExtIcon({required this.item});
-
-  final ExtensionItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget box(Widget child) => Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: SemColors.accent.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: SizedBox(width: 24, height: 24, child: Center(child: child)),
-        );
-
-    final letter = Text(
-      item.name.isEmpty ? '?' : item.name.characters.first.toUpperCase(),
-      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: SemColors.accent),
-    );
-
-    // 自己填的文字 / emoji
-    if (item.icon.isNotEmpty && !item.iconIsImage) {
-      return box(Text(item.icon, style: const TextStyle(fontSize: 20)));
-    }
-    // 自己填的图片网址
-    if (item.iconIsImage) {
-      return box(Image.network(item.icon,
-          width: 24,
-          height: 24,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => letter));
-    }
-    // 本地压缩包没有站点：直接用首字
-    if (item.bundled) return box(letter);
-    // 网站图标：抓到之前 / 抓不到都先显示首字（拿到后自动换成图标）
-    return box(FutureBuilder<Uint8List?>(
-      future: SiteIcon.loader(item.url),
-      builder: (_, snap) {
-        final bytes = snap.data;
-        if (bytes == null || bytes.isEmpty) return letter;
-        return Image.memory(bytes,
-            width: 24,
-            height: 24,
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => letter);
-      },
-    ));
-  }
-}
-
 /// 添加 / 编辑 / 详情弹窗：输入控制器归它的 State 管——弹窗退场动画期间控件还在
 /// 重建，在外面 await 完就 dispose 会撞上「用了已释放的控制器」。
 /// [readOnly] = 内置拓展的详情（只看不改）。校验通过就把 [ExtensionItem] 返回。
@@ -522,15 +450,21 @@ class _AddEditDialogState extends State<_AddEditDialog> {
     final name = _name.text.trim();
     final desc = _desc.text.trim();
     final icon = _icon.text.trim();
+    // 编辑既有条目一律走 copyWith：市场字段（版本 / 哈希 / 权限 / 来源）不能因为
+    // 「在 App 里改了个名字」就丢掉——丢了既看不到更新，权限门也会跟着失效。
+    final base = widget.item ??
+        ExtensionItem(id: ExtensionItem.newId(), name: '', url: url, bundled: _bundled);
     Navigator.pop(
       context,
-      ExtensionItem(
-        id: widget.item?.id ?? ExtensionItem.newId(),
-        name: name.isEmpty ? (_bundled ? '本地拓展' : Uri.parse(url).host) : name,
+      base.copyWith(
+        name: name.isEmpty
+            ? (base.name.isNotEmpty
+                ? base.name
+                : (_bundled ? '本地拓展' : Uri.parse(url).host))
+            : name,
         url: url,
         desc: desc,
         icon: icon,
-        bundled: _bundled,
       ),
     );
   }

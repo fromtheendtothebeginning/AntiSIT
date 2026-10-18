@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'ext_permissions.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
 
@@ -24,15 +25,23 @@ import 'extension_store.dart';
 /// 能立刻看见；用户数据（学号、课表、成绩）**不在**这套接口里，别把用户数据
 /// 交给一个用户自己填的网址。
 class ExtBridge extends WebBridge {
-  ExtBridge({required this.extId, required this.context, ExtensionStore? store})
-      : store = store ?? ExtensionStore.I;
+  ExtBridge({
+    required this.extId,
+    required this.context,
+    this.item,
+    ExtensionStore? store,
+  }) : store = store ?? ExtensionStore.I;
 
   final String extId;
   final BuildContext context;
+
+  /// 这条拓展（权限门按它判断）。传 null / 非市场来源 = 全量放行。
+  final ExtensionItem? item;
   final ExtensionStore store;
 
   @override
   Future<Object?> call(String method, Object? args) async {
+    _checkPermission(method);
     switch (method) {
       case 'theme':
         return _theme();
@@ -59,6 +68,20 @@ class ExtBridge extends WebBridge {
         return true;
       default:
         throw ArgumentError('未知接口：$method');
+    }
+  }
+
+  /// 权限门：市场装的拓展按清单里声明的权限放行，没声明就报错回网页
+  /// （网页侧会 Promise reject，作者一眼看得出是哪条没写）。
+  /// 用户自己填网址 / 自己挑压缩包装的拓展全量放行——来源是他自己选的，
+  /// 我们没资格替他设限；[item] 为空的老调用同理。
+  void _checkPermission(String method) {
+    final it = item;
+    if (it == null || !it.fromMarket) return;
+    final need = kMethodPermissions[method];
+    if (need == null) return;
+    if (!it.permissions.contains(need)) {
+      throw ArgumentError('这条拓展没有声明「${kPermissionLabels[need] ?? need}」权限（$need），接口已拒');
     }
   }
 

@@ -84,7 +84,8 @@ class ExtensionStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 删除：内置的不给删；压缩包导入的连同解压出来的文件一起清掉。
+  /// 删除：内置的不给删；压缩包导入的连同解压出来的文件一起清掉，
+  /// 它的键值数据（`plugin.ext.data.<id>.*`）也一起清——删除弹窗就是这么跟用户说的。
   Future<void> remove(String id) async {
     if (isBuiltin(id)) return;
     final gone = [for (final e in _items) if (e.id == id) e];
@@ -93,6 +94,7 @@ class ExtensionStore extends ChangeNotifier {
     for (final e in gone) {
       if (e.bundled) await _deleteBundle(e.id);
     }
+    await clearData(id);
     notifyListeners();
   }
 
@@ -154,9 +156,14 @@ class ExtensionStore extends ChangeNotifier {
 
   // ==================== 压缩包导入 ====================
 
+  /// 拓展解压目录的根目录从哪儿来（`<文档目录>/ext/<id>`）。
+  /// 单测里 path_provider 没有实现，所以留一个可替换的取目录函数
+  /// （与 `SiteIcon.loader`、`ExtensionStore.I` 同一个套路）。
+  static Future<String> Function() documentsDirectory =
+      () async => (await getApplicationDocumentsDirectory()).path;
+
   /// 某个拓展的解压根目录：`<文档目录>/ext/<id>`。
-  Future<String> bundleDir(String id) async =>
-      '${(await getApplicationDocumentsDirectory()).path}/ext/$id';
+  Future<String> bundleDir(String id) async => '${await documentsDirectory()}/ext/$id';
 
   Future<void> _deleteBundle(String id) async {
     try {
@@ -188,6 +195,17 @@ class ExtensionStore extends ChangeNotifier {
   Future<void> dataRemove(String extId, String key) async {
     final sp = await SharedPreferences.getInstance();
     await sp.remove('$_kDataPrefix$extId.$key');
+  }
+
+  /// 清掉某条拓展的全部键值数据（删除拓展时用）。返回清掉的条数。
+  Future<int> clearData(String extId) async {
+    final sp = await SharedPreferences.getInstance();
+    final prefix = '$_kDataPrefix$extId.';
+    final keys = [for (final k in sp.getKeys()) if (k.startsWith(prefix)) k];
+    for (final k in keys) {
+      await sp.remove(k);
+    }
+    return keys.length;
   }
 
   // ==================== 落盘 ====================

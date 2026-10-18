@@ -132,3 +132,36 @@ String inlineLocalAssets(String html, String? Function(String relative) read) {
 
 bool _isRemote(String ref) =>
     ref.startsWith('http://') || ref.startsWith('https://') || ref.startsWith('//');
+
+/// 给内置页注入一条 CSP（[applyExtensionCsp] 用的策略串）。
+///
+/// **默认禁网**：`zip` 拓展是自包含页面，审核过的那份代码就该是手机上跑的那份——
+/// 不让它运行时再去作者服务器拉新脚本。声明了 `network` 权限才把 connect / 图片 / 字体
+/// 放开到 `https:`。
+///
+/// `script-src 'unsafe-inline'`：页面的脚本是打包时内联进来的，没法给 hash。
+String extensionCsp({required bool allowNetwork}) => allowNetwork
+    ? "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "img-src data: https:; font-src data: https:; media-src https:; "
+        "connect-src https:; form-action 'none'; base-uri 'none'"
+    : "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "img-src data:; font-src data:; connect-src 'none'; "
+        "form-action 'none'; base-uri 'none'";
+
+/// 把上面那条策略塞进 html 的 `<head>`（没有 head 就塞在 `<!doctype>` 之后）。
+///
+/// CSP 只从它出现的位置往后生效，所以要尽量靠前；插在 `<head>` 之后即满足。
+/// 已经带了 CSP 的页面原样返回（不跟作者自己的策略打架）。
+String applyExtensionCsp(String html, {required bool allowNetwork}) {
+  if (RegExp(r'''http-equiv\s*=\s*["']?content-security-policy''', caseSensitive: false)
+      .hasMatch(html)) {
+    return html;
+  }
+  final meta =
+      '<meta http-equiv="Content-Security-Policy" content="${extensionCsp(allowNetwork: allowNetwork)}">';
+  final head = RegExp(r'<head[^>]*>', caseSensitive: false).firstMatch(html);
+  if (head != null) return html.replaceRange(head.end, head.end, meta);
+  final doctype = RegExp(r'<!doctype[^>]*>', caseSensitive: false).firstMatch(html);
+  if (doctype != null) return html.replaceRange(doctype.end, doctype.end, meta);
+  return '$meta$html';
+}
