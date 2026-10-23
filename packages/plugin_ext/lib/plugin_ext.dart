@@ -14,5 +14,7 @@ export 'extensions_page.dart';
 export 'market/market_entry.dart';
 export 'market/market_installer.dart';
 export 'market/market_source.dart';
+export 'market/market_sources.dart';
+export 'market/market_sources_view.dart';
 export 'market/market_view.dart';
 export 'site_icon.dart';

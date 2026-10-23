@@ -517,15 +517,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               const SizedBox(height: 14),
               // 从组件边上挪下来的说明，统一沉到页底
-              PageNotes(lines: [
-                if (st.direct)
+              if (st.direct)
+                PageNotes(lines: [
                   '直连模式：数据由本机直接访问学校系统，不走任何服务器，'
                       '需在校园网 / 校内 VPN 内；登录验证码由 AI 自动识别'
-                      '（可在「AI 设置」里配置），未配置则弹框手动输入。'
-                else if (loggedIn)
-                  '登录态失效会在下次查询时自动重登'
-                      '${st.direct ? '（需输入验证码）' : ''}。',
-              ]),
+                      '（可在「AI 设置」里配置），未配置则弹框手动输入。',
+                ]),
               const SizedBox(height: 6),
               Center(
                 child: Text(

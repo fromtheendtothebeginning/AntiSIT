@@ -45,7 +45,6 @@ class TimetablePlugin extends FeaturePlugin {
         ListTile(
           leading: const Icon(Icons.event_note_outlined),
           title: const Text('课程表设置'),
-          subtitle: const Text('学期 / 调休 / 上课提醒 / 上完的课淡化', style: TextStyle(fontSize: 12)),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context)
               .push(MaterialPageRoute(builder: (_) => const TimetableSettingsPage())),

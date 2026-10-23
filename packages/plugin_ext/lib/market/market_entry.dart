@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+
 /// 市场目录（`market.json`）里的一条：只带「装得下来」需要的东西。
 ///
 /// 目录由维护者签名（见 [MarketSource]），这份解析只负责把它读成对象——
@@ -22,6 +24,8 @@ class MarketEntry {
     required this.size,
     required this.permissions,
     required this.minAppVersion,
+    this.base = '',
+    this.sourceId = '',
   });
 
   final String id;
@@ -50,13 +54,23 @@ class MarketEntry {
   /// 低于它的 App 装不了（`''` = 没要求）。
   final String minAppVersion;
 
+  /// 这条来自哪个源：**官方目录是空串**，第三方源是它解析出来的 base 地址
+  /// （下载时用 `base + zip`，所以 App 不需要为第三方源再准备镜像）。
+  final String base;
+
+  /// 源 id（`''` = 官方目录）。用来判断「同一个 id 是不是换了个源在装」。
+  final String sourceId;
+
+  /// 官方目录（内置签名公钥那条）来的条目。
+  bool get official => sourceId.isEmpty;
+
   bool get isBundle => type == 'bundle';
 
   /// 详情里显示「需要升级 App」用的判断。[appVersion] 形如 `1.16.0`。
   bool needsNewerApp(String appVersion) =>
       minAppVersion.isNotEmpty && compareVersions(appVersion, minAppVersion) < 0;
 
-  static MarketEntry? tryParse(Object? raw) {
+  static MarketEntry? tryParse(Object? raw, {String base = '', String sourceId = ''}) {
     if (raw is! Map) return null;
     String str(String key) => '${raw[key] ?? ''}'.trim();
     final id = str('id');
@@ -80,6 +94,8 @@ class MarketEntry {
       size: size is int ? size : 0,
       permissions: perms is List ? [for (final p in perms) '$p'] : const [],
       minAppVersion: str('minAppVersion'),
+      base: base,
+      sourceId: sourceId,
     );
   }
 
@@ -118,7 +134,7 @@ bool marketHasUpdate({
 }
 
 /// 解析整个目录：返回条目列表；坏条目跳过，坏的整份目录抛错。
-List<MarketEntry> parseCatalog(List<int> bytes) {
+List<MarketEntry> parseCatalog(List<int> bytes, {String base = '', String sourceId = ''}) {
   final raw = jsonDecode(utf8.decode(bytes));
   if (raw is! Map) throw const FormatException('市场目录不是一个 JSON 对象');
   if (raw['schema'] != 1) throw FormatException('市场目录的版本不认识：${raw['schema']}');
@@ -126,10 +142,30 @@ List<MarketEntry> parseCatalog(List<int> bytes) {
   if (list is! List) throw const FormatException('市场目录里没有 extensions');
   final out = <MarketEntry>[];
   for (final item in list) {
-    final e = MarketEntry.tryParse(item);
+    final e = MarketEntry.tryParse(item, base: base, sourceId: sourceId);
     if (e != null && e.usable) out.add(e);
   }
   return out;
+}
+
+/// 目录里自报的公钥（第三方源自带；官方目录没有，用 App 内置的那把）。
+String catalogPublicKeyOf(List<int> bytes) {
+  final raw = jsonDecode(utf8.decode(bytes));
+  if (raw is! Map) throw const FormatException('市场目录不是一个 JSON 对象');
+  return '${raw['publicKey'] ?? ''}'.trim();
+}
+
+/// 公钥指纹：`sha256(公钥字节)` 前 12 位，按 4 位分组（`A1B2-C3D4-E5F6`）。
+/// **与市场仓库 `market_tool` 的 `keyFingerprint` 必须一致**——作者公布的指纹
+/// 就是它，用户添加源时核对的也是它。
+String keyFingerprintOf(String publicKeyBase64) {
+  try {
+    final hex = sha256.convert(base64Decode(publicKeyBase64)).toString().toUpperCase();
+    if (hex.length < 12) return '(公钥无效)';
+    return '${hex.substring(0, 4)}-${hex.substring(4, 8)}-${hex.substring(8, 12)}';
+  } catch (_) {
+    return '(公钥无效)';
+  }
 }
 
 /// 目录声明的密钥 id（验签时用来挑公钥）。

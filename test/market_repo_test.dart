@@ -71,14 +71,56 @@ void main() {
     final entries = parseCatalog(signer);
     final byId = {for (final e in entries) e.id: e};
 
-    expect(byId.keys, containsAll(['sit.demo-counter', 'sit.game-2048', 'sit.game-minesweeper']));
-    expect(byId['sit.demo-counter']!.permissions, contains('storage'));
+    expect(byId.keys, containsAll(['sit.game-2048', 'sit.game-minesweeper']));
     expect(byId['sit.game-2048']!.permissions, contains('storage'), reason: '最高分要落盘');
     expect(byId['sit.game-minesweeper']!.permissions, isEmpty,
         reason: '扫雷不存数据不联网，正好当「零权限插件」的样例');
     expect(byId['sit.game-2048']!.needsNewerApp('1.15.0'), isTrue, reason: '要求 1.16.0 以上的 App');
     expect(byId['sit.game-2048']!.needsNewerApp('1.16.0'), isFalse);
   }, skip: skip);
+
+  // ==================== 第三方源（作者自己发的那种） ====================
+
+  // 这个 fixture 是拿市场仓库的工具现造的（`dart run tool/market_tool.dart publish`，
+  // 见市场仓库 .verify-author-source/，gitignore 掉了）。它专门盯**工具与 App 之间的
+  // 字段名/格式约定**：目录里的 `publicKey` 叫什么、指纹怎么算、zip 能不能解开。
+  // 造过一次之后就有得测；没造过就跳过。
+  final authorRepo = Directory('../AntiSIT-market/.verify-author-source');
+  final authorSkip = !File('${authorRepo.path}/market.json').existsSync()
+      ? '旁边没有造过作者 fixture（市场仓库里跑 publish 生成 .verify-author-source/）'
+      : null;
+
+  test('作者源：工具写的目录，App 读得懂、验得过、装得下', () async {
+    final bytes = File('${authorRepo.path}/market.json').readAsBytesSync();
+    final sig = File('${authorRepo.path}/market.json.sig').readAsStringSync().trim();
+
+    // 1) 工具内嵌的公钥：字段名与 App 的解析必须一致（跨仓库最容易悄悄错位的地方）
+    final publicKey = catalogPublicKeyOf(bytes);
+    expect(publicKey, isNotEmpty, reason: '作者源的目录要内嵌公钥');
+    final fingerprint = keyFingerprintOf(publicKey);
+    expect(fingerprint, matches(RegExp(r'^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$')));
+    // ignore: avoid_print
+    print('App 算出的指纹：$fingerprint（应与工具 publish 打印的一致）');
+
+    // 2) 用内嵌公钥验签（完整性）
+    expect(await verifyCatalogSignature(bytes, signature: sig, publicKey: publicKey), isTrue);
+
+    // 3) 解析成条目：非官方来源、base 指向该源、产物哈希对得上
+    const base = 'https://cdn.jsdelivr.net/gh/someone/author-demo@main/';
+    final entries = parseCatalog(bytes, base: base, sourceId: ExtSourceStore.sourceIdFor(base));
+    expect(entries, isNotEmpty);
+    for (final e in entries) {
+      expect(e.official, isFalse, reason: '第三方条目');
+      expect(e.base, base);
+      if (!e.isBundle) continue;
+      final zip = File('${authorRepo.path}/${e.zip}').readAsBytesSync();
+      expect(sha256.convert(zip).toString(), e.sha256, reason: '${e.id} 的哈希与目录一致');
+      final dir = Directory.systemTemp.createTempSync('author_ext');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final bundle = extractBundle(bytes: zip, dir: '${dir.path}/${e.id}');
+      expect(File(bundle.entry).existsSync(), isTrue, reason: '工具打的包 App 解得开');
+    }
+  }, skip: authorSkip);
 
   // 上面两条需要真仓库；这条只用 stub，放在最后免得跳过逻辑看花眼
   testWidgets('市场页能画出真实目录里的条目', (tester) async {
@@ -92,9 +134,9 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: Scaffold(body: MarketView())));
     await tester.pumpAndSettle();
 
-    for (final name in ['记一笔', '2048', '扫雷']) {
+    for (final name in ['2048', '扫雷']) {
       expect(find.text(name), findsOneWidget, reason: '真实目录里的「$name」画出来了');
     }
-    expect(find.text('安装'), findsNWidgets(3), reason: '三条都还没装');
+    expect(find.text('安装'), findsNWidgets(2), reason: '两条都还没装');
   }, skip: skip != null);
 }

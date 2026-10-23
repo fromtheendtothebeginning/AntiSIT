@@ -38,10 +38,19 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   /// 0 = 我的，1 = 市场。
   int _tab = 0;
 
+  /// 滑块的连续位置 / 页面区域拖动中的位置（与连接设置、主界面切页同一套）。
+  final ValueNotifier<double> _tabPos = ValueNotifier<double>(0);
+  final ValueNotifier<double?> _tabDrag = ValueNotifier<double?>(null);
+
+  /// 市场页第一次要被看到时再建：拓展页会被主界面离屏预建，
+  /// 一上来就建它会把市场目录的网络请求带到启动阶段。
+  bool _marketMounted = false;
+
   @override
   void initState() {
     super.initState();
     _store.addListener(_onChanged);
+    _tabPos.value = _tab.toDouble();
     if (!_store.loaded) unawaited(_store.load());
   }
 
@@ -52,6 +61,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   @override
   void dispose() {
     _store.removeListener(_onChanged);
+    _tabPos.dispose();
+    _tabDrag.dispose();
     super.dispose();
   }
 
@@ -238,6 +249,41 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   // ==================== 界面 ====================
 
+  void _setTab(int i) {
+    if (i == _tab) return;
+    if (i == 1) _marketMounted = true;
+    setState(() => _tab = i);
+  }
+
+  // ── 页面区域左右滑动切「我的 / 市场」（与主界面、连接设置同一套：
+  //    拖过一半就换，快速甩动借动量多滑一格；页面内部接住横滑的照旧优先）──
+
+  void _onTabDragStart(DragStartDetails _) {
+    _tabDrag.value = _tabPos.value;
+    // 邻页得在树里才能跟着滑进来
+    if (!_marketMounted) setState(() => _marketMounted = true);
+  }
+
+  void _onTabDragUpdate(DragUpdateDetails d) {
+    final w = MediaQuery.sizeOf(context).width;
+    if (w <= 0) return;
+    // 内容往左拖 = 去下一格
+    final next = ((_tabDrag.value ?? _tabPos.value) - d.delta.dx / w).clamp(0.0, 1.0);
+    _tabDrag.value = next;
+    // 「界面实时跟着滑块切换」关掉时等松手落位再换
+    if (AppState.I.followSlider) _setTab(next.round());
+  }
+
+  void _onTabDragEnd(DragEndDetails d) {
+    final w = MediaQuery.sizeOf(context).width;
+    final v = (-d.velocity.pixelsPerSecond.dx / (w <= 0 ? 1 : w)).clamp(-8.0, 8.0);
+    var target = (_tabDrag.value ?? _tabPos.value).round().clamp(0, 1);
+    final next = target + (v > 0 ? 1 : -1);
+    if (v.abs() >= 5.0 && next >= 0 && next <= 1) target = next;
+    _tabDrag.value = null; // 交还弹簧：滑块从当前位置弹到落点
+    _setTab(target);
+  }
+
   /// 隐藏全部网址的总开关（卡片上那一行直接不显示，详情里照旧能看到）。
   /// 藏在标题栏是因为它管的是「整页要不要露网址」，摆在页面上会一直占位置。
   Future<void> _toggleHideUrls() => _store.setHideUrls(!_store.hideUrls);
@@ -247,6 +293,12 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     final items = _store.items;
     final hide = _store.hideUrls;
     final market = _tab == 1;
+    // 两页都留在树里：横滑时一起位移，State（搜索词、滚动位置）也不会切走就丢。
+    // 市场页仍按需挂载，见 _marketMounted。
+    final panels = <Widget>[
+      items.isEmpty ? _empty() : _grid(items),
+      if (market || _marketMounted) MarketView(onInstalled: _toast),
+    ];
     return Scaffold(
       appBar: AppBar(
         title: const Text('拓展'),
@@ -276,13 +328,43 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             child: GlassTabs(
               labels: const ['我的', '市场'],
               index: _tab,
-              onChanged: (i) => setState(() => _tab = i),
+              position: _tabPos,
+              dragPosition: _tabDrag,
+              onChanged: _setTab,
             ),
           ),
           Expanded(
-            child: market
-                ? MarketView(onInstalled: _toast)
-                : (items.isEmpty ? _empty() : _grid(items)),
+            child: GestureDetector(
+              // translucent：页面空白处也能起手势；内层真接住横滑的（搜索框选词等）优先
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragStart: _onTabDragStart,
+              onHorizontalDragUpdate: _onTabDragUpdate,
+              onHorizontalDragEnd: _onTabDragEnd,
+              onHorizontalDragCancel: () => _tabDrag.value = null,
+              child: ValueListenableBuilder<double>(
+                valueListenable: _tabPos,
+                builder: (context, rawPos, _) {
+                  // 开关关掉时界面不跟滑块连续滑，只按已落位的那一格显示（松手才换）
+                  final pos = AppState.I.followSlider ? rawPos : _tab.toDouble();
+                  final w = MediaQuery.sizeOf(context).width;
+                  return Stack(
+                    children: [
+                      for (var k = 0; k < panels.length; k++)
+                        Positioned.fill(
+                          // 只画当前页和拖动时露出的邻页
+                          child: Offstage(
+                            offstage: (k - pos).abs() >= 0.999,
+                            child: Transform.translate(
+                              offset: Offset((k - pos) * w, 0),
+                              child: panels[k],
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),
@@ -335,16 +417,18 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         ),
       );
 
-  Widget _grid(List<ExtensionItem> items) => GridView.count(
-        crossAxisCount: 2,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 1.16,
+  Widget _grid(List<ExtensionItem> items) => GridView.builder(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-        children: [
-          for (final e in items) _card(e),
-          _addCard(),
-        ],
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          // 卡片内容高度基本固定（图标行 + 名称 + 两行简介 + 网址）；
+          // 按宽度算的宽高比在窄屏会压扁卡片，把简介 / 网址挤出圆角外
+          mainAxisExtent: 176,
+        ),
+        itemCount: items.length + 1,
+        itemBuilder: (_, i) => i == items.length ? _addCard() : _card(items[i]),
       );
 
   Widget _card(ExtensionItem e) => AppCard(
@@ -377,12 +461,17 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             if (e.desc.isNotEmpty) ...[
               const SizedBox(height: 3),
-              Text(e.desc,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, height: 1.4, color: SemColors.textSecondary)),
-            ],
-            const Spacer(),
+              // 简介吃掉剩余高度：系统字体放大时缩成一行，而不是把整列撑出卡片
+              Flexible(
+                child: Text(e.desc,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 11.5, height: 1.4, color: SemColors.textSecondary)),
+              ),
+              const SizedBox(height: 4),
+            ] else
+              const Spacer(),
             if (!_store.hideUrls)
               Text(e.urlLine,
                   maxLines: 1,

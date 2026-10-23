@@ -7,6 +7,7 @@ import '../extension_item.dart';
 import '../extension_store.dart';
 import 'market_entry.dart';
 import 'market_source.dart';
+import 'market_sources.dart';
 
 /// 把市场里的条目装进本地清单。
 ///
@@ -20,6 +21,17 @@ class MarketInstaller {
 
   final ExtensionStore store;
   final MarketSource source;
+
+  /// 下载某条拓展的内容：官方目录走内置镜像，第三方源走条目自己的地址。
+  /// 测试里可以换掉它（默认实现两条路都覆盖了）。
+  Future<List<int>> Function(MarketEntry entry)? downloadOverride;
+
+  Future<List<int>> download(MarketEntry entry) {
+    final custom = downloadOverride;
+    if (custom != null) return custom(entry);
+    if (!entry.official) return ExtSourceStore.I.download(entry);
+    return source.download(entry.zip);
+  }
 
   ExtensionItem? installed(String id) {
     for (final e in store.items) {
@@ -53,6 +65,13 @@ class MarketInstaller {
       throw StateError('「${entry.name}」的 id 与内置拓展冲突（${entry.id}），装不了');
     }
     final have = installed(entry.id);
+    // 同一个 id 只能由一个源管：否则第三方源可以拿官方拓展的 id 把已装的内容顶掉
+    if (have != null && have.sourceId != entry.sourceId) {
+      final from = have.sourceId.isEmpty ? '官方目录' : have.sourceId;
+      final to = entry.sourceId.isEmpty ? '官方目录' : entry.sourceId;
+      throw StateError('这条拓展（${entry.id}）已经由「$from」装着了，'
+          '不能换到「$to」上装——要先卸载它');
+    }
 
     if (!entry.isBundle) {
       if (have != null) return have; // 网址型：装过就是装过
@@ -64,12 +83,13 @@ class MarketInstaller {
         icon: entry.icon,
         permissions: entry.permissions,
         fromMarket: true,
+        sourceId: entry.sourceId,
       );
       await store.add(item);
       return item;
     }
 
-    final bytes = await source.download(entry.zip);
+    final bytes = await download(entry);
     final actual = sha256.convert(bytes).toString();
     if (actual != entry.sha256) {
       throw StateError('下载到的内容和市场记录的不一致（可能被改过 / 没下完），已放弃安装');
@@ -98,6 +118,7 @@ class MarketInstaller {
         sha256: entry.sha256,
         permissions: entry.permissions,
         fromMarket: true,
+        sourceId: entry.sourceId,
       );
       await store.add(item);
     } else {
@@ -109,6 +130,7 @@ class MarketInstaller {
         sha256: entry.sha256,
         permissions: entry.permissions,
         fromMarket: true,
+        sourceId: entry.sourceId,
       );
       await store.update(item);
     }

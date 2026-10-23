@@ -25,7 +25,7 @@ class RiskPlugin extends FeaturePlugin {
   @override
   String get name => '风险提醒';
   @override
-  String get description => '默认启用：依《${RiskTerms.title}》不予执行受拦截行为（校园码付款码、宿舍电费充值）';
+  String get description => '默认启用：校园码付款码、宿舍电费充值等行为依《${RiskTerms.title}》不予执行';
 
   /// 装进清单就生效。默认值本来就是 true，这里写出来是为了把语义钉死：
   /// 用户停用之后由注册表记住这个选择，不会自己再启用。
@@ -41,7 +41,7 @@ class RiskPlugin extends FeaturePlugin {
         ListTile(
           leading: const Icon(Icons.shield_outlined),
           title: const Text('风险提醒'),
-          subtitle: const Text('受拦截行为的拦截规则与责任条款（全文）',
+          subtitle: const Text('拦截规则与责任条款（全文）',
               style: TextStyle(fontSize: 12)),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context)

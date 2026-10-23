@@ -17,6 +17,7 @@ class ExtensionItem {
     this.sha256 = '',
     this.permissions = const [],
     this.fromMarket = false,
+    this.sourceId = '',
   });
 
   /// 稳定 id：生成一次就跟着数据走（存储、每个拓展的键值数据隔离都按它）。
@@ -62,6 +63,10 @@ class ExtensionItem {
   /// 用户自己填网址 / 自己挑压缩包装的照旧能用全套接口（来源是他自己选的）。
   final bool fromMarket;
 
+  /// 装它的是哪个源：官方目录是 `''`，第三方源是那个源的 id。
+  /// 用来挡住「另一个源拿同一个 id 把已装的插件顶掉」——同一 id 换源装会被拒。
+  final String sourceId;
+
   /// 自定义图标是不是图片网址（否则按文字 / emoji 渲染）。
   bool get iconIsImage =>
       icon.startsWith('http://') || icon.startsWith('https://');
@@ -78,6 +83,7 @@ class ExtensionItem {
     String? sha256,
     List<String>? permissions,
     bool? fromMarket,
+    String? sourceId,
   }) =>
       ExtensionItem(
         id: id,
@@ -91,6 +97,7 @@ class ExtensionItem {
         sha256: sha256 ?? this.sha256,
         permissions: permissions ?? this.permissions,
         fromMarket: fromMarket ?? this.fromMarket,
+        sourceId: sourceId ?? this.sourceId,
       );
 
   /// 换掉卡片上的显示值（网页用 `card.setName` / `card.setDesc` / `card.setIcon` 接口改，
@@ -117,6 +124,7 @@ class ExtensionItem {
         if (sha256.isNotEmpty) 'sha256': sha256,
         if (permissions.isNotEmpty) 'permissions': permissions,
         if (fromMarket) 'market': true,
+        if (sourceId.isNotEmpty) 'source': sourceId,
         // builtin 不落盘：只有编译前的固定清单能置这个标记
       };
 
@@ -162,6 +170,7 @@ class ExtensionItem {
       sha256: '${raw['sha256'] ?? ''}'.trim(),
       permissions: perms is List ? [for (final p in perms) '$p'] : const [],
       fromMarket: raw['market'] == true,
+      sourceId: '${raw['source'] ?? ''}'.trim(),
     );
   }
 

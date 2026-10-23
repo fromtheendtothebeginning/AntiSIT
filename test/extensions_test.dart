@@ -11,8 +11,8 @@ import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_webview/plugin_webview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「拓展」（底栏页，默认关闭、硬依赖 WebView 内核）的验收：
-/// * 默认关闭；启用它会连带启用内核，停用内核会连带停掉它（关系图实线的语义）；
+/// 「拓展」（底栏页，默认开启、硬依赖 WebView 内核）的验收：
+/// * 默认开启（内核也随之开启）；停用内核会连带停掉它（关系图实线的语义）；
 /// * 页面初始为空，三种加法：填网址 / 导入压缩包 / 导入 JSON；
 /// * 压缩包：解压 + 入口识别 + css/js 内联成自包含页面 + zip-slip 防护；
 /// * 卡片：favicon 默认图标 / 自定义 emoji 或图片 / 简介 / 网址（标题栏总开关可一下全隐藏）；
@@ -71,11 +71,9 @@ void main() {
   Uint8List fakePng() => base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
 
-  test('默认关闭 + 硬依赖内核：启用连带打开内核，停用内核连带停掉拓展', () async {
-    expect(PluginRegistry.I.isEnabled('ext'), isFalse, reason: '默认关闭，先不占底栏');
-
-    final on = await PluginRegistry.I.enable('ext');
-    expect(on, containsAll(<String>['ext', 'webview']), reason: '启用拓展要连带启用内核');
+  test('默认开启 + 硬依赖内核：装好即可用，停用内核连带停掉拓展', () async {
+    expect(PluginRegistry.I.isEnabled('ext'), isTrue, reason: '默认开启，底栏直接有「拓展」');
+    expect(PluginRegistry.I.isEnabled(PluginIds.webview), isTrue, reason: '内核跟着一起开');
     expect(PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview), isNotNull);
 
     final labels = [
@@ -286,6 +284,43 @@ void main() {
         .widget<Container>(find.ancestor(of: img, matching: find.byType(Container)).first)
         .padding;
     expect(pad, const EdgeInsets.all(8), reason: '与工具宫格同一个 8 内边距');
+  });
+
+  testWidgets('窄屏长简介不撑破卡片', (tester) async {
+    // 回归：卡片高度曾按宽度算宽高比（1.16），360dp 屏上两行简介 + 网址会溢出圆角外
+    tester.view.physicalSize = const Size(720, 1600);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+
+    await PluginRegistry.I.enable('ext');
+    await ExtensionStore.I.add(const ExtensionItem(
+      id: 'e1',
+      name: '查空教室',
+      url: 'https://a.example.com/tool',
+      desc: '按教学楼和节次查当前空闲的教室，数据来自教务系统，支持上午下午晚上三段查询',
+    ));
+    await tester.pumpWidget(const MaterialApp(home: ExtensionsPage()));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: '简介 / 网址不能画出卡片外');
+  });
+
+  testWidgets('左右滑动切换「我的 / 市场」（与主界面同一套）', (tester) async {
+    await PluginRegistry.I.enable('ext');
+    await pumpPage(tester);
+    expect(find.text('还没有拓展'), findsOneWidget);
+
+    // 往左拖过半屏 → 市场
+    await tester.drag(find.text('还没有拓展'), const Offset(-400, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget, reason: '已经切到市场页');
+    expect(find.text('还没有拓展'), findsNothing, reason: '我的页已滑出（离屏不参与查找）');
+
+    // 往右拖回去 → 我的（从列表空白处起手，避开搜索框的选词手势）
+    await tester.dragFrom(const Offset(270, 900), const Offset(400, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('还没有拓展'), findsOneWidget, reason: '切回我的页');
+    expect(find.text('搜名称 / 简介 / 作者'), findsNothing);
   });
 
   testWidgets('总开关：一下隐藏全部网址，详情里仍能看全，再点一下恢复', (tester) async {

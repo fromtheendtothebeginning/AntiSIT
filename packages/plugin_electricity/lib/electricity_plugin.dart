@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:campus_core/campus_core.dart';
 import 'electricity_page.dart';
 
-/// 宿舍电费：余额查询、充值、历史余额折线图。
+/// 宿舍电费：查余额、充值、历史余额曲线。
 class ElectricityPlugin extends FeaturePlugin {
   const ElectricityPlugin();
 
@@ -14,7 +14,7 @@ class ElectricityPlugin extends FeaturePlugin {
   @override
   String get name => '宿舍电费';
   @override
-  String get description => '余额查询、充值、历史余额折线图';
+  String get description => '查余额、充值、看历史余额曲线';
   @override
   List<String> get dependencies => const [PluginIds.network];
 

@@ -15,7 +15,7 @@ class ToolsPlugin extends FeaturePlugin {
   @override
   String get name => '工具中心';
   @override
-  String get description => '汇聚成绩 / 考试 / 二课 / 电费等工具的宫格页；没有任何工具启用时自动从底栏隐藏';
+  String get description => '已启用工具的宫格入口；一个工具都没有时自动从底栏隐藏';
 
   @override
   List<PluginNavItem> navItems(registry, tab) {

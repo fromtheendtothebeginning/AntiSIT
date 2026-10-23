@@ -12,6 +12,8 @@ import '../ext_permissions.dart';
 import 'market_entry.dart';
 import 'market_installer.dart';
 import 'market_source.dart';
+import 'market_sources.dart';
+import 'market_sources_view.dart';
 
 /// 「插件市场」页（拓展页里的第二个标签）：
 /// 列出市场目录里的拓展，装 / 更新 / 打开 / 卸载。
@@ -36,17 +38,23 @@ class _MarketViewState extends State<MarketView> {
 
   MarketSource get _source => MarketSource.I;
 
+  /// 用户添加的第三方源（作者自己发的那种，见 market_sources.dart）。
+  ExtSourceStore get _sources => ExtSourceStore.I;
+
   @override
   void initState() {
     super.initState();
     _source.addListener(_onChanged);
+    _sources.addListener(_onChanged);
     if (_source.status == MarketStatus.idle) unawaited(_source.load());
+    if (!_sources.loaded) unawaited(_sources.load());
     unawaited(_readAppVersion());
   }
 
   @override
   void dispose() {
     _source.removeListener(_onChanged);
+    _sources.removeListener(_onChanged);
     _search.dispose();
     super.dispose();
   }
@@ -77,10 +85,13 @@ class _MarketViewState extends State<MarketView> {
 
   // ==================== 过滤 ====================
 
+  /// 官方目录 + 所有第三方源（第三方排在后面，卡片上标来源）。
+  List<MarketEntry> get _all => [..._source.entries, ..._sources.allEntries];
+
   List<MarketEntry> get _visible {
     final q = _search.text.trim().toLowerCase();
     return [
-      for (final e in _source.entries)
+      for (final e in _all)
         if ((_category == '全部' || e.category == _category) &&
             (q.isEmpty ||
                 e.name.toLowerCase().contains(q) ||
@@ -92,7 +103,7 @@ class _MarketViewState extends State<MarketView> {
   }
 
   List<String> get _categories {
-    final have = {for (final e in _source.entries) e.category};
+    final have = {for (final e in _all) e.category};
     return [
       '全部',
       for (final c in ['学习', '工具', '生活', '娱乐', '其他'])
@@ -146,7 +157,12 @@ class _MarketViewState extends State<MarketView> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _kv('来源', '插件市场 · ${e.author.isEmpty ? '佚名' : e.author}'),
+              _kv(
+                  '来源',
+                  e.official
+                      ? '插件市场 · ${e.author.isEmpty ? '佚名' : e.author}'
+                      : '第三方源 · ${_sources.byId(e.sourceId)?.label ?? e.sourceId}'
+                          '${e.author.isEmpty ? '' : '（${e.author}）'}'),
               if (e.version.isNotEmpty) _kv('版本', update ? '${installed?.version} → ${e.version}' : e.version),
               if (e.isBundle && e.size > 0) _kv('大小', _size(e.size)),
               _kv('分类', e.category),
@@ -168,6 +184,11 @@ class _MarketViewState extends State<MarketView> {
                         style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.5)),
                   ),
               const SizedBox(height: 10),
+              if (!e.official) ...[
+                Text('第三方源：内容由作者自己发布，没有经过官方审核（收录 ≠ 背书）。',
+                    style: TextStyle(fontSize: 11.5, color: SemColors.danger, height: 1.6)),
+                const SizedBox(height: 6),
+              ],
               Text(
                 e.isBundle
                     ? (update
@@ -202,13 +223,14 @@ class _MarketViewState extends State<MarketView> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverToBoxAdapter(child: _top()),
-              if (_source.status == MarketStatus.ready)
-                _visible.isEmpty
-                    ? SliverToBoxAdapter(child: _empty())
-                    : SliverList.builder(
-                        itemCount: _visible.length,
-                        itemBuilder: (_, i) => _card(_visible[i]),
-                      )
+              // 官方目录拉不到时，第三方源照样要能列（一个源坏掉不该带崩整页）
+              if (_visible.isNotEmpty)
+                SliverList.builder(
+                  itemCount: _visible.length,
+                  itemBuilder: (_, i) => _card(_visible[i]),
+                )
+              else if (_source.status == MarketStatus.ready)
+                SliverToBoxAdapter(child: _empty())
               else
                 const SliverToBoxAdapter(child: SizedBox(height: 0)),
             ],
@@ -263,6 +285,30 @@ class _MarketViewState extends State<MarketView> {
                 ],
               ),
             ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () => showSourceSheet(context, onMessage: _say),
+                  icon: const Icon(Icons.dns_outlined, size: 16),
+                  label: Text(
+                    _sources.sources.isEmpty
+                        ? '插件源：只有官方目录'
+                        : '插件源：官方 + ${_sources.sources.length} 个第三方',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                const Spacer(),
+                if (_sources.sources.isNotEmpty)
+                  TextButton(
+                    onPressed: _sources.refreshing ? null : () => unawaited(_sources.refresh()),
+                    child: const Text('刷新源', style: TextStyle(fontSize: 12)),
+                  ),
+              ],
+            ),
+            for (final src in _sources.sources)
+              if (_sources.errorsBySource.containsKey(src.id))
+                _sourceErrorBox(src.label, _sources.errorsBySource[src.id]!),
             if (_source.status == MarketStatus.failed) _errorBox(),
             if (_source.status == MarketStatus.ready && _source.fromCache)
               _noteBox('网络没通，用的是上次缓存的目录（${_when(_source.fetchedAt)}）'),
@@ -299,6 +345,44 @@ class _MarketViewState extends State<MarketView> {
         padding: const EdgeInsets.only(top: 10),
         child: Text(text,
             style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6)),
+      );
+
+  Widget _sourceErrorBox(String label, String message) => Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: AppCard(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.error_outline, size: 16, color: SemColors.danger),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('源「$label」用不了',
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: SemColors.danger)),
+                    const SizedBox(height: 4),
+                    Text(message,
+                        style: TextStyle(
+                            fontSize: 11.5, color: SemColors.textSecondary, height: 1.6)),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => unawaited(_sources.refresh()),
+                        child: const Text('重试', style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       );
 
   Widget _empty() => Padding(
@@ -368,6 +452,7 @@ class _MarketViewState extends State<MarketView> {
                           if (e.author.isNotEmpty) e.author,
                           e.category,
                           if (!e.isBundle) '网址',
+                          if (!e.official) '第三方',
                         ].join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -421,6 +506,9 @@ class _MarketViewState extends State<MarketView> {
         name: e.name,
         url: e.url,
         icon: e.icon,
+        // bundle 条目的 url 是空的（真正的地址在 base + zip），标成 bundled
+        // 图标就走 emoji / 首字，不会去抓站点图标
+        bundled: e.isBundle,
       );
 
   Widget _kv(String k, String v) => Padding(

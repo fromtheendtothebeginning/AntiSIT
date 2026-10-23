@@ -14,7 +14,7 @@ class FeedbackPlugin extends FeaturePlugin {
   @override
   String get name => '提交反馈';
   @override
-  String get description => 'Issue · PR · Fork（GPL-3.0）三个 GitHub 入口';
+  String get description => '在 GitHub 提 Issue、PR 或 Fork（GPL-3.0）';
   @override
   int get settingsOrder => 70;
 
@@ -23,7 +23,8 @@ class FeedbackPlugin extends FeaturePlugin {
         ListTile(
           leading: const Icon(Icons.feedback_outlined),
           title: const Text('提交反馈'),
-          subtitle: const Text('Issue · PR · Fork · GitHub（GPL-3.0）', style: TextStyle(fontSize: 12)),
+          subtitle: const Text('在 GitHub 提 Issue / PR / Fork（GPL-3.0）',
+              style: TextStyle(fontSize: 12)),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context)
               .push(MaterialPageRoute(builder: (_) => const FeedbackPage())),

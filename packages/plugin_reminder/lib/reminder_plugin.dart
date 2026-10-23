@@ -21,7 +21,7 @@ class ReminderPlugin extends FeaturePlugin {
   String get name => '上课提醒';
   @override
   String get description =>
-      '课前 ${ClassReminderService.leadMinutes} 分钟后台通知，不用打开 App；依赖课程表里的上课时间';
+      '课前 ${ClassReminderService.leadMinutes} 分钟本地通知，App 不用打开；上课时间取自课程表';
   @override
   List<String> get dependencies => const [PluginIds.timetable];
   @override

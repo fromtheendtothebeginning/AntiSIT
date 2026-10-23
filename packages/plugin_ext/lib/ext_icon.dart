@@ -44,8 +44,9 @@ class ExtIcon extends StatelessWidget {
       return box(Image.network(item.icon,
           width: size, height: size, fit: BoxFit.contain, errorBuilder: (_, __, ___) => letter));
     }
-    // 本地压缩包没有站点：直接用首字
-    if (item.bundled) return box(letter);
+    // 本地压缩包没有站点：直接用首字（市场条目里 bundle 型 url 也是空的）
+    final bool httpUrl = item.url.startsWith('http://') || item.url.startsWith('https://');
+    if (item.bundled || !httpUrl) return box(letter);
     // 网站图标：抓到之前 / 抓不到都先显示首字（拿到后自动换成图标）
     return box(FutureBuilder<Uint8List?>(
       future: SiteIcon.loader(item.url),

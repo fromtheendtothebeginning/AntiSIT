@@ -14,7 +14,7 @@ class EcardPlugin extends FeaturePlugin {
   @override
   String get name => '校园码';
   @override
-  String get description => '动态付款码（30 秒自动刷新）与校园卡余额，亮码期间屏幕常亮';
+  String get description => '校园卡动态付款码（30 秒刷新）与余额，亮码时屏幕常亮';
   @override
   List<String> get dependencies => const [PluginIds.network];
 

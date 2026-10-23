@@ -14,7 +14,7 @@ class ExamsPlugin extends FeaturePlugin {
   @override
   String get name => '考试安排';
   @override
-  String get description => '期中 / 期末安排';
+  String get description => '期中 / 期末的考试时间、地点与座位';
   @override
   List<String> get dependencies => const [PluginIds.network];
 
@@ -24,7 +24,7 @@ class ExamsPlugin extends FeaturePlugin {
           icon: Icons.event_note_rounded,
           color: Colors.orange,
           title: '考试安排',
-          subtitle: () => '期中 / 期末安排',
+          subtitle: () => '期中 / 期末的考试时间、地点与座位',
           open: () => const ExamsPage(),
         ),
       ];

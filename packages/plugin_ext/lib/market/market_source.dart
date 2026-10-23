@@ -70,6 +70,13 @@ class MarketSource extends ChangeNotifier {
   static const String _kSig = 'plugin.ext.market.sig';
   static const String _kAt = 'plugin.ext.market.at';
 
+  /// 上次成功的镜像（跨会话记住，下次先试它——别每次都从第一个开始试错）。
+  /// 这是跟 dsh 的市场学的：按资源记住可用线路，只在失败后才换线。
+  static const String _kMirror = 'plugin.ext.market.mirror';
+
+  /// 目录体积上限（官方那份不到 2 KB；拦的是一反代就吐几十兆的情况）。
+  static const int maxCatalogBytes = 8 * 1024 * 1024;
+
   MarketStatus status = MarketStatus.idle;
   List<MarketEntry> entries = const [];
 
@@ -106,9 +113,19 @@ class MarketSource extends ChangeNotifier {
     notifyListeners();
 
     final problems = <String>[];
-    for (final base in kMarketMirrors) {
+    for (final base in await _mirrorOrder()) {
       try {
         final catalog = await fetcher(Uri.parse('${base}market.json'));
+        if (catalog.length > maxCatalogBytes) {
+          problems.add('$base：目录太大（${(catalog.length / 1024 / 1024).toStringAsFixed(1)} MB）');
+          continue;
+        }
+        // 反代/加速服务出错时会回 HTTP 200 的 HTML 错误页：单独说清，
+        // 不然报「签名校验不过」会把排查方向带偏
+        if (!String.fromCharCodes(catalog.take(40)).trimLeft().startsWith('{')) {
+          problems.add('$base：返回的不是目录（像网页或错误页，可能被反代挡了）');
+          continue;
+        }
         final sig = utf8.decode(await fetcher(Uri.parse('${base}market.json.sig'))).trim();
         final bad = await _verifyProblem(catalog, sig);
         if (bad != null) {
@@ -167,6 +184,7 @@ class MarketSource extends ChangeNotifier {
     entries = list;
     activeBase = base;
     fromCache = cached;
+    if (base.isNotEmpty) unawaited(_rememberMirror(base));
     fetchedAt = at;
     status = MarketStatus.ready;
     notifyListeners();
@@ -179,13 +197,30 @@ class MarketSource extends ChangeNotifier {
     await sp.setInt(_kAt, DateTime.now().millisecondsSinceEpoch);
   }
 
+  /// 镜像尝试顺序：上次成功的那个排第一，其余按内置顺序。
+  Future<List<String>> _mirrorOrder() async {
+    final sp = await SharedPreferences.getInstance();
+    final remembered = sp.getString(_kMirror);
+    if (remembered == null || !kMarketMirrors.contains(remembered)) {
+      return kMarketMirrors;
+    }
+    return [remembered, ...kMarketMirrors.where((b) => b != remembered)];
+  }
+
+  Future<void> _rememberMirror(String base) async {
+    if (!kMarketMirrors.contains(base)) return;
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kMirror, base);
+  }
+
   /// 下载一个拓展包（`market.json` 里的相对路径）：先走当前镜像，再依次试别的。
   /// **不校验哈希**——校验交给装的人（[MarketInstaller]），它才有目录里那个值。
   Future<List<int>> download(String relativePath) async {
     if (relativePath.trim().isEmpty) throw StateError('这条拓展没有下载地址');
+    final ordered = await _mirrorOrder();
     final bases = [
       if (activeBase.isNotEmpty) activeBase,
-      for (final b in kMarketMirrors)
+      for (final b in ordered)
         if (b != activeBase) b,
     ];
     final problems = <String>[];

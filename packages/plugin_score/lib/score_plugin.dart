@@ -14,7 +14,7 @@ class ScorePlugin extends FeaturePlugin {
   @override
   String get name => '二课分数';
   @override
-  String get description => '达标进度与明细分项';
+  String get description => '第二课堂学分：达标进度与分项明细';
   @override
   List<String> get dependencies => const [PluginIds.network];
 
