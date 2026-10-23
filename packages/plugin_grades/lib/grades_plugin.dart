@@ -14,7 +14,7 @@ class GradesPlugin extends FeaturePlugin {
   @override
   String get name => '成绩单';
   @override
-  String get description => '历年成绩与 GPA';
+  String get description => '各学期成绩、学分与 GPA';
   @override
   List<String> get dependencies => const [PluginIds.network];
 
@@ -24,7 +24,7 @@ class GradesPlugin extends FeaturePlugin {
           icon: Icons.fact_check_rounded,
           color: Colors.blue,
           title: '成绩单',
-          subtitle: () => '历年成绩与 GPA',
+          subtitle: () => '各学期成绩、学分与 GPA',
           open: () => const GradesPage(),
         ),
       ];

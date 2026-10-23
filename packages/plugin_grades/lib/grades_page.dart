@@ -9,6 +9,27 @@ class GradesPage extends StatefulWidget {
   State<GradesPage> createState() => _GradesPageState();
 }
 
+/// 学期码 → 名称（接口返回 1/2 序号，旧版网站学期码 3/12/16 也兼容）。
+String _xqName(String? s) => switch (s) {
+      '1' || '3' => '第一学期',
+      '2' || '12' => '第二学期',
+      '16' => '短学期',
+      _ => (s ?? '').trim(),
+    };
+
+/// 成绩卡上的标签：课程类别 / 考核方式 / 学年学期。
+/// 学校对部分课程不回这些字段（值就是 null），**空字段不生成标签**——
+/// 直接插值会把这些课程显示成字面量 "null"。
+List<String> gradeTags(Map<String, dynamic> g) => [
+      _tag(g['kclbmc']),
+      _tag(g['khfsmc']),
+      [_tag(g['xnmmc']), _xqName(g['xqmmc']?.toString())]
+          .where((s) => s.isNotEmpty)
+          .join(' '),
+    ].where((s) => s.isNotEmpty).toList();
+
+String _tag(Object? v) => '${v ?? ''}'.trim();
+
 class _GradesPageState extends State<GradesPage> {
   bool _loading = true;
   String? _err;
@@ -17,14 +38,6 @@ class _GradesPageState extends State<GradesPage> {
   num _gpa = 0;
   String _xnm = ''; // '' = 全部学期
   String _xqm = '';
-
-  /// 学期码 → 名称（接口返回 1/2 序号，旧版网站学期码 3/12/16 也兼容）。
-  static String _xqName(String? s) => switch (s) {
-        '1' || '3' => '第一学期',
-        '2' || '12' => '第二学期',
-        '16' => '短学期',
-        _ => s ?? '',
-      };
 
   @override
   void initState() {
@@ -72,7 +85,7 @@ class _GradesPageState extends State<GradesPage> {
             ),
             for (final t in _terms)
               ListTile(
-                title: Text('${t['xnmmc']} · ${_xqName('${t['xqmmc']}')}'),
+                title: Text('${t['xnmmc']} · ${_xqName(t['xqmmc']?.toString())}'),
                 trailing: (_xnm == '${t['xnm']}' && _xqm == '${t['xqm']}')
                     ? Icon(Icons.check, color: SemColors.accent)
                     : null,
@@ -103,7 +116,9 @@ class _GradesPageState extends State<GradesPage> {
             final t = _terms
                 .where((t) => '${t['xnm']}' == _xnm && '${t['xqm']}' == _xqm)
                 .firstOrNull;
-            return t == null ? '$_xnm ${_xqName(_xqm)}' : '${t['xnmmc']} · ${_xqName('${t['xqmmc']}')}';
+            return t == null
+                ? '$_xnm ${_xqName(_xqm)}'
+                : '${t['xnmmc']} · ${_xqName(t['xqmmc']?.toString())}';
           }();
     return Scaffold(
       appBar: AppBar(title: const Text('成绩查询')),
@@ -189,11 +204,7 @@ class _GradesPageState extends State<GradesPage> {
                               Wrap(
                                 spacing: 6,
                                 runSpacing: 4,
-                                children: [
-                                  _chip('${g['kclbmc']}'),
-                                  _chip('${g['khfsmc']}'),
-                                  _chip('${g['xnmmc']} ${_xqName('${g['xqmmc']}')}'),
-                                ],
+                                children: [for (final tag in gradeTags(g)) _chip(tag)],
                               ),
                             ],
                           ),
