@@ -33,6 +33,14 @@ class AiVision {
   final Map<String, List<String>> _modelsCache = {};
   bool _loaded = false;
 
+  static final http.Client _defaultClient = http.Client();
+
+  /// 发请求用的客户端：单测注入 MockClient 用（见 test/ai_vision_test.dart），生产走默认实现。
+  @visibleForTesting
+  static http.Client? clientOverride;
+
+  static http.Client get _client => clientOverride ?? _defaultClient;
+
   AiConfig get config => _config;
 
   Future<AiConfig> load() async {
@@ -107,7 +115,7 @@ class AiVision {
     final url = '${c.baseUrl.replaceAll(RegExp(r'/+$'), '')}/models';
     http.Response resp;
     try {
-      resp = await http.get(Uri.parse(url), headers: {
+      resp = await _client.get(Uri.parse(url), headers: {
         'Authorization': 'Bearer ${c.effectiveApiKey}',
       }).timeout(const Duration(seconds: 20));
     } catch (e) {
@@ -147,6 +155,11 @@ class AiVision {
 
   /// 让模型读图并返回文本。失败抛 ApiError（调用方决定是否降级）。
   /// [thinkingOff] 为 true 时显式关闭思考（验证码识别用：只要短答案，思考纯属浪费）。
+  ///
+  /// 首次回答为空时自动**关掉思考再试一次**：思考型模型（官网：deepseek-flash
+  /// 「thinking 默认开启，默认档位 high」）的推理内容与正式回答共享 max_tokens，
+  /// 推理吃光预算就只剩空 content（finish_reason=length），报错文案还容易误导成
+  /// 「模型不支持识图」。重试一次代价很小，却让默认配置直接可用。
   Future<String> describeImage(
     Uint8List image, {
     required String prompt,
@@ -157,10 +170,44 @@ class AiVision {
     bool thinkingOff = false,
   }) async {
     await load();
-    final c = _config;
-    if (!c.ready) {
+    if (!_config.ready) {
       throw ApiError('尚未配置识图模型：请在「我的 → AI 设置」填写 API Key 与模型');
     }
+    var reply = await _chat(image,
+        prompt: prompt,
+        system: system,
+        mime: mime,
+        maxTokens: maxTokens,
+        thinkingOff: thinkingOff,
+        timeout: timeout);
+    if (reply.text.isEmpty && !thinkingOff) {
+      reply = await _chat(image,
+          prompt: prompt,
+          system: system,
+          mime: mime,
+          maxTokens: maxTokens,
+          thinkingOff: true,
+          timeout: timeout);
+    }
+    if (reply.text.isNotEmpty) return reply.text;
+    // finish_reason=length 说明撞上了 max_tokens（思考型模型还可能全被推理吃掉），
+    // 这和「模型不支持识图」是两回事，别让用户去换错东西。
+    throw ApiError(reply.finishReason == 'length'
+        ? 'AI 输出被截断（撞上 token 上限），没有给出结果：请重试或换一个模型'
+        : 'AI 未返回内容（模型可能不支持识图）');
+  }
+
+  /// 发一次带图对话请求，返回 (输出文本, finish_reason)。
+  Future<({String text, String finishReason})> _chat(
+    Uint8List image, {
+    required String prompt,
+    String? system,
+    required String mime,
+    required int maxTokens,
+    required bool thinkingOff,
+    required Duration timeout,
+  }) async {
+    final c = _config;
     final url = '${c.baseUrl.replaceAll(RegExp(r'/+$'), '')}/chat/completions';
     final body = _payload(c, prompt, system, image, mime, maxTokens, thinkingOff);
     final headers = {
@@ -170,7 +217,7 @@ class AiVision {
 
     http.Response resp;
     try {
-      resp = await http.post(Uri.parse(url), headers: headers, body: jsonEncode(body)).timeout(timeout);
+      resp = await _client.post(Uri.parse(url), headers: headers, body: jsonEncode(body)).timeout(timeout);
     } catch (e) {
       throw ApiError('调用 AI 失败（${c.provider.label}）：$e');
     }
@@ -178,9 +225,8 @@ class AiVision {
       final detail = utf8.decode(resp.bodyBytes, allowMalformed: true);
       throw ApiError('AI 返回 ${resp.statusCode}：${detail.length > 200 ? detail.substring(0, 200) : detail}');
     }
-    final text = _extractText(_decode(resp.bodyBytes));
-    if (text.trim().isEmpty) throw ApiError('AI 未返回内容（模型可能不支持识图）');
-    return text.trim();
+    final j = _decode(resp.bodyBytes);
+    return (text: _extractText(j).trim(), finishReason: _finishReason(j));
   }
 
   /// 「测试连接」：发一张极小的图问一句，确认 Key/模型/地址都通。
@@ -272,6 +318,16 @@ class AiVision {
           return buf.toString();
         }
       }
+    }
+    return '';
+  }
+
+  /// 模型输出的结束原因（'length' = 撞到 max_tokens 被截断，content 可能只有半截或为空）。
+  String _finishReason(dynamic j) {
+    if (j is! Map) return '';
+    final choices = j['choices'];
+    if (choices is List && choices.isNotEmpty && choices.first is Map) {
+      return '${(choices.first as Map)['finish_reason'] ?? ''}';
     }
     return '';
   }

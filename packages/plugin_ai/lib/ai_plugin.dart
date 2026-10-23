@@ -18,7 +18,7 @@ class AiPlugin extends FeaturePlugin {
   @override
   String get name => 'AI 设置';
   @override
-  String get description => '配置 AI 提供商与模型，用于自动识别验证码、识别校历调休';
+  String get description => '配置 AI 提供商与模型：自动识别验证码、从校历截图识别调休';
   @override
   List<String> get dependencies => const [PluginIds.network];
   @override
@@ -74,7 +74,7 @@ class CustomProvider extends AiProviderPlugin {
   @override
   String get label => '自定义';
   @override
-  String get description => '任意 OpenAI 兼容服务（地址自己填）';
+  String get description => '任意 OpenAI 兼容接口（自行填写地址与模型）';
   @override
   String get baseUrl => '';
   @override

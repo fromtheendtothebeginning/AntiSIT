@@ -65,6 +65,10 @@ Future<List<HolidayRule>> parseHolidayImage(
     mime: mime,
     timeout: const Duration(seconds: 120),
     maxTokens: 4096,
+    // 关思考：这是「照图抄日期」，不是推理题。思考型模型默认开思考（官网：deepseek-flash
+    // 默认既开思考、档位还是 high），推理内容与正式回答共享 max_tokens——思考吃光预算就
+    // 只剩空 content，用户看到「AI 未返回内容（模型可能不支持识图）」，其实是 token 被思考占了。
+    thinkingOff: true,
   );
 
   final out = <String, HolidayRule>{};
