@@ -58,6 +58,29 @@ void main() {
       expect(phy.weekEnd, 9);
     });
 
+    test('混合奇偶的段不并入单周段（5,7,9,10,11）', () {
+      final tt = SemesterTt();
+      tt.jwxtWeeks = {
+        '5': [occ(0, name: '物理')],
+        '7': [occ(0, name: '物理')],
+        '9': [occ(0, name: '物理')],
+        '10': [occ(0, name: '物理')],
+        '11': [occ(0, name: '物理')],
+      };
+      final courses = TimetableStore.deriveImported(tt);
+      // 5,7 是单周 → odd 5-7；9,10,11 奇偶混杂 → all 9-11，二者不能并成 all 5-11
+      expect(courses.length, 2);
+      final odd = courses.firstWhere((c) => c.weekType == 'odd');
+      expect(odd.weekStart, 5);
+      expect(odd.weekEnd, 7);
+      final every = courses.firstWhere((c) => c.weekType == 'all');
+      expect(every.weekStart, 9);
+      expect(every.weekEnd, 11);
+      // 6、8 周本无此课，不能被任何一段覆盖（否则会与另一地点的课重叠显示）
+      expect(courses.any((c) => TimetableStore.coversWeek(c, 6)), isFalse);
+      expect(courses.any((c) => TimetableStore.coversWeek(c, 8)), isFalse);
+    });
+
     test('coversWeek 按 weekType 过滤', () {
       final c = TtCourse(id: 'a', name: 'x', day: 0, slotStart: 0, slotEnd: 1, weekType: 'odd', weekStart: 1, weekEnd: 9);
       expect(TimetableStore.coversWeek(c, 3), isTrue);

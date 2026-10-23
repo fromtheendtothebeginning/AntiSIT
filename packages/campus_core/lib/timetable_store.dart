@@ -338,12 +338,15 @@ class TimetableStore {
         runs.add([zs]);
       }
     }
-    // 相邻段首尾差 2 且整体同奇偶 → 合并（如 6,8 → 6-8）
+    // 间隔 2 且同奇偶的相邻段合并（如 6,8 → 双周 6-8）。
+    // 待并入的段本身也必须是单奇偶；否则合并成「all」后会把中间缺席的周也画出来
+    //（如 5,7,9,10,11 → all 5-11，让同一门课的另一个上课地点在 6、8 周重叠显示）
     final merged = <List<int>>[];
     for (final r in runs) {
       if (merged.isNotEmpty &&
           r.first - merged.last.last == 2 &&
-          r.first.isOdd == merged.last.first.isOdd) {
+          merged.last.every((w) => w.isOdd == r.first.isOdd) &&
+          r.every((w) => w.isOdd == r.first.isOdd)) {
         merged.last.addAll(r);
       } else {
         merged.add(r);
