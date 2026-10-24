@@ -16,7 +16,7 @@ class ExamsPlugin extends FeaturePlugin {
   @override
   String get description => '期中 / 期末的考试时间、地点与座位';
   @override
-  List<String> get dependencies => const [PluginIds.network];
+  List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 
   @override
   List<PluginTool> tools(PluginRegistry registry) => [

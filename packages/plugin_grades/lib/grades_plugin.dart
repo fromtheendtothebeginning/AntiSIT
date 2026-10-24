@@ -16,7 +16,7 @@ class GradesPlugin extends FeaturePlugin {
   @override
   String get description => '各学期成绩、学分与 GPA';
   @override
-  List<String> get dependencies => const [PluginIds.network];
+  List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 
   @override
   List<PluginTool> tools(PluginRegistry registry) => [

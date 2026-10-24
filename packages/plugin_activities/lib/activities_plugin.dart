@@ -16,7 +16,7 @@ class ActivitiesPlugin extends FeaturePlugin {
   @override
   String get description => '第二课堂活动：报名状态、活动时间与名额';
   @override
-  List<String> get dependencies => const [PluginIds.network];
+  List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 
   @override
   List<PluginTool> tools(PluginRegistry registry) => [

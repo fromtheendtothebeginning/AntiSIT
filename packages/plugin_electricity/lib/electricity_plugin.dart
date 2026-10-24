@@ -16,7 +16,7 @@ class ElectricityPlugin extends FeaturePlugin {
   @override
   String get description => '查余额、充值、看历史余额曲线';
   @override
-  List<String> get dependencies => const [PluginIds.network];
+  List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 
   /// 软依赖（不联动启停）：风险提醒开着时本插件的充值入口被拦下（见 [RiskNoticeCapability]），
   /// 关掉它立即恢复；没装风险提醒则等同没有这道闸。
@@ -37,13 +37,13 @@ class ElectricityPlugin extends FeaturePlugin {
   static String _subtitle() {
     final e = ToolCache.electricity;
     if (e == null) return '余额查询与充值';
-    return '余额 ¥${e['balance']}';
+    return '余额 ¥${e.balance}';
   }
 
   @override
   Future<void> prefetch() async {
     final r = await ApiClient.I.electricityQuery();
-    ToolCache.electricity = r['data'] as Map<String, dynamic>?;
+    ToolCache.electricity = ToolCache.electricityOf(r['data']);
   }
 }
 

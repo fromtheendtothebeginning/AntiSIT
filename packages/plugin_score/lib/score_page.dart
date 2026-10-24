@@ -32,8 +32,8 @@ class _ScorePageState extends State<ScorePage> {
     try {
       final r = await ApiClient.I.score();
       _data = r['data'] as Map<String, dynamic>?;
-      AppState.I.studentInfo = _data?['student'] as Map<String, dynamic>?;
-      ToolCache.score = _data;
+      ToolCache.score = ToolCache.scoreOf(_data);
+      AppState.I.studentInfo = ToolCache.score?.student;
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
     } finally {

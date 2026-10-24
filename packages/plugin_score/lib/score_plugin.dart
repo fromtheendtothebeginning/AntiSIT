@@ -16,7 +16,7 @@ class ScorePlugin extends FeaturePlugin {
   @override
   String get description => '第二课堂学分：达标进度与分项明细';
   @override
-  List<String> get dependencies => const [PluginIds.network];
+  List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 
   @override
   List<PluginTool> tools(PluginRegistry registry) => [
@@ -32,15 +32,15 @@ class ScorePlugin extends FeaturePlugin {
   static String _subtitle() {
     final s = ToolCache.score;
     if (s == null) return '达标进度与明细';
-    return '${s['credit']} / ${s['total']} 分';
+    return '${s.credit} / ${s.total} 分';
   }
 
   /// 「我的 → 学籍信息」也读这份缓存，所以取到后一并写进 AppState。
   @override
   Future<void> prefetch() async {
     final r = await ApiClient.I.score();
-    ToolCache.score = r['data'] as Map<String, dynamic>?;
-    AppState.I.studentInfo = ToolCache.score?['student'] as Map<String, dynamic>?;
+    ToolCache.score = ToolCache.scoreOf(r['data']);
+    AppState.I.studentInfo = ToolCache.score?.student;
   }
 }
 

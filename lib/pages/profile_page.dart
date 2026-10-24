@@ -122,8 +122,8 @@ class _ProfilePageState extends State<ProfilePage> {
     if (AppState.I.studentInfo != null) return;
     try {
       final r = await ApiClient.I.score();
-      AppState.I.studentInfo = r['data']?['student'] as Map<String, dynamic>?;
-      ToolCache.score = r['data'] as Map<String, dynamic>?;
+      ToolCache.score = ToolCache.scoreOf(r['data']);
+      AppState.I.studentInfo = ToolCache.score?.student;
       if (mounted) setState(() {});
     } catch (_) {}
   }

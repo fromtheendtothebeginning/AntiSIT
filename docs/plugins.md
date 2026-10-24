@@ -69,11 +69,11 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | （宿主） | `network` | — | — | — | ✗ 核心 | 无界面 + 启动初始化 |
 | （宿主） | `profile` | `network` | — | — | ✗ 核心 | 底栏页 |
 | `plugin_feedback` | `feedback` | — | — | — | ✓ | 设置条目 |
-| `plugin_electricity` | `electricity` | `network` | `risk` | `risk` | ✓ | 工具卡片 + 卡面预取 |
-| `plugin_activities` | `activities` | `network` | — | — | ✓ | 工具卡片 |
-| `plugin_score` | `score` | `network` | — | — | ✓ | 工具卡片 + 卡面预取 |
-| `plugin_exams` | `exams` | `network` | — | — | ✓ | 工具卡片 |
-| `plugin_grades` | `grades` | `network` | — | — | ✓ | 工具卡片 |
+| `plugin_electricity` | `electricity` | `network`、`tools` | `risk` | `risk` | ✓ | 工具卡片 + 卡面预取 |
+| `plugin_activities` | `activities` | `network`、`tools` | — | — | ✓ | 工具卡片 |
+| `plugin_score` | `score` | `network`、`tools` | — | — | ✓ | 工具卡片 + 卡面预取 |
+| `plugin_exams` | `exams` | `network`、`tools` | — | — | ✓ | 工具卡片 |
+| `plugin_grades` | `grades` | `network`、`tools` | — | — | ✓ | 工具卡片 |
 | `plugin_timetable` | `timetable` | `network` | `ai`、`reminder` | `ai`、`reminder` | ✓ | 底栏页 + 设置条目 |
 | `plugin_webview` | `webview` | — | — | — | ✓ | 无界面 |
 | `plugin_ext` | `ext` | `webview` | `ai` | `ai`、`webview` | ✓ | 底栏页 |

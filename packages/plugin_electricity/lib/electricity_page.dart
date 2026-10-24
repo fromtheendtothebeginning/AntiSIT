@@ -33,7 +33,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
     try {
       final r = await ApiClient.I.electricityQuery();
       _data = r['data'] as Map<String, dynamic>?;
-      ToolCache.electricity = _data;
+      ToolCache.electricity = ToolCache.electricityOf(_data);
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
     } finally {
