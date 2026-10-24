@@ -3,7 +3,9 @@ import 'package:campus_service/pages/home_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plugin_ext/plugin_ext.dart';
 import 'package:plugin_theme_glass/plugin_theme_glass.dart';
+import 'package:plugin_webview/plugin_webview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 需求：**不冲突时**左右滑动切界面，且界面永远是「最贴近底栏滑块的那一格」
@@ -201,6 +203,182 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(shownTab(tester), 1);
+    });
+  });
+
+  group('拓展子页接进主界面滑动链（NavSwipeScope 桥）', () {
+    /// 底栏三页：工具(0) 拓展(1) 我的(2)；拓展内部两子页：我的(0) 市场(1)。
+    /// 滑动链：… 工具 ⇄ 拓展·我的 ⇄ 拓展·市场 ⇄ 我的 …
+    Future<void> pumpExtShell(WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      ExtensionStore.I = ExtensionStore();
+      ExtensionStore.builtins = const [];
+      // 市场目录不真发网络请求（失败即可，别让 loading 的不定动画卡住 settle）
+      MarketSource.I = MarketSource();
+      MarketSource.fetcher = (Uri url) => throw Exception('offline');
+      PluginRegistry.I = PluginRegistry(
+        features: const [
+          _Page('tools', '工具', 30),
+          WebViewPlugin(),
+          ExtPlugin(),
+          _Page('profile', '我的', 99),
+        ],
+        themes: const [GlassTheme()],
+        capabilities: const {PluginIds.webview: WebViewCapabilityImpl()},
+      );
+      tester.view.physicalSize = const Size(1080, 2000);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const MaterialApp(home: HomePage()));
+      await tester.pumpAndSettle();
+    }
+
+    /// 拓展页 body 的拖动起点（AppBar 与标签条之下、列表空白处）
+    final extBody = const Offset(270, 600);
+
+    /// 拓展页在屏幕上的水平中心：哪个子页在显示就用哪个的标志文本
+    /// （另一个子页的标志被滑到一屏之外，不能拿来代表拓展页位置）
+    double extCenterX(WidgetTester tester) {
+      final w = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      final mine = tester.getCenter(find.text('还没有拓展', skipOffstage: false)).dx;
+      final market = tester.getCenter(find.text('搜名称 / 简介 / 作者', skipOffstage: false)).dx;
+      return (mine - w / 2).abs() <= (market - w / 2).abs() ? mine : market;
+    }
+
+    /// 现在在屏幕正中附近的是哪页：0=工具 1=拓展 2=我的
+    int shownPage(WidgetTester tester) {
+      final w = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      final xs = [
+        tester.getCenter(find.text('页面工具', skipOffstage: false)).dx,
+        extCenterX(tester),
+        tester.getCenter(find.text('页面我的', skipOffstage: false)).dx,
+      ];
+      var best = 0;
+      var bestD = double.infinity;
+      for (var k = 0; k < xs.length; k++) {
+        final d = (xs[k] - w / 2).abs();
+        if (d < bestD) {
+          bestD = d;
+          best = k;
+        }
+      }
+      return best;
+    }
+
+    testWidgets('「我的」子页向上一格方向拖：工具页跟着滑进来，松手落位工具', (tester) async {
+      await pumpExtShell(tester);
+      await tester.tap(find.text('拓展'));
+      await tester.pumpAndSettle();
+      expect(find.text('还没有拓展'), findsOneWidget);
+
+      final g = await begin(tester, extBody);
+      await g.moveBy(const Offset(300, 0)); // 手指右划 = 主界面上一格（工具）
+      await tester.pump();
+      expect(shownPage(tester), 0, reason: '拖动中工具页已经滑到眼前');
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(shownPage(tester), 0, reason: '松手落位工具页');
+    });
+
+    testWidgets('市场子页向下一格方向拖：切到「我的」页（底栏）', (tester) async {
+      await pumpExtShell(tester);
+      await tester.tap(find.text('拓展'));
+      await tester.pumpAndSettle();
+
+      // 先在拓展内部滑到「市场」子页
+      final g1 = await begin(tester, extBody);
+      await g1.moveBy(const Offset(-300, 0));
+      await tester.pump();
+      await g1.up();
+      await tester.pumpAndSettle();
+      expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget);
+      expect(shownPage(tester), 1, reason: '还在拓展页，只是子页切了');
+
+      // 继续向下一格方向拖：主界面滑向「我的」页
+      final g2 = await begin(tester, extBody);
+      await g2.moveBy(const Offset(-300, 0));
+      await tester.pump();
+      expect(shownPage(tester), 2, reason: '「我的」页滑到眼前');
+      await g2.up();
+      await tester.pumpAndSettle();
+      expect(shownPage(tester), 2, reason: '松手落位「我的」页');
+    });
+
+    testWidgets('一次拖动穿三层：市场 → 我的（子页）→ 工具页', (tester) async {
+      await pumpExtShell(tester);
+      await tester.tap(find.text('拓展'));
+      await tester.pumpAndSettle();
+
+      final g1 = await begin(tester, extBody);
+      await g1.moveBy(const Offset(-300, 0));
+      await g1.up();
+      await tester.pumpAndSettle();
+      expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget);
+
+      // 反方向一把拖过一屏多：子页市场→我的，越界后主界面工具页进来
+      final g2 = await begin(tester, extBody);
+      await g2.moveBy(const Offset(1100, 0));
+      await tester.pump();
+      expect(shownPage(tester), 0, reason: '一路滑到了工具页');
+      await g2.up();
+      await tester.pumpAndSettle();
+      expect(shownPage(tester), 0);
+    });
+
+    testWidgets('越界后拖回来松手：就近弹回拓展页，不误切', (tester) async {
+      await pumpExtShell(tester);
+      await tester.tap(find.text('拓展'));
+      await tester.pumpAndSettle();
+
+      final g = await begin(tester, extBody);
+      await g.moveBy(const Offset(200, 0)); // 越界约 0.4 格
+      await tester.pump();
+      await g.moveBy(const Offset(-200, 0)); // 拖回来
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(shownPage(tester), 1, reason: '拖回来了就留在拓展页');
+      expect(find.text('还没有拓展'), findsOneWidget);
+    });
+
+    testWidgets('越界方向快甩借一格：直接落到工具页', (tester) async {
+      await pumpExtShell(tester);
+      await tester.tap(find.text('拓展'));
+      await tester.pumpAndSettle();
+
+      await tester.flingFrom(extBody, const Offset(200, 0), 3000);
+      await tester.pumpAndSettle();
+      expect(shownPage(tester), 0, reason: '快甩借一格，落到工具页');
+    });
+
+    testWidgets('界内镜像不锚定主界面：切页弹簧半路拖子页不会拽回上一格', (tester) async {
+      await pumpExtShell(tester);
+      // 直接驱动桥（拓展页手势的另一端）：手势时序版要拿捏弹簧半路的那几十毫秒，
+      // 太脆；守卫的语义是「over=0 且从未越界 → 整体跳过」，按谓词直接测。
+      // 若不跳过，切页弹簧半路（_pos 非整格）时的界内镜像会被照单锚定，
+      // round 把 tab 拽回上一格、掐断切页动画。
+      final host = NavSwipeScope.of(tester.element(find.text('页面工具')))!;
+      int navIndex() => tester.widget<GlassNavBar>(find.byType(GlassNavBar)).index;
+      expect(navIndex(), 0);
+
+      // 从未越界：界内镜像与松手落位都是空操作
+      host.navDragOver(0);
+      await tester.pump();
+      expect(navIndex(), 0, reason: '界内镜像不该换格');
+      host.navDragEnd(-3000);
+      await tester.pumpAndSettle();
+      expect(navIndex(), 0, reason: '没越界过的快甩也不借格');
+
+      // 真越界过的：拖回来（over=0）要照常同步回弹
+      host.navDragOver(0.6);
+      await tester.pump();
+      expect(navIndex(), 1, reason: '越界中拖过半，实时换格');
+      host.navDragOver(0);
+      await tester.pump();
+      expect(navIndex(), 0, reason: '拖回界内越界量归零，主界面跟着回');
+      host.navDragEnd(0);
+      await tester.pumpAndSettle();
+      expect(navIndex(), 0);
     });
   });
 }

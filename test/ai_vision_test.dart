@@ -95,4 +95,43 @@ void main() {
     expect(bodies.single['model'], 'deepseek-flash');
     expect(rules.map((r) => r.date), ['2026-10-01']);
   });
+
+  group('chat（纯文本对话，拓展 ai.chat 接口的底层）', () {
+    test('文本请求：user content 是字符串（不是识图那种分段数组），system 在前', () async {
+      await configured();
+      final bodies = stub([reply('你好', 'stop')]);
+
+      final out = await AiVision.I.chat('问个问题', system: '你是助手', maxTokens: 512);
+
+      expect(out, '你好');
+      final msgs = bodies.single['messages'] as List;
+      expect(msgs.length, 2);
+      expect(msgs.first, {'role': 'system', 'content': '你是助手'});
+      expect(msgs.last, {'role': 'user', 'content': '问个问题'});
+      expect(jsonEncode(bodies.single).contains('image_url'), isFalse);
+      expect(bodies.single['max_tokens'], 512);
+    });
+
+    test('首次空回答：自动关思考重试一次（与识图同一套兜底）', () async {
+      await configured();
+      final bodies = stub([reply('', 'length'), reply('答出来了', 'stop')]);
+
+      final out = await AiVision.I.chat('x');
+
+      expect(out, '答出来了');
+      expect(bodies.length, 2);
+      expect(bodies.first.containsKey('thinking'), isFalse);
+      expect(bodies.last['thinking'], {'type': 'disabled'});
+    });
+
+    test('没配置模型：报「尚未配置」并指向 AI 设置', () async {
+      // 单例是进程级的：前面的用例已 configured()，这里显式存一份「关着」的配置
+      await AiVision.I
+          .save(AiConfig(enabled: false, providerId: 'deepseek', model: '')..setApiKey(''));
+      await expectLater(
+        AiVision.I.chat('x'),
+        throwsA(isA<ApiError>().having((e) => e.message, 'message', contains('AI 设置'))),
+      );
+    });
+  });
 }

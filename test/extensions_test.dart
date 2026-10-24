@@ -634,4 +634,303 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('🛠'), findsOneWidget, reason: '接口给的文字图标直接上卡片');
   });
+
+  group('滑出子页边界转给主界面（NavSwipeScope 桥）', () {
+    late _RecordingSwipeHost host;
+
+    setUp(() {
+      host = _RecordingSwipeHost();
+      // 市场目录不真发网络请求（失败即可，别让 loading 的不定动画卡住 settle）
+      MarketSource.I = MarketSource();
+      MarketSource.fetcher = (Uri url) => throw Exception('offline');
+    });
+
+    Future<void> pumpWithHost(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2200);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(NavSwipeScope(
+        host: host,
+        child: const MaterialApp(home: ExtensionsPage()),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    /// 从 [from] 起手横拖，第一步（[slopDir] 方向 20px）只为越过 touch slop
+    Future<TestGesture> beginSwipe(WidgetTester tester, Offset from,
+        {double slopDir = -1}) async {
+      final g = await tester.startGesture(from);
+      await g.moveBy(Offset(20 * slopDir, 0));
+      await tester.pump();
+      return g;
+    }
+
+    testWidgets('「我的」向上一格方向拖：越界量为负，拖回来归零，松手交主界面落位', (tester) async {
+      await pumpWithHost(tester);
+      expect(find.text('还没有拓展'), findsOneWidget);
+
+      final g = await beginSwipe(tester, const Offset(270, 900), slopDir: 1);
+      await g.moveBy(const Offset(700, 0)); // 逻辑宽 540：越界约一页
+      await tester.pump();
+      expect(host.overs.last, lessThan(-0.9), reason: '滑出边界的量要镜像给主界面');
+
+      await g.moveBy(const Offset(-700, 0)); // 拖回界内
+      await tester.pump();
+      expect(host.overs.last, closeTo(0, 0.05), reason: '拖回来越界量归零，主界面跟着弹回');
+
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(host.endVelocity, isNotNull, reason: '松手要交给主界面落位');
+      expect(find.text('还没有拓展'), findsOneWidget, reason: '子页留在「我的」');
+    });
+
+    testWidgets('「市场」向下一格方向拖：越界量为正', (tester) async {
+      await pumpWithHost(tester);
+      await tester.drag(find.text('还没有拓展'), const Offset(-400, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget);
+      host.overs.clear();
+      host.endVelocity = null;
+
+      final g = await beginSwipe(tester, const Offset(270, 900));
+      await g.moveBy(const Offset(-700, 0));
+      await tester.pump();
+      expect(host.overs.last, greaterThan(0.9));
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(host.endVelocity, isNotNull);
+    });
+
+    testWidgets('界内拖（我的 → 市场）不产生越界量', (tester) async {
+      await pumpWithHost(tester);
+      final g = await beginSwipe(tester, const Offset(270, 900));
+      await g.moveBy(const Offset(-300, 0)); // 半屏多一点：子页刚好切到市场
+      await tester.pump();
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget, reason: '子页正常切到市场');
+      expect(host.overs.every((o) => o == 0), isTrue, reason: '没滑出边界就别去动主界面');
+    });
+  });
+
+  group('接口：ai.chat（提示词本地转义成提供商请求）', () {
+    late _FakeAiCapability ai;
+
+    setUp(() {
+      ai = _FakeAiCapability();
+      PluginRegistry.I = PluginRegistry(
+        features: [WebViewPlugin(), ExtPlugin(), _FakeAiPlugin(ai)],
+        themes: const [GlassTheme()],
+        capabilities: {PluginIds.webview: WebViewCapabilityImpl(), PluginIds.ai: ai},
+      );
+    });
+
+    Future<ExtBridge> bridge(WidgetTester tester, {ExtensionItem? item}) async {
+      await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+      return ExtBridge(
+          extId: 'e1', context: tester.element(find.byType(SizedBox)), item: item);
+    }
+
+    testWidgets('用户自己加的拓展直接能用：提示词与参数进能力，回答文本出来', (tester) async {
+      final b = await bridge(tester);
+      expect(await b.call('ai.chat', {'prompt': ' 你好 ', 'system': '你是助手'}), '好的');
+      expect(ai.lastPrompt, '你好', reason: '两端空白去掉');
+      expect(ai.lastSystem, '你是助手');
+      expect(ai.lastMaxTokens, 1024, reason: '缺省 1024');
+    });
+
+    testWidgets('maxTokens 收在 16–4096；缺省 1024，不合法的值直接报错', (tester) async {
+      final b = await bridge(tester);
+      await b.call('ai.chat', {'prompt': 'x', 'maxTokens': 99999});
+      expect(ai.lastMaxTokens, 4096);
+      expect(await b.call('ai.chat', {'prompt': 'x'}), '好的');
+      expect(ai.lastMaxTokens, 1024);
+      await expectLater(b.call('ai.chat', {'prompt': 'x', 'maxTokens': 0}),
+          throwsArgumentError, reason: '参数不对要报错，不静默回退');
+      await expectLater(
+          b.call('ai.chat', {'prompt': 'x', 'maxTokens': '不是数字'}), throwsArgumentError);
+    });
+
+    testWidgets('prompt / system 超长直接报错（不序列化超大请求体）', (tester) async {
+      final b = await bridge(tester);
+      await expectLater(
+          b.call('ai.chat', {'prompt': 'x' * 40000}), throwsArgumentError);
+      await expectLater(
+          b.call('ai.chat', {'prompt': 'x', 'system': 's' * 40000}), throwsArgumentError);
+      expect(ai.calls, 0, reason: '没到 AI 那一步就该拦下');
+    });
+
+    testWidgets('参数不对直接报错（Promise reject，不静默失败）', (tester) async {
+      final b = await bridge(tester);
+      await expectLater(b.call('ai.chat', null), throwsArgumentError);
+      await expectLater(b.call('ai.chat', {'prompt': '   '}), throwsArgumentError,
+          reason: 'prompt 不能是空的');
+      expect(ai.calls, 0);
+    });
+
+    testWidgets('市场装的拓展必须声明 ai 权限', (tester) async {
+      final denied = await bridge(tester, item: _marketItem(permissions: const ['storage']));
+      await expectLater(denied.call('ai.chat', {'prompt': 'x'}), throwsArgumentError);
+      expect(ai.calls, 0);
+
+      final allowed = await bridge(tester, item: _marketItem(permissions: const ['ai']));
+      expect(await allowed.call('ai.chat', {'prompt': 'x'}), '好的');
+    });
+
+    testWidgets('AI 不可用（停用 / 没配置）报「AI 还没配好」', (tester) async {
+      ai.available = false;
+      final b = await bridge(tester);
+      await expectLater(
+        b.call('ai.chat', {'prompt': 'x'}),
+        throwsA(isA<ArgumentError>().having((e) => e.message, 'message', contains('AI 还没配好'))),
+      );
+    });
+
+    testWidgets('AI 插件没装：同样报错，不崩', (tester) async {
+      PluginRegistry.I = PluginRegistry(
+        features: const [WebViewPlugin(), ExtPlugin()],
+        themes: const [GlassTheme()],
+        capabilities: const {PluginIds.webview: WebViewCapabilityImpl()},
+      );
+      final b = await bridge(tester);
+      await expectLater(
+        b.call('ai.chat', {'prompt': 'x'}),
+        throwsA(isA<ArgumentError>().having((e) => e.message, 'message', contains('AI 还没配好'))),
+      );
+    });
+
+    test('ai 是敏感权限：安装弹窗的说明列表会带上它', () {
+      final out = describeSensitivePermissions(['ai', 'storage']);
+      expect(out, contains('调用 AI 对话（用你配置的模型与 API Key，可能产生费用）'));
+      expect(out, hasLength(2));
+    });
+  });
+
+  group('限定 App 版本（minAppVersion）', () {
+    test('导入的 JSON 也能声明，落盘回读', () async {
+      final store = ExtensionStore.I;
+      await store.load();
+      await store.add(const ExtensionItem(
+          id: 'e1', name: '甲', url: 'https://a.example.com', minAppVersion: '1.18.0'));
+
+      ExtensionStore.I = ExtensionStore(); // 模拟重启
+      await ExtensionStore.I.load();
+      expect(ExtensionStore.I.items.single.minAppVersion, '1.18.0');
+    });
+
+    testWidgets('App 版本不够：卡片标「需升级 App」，点开提示升级且不进内核', (tester) async {
+      final savedLoader = ExtensionItem.appVersionLoader;
+      ExtensionItem.appVersionLoader = () async => '1.16.0';
+      addTearDown(() => ExtensionItem.appVersionLoader = savedLoader);
+
+      await PluginRegistry.I.enable('ext');
+      await ExtensionStore.I.add(const ExtensionItem(
+          id: 'e1', name: '未来拓展', url: 'https://a.example.com/tool', minAppVersion: '9.9.9'));
+      await pumpPage(tester);
+      expect(find.text('需升级 App'), findsOneWidget);
+
+      await tester.tap(find.text('未来拓展'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('需要 App ≥9.9.9'), findsOneWidget,
+          reason: '打开被拦下，说清原因（版本门在内核检查之前）');
+    });
+
+    testWidgets('App 版本够：卡片没有标记，照常打开', (tester) async {
+      final savedLoader = ExtensionItem.appVersionLoader;
+      ExtensionItem.appVersionLoader = () async => '10.0.0';
+      addTearDown(() => ExtensionItem.appVersionLoader = savedLoader);
+
+      await PluginRegistry.I.enable('ext');
+      await ExtensionStore.I.add(const ExtensionItem(
+          id: 'e1', name: '未来拓展', url: 'https://a.example.com/tool', minAppVersion: '9.9.9'));
+      await pumpPage(tester);
+      expect(find.text('需升级 App'), findsNothing);
+
+      await tester.tap(find.text('未来拓展'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('需要 App'), findsNothing,
+          reason: '版本门放行（测试环境内核不可用，会走平台不支持那句）');
+    });
+  });
+}
+
+/// 市场装的测试拓展（权限门按它判断）。
+ExtensionItem _marketItem({List<String> permissions = const []}) => ExtensionItem(
+      id: 'sit.ai-demo',
+      name: 'AI 小助手',
+      url: '/data/ext/sit.ai-demo/index.html',
+      bundled: true,
+      version: '1.0.0',
+      sha256: 'a' * 64,
+      permissions: permissions,
+      fromMarket: true,
+    );
+
+/// 测试用 AI 功能插件：只为了让注册表里存在 PluginIds.ai（capability 查询要求已启用）。
+class _FakeAiPlugin extends FeaturePlugin {
+  _FakeAiPlugin(this.capability);
+
+  final AiCapability capability;
+
+  @override
+  String get id => PluginIds.ai;
+  @override
+  String get name => 'AI（测试）';
+  @override
+  String get description => '测试用 AI 能力提供方';
+}
+
+/// 记录 ai.chat 收到什么、返回什么（桥的单测用）。
+class _FakeAiCapability implements AiCapability {
+  @override
+  bool available = true;
+  int calls = 0;
+  String? lastPrompt;
+  String? lastSystem;
+  int? lastMaxTokens;
+
+  @override
+  Future<void> load() async {}
+
+  @override
+  String get providerLabel => '测试提供商';
+  @override
+  String get providerId => 'fake';
+
+  @override
+  Future<String?> solveCaptcha(Uint8List image) async => null;
+
+  @override
+  Future<List<HolidayRule>> parseHolidayImage(
+    Uint8List image, {
+    required String startDate,
+    required int weekCount,
+    String mime = 'image/png',
+  }) async =>
+      const [];
+
+  @override
+  Future<String> chat(String prompt, {String? system, int? maxTokens}) async {
+    calls++;
+    lastPrompt = prompt;
+    lastSystem = system;
+    lastMaxTokens = maxTokens;
+    return '好的';
+  }
+}
+
+/// 记录 NavSwipeHost 每次调用的假宿主（桥的单测用）。
+class _RecordingSwipeHost implements NavSwipeHost {
+  final overs = <double>[];
+  double? endVelocity;
+  int cancels = 0;
+
+  @override
+  void navDragOver(double over) => overs.add(over);
+
+  @override
+  void navDragEnd(double velocityDx) => endVelocity = velocityDx;
+
+  @override
+  void navDragCancel() => cancels++;
 }

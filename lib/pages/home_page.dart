@@ -15,12 +15,15 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> implements NavSwipeHost {
   final ValueNotifier<int> tab = ValueNotifier(0);
 
   /// 页面区域横滑中的连续位置（单位 = 底栏格）：底栏滑块跟着它走，松手置回 null
   /// 把位置交还给底栏自己的弹簧。单独用 ValueNotifier 是为了不每帧重建整棵页面树。
   final ValueNotifier<double?> _dragPos = ValueNotifier<double?>(null);
+
+  /// 内页（[NavSwipeScope] 桥）越界拖动的锚点：起拖时的主界面格。null = 没在接。
+  double? _bridgeFrom;
 
   /// 底栏**写出来**的当前滑块位置（每帧更新，含弹簧过程）：页面照着它位移，
   /// 于是页面和滑块是同一套弹簧、不会在切页时跳。
@@ -112,6 +115,57 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // ── 内页（拓展页等）滑出自身边界后的拖动镜像 ──
+  // 内页手势在竞技场里赢过了外层，主界面自己的 onHorizontalDrag* 收不到那次
+  // 拖动；越界量由内页经 NavSwipeScope 转过来，位置机制（滑块跟手、松手弹到
+  // 落点）与主界面原生手势同一条路，观感上就是把内页接进了滑动链。
+
+  @override
+  void navDragOver(double over) {
+    // 界内拖动（over=0 且从未越界）不惊动主界面：起拖若恰逢切页弹簧
+    // （_pos 还在半路），锚定并写 _dragPos 会掐断弹簧、把 tab 拽回上一格。
+    // 一旦真的越界（_bridgeFrom 已锚定），拖回 0 也要照常同步回弹。
+    if (over == 0 && _bridgeFrom == null) return;
+    if (_tabCount < 2) return;
+    _bridgeFrom ??= _pos.value;
+    final last = (_tabCount - 1).toDouble();
+    _dragPos.value = (_bridgeFrom! + over).clamp(0.0, last);
+    // 与自身手势同一规则：「界面实时跟着滑块切换」开着才拖动中换格
+    if (AppState.I.followSlider) {
+      final nearest = _dragPos.value!.round();
+      if (nearest != tab.value) tab.value = nearest;
+    }
+  }
+
+  @override
+  void navDragEnd(double velocityDx) {
+    final from = _bridgeFrom;
+    _bridgeFrom = null;
+    final p = _dragPos.value;
+    if (p == null) return; // 本次拖动没到过界外：主界面没什么可落位的
+    final last = _tabCount - 1;
+    var target = p.round().clamp(0, last);
+    final v = (-velocityDx / _screenW).clamp(-8.0, 8.0);
+    // 借一格只认「松手时还在界外（拖出一屏的 5% 以上）且甩动方向与越界一致」：
+    // 锚点的弹簧残差不算越界，界内的甩动是内页自己的事
+    final over = from == null ? 0.0 : p - from;
+    if (over.abs() > 0.05 && over * v > 0 && v.abs() >= 5.0) {
+      final next = target + (v > 0 ? 1 : -1);
+      if (next >= 0 && next <= last) target = next;
+    }
+    _dragPos.value = null; // 交还弹簧：滑块从当前位置弹到落点
+    if (target != tab.value) {
+      HapticFeedback.selectionClick();
+      tab.value = target;
+    }
+  }
+
+  @override
+  void navDragCancel() {
+    _bridgeFrom = null;
+    _dragPos.value = null;
+  }
+
   Future<void> _exitDemo() async {
     // 退出演示留在主导航界面（我的页显示未登录），不跳登录页
     await AppState.I.setDemo(false);
@@ -119,7 +173,11 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
+    // 把主界面横滑桥挂到树上：内页（拓展页的子页）滑到自身边界后经它
+    // 把拖动转过来，见 [NavSwipeHost]。
+    return NavSwipeScope(
+      host: this,
+      child: ValueListenableBuilder<int>(
       valueListenable: tab,
       builder: (context, i, _) => ListenableBuilder(
         listenable: Listenable.merge([AppState.I, PluginRegistry.I]),
@@ -230,6 +288,7 @@ class _HomePageState extends State<HomePage> {
                   ),
           );
         },
+      ),
       ),
     );
   }

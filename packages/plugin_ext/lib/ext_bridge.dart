@@ -19,6 +19,7 @@ import 'extension_store.dart';
 /// | `storage.get` | `{key}` | 该拓展自己存的任意 JSON；没有则 null |
 /// | `storage.set` | `{key, value}` | true |
 /// | `storage.remove` | `{key}` | true |
+/// | `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本。提示词由 App 本地转成当前 AI 提供商的请求（Key / 模型不出 App）；没配好 AI 或市场拓展没声明 `ai` 权限都直接报错 |
 ///
 /// 每个拓展一个实例：绑定自己的 [extId]（数据互相隔离）与打开网页那个 [context]
 /// （提示条 / 关页要用）。未知方法一律报错回网页，不静默失败——拓展作者调试时
@@ -66,6 +67,8 @@ class ExtBridge extends WebBridge {
       case 'storage.remove':
         await store.dataRemove(extId, _key(args));
         return true;
+      case 'ai.chat':
+        return _aiChat(args);
       default:
         throw ArgumentError('未知接口：$method');
     }
@@ -115,6 +118,39 @@ class ExtBridge extends WebBridge {
   }
 
   static bool _isUrl(String s) => s.startsWith('http://') || s.startsWith('https://');
+
+  /// AI 对话：提示词由 App 本地转成当前 AI 提供商的请求（Key / 模型都留在
+  /// App 侧，网页只拿到回答文本）。AI 插件没装 / 被停用 / 没配置都如实报错。
+  /// prompt / system 有长度上限：网页传多大的串都照单全收的话，序列化超大
+  /// 请求体能把 App 卡死。
+  static const int _maxAiTextChars = 32768;
+
+  Future<Object?> _aiChat(Object? args) async {
+    if (args is! Map) throw ArgumentError('ai.chat 要带 {prompt}');
+    final prompt = '${args['prompt'] ?? ''}'.trim();
+    if (prompt.isEmpty) throw ArgumentError('prompt 不能为空');
+    if (prompt.length > _maxAiTextChars) {
+      throw ArgumentError('prompt 太长（最多 $_maxAiTextChars 字）');
+    }
+    final system = args['system']?.toString();
+    if (system != null && system.length > _maxAiTextChars) {
+      throw ArgumentError('system 太长（最多 $_maxAiTextChars 字）');
+    }
+    final maxRaw = args['maxTokens'];
+    final int maxTokens;
+    if (maxRaw == null) {
+      maxTokens = 1024;
+    } else if (maxRaw is num && maxRaw > 0) {
+      maxTokens = maxRaw.toInt().clamp(16, 4096).toInt();
+    } else {
+      throw ArgumentError('maxTokens 要是正数（缺省 1024，收在 16–4096）');
+    }
+    final ai = PluginRegistry.I.capability<AiCapability>(PluginIds.ai);
+    if (ai == null || !ai.available) {
+      throw ArgumentError('AI 还没配好：到「我的 → AI 设置」选择提供商并填写 Key 与模型');
+    }
+    return ai.chat(prompt, system: system, maxTokens: maxTokens);
+  }
 
   /// 当前配色：拓展照着 App 的样子画，不用自己猜深浅色。
   Map<String, Object?> _theme() => {

@@ -28,6 +28,7 @@ export 'direct/sm4.dart';
 export 'direct/xg.dart';
 export 'host.dart';
 export 'json_num.dart';
+export 'nav_swipe.dart';
 export 'pages/connect_page.dart';
 export 'pages/login_page.dart';
 export 'plugins/ai_capability.dart';

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:campus_core/campus_core.dart';
 
@@ -65,12 +64,8 @@ class _MarketViewState extends State<MarketView> {
 
   /// 本机版本号：判「需要升级 App」。读不到就当没要求（软门，不挡人）。
   Future<void> _readAppVersion() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      if (mounted) setState(() => _appVersion = info.version);
-    } catch (_) {
-      // 测试环境 / 平台拿不到：不设门
-    }
+    final v = await ExtensionItem.appVersionLoader();
+    if (mounted && v.isNotEmpty) setState(() => _appVersion = v);
   }
 
   void _say(String msg) {
@@ -111,6 +106,22 @@ class _MarketViewState extends State<MarketView> {
     ];
   }
 
+  /// 所有已装且有新版的条目（官方 + 第三方源），不受当前搜索 / 分类过滤影响。
+  /// 同一 id 由多个源提供时只认已装的那个源（换源安装本来就会被拒）；
+  /// 需要更高版本 App 的更新装不动，不算进来（卡片上仍标「有新版 / 需升级 App」）。
+  List<MarketEntry> get _updatable {
+    final installer = MarketInstaller();
+    final out = <String, MarketEntry>{};
+    for (final e in _all) {
+      if (!installer.hasUpdate(e)) continue;
+      if (e.needsNewerApp(_appVersion)) continue;
+      final have = installer.installed(e.id);
+      if (have == null || e.sourceId != have.sourceId) continue;
+      out.putIfAbsent(e.id, () => e);
+    }
+    return out.values.toList();
+  }
+
   // ==================== 安装 / 更新 / 卸载 ====================
 
   Future<void> _install(MarketEntry e) async {
@@ -128,6 +139,93 @@ class _MarketViewState extends State<MarketView> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 一次更新所有「已装且有新版」的条目：逐条下载校验，单条失败不挡后面的。
+  Future<void> _updateAll() async {
+    final targets = _updatable;
+    if (targets.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('更新全部拓展？'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('将依次更新 ${targets.length} 个拓展：',
+                  style: const TextStyle(fontSize: 12.5, height: 1.6)),
+              const SizedBox(height: 6),
+              for (final e in targets)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text('· ${e.name}${e.version.isEmpty ? '' : ' → v${e.version}'}',
+                      style: const TextStyle(fontSize: 12.5, height: 1.5)),
+                ),
+              const SizedBox(height: 10),
+              Text(
+                '更新只换页面内容，拓展里存的数据（设置、历史）保留；'
+                '单个失败不会影响其他条目。',
+                style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('更新')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _busy = true);
+    var done = 0;
+    final failed = <String>[];
+    try {
+      for (final e in targets) {
+        try {
+          await MarketInstaller().install(e);
+          done++;
+        } catch (err) {
+          failed.add('${e.name}：${_short(err)}');
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    if (failed.isEmpty) {
+      widget.onInstalled?.call('已更新 $done 个拓展');
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('部分拓展没更新成功'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('成功 $done 个，失败 ${failed.length} 个：',
+                  style: const TextStyle(fontSize: 12.5, height: 1.6)),
+              const SizedBox(height: 6),
+              for (final line in failed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('· $line',
+                      style: const TextStyle(fontSize: 12, height: 1.6)),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+        ],
+      ),
+    );
   }
 
   Future<void> _uninstall(MarketEntry e) async {
@@ -267,6 +365,10 @@ class _MarketViewState extends State<MarketView> {
                       ),
               ),
             ),
+            if (_updatable.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _updateAllBanner(_updatable.length),
+            ],
             if (_categories.length > 1) ...[
               const SizedBox(height: 10),
               Wrap(
@@ -341,6 +443,34 @@ class _MarketViewState extends State<MarketView> {
         ),
       );
 
+  /// 「N 个拓展有新版 + 全部更新」：只在有可更新条目时出现，不占常驻空间。
+  Widget _updateAllBanner(int count) => Container(
+        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+        decoration: BoxDecoration(
+          color: SemColors.accent.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: SemColors.accent.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.system_update_alt_rounded, size: 18, color: SemColors.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('$count 个拓展有新版',
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+            ),
+            FilledButton.tonal(
+              onPressed: _busy ? null : _updateAll,
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text('全部更新', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      );
+
   Widget _noteBox(String text) => Padding(
         padding: const EdgeInsets.only(top: 10),
         child: Text(text,
@@ -402,7 +532,7 @@ class _MarketViewState extends State<MarketView> {
     final installer = MarketInstaller();
     final installed = installer.installed(e.id);
     final update = installer.hasUpdate(e);
-    final needsApp = _appVersion.isNotEmpty && e.needsNewerApp(_appVersion);
+    final needsApp = e.needsNewerApp(_appVersion);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),

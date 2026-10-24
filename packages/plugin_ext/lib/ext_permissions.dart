@@ -11,12 +11,13 @@
 library;
 
 /// 敏感权限：市场清单里必须声明才会被放行。
-const Set<String> kSensitivePermissions = {'storage', 'network'};
+const Set<String> kSensitivePermissions = {'storage', 'network', 'ai'};
 
 /// 权限的中文说明（与市场仓库 `market_manifest.dart` 的文案保持一致）。
 const Map<String, String> kPermissionLabels = {
   'storage': '在本机保存数据（记设置、记历史）',
   'network': '运行时联网',
+  'ai': '调用 AI 对话（用你配置的模型与 API Key，可能产生费用）',
   'theme': '读取 App 配色（只读）',
   'toast': '弹一条 App 风格的提示',
   'close': '关闭自己的页面',
@@ -29,6 +30,7 @@ const Map<String, String> kMethodPermissions = {
   'storage.get': 'storage',
   'storage.set': 'storage',
   'storage.remove': 'storage',
+  'ai.chat': 'ai',
 };
 
 /// 敏感权限的中文说明列表（市场页 / 安装弹窗 / 详情页共用）。

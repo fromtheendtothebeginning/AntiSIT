@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../extension_item.dart' show compareVersions;
+
 /// 市场目录（`market.json`）里的一条：只带「装得下来」需要的东西。
 ///
 /// 目录由维护者签名（见 [MarketSource]），这份解析只负责把它读成对象——
@@ -66,9 +68,12 @@ class MarketEntry {
 
   bool get isBundle => type == 'bundle';
 
-  /// 详情里显示「需要升级 App」用的判断。[appVersion] 形如 `1.16.0`。
+  /// 「需要升级 App」的判断。[appVersion] 形如 `1.16.0`；
+  /// 读不到（空串）不设门——拿不到本机版本时宁可放行，别把市场锁死。
   bool needsNewerApp(String appVersion) =>
-      minAppVersion.isNotEmpty && compareVersions(appVersion, minAppVersion) < 0;
+      minAppVersion.isNotEmpty &&
+      appVersion.isNotEmpty &&
+      compareVersions(appVersion, minAppVersion) < 0;
 
   static MarketEntry? tryParse(Object? raw, {String base = '', String sourceId = ''}) {
     if (raw is! Map) return null;
@@ -102,22 +107,6 @@ class MarketEntry {
   /// 一条市场条目能不能用（bundle 必须有下载地址与哈希）。
   bool get usable =>
       isBundle ? (zip.isNotEmpty && sha256.isNotEmpty) : (url.startsWith('https://'));
-}
-
-/// `x.y.z` 比大小（App 的 `update_check` 里那个在 app 层，插件包够不着，这里要一份小的）。
-/// 位数不等时按 0 补；非数字段当 0（不抛异常——目录里的脏数据不该把页面搞崩）。
-int compareVersions(String a, String b) {
-  List<int> parts(String v) => [
-        for (final s in v.split('.'))
-          int.tryParse(RegExp(r'^\d+').stringMatch(s) ?? '') ?? 0,
-      ];
-  final x = parts(a), y = parts(b);
-  for (var i = 0; i < (x.length > y.length ? x.length : y.length); i++) {
-    final xi = i < x.length ? x[i] : 0;
-    final yi = i < y.length ? y[i] : 0;
-    if (xi != yi) return xi < yi ? -1 : 1;
-  }
-  return 0;
 }
 
 /// 目录里的一条是否有「更新」：版本更高，或同版本但内容哈希变了（作者重发同一版）。

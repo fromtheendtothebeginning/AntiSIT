@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:package_info_plus/package_info_plus.dart';
 
 /// 一条拓展：名字 + 打开内容（远程网址，或导入的压缩包入口）。
 ///
@@ -18,6 +21,7 @@ class ExtensionItem {
     this.permissions = const [],
     this.fromMarket = false,
     this.sourceId = '',
+    this.minAppVersion = '',
   });
 
   /// 稳定 id：生成一次就跟着数据走（存储、每个拓展的键值数据隔离都按它）。
@@ -67,6 +71,32 @@ class ExtensionItem {
   /// 用来挡住「另一个源拿同一个 id 把已装的插件顶掉」——同一 id 换源装会被拒。
   final String sourceId;
 
+  /// 跑这条拓展需要的最低 App 版本（`''` = 没要求）。市场条目与导入的 JSON
+  /// 都可以声明；当前 App 低于它 → 市场里装不了，已装的照旧标「需升级 App」、
+  /// 打开时拦下（见 `ext_open.dart`）。
+  final String minAppVersion;
+
+  /// 当前 App 是否低于 [minAppVersion]。App 版本读不到（空串）不设门。
+  bool needsNewerApp(String appVersion) =>
+      minAppVersion.isNotEmpty &&
+      appVersion.isNotEmpty &&
+      compareVersions(appVersion, minAppVersion) < 0;
+
+  /// 当前 App 版本的读取方式（判 [needsNewerApp] 用，安装 / 打开前都会问它）：
+  /// 默认读 PackageInfo，读不到给空串 = 不设门（软门，不挡人）。测试里整体替换。
+  static Future<String> Function() appVersionLoader = _readPackageVersion;
+
+  static Future<String> _readPackageVersion() async {
+    // 单测（flutter_tester）里平台通道没人应答，PackageInfo 会永远等下去：
+    // 测试环境直接当读不到，要测版本门就替换 [appVersionLoader]
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return '';
+    try {
+      return (await PackageInfo.fromPlatform()).version;
+    } catch (_) {
+      return '';
+    }
+  }
+
   /// 自定义图标是不是图片网址（否则按文字 / emoji 渲染）。
   bool get iconIsImage =>
       icon.startsWith('http://') || icon.startsWith('https://');
@@ -84,6 +114,7 @@ class ExtensionItem {
     List<String>? permissions,
     bool? fromMarket,
     String? sourceId,
+    String? minAppVersion,
   }) =>
       ExtensionItem(
         id: id,
@@ -98,6 +129,7 @@ class ExtensionItem {
         permissions: permissions ?? this.permissions,
         fromMarket: fromMarket ?? this.fromMarket,
         sourceId: sourceId ?? this.sourceId,
+        minAppVersion: minAppVersion ?? this.minAppVersion,
       );
 
   /// 换掉卡片上的显示值（网页用 `card.setName` / `card.setDesc` / `card.setIcon` 接口改，
@@ -125,6 +157,7 @@ class ExtensionItem {
         if (permissions.isNotEmpty) 'permissions': permissions,
         if (fromMarket) 'market': true,
         if (sourceId.isNotEmpty) 'source': sourceId,
+        if (minAppVersion.isNotEmpty) 'minAppVersion': minAppVersion,
         // builtin 不落盘：只有编译前的固定清单能置这个标记
       };
 
@@ -171,6 +204,7 @@ class ExtensionItem {
       permissions: perms is List ? [for (final p in perms) '$p'] : const [],
       fromMarket: raw['market'] == true,
       sourceId: '${raw['source'] ?? ''}'.trim(),
+      minAppVersion: '${raw['minAppVersion'] ?? ''}'.trim(),
     );
   }
 
@@ -181,4 +215,21 @@ class ExtensionItem {
     if (list.isEmpty) throw const FormatException('没有可导入的拓展');
     return [for (final e in list) ExtensionItem.parse(e)];
   }
+}
+
+/// `x.y.z` 比大小：[minAppVersion] 判定用。App 层 `update_check` 里另有一份
+/// （插件包够不着 app 层，两处各自维护）；位数不等按 0 补，非数字段当 0
+/// （不抛异常——目录里的脏数据不该把页面搞崩）。
+int compareVersions(String a, String b) {
+  List<int> parts(String v) => [
+        for (final s in v.split('.'))
+          int.tryParse(RegExp(r'^\d+').stringMatch(s) ?? '') ?? 0,
+      ];
+  final x = parts(a), y = parts(b);
+  for (var i = 0; i < (x.length > y.length ? x.length : y.length); i++) {
+    final xi = i < x.length ? x[i] : 0;
+    final yi = i < y.length ? y[i] : 0;
+    if (xi != yi) return xi < yi ? -1 : 1;
+  }
+  return 0;
 }

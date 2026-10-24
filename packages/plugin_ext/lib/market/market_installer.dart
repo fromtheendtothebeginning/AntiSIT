@@ -59,8 +59,14 @@ class MarketInstaller {
   /// * `bundle`：下载 zip → 校验 sha256 → 解压 → 入列（更新时保留卡片上改过的名字 / 简介 / 图标）；
   /// * `web`：不下载东西，只记一条网址（站点自己会变，没有版本可更新）。
   ///
-  /// 抛 [StateError] 时消息可以直接给用户看（哈希不对 / 包坏了 / 与内置冲突）。
+  /// 抛 [StateError] 时消息可以直接给用户看（App 版本不够 / 哈希不对 / 包坏了 /
+  /// 与内置冲突）。市场卡片的「装不了」只是 UI 层，安装器这里再拦一道——
+  /// 「全部更新」之类的批量路径不该绕过版本门。
   Future<ExtensionItem> install(MarketEntry entry) async {
+    final app = await ExtensionItem.appVersionLoader();
+    if (entry.needsNewerApp(app)) {
+      throw StateError('「${entry.name}」需要 App ≥${entry.minAppVersion}，请先升级 App');
+    }
     if (store.isBuiltin(entry.id)) {
       throw StateError('「${entry.name}」的 id 与内置拓展冲突（${entry.id}），装不了');
     }
@@ -84,6 +90,7 @@ class MarketInstaller {
         permissions: entry.permissions,
         fromMarket: true,
         sourceId: entry.sourceId,
+        minAppVersion: entry.minAppVersion,
       );
       await store.add(item);
       return item;
@@ -119,6 +126,7 @@ class MarketInstaller {
         permissions: entry.permissions,
         fromMarket: true,
         sourceId: entry.sourceId,
+        minAppVersion: entry.minAppVersion,
       );
       await store.add(item);
     } else {
@@ -131,6 +139,7 @@ class MarketInstaller {
         permissions: entry.permissions,
         fromMarket: true,
         sourceId: entry.sourceId,
+        minAppVersion: entry.minAppVersion,
       );
       await store.update(item);
     }

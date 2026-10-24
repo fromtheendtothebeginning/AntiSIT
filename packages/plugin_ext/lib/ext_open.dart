@@ -10,13 +10,21 @@ import 'extension_store.dart';
 /// 打开一条拓展：把入口内容拿给 WebView 内核，带上这条拓展自己的接口通道。
 ///
 /// 「拓展」页与「插件市场」页共用（市场卡片上的「打开」跟列表里点卡片是同一件事）。
-/// 平台不支持 / 内核没开 → 用 [onMessage] 说一句（调用方决定是 snackbar 还是别的）。
+/// 平台不支持 / 内核没开 / App 版本低于拓展要求 → 用 [onMessage] 说一句
+/// （调用方决定是 snackbar 还是别的）。
 Future<void> openExtension(
   BuildContext context,
   ExtensionItem e, {
   void Function(String)? onMessage,
 }) async {
   void say(String msg) => onMessage?.call(msg);
+
+  // App 版本门放在最前：市场里装不进来「需要新 App」的拓展，但导入 JSON 没有这层，
+  // 而且版本比较便宜——不满足就别碰内核了
+  if (e.needsNewerApp(await ExtensionItem.appVersionLoader())) {
+    say('「${e.name}」需要 App ≥${e.minAppVersion}，请先升级 App 再打开');
+    return;
+  }
 
   final kernel = PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
   if (kernel == null) {
@@ -42,6 +50,8 @@ Future<void> openExtension(
       html = applyExtensionCsp(html, allowNetwork: e.permissions.contains('network'));
     }
   }
+  // 版本门 await 过了：页面可能已经不在树上
+  if (!context.mounted) return;
   await kernel.openPage(
     context,
     url: e.bundled ? null : e.url,

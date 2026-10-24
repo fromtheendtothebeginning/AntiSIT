@@ -17,6 +17,8 @@ import 'market/market_view.dart';
 /// 「拓展」页：网页形态的小功能，用户自己加进来。
 ///
 /// 两个标签：**我的**（自己加的与装进来的）与**市场**（[MarketView]，从插件市场装）。
+/// 子页滑到边界后继续拖，拖动经 [NavSwipeHost] 转给主界面，把两个子页接进
+/// 主界面的滑动链：`… 工具 ⇄ 拓展·我的 ⇄ 拓展·市场 ⇄ 我的 …`。
 /// 自己加有三种加法：**填写网址**、**导入压缩包**（html/js/css 三件套，导入后解压成
 /// 一份自包含页面）、**导入 JSON**；发行方还能在源码里放编译前固定的内置拓展
 /// （见 [kBuiltinExtensions]，用户端只读）。
@@ -42,9 +44,22 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   final ValueNotifier<double> _tabPos = ValueNotifier<double>(0);
   final ValueNotifier<double?> _tabDrag = ValueNotifier<double?>(null);
 
+  /// 本次手势的连续（**未 clamp**）位置：越界量按它算，拖回来时越界量才会
+  /// 跟着归零——若以 clamp 后的位置为基准，回程会被吃掉，主界面弹过锚点
+  /// 冲向另一边。松手 / 取消时清空。
+  double? _dragRaw;
+
   /// 市场页第一次要被看到时再建：拓展页会被主界面离屏预建，
   /// 一上来就建它会把市场目录的网络请求带到启动阶段。
   bool _marketMounted = false;
+
+  /// 主界面滑页桥（[NavSwipeScope]）：build 里取，树上没有（独立运行 / 单测）
+  /// 就是 null，越界拖动就地吞掉，与接桥前行为一致。
+  NavSwipeHost? _navHost;
+
+  /// 本机 App 版本：判已装拓展的「需升级 App」（导入的 JSON 也能声明最低版本，
+  /// 没有市场那道安装门，列表提示与打开拦截就是唯一检查点）。
+  String _appVersion = '';
 
   @override
   void initState() {
@@ -52,6 +67,12 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     _store.addListener(_onChanged);
     _tabPos.value = _tab.toDouble();
     if (!_store.loaded) unawaited(_store.load());
+    unawaited(_readAppVersion());
+  }
+
+  Future<void> _readAppVersion() async {
+    final v = await ExtensionItem.appVersionLoader();
+    if (mounted && v.isNotEmpty) setState(() => _appVersion = v);
   }
 
   void _onChanged() {
@@ -260,6 +281,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   void _onTabDragStart(DragStartDetails _) {
     _tabDrag.value = _tabPos.value;
+    _dragRaw = _tabPos.value;
     // 邻页得在树里才能跟着滑进来
     if (!_marketMounted) setState(() => _marketMounted = true);
   }
@@ -267,11 +289,15 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   void _onTabDragUpdate(DragUpdateDetails d) {
     final w = MediaQuery.sizeOf(context).width;
     if (w <= 0) return;
-    // 内容往左拖 = 去下一格
-    final next = ((_tabDrag.value ?? _tabPos.value) - d.delta.dx / w).clamp(0.0, 1.0);
-    _tabDrag.value = next;
+    // 内容往左拖 = 去下一格；连续位置先不 clamp，滑出边界的部分转给主界面
+    final raw = (_dragRaw ?? _tabPos.value) - d.delta.dx / w;
+    _dragRaw = raw;
+    _tabDrag.value = raw.clamp(0.0, 1.0);
     // 「界面实时跟着滑块切换」关掉时等松手落位再换
-    if (AppState.I.followSlider) _setTab(next.round());
+    if (AppState.I.followSlider) _setTab(_tabDrag.value!.round());
+    // 越界部分镜像给主界面（工具 ← 我的｜市场 → 我的）：主页面跟着手指连续
+    // 滑过去，拖回界内越界量归零、主界面位置也跟着弹回拓展格
+    _navHost?.navDragOver(raw < 0 ? raw : (raw > 1 ? raw - 1 : 0));
   }
 
   void _onTabDragEnd(DragEndDetails d) {
@@ -281,7 +307,10 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     final next = target + (v > 0 ? 1 : -1);
     if (v.abs() >= 5.0 && next >= 0 && next <= 1) target = next;
     _tabDrag.value = null; // 交还弹簧：滑块从当前位置弹到落点
+    _dragRaw = null;
     _setTab(target);
+    // 越界拖动的落位交给主界面就近落格（没到过界外时它自己会忽略）
+    _navHost?.navDragEnd(d.velocity.pixelsPerSecond.dx);
   }
 
   /// 隐藏全部网址的总开关（卡片上那一行直接不显示，详情里照旧能看到）。
@@ -290,6 +319,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   @override
   Widget build(BuildContext context) {
+    _navHost = NavSwipeScope.of(context);
     final items = _store.items;
     final hide = _store.hideUrls;
     final market = _tab == 1;
@@ -340,7 +370,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
               onHorizontalDragStart: _onTabDragStart,
               onHorizontalDragUpdate: _onTabDragUpdate,
               onHorizontalDragEnd: _onTabDragEnd,
-              onHorizontalDragCancel: () => _tabDrag.value = null,
+              onHorizontalDragCancel: () {
+                _tabDrag.value = null;
+                _dragRaw = null;
+                _navHost?.navDragCancel();
+              },
               child: ValueListenableBuilder<double>(
                 valueListenable: _tabPos,
                 builder: (context, rawPos, _) {
@@ -441,6 +475,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
               children: [
                 ExtIcon(item: e),
                 const Spacer(),
+                if (e.needsNewerApp(_appVersion))
+                  Padding(
+                    padding: const EdgeInsets.only(right: 2),
+                    child: Capsule('需升级 App', color: SemColors.danger),
+                  ),
                 if (e.builtin)
                   Padding(
                     padding: const EdgeInsets.only(right: 2),

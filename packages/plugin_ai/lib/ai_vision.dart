@@ -206,27 +206,8 @@ class AiVision {
     required int maxTokens,
     required bool thinkingOff,
     required Duration timeout,
-  }) async {
-    final c = _config;
-    final url = '${c.baseUrl.replaceAll(RegExp(r'/+$'), '')}/chat/completions';
-    final body = _payload(c, prompt, system, image, mime, maxTokens, thinkingOff);
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ${c.effectiveApiKey}',
-    };
-
-    http.Response resp;
-    try {
-      resp = await _client.post(Uri.parse(url), headers: headers, body: jsonEncode(body)).timeout(timeout);
-    } catch (e) {
-      throw ApiError('调用 AI 失败（${c.provider.label}）：$e');
-    }
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      final detail = utf8.decode(resp.bodyBytes, allowMalformed: true);
-      throw ApiError('AI 返回 ${resp.statusCode}：${detail.length > 200 ? detail.substring(0, 200) : detail}');
-    }
-    final j = _decode(resp.bodyBytes);
-    return (text: _extractText(j).trim(), finishReason: _finishReason(j));
+  }) {
+    return _sendChat(_payload(_config, prompt, system, image, mime, maxTokens, thinkingOff), timeout);
   }
 
   /// 「测试连接」：发一张极小的图问一句，确认 Key/模型/地址都通。
@@ -247,6 +228,84 @@ class AiVision {
     } finally {
       _config = saved;
     }
+  }
+
+  // ==================== 纯文本对话 ====================
+
+  /// 一轮纯文本对话：提示词进、回答文本出（拓展的 `ai.chat` 接口走这里）。
+  /// 与识图同一条请求路径（OpenAI 兼容 /chat/completions，本地按当前提供商
+  /// 拼 Key / 模型 / 关思考参数，见 [_chatText]）；首次回答为空自动关思考重试
+  /// 一次——思考型模型把 max_tokens 全吃光的场景与识图相同（见 [describeImage]）。
+  Future<String> chat(
+    String prompt, {
+    String? system,
+    int maxTokens = 1024,
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
+    await load();
+    if (!_config.ready) {
+      throw ApiError('尚未配置 AI：请在「我的 → AI 设置」填写 API Key 与模型');
+    }
+    var reply = await _chatText(prompt,
+        system: system, maxTokens: maxTokens, thinkingOff: false, timeout: timeout);
+    if (reply.text.isEmpty) {
+      reply = await _chatText(prompt,
+          system: system, maxTokens: maxTokens, thinkingOff: true, timeout: timeout);
+    }
+    if (reply.text.isNotEmpty) return reply.text;
+    throw ApiError(reply.finishReason == 'length'
+        ? 'AI 输出被截断（撞上 token 上限），没有给出结果：请重试或换一个模型'
+        : 'AI 未返回内容');
+  }
+
+  /// 文本对话的请求体：没有 image_url 那一段，user content 直接是字符串。
+  Future<({String text, String finishReason})> _chatText(
+    String prompt, {
+    String? system,
+    required int maxTokens,
+    required bool thinkingOff,
+    required Duration timeout,
+  }) {
+    final c = _config;
+    return _sendChat({
+      'model': c.model.trim(),
+      'max_tokens': maxTokens,
+      'stream': false,
+      'messages': [
+        if (system != null && system.isNotEmpty) {'role': 'system', 'content': system},
+        {'role': 'user', 'content': prompt},
+      ],
+      if (thinkingOff) ...applyThinkingOff(c.providerId, c.model.trim()),
+    }, timeout);
+  }
+
+  /// 发一次对话请求并解开回答：URL / 鉴权 / 状态码 / 超时的处理识图与文本对话共用。
+  Future<({String text, String finishReason})> _sendChat(
+    Map<String, dynamic> body,
+    Duration timeout,
+  ) async {
+    final c = _config;
+    final url = '${c.baseUrl.replaceAll(RegExp(r'/+$'), '')}/chat/completions';
+    http.Response resp;
+    try {
+      resp = await _client
+          .post(Uri.parse(url),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ${c.effectiveApiKey}',
+              },
+              body: jsonEncode(body))
+          .timeout(timeout);
+    } catch (e) {
+      throw ApiError('调用 AI 失败（${c.provider.label}）：$e');
+    }
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      final detail = utf8.decode(resp.bodyBytes, allowMalformed: true);
+      throw ApiError(
+          'AI 返回 ${resp.statusCode}：${detail.length > 200 ? detail.substring(0, 200) : detail}');
+    }
+    final j = _decode(resp.bodyBytes);
+    return (text: _extractText(j).trim(), finishReason: _finishReason(j));
   }
 
   // ==================== 请求构造 ====================

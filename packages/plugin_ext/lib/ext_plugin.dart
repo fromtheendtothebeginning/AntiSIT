@@ -26,6 +26,12 @@ class ExtPlugin extends FeaturePlugin {
   String get description => '把网页变成小功能：市场安装、填网址或导入压缩包，点开即用';
   @override
   List<String> get dependencies => const [PluginIds.webview];
+
+  /// AI 是软依赖：ai.chat 接口只在 AI 插件可用时工作，没装 / 停用 / 没配置就
+  /// 报错回网页（「有则增强、删了拉倒」）。
+  @override
+  List<String> get optionalDependencies => const [PluginIds.ai];
+
   @override
   bool get defaultEnabled => true;
 

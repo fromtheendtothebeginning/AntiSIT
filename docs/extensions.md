@@ -107,8 +107,9 @@ antiSIT.post('toast', { text: '已保存' });
 | `storage.get` | `{key}` | 该拓展自己存的值（任意 JSON），没有则 `null` |
 | `storage.set` | `{key, value}` | `true` |
 | `storage.remove` | `{key}` | `true` |
+| `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本（`maxTokens` 缺省 1024，16–4096）。提示词由 App **本地**转成当前 AI 提供商的请求发出（API Key / 模型配置不出 App，网页也摸不到），只把回答还回来；AI 没配置好 → Promise reject 并提示去「AI 设置」 |
 
-**市场装的拓展**用 `storage.*` 需要在清单里声明 `storage` 权限（见下节「权限」）；
+**市场装的拓展**用 `storage.*`、`ai.chat` 需要在清单里声明对应权限（见下节「权限」）；
 用户自己加的拓展不受这条限制。
 
 约定：
@@ -172,6 +173,9 @@ antiSIT.post('toast', { text: '已保存' });
 * **装 / 更新 / 卸载**：更新就是再装一次，拓展 id 不变，所以解压目录被换掉、
   而它的数据（`plugin.ext.data.<id>.*`）留着；你在卡片上改过的名字 / 简介 / 图标也留着。
   卸载把条目、解压目录、它的数据一起清掉。
+* **限定 App 版本**：条目（和导入的 JSON）可以声明 `minAppVersion`。当前 App 低于它 →
+  市场卡片标「需要升级 App」、按钮变「装不了」（安装器也会拦，`全部更新`不把它算进来）；
+  已经装上的会在拓展列表标「需升级 App」，打开时提示升级。App 版本读不到时不设门。
 * **投稿有源码体检**：市场工具（`dart run tool/market_tool.dart check`）会拦下两道
   在内置页里必然踩坑的写法——用 `localStorage` / `sessionStorage` / `document.cookie`
   （opaque origin，读它直接抛错，要存数据走 `antiSIT` 的 `storage`），以及没声明
@@ -207,6 +211,7 @@ antiSIT.post('toast', { text: '已保存' });
 |---|---|
 | `storage` | 在本机保存数据（记设置、记历史）；不声明就调用 `storage.*` → 直接拒（Promise reject） |
 | `network` | 运行时联网。**市场装的 zip 默认禁网**（打开时由 `plugin_ext` 注入 `connect-src 'none'` 的 CSP，`img-src` / `font-src` 只放 `data:`）：审核过的那份代码就是手机上跑的那份，不会运行时再去作者服务器拉新脚本。用户自己导入的压缩包不受这条限制 |
+| `ai` | 调用 AI 对话（`ai.chat`，走用户在「AI 设置」里配置的模型与 API Key，可能产生费用）；不声明就调用 → 直接拒 |
 
 `theme` / `toast` / `close` / `card` 是**基础接口**，只跟界面有关，不声明也放行
 （写进 `permissions` 只是为了拦住拼写错误）。用户自己填网址 / 自己挑压缩包装的拓展

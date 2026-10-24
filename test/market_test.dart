@@ -89,6 +89,7 @@ void main() {
     required Map<String, String> signer,
     String version = '1.0.0',
     String name = '记一笔',
+    String minAppVersion = '1.0.0',
     Map<String, String> files = const {
       'index.html': '<!doctype html><html><head></head><body>hi</body></html>',
       'app.js': 'console.log(1)',
@@ -113,7 +114,7 @@ void main() {
           'sha256': sha,
           'size': zip.length,
           'permissions': ['storage'],
-          'minAppVersion': '1.0.0',
+          'minAppVersion': minAppVersion,
         }
       ],
     };
@@ -229,11 +230,15 @@ void main() {
 
   group('安装', () {
     Future<MarketEntry> readyEntry(Map<String, String> signer,
-        {String version = '1.0.0', Map<String, String>? files}) async {
+        {String version = '1.0.0', String minAppVersion = '1.0.0', Map<String, String>? files}) async {
       MarketSource.publicKeys = {'k-test': signer['pub']!};
-      final (catalog, sig, zip) = await makeCatalog(signer: signer, version: version, files: files ?? const {
-        'index.html': '<!doctype html><html><head></head><body>hi</body></html>',
-      });
+      final (catalog, sig, zip) = await makeCatalog(
+          signer: signer,
+          version: version,
+          minAppVersion: minAppVersion,
+          files: files ?? const {
+            'index.html': '<!doctype html><html><head></head><body>hi</body></html>',
+          });
       serveMirror(catalog: catalog, sig: sig, files: {'dist/sit.demo-counter/$version.zip': zip});
       await MarketSource.I.load(force: true); // 每次都是新目录，强制重拉
       return MarketSource.I.entries.single;
@@ -250,8 +255,31 @@ void main() {
       expect(item.sha256, entry.sha256);
       expect(item.permissions, ['storage']);
       expect(item.fromMarket, isTrue);
+      expect(item.minAppVersion, '1.0.0', reason: '记下来，列表与打开时好判');
       expect(ExtensionStore.I.items.single.id, 'sit.demo-counter');
       expect(MarketInstaller().isInstalled('sit.demo-counter'), isTrue);
+    });
+
+    test('App 版本低于条目要求：安装器直接拒（不下载不落盘）', () async {
+      final signer = await newSigner();
+      final entry = await readyEntry(signer, minAppVersion: '9.9.9');
+
+      final savedLoader = ExtensionItem.appVersionLoader;
+      ExtensionItem.appVersionLoader = () async => '1.16.0';
+      addTearDown(() => ExtensionItem.appVersionLoader = savedLoader);
+      var downloads = 0;
+      final installer = MarketInstaller()
+        ..downloadOverride = ((_) async {
+          downloads++;
+          return [];
+        });
+
+      await expectLater(
+        installer.install(entry),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('升级 App'))),
+      );
+      expect(downloads, 0, reason: '版本门在下载之前');
+      expect(ExtensionStore.I.items, isEmpty);
     });
 
     test('包被改过（sha256 对不上）→ 不落盘、不入列', () async {
@@ -439,6 +467,101 @@ void main() {
 
       expect(find.text('有新版'), findsOneWidget);
       expect(find.text('更新'), findsOneWidget);
+    });
+
+    testWidgets('新版要求更高的 App：卡片标「装不了」，也不进「全部更新」', (tester) async {
+      final savedLoader = ExtensionItem.appVersionLoader;
+      ExtensionItem.appVersionLoader = () async => '1.16.0';
+      addTearDown(() => ExtensionItem.appVersionLoader = savedLoader);
+
+      final signer = await newSigner();
+      final v1 = await (() async {
+        MarketSource.publicKeys = {'k-test': signer['pub']!};
+        final (catalog, sig, zip) = await makeCatalog(signer: signer, version: '1.0.0');
+        serveMirror(catalog: catalog, sig: sig, files: {'dist/sit.demo-counter/1.0.0.zip': zip});
+        await MarketSource.I.load(force: true);
+        return MarketSource.I.entries.single;
+      })();
+      await MarketInstaller().install(v1);
+
+      // 目录升到 1.1.0，但这一版要求 App ≥9.9.9
+      final (catalog2, sig2, zip2) =
+          await makeCatalog(signer: signer, version: '1.1.0', minAppVersion: '9.9.9');
+      serveMirror(catalog: catalog2, sig: sig2, files: {'dist/sit.demo-counter/1.1.0.zip': zip2});
+      MarketSource.I = MarketSource();
+      await pumpMarket(tester);
+
+      expect(find.textContaining('需要升级 App'), findsOneWidget);
+      expect(find.text('装不了'), findsOneWidget);
+      expect(find.text('有新版'), findsOneWidget, reason: '更新存在照旧标注，但按钮是「装不了」');
+      expect(find.text('更新'), findsNothing);
+      expect(find.text('全部更新'), findsNothing, reason: '装不动的更新不进「全部更新」');
+    });
+
+    testWidgets('一键全部更新：所有有新版条目一起更新，拓展数据保留', (tester) async {
+      final signer = await newSigner();
+      MarketSource.publicKeys = {'k-test': signer['pub']!};
+
+      Future<(List<int>, String, Map<String, Uint8List>)> catalogFor(String version) async {
+        final zips = <String, Uint8List>{};
+        final entries = <Map<String, dynamic>>[];
+        for (final (id, name) in [('sit.demo-counter', '记一笔'), ('sit.other', '另一个')]) {
+          final zip = makeZip({
+            'index.html': '<!doctype html><html><body>$name $version</body></html>',
+          });
+          zips['dist/$id/$version.zip'] = zip;
+          entries.add({
+            'id': id,
+            'name': name,
+            'desc': '$name 的简介',
+            'author': 'AntiSIT',
+            'category': '工具',
+            'icon': '🧮',
+            'type': 'bundle',
+            'version': version,
+            'zip': 'dist/$id/$version.zip',
+            'sha256': hex(zip),
+            'size': zip.length,
+            'permissions': const <String>[],
+            'minAppVersion': '1.0.0',
+          });
+        }
+        final catalog = {'schema': 1, 'keyId': 'k-test', 'extensions': entries};
+        final bytes = utf8.encode('${const JsonEncoder.withIndent('  ').convert(catalog)}\n');
+        return (bytes, await sign(bytes, signer), zips);
+      }
+
+      // 先装两条 1.0.0
+      final (c1, s1, z1) = await catalogFor('1.0.0');
+      serveMirror(catalog: c1, sig: s1, files: z1);
+      await MarketSource.I.load();
+      for (final e in MarketSource.I.entries) {
+        await MarketInstaller().install(e);
+      }
+      await ExtensionStore.I.dataSet('sit.demo-counter', 'note', 'v1-data');
+      expect(ExtensionStore.I.items.map((e) => e.version), everyElement('1.0.0'));
+
+      // 目录升到 1.1.0，重新进市场页
+      final (c2, s2, z2) = await catalogFor('1.1.0');
+      serveMirror(catalog: c2, sig: s2, files: z2);
+      MarketSource.I = MarketSource();
+      await pumpMarket(tester);
+
+      expect(find.text('2 个拓展有新版'), findsOneWidget);
+      await tester.tap(find.text('全部更新'));
+      await tester.pumpAndSettle();
+      expect(find.text('更新全部拓展？'), findsOneWidget);
+      await tester.tap(find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, '更新'),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(ExtensionStore.I.items, hasLength(2));
+      expect(ExtensionStore.I.items.map((e) => e.version), everyElement('1.1.0'));
+      expect(await ExtensionStore.I.dataGet('sit.demo-counter', 'note'), 'v1-data',
+          reason: '更新保留拓展自己的数据');
+      expect(find.text('2 个拓展有新版'), findsNothing, reason: '更新完横幅消失');
     });
 
     testWidgets('目录验签不过：说清原因并给重试，不列任何条目', (tester) async {

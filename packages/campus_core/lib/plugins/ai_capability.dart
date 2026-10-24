@@ -44,4 +44,9 @@ abstract class AiCapability implements PluginCapability {
     required int weekCount,
     String mime = 'image/png',
   });
+
+  /// 纯文本对话：提示词进、回答文本出（拓展的 `ai.chat` 接口走这里）。
+  /// 请求由 App 本地按当前提供商的协议构造（Key / 模型都不出 App），失败抛 ApiError。
+  /// [maxTokens] 缺省由实现决定；没配置模型 / 插件被停用时先用 [available] 判断。
+  Future<String> chat(String prompt, {String? system, int? maxTokens});
 }

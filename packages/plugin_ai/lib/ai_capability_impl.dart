@@ -37,4 +37,8 @@ class AiCapabilityImpl implements AiCapability {
     String mime = 'image/png',
   }) =>
       tasks.parseHolidayImage(image, startDate: startDate, weekCount: weekCount, mime: mime);
+
+  @override
+  Future<String> chat(String prompt, {String? system, int? maxTokens}) =>
+      AiVision.I.chat(prompt, system: system, maxTokens: maxTokens ?? 1024);
 }
