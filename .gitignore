@@ -56,3 +56,7 @@ app.*.map.json
 /android/local.properties
 
 TODO.md
+# IDE 本地配置
+/.vscode/
+# 图标生成过程的临时预览图
+/tool/icon/_preview_small.png

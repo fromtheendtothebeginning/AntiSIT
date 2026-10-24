@@ -1,0 +1,29 @@
+name: CI
+
+# 每次 push / PR 跑静态分析与全量测试（本地 30 秒左右跑完，成本极低）。
+# 发版构建仍走 release.yml（打 tag 触发），两条流水线互不影响。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.35.7 # 与 release.yml 保持一致，避免两边结论打架
+          cache: true
+
+      - name: 解析依赖
+        run: flutter pub get
+
+      - name: 静态分析（info 也算失败，保持仓库零告警）
+        run: flutter analyze --fatal-infos
+
+      - name: 全量测试
+        run: flutter test

@@ -53,6 +53,7 @@ class JsonThemePlugin extends ThemePlugin {
     return JsonThemePlugin(id: id, name: name, light: light, dark: dark);
   }
 
+  @override
   final String id;
 
   @override
@@ -77,7 +78,7 @@ class JsonThemePlugin extends ThemePlugin {
     Color require(String key) {
       final raw = '${node[key] ?? ''}'.trim();
       final c = _colorOf(raw);
-      if (c == null) throw FormatException('$which.$key 不是合法的颜色值：\"$raw\"');
+      if (c == null) throw FormatException('$which.$key 不是合法的颜色值："$raw"');
       return c;
     }
 

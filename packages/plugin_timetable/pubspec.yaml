@@ -16,6 +16,8 @@ dependencies:
   image_picker: ^1.2.0
   # 课表自定义背景：把图库里的图拷进应用目录保存
   path_provider: ^2.1.5
+  # 课表自定义背景的路径与淡显程度存在本机偏好里
+  shared_preferences: ^2.5.5
   # 课表导出日历：生成的 .ics 交给系统分享（存到文件 / 发给自己 / 导入日历 App）
   share_plus: ^12.0.2
   # 导入日历：选一个 .ics 文件
