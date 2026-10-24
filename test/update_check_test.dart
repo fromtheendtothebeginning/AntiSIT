@@ -155,6 +155,36 @@ void main() {
     });
   });
 
+  group('多源尝试（GitHub 失败退回镜像）', () {
+    test('第一个源挂了用第二个，拿到结果', () async {
+      final tried = <Uri>[];
+      final j = await fetchLatestFrom([Uri.parse('https://a/1'), Uri.parse('https://b/2')],
+          (api) async {
+        tried.add(api);
+        if (api.host == 'a') throw Exception('timeout');
+        return {'tag_name': 'v9.9.9'};
+      });
+      expect(j['tag_name'], 'v9.9.9');
+      expect(tried.length, 2);
+    });
+
+    test('全部失败抛最后一个错误', () async {
+      await expectLater(
+        fetchLatestFrom(
+            [Uri.parse('https://a/1'), Uri.parse('https://b/2')], (api) async {
+          if (api.host == 'a') throw Exception('first');
+          throw Exception('second');
+        }),
+        throwsA(isA<Exception>().having((e) => '$e', 'msg', contains('second'))),
+      );
+    });
+
+    test('镜像源已配置（anticraft.top）', () {
+      expect(latestReleaseApis.first.host, 'api.github.com');
+      expect(latestReleaseApis.last.host, 'anticraft.top');
+    });
+  });
+
   test('点过「稍后」的版本不再自动弹，手动检查仍看得到', () async {
     UpdateChecker.I.debugFetch = () async => releaseJson('v1.13.6');
     await UpdateChecker.I.load();

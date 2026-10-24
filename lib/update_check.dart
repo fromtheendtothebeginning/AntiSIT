@@ -9,9 +9,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 更新检查的来源：发行 APK 挂在 GitHub Release 上（见 .github/workflows/release.yml）。
 const String updateRepo = 'fromtheendtothebeginning/AntiSIT';
 
-/// GitHub 的「最新正式版本」接口（草稿与预发布不算）。
-final Uri latestReleaseApi =
-    Uri.parse('https://api.github.com/repos/$updateRepo/releases/latest');
+/// 依次尝试的更新源：GitHub 官方接口优先；它访问不了（国内网络常见）时退回
+/// 自建镜像——`anticraft.top/apk/latest.json` 放一份**同结构**的 Release JSON
+/// （发版后从 GitHub API 导出即可；assets 的下载地址可换成站内 HTTPS 直链，
+/// 手机端下载就不用翻 GitHub）。第一个成功的胜出。
+final List<Uri> latestReleaseApis = [
+  Uri.parse('https://api.github.com/repos/$updateRepo/releases/latest'),
+  Uri.parse('https://anticraft.top/apk/latest.json'),
+];
 
 /// 一个比本机新的版本，以及引导更新要用的东西。
 class UpdateInfo {
@@ -201,13 +206,18 @@ class UpdateChecker extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> _fetchLatest() async {
+  Future<Map<String, dynamic>> _fetchLatest() =>
+      fetchLatestFrom(latestReleaseApis, _fetchOne);
+
+  Future<Map<String, dynamic>> _fetchOne(Uri api) async {
     final res = await http
-        .get(latestReleaseApi,
+        .get(api,
             headers: const {'Accept': 'application/vnd.github+json', 'User-Agent': 'AntiSIT'})
         .timeout(_timeout);
     if (res.statusCode != 200) throw http.ClientException('HTTP ${res.statusCode}');
-    return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    final j = jsonDecode(utf8.decode(res.bodyBytes));
+    if (j is! Map<String, dynamic>) throw const FormatException('接口返回的不是 JSON 对象');
+    return j;
   }
 
   /// 失败原因 → 给用户看的短句（接口限流与网络不通最常见）。
@@ -216,6 +226,23 @@ class UpdateChecker extends ChangeNotifier {
     final s = '$e';
     if (s.contains('403')) return 'GitHub 接口限流（403），过一会儿再试';
     if (s.contains('404')) return '仓库里还没有发布过版本';
-    return '网络不可用（GitHub 可能访问不了）';
+    return '网络不可用（GitHub 与镜像都访问不了）';
   }
+}
+
+/// 依次尝试更新源，第一个成功的胜出；全部失败抛出**最后一个**错误
+/// （先试的 GitHub，错误文案以最后的镜像为准没有意义，保留原错误更利于定位）。
+Future<Map<String, dynamic>> fetchLatestFrom(
+  Iterable<Uri> sources,
+  Future<Map<String, dynamic>> Function(Uri) fetch,
+) async {
+  Object? last;
+  for (final api in sources) {
+    try {
+      return await fetch(api);
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw last ?? StateError('没有可用的更新源');
 }
