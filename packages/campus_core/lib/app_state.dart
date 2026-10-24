@@ -5,11 +5,49 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'direct/school.dart';
+import 'secure_store.dart';
+
+/// 二课分数快照（/score 的 data 节点）：宫格副标题与「学籍信息」的常用字段
+/// 强类型访问；详情页要挖别的字段走 [raw]。
+class ScoreSnapshot {
+  const ScoreSnapshot._(this.raw);
+
+  factory ScoreSnapshot.fromJson(Map<String, dynamic> j) => ScoreSnapshot._(j);
+
+  final Map<String, dynamic> raw;
+
+  /// 已得分 / 达标分（缺字段按 0，副标题不至于显示 null）。
+  num get credit => raw['credit'] is num ? raw['credit'] as num : 0;
+  num get total => raw['total'] is num ? raw['total'] as num : 0;
+
+  /// 学籍信息节点（院系 / 专业 / 班级），「我的 → 学籍信息」用。
+  Map<String, dynamic>? get student =>
+      raw['student'] is Map<String, dynamic> ? raw['student'] as Map<String, dynamic> : null;
+}
+
+/// 宿舍电费快照（/electricity/query 的 data 节点）。
+class ElectricitySnapshot {
+  const ElectricitySnapshot._(this.raw);
+
+  factory ElectricitySnapshot.fromJson(Map<String, dynamic> j) => ElectricitySnapshot._(j);
+
+  final Map<String, dynamic> raw;
+
+  /// 当前余额（元）。
+  num get balance => raw['balance'] is num ? raw['balance'] as num : 0;
+}
 
 /// 工具页与子页共享的缓存数值（用于宫格卡面速览）。
 class ToolCache {
-  static Map<String, dynamic>? score;
-  static Map<String, dynamic>? electricity;
+  static ScoreSnapshot? score;
+  static ElectricitySnapshot? electricity;
+
+  /// data 节点缺失 / 类型不对时给 null，把判空集中在这一处。
+  static ScoreSnapshot? scoreOf(Object? data) =>
+      data is Map<String, dynamic> ? ScoreSnapshot.fromJson(data) : null;
+
+  static ElectricitySnapshot? electricityOf(Object? data) =>
+      data is Map<String, dynamic> ? ElectricitySnapshot.fromJson(data) : null;
 }
 
 /// 数据来源模式：
@@ -66,10 +104,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
+    final secure = SecureStore.I;
     serverUrl = sp.getString('server_url') ?? '';
     demo = kDebugMode && (sp.getBool('demo') ?? false); // 演示模式仅 debug 构建可用
     remember = sp.getBool('remember') ?? true;
-    token = sp.getString('token');
+    // 敏感值走加密存储；早期版本留在明文 SharedPreferences 里的旧值一次性迁入
+    token = await _migrate(secure, sp, 'token');
     themeMode = switch (sp.getString('theme_mode')) {
       'light' => ThemeMode.light,
       'dark' => ThemeMode.dark,
@@ -83,14 +123,27 @@ class AppState extends ChangeNotifier {
     if (schools.isEmpty) schools = [SchoolProfile.sit()];
     final active = sp.getString('direct_school') ?? '';
     school = schools.firstWhere((s) => s.name == active, orElse: () => schools.first);
-    creds = CampusCreds.fromJson(_decodeObj(sp.getString('direct_creds')));
+    creds = CampusCreds.fromJson(_decodeObj(await _migrate(secure, sp, 'direct_creds')));
     if (remember) {
-      username = sp.getString('username');
-      password = sp.getString('password');
+      username = await _migrate(secure, sp, 'username');
+      password = await _migrate(secure, sp, 'password');
     }
     loaded = true;
     // 主题等偏好可能在首帧后才异步加载完成，通知根组件按持久化偏好重建
     notifyListeners();
+  }
+
+  /// 加密存储优先；它没有而明文 SharedPreferences 里有（旧版本写入的）→
+  /// 采用明文值、写入加密存储、删掉明文。
+  static Future<String?> _migrate(
+      SecureStore secure, SharedPreferences sp, String key) async {
+    final v = await secure.read(key);
+    if (v != null && v.isNotEmpty) return v;
+    final legacy = sp.getString(key);
+    if (legacy == null || legacy.isEmpty) return null;
+    await secure.write(key, legacy);
+    await sp.remove(key);
+    return legacy;
   }
 
   static Map<String, dynamic>? _decodeObj(String? raw) {
@@ -105,6 +158,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _persist() async {
     final sp = await SharedPreferences.getInstance();
+    final secure = SecureStore.I;
     await sp.setBool('demo', demo);
     await sp.setString('server_url', serverUrl);
     await sp.setBool('remember', remember);
@@ -116,20 +170,27 @@ class AppState extends ChangeNotifier {
     await sp.setString('app_mode', direct ? 'direct' : 'server');
     await sp.setString('direct_schools', SchoolProfile.encodeList(schools));
     await sp.setString('direct_school', school.name);
-    await sp.setString('direct_creds', jsonEncode(creds.toJson()));
-    final token = this.token;
-    if (token != null) {
-      await sp.setString('token', token);
-    } else {
-      await sp.remove('token');
-    }
+    await _putSecure(secure, sp, 'direct_creds', jsonEncode(creds.toJson()));
+    await _putSecure(secure, sp, 'token', token);
     if (remember && username != null && password != null) {
-      await sp.setString('username', username!);
-      await sp.setString('password', password!);
+      await _putSecure(secure, sp, 'username', username!);
+      await _putSecure(secure, sp, 'password', password!);
     } else {
-      await sp.remove('username');
-      await sp.remove('password');
+      await _putSecure(secure, sp, 'username', null);
+      await _putSecure(secure, sp, 'password', null);
     }
+  }
+
+  /// 敏感值写加密存储；顺带清掉早期版本可能留在明文里的同名 key。
+  /// 值为 null / 空表示删除。
+  static Future<void> _putSecure(
+      SecureStore secure, SharedPreferences sp, String key, String? value) async {
+    if (value != null && value.isNotEmpty) {
+      await secure.write(key, value);
+    } else {
+      await secure.remove(key);
+    }
+    await sp.remove(key);
   }
 
   /// 直连模式的学校 / 凭据改动落盘（不改登录 token）。

@@ -14,6 +14,9 @@ dependencies:
   # 数据来源与登录（服务器模式 / 直连模式）
   http: ^1.6.0
   shared_preferences: ^2.5.5
+  # 敏感凭据（token / 账号密码 / 校园凭据含支付密码）的加密存储：
+  # 明文 SharedPreferences 在 root / adb backup 下裸奔，走 Android Keystore
+  flutter_secure_storage: ^10.0.0
   # 直连模式的国密 / RSA 实现
   pointycastle: ^4.0.0
   # AI 提供商 logo 与品牌图形

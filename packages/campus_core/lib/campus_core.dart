@@ -21,6 +21,8 @@ export 'direct/crypto.dart';
 export 'direct/epay.dart';
 export 'direct/http_session.dart';
 export 'direct/jwxt.dart';
+// ⚠️ 仅调试用的本地模拟校园服务：连接设置页手动启动，release 构建里整块被
+// 摇树剔除。插件作者不要依赖它——它是给直连链路调试用的,不是对外契约。
 export 'direct/mock_campus_server.dart';
 export 'direct/mock_captcha.dart';
 export 'direct/school.dart';
@@ -31,6 +33,7 @@ export 'json_num.dart';
 export 'nav_swipe.dart';
 export 'pages/connect_page.dart';
 export 'pages/login_page.dart';
+export 'secure_store.dart';
 export 'plugins/ai_capability.dart';
 export 'plugins/capability.dart';
 export 'plugins/plugin.dart';

@@ -373,6 +373,8 @@ bool onNavigationNotification(NavigationNotification notification) {
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // 敏感凭据改走加密存储（Keystore）：默认的内存实现不持久化，必须在这里装上真机版
+  SecureStore.I = FlutterSecureStore();
   // 竖屏锁定：手机横过来也不跟着陀螺仪转（页面布局按竖屏设计）
   SystemChrome.setPreferredOrientations(const [
     DeviceOrientation.portraitUp,
