@@ -1,0 +1,101 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'update_check.dart';
+
+/// 一条版本更新日志。
+class ChangelogEntry {
+  const ChangelogEntry({required this.version, required this.date, required this.notes});
+
+  final String version;
+
+  /// 发布日期（YYYY-MM-DD）。
+  final String date;
+
+  /// 面向用户的变更说明（每条一行，弹窗里按 · 列表展示）。
+  final List<String> notes;
+}
+
+/// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
+/// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
+const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.18.0', date: '2026-10-25', notes: [
+    '二课活动详情页新增在线报名：报名原因、个人角色等自述项选填，提交后进入学校审批流并返回申请编号；已报名的活动自动显示「已报名」',
+    '新增更新日志：升级后首次打开自动展示新版本变化',
+    '账号凭据改存系统加密存储；更新检查新增镜像源兜底；若干稳定性修复',
+  ]),
+  ChangelogEntry(version: '1.17.0', date: '2026-10-23', notes: [
+    '拓展中心默认开启，主界面可左右滑动切页',
+    '插件市场支持第三方源与卡片简介',
+    'AI 对话接口接入，拓展新增最低版本要求门槛',
+  ]),
+  ChangelogEntry(version: '1.16.1', date: '2026-10-18', notes: [
+    '新增插件市场：拓展页「市场」标签，支持安装 / 更新 / 卸载与权限提示',
+    '示例拓展：2048 与扫雷',
+    '课表导入：混合奇偶周次不再误并；成绩单兼容新学期码',
+    'AI 识图：思考型模型空回答时自动关思考重试',
+  ]),
+  ChangelogEntry(version: '1.15.0', date: '2026-10-13', notes: [
+    '新增启动时更新检查：有新版本时弹窗引导更新',
+  ]),
+];
+
+/// 上次打开时的版本号记在偏好里的键。
+const String kChangelogSeenVersion = 'changelog_seen_version';
+
+/// 比上次见过的版本（不含）新、且不晚于当前版本（含）的条目，新版本在前。
+/// 首次安装（[since] 为 null）、版本没变、降级安装都返回空。
+List<ChangelogEntry> changelogEntriesSince(String? since, String current) {
+  if (since == null || since == current) return const [];
+  return [
+    for (final e in appChangelog)
+      if (compareVersions(e.version, since) > 0 && compareVersions(e.version, current) <= 0) e
+  ];
+}
+
+/// 升级后第一次打开 → 弹更新日志。首次安装不弹（没有「更新」发生，只记下当前版本），
+/// 版本没变也不弹。返回是否展示了弹窗。
+Future<bool> showChangelogIfUpdated(BuildContext context, String current) async {
+  final sp = await SharedPreferences.getInstance();
+  final seen = sp.getString(kChangelogSeenVersion);
+  if (seen == null) {
+    await sp.setString(kChangelogSeenVersion, current);
+    return false;
+  }
+  final entries = changelogEntriesSince(seen, current);
+  // 先记再弹：看完关掉就算完，不区分「已读」；降级安装也记下，避免每次启动都弹
+  await sp.setString(kChangelogSeenVersion, current);
+  if (entries.isEmpty || !context.mounted) return false;
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('更新日志'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < entries.length; i++) ...[
+                Text('${entries[i].version} · ${entries[i].date}',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                for (final n in entries[i].notes)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text('· $n', style: const TextStyle(fontSize: 13)),
+                  ),
+                if (i < entries.length - 1) const Divider(height: 20),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('知道了')),
+      ],
+    ),
+  );
+  return true;
+}

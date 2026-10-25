@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import '../changelog.dart';
 import '../update_check.dart';
 import '../widgets/update_dialog.dart';
 
@@ -43,6 +44,10 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
   Future<void> _checkUpdateOnStart() async {
     await UpdateChecker.I.load();
     if (UpdateChecker.I.current.isEmpty) return; // 没有本机版本就没什么可比的
+    // 升级后首次打开：先讲这次装上了什么（更新日志），关掉后再查有没有更新的，
+    // 免得两个弹窗叠在一起
+    if (mounted) await showChangelogIfUpdated(context, UpdateChecker.I.current);
+    if (!mounted) return;
     await UpdateChecker.I.check();
     if (!mounted) return;
     final info = UpdateChecker.I.available;
