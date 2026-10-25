@@ -235,6 +235,13 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   bool _loading = true;
   String? _err;
   Map<String, dynamic>? _data;
+  bool _signingUp = false;
+
+  /// 报名成功后的工作流实例 ID（学校侧审批记录，可凭它追溯进度）。
+  String? _signedInstanceId;
+
+  /// 已报名：学校详情接口的 signed（他人会话查回来的不透传 true）或本次会话刚报过。
+  bool get _signed => _signedInstanceId != null || _data?['signed'] == true;
 
   @override
   void initState() {
@@ -271,12 +278,108 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     ));
   }
 
+  // ==================== 在线报名 ====================
+
+  Future<void> _openSignupSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _SignupSheet(
+        title: '${_data?['name'] ?? ''}',
+        submit: _submitSignup,
+        onSuccess: _showSignupResult,
+      ),
+    );
+  }
+
+  /// 提交报名。成功返回申请编号（学校没给时为空串），失败返回 null——错误提示
+  /// （学校原文 / 结果不确定引导）已在这里弹给用户，弹层据此留在原地。
+  /// 写操作防重：提交中按钮禁用；超时 / 网络错误结果不确定时，引导先确认再决定。
+  Future<String?> _submitSignup(Map<String, String> extras) async {
+    setState(() => _signingUp = true);
+    try {
+      final r = await ApiClient.I.activitySignup(
+        widget.id,
+        grjs: extras['grjs'],
+        grgzjl: extras['grgzjl'],
+        hjry: extras['hjry'],
+        bmyy: extras['bmyy'],
+        zyjn: extras['zyjn'],
+      );
+      final iid = (((r['data'] as Map?)?['instance_id'] ?? '').toString());
+      if (mounted) setState(() => _signedInstanceId = iid);
+      return iid;
+    } on ApiError catch (e) {
+      if (!mounted) return null;
+      final uncertain = e.message.contains('超时') || e.message.contains('网络错误');
+      if (uncertain) {
+        // 请求可能已经到达学校：再提交一次可能生成重复申请，必须先人工确认。
+        showDialog(
+          context: context,
+          builder: (dialogCtx) => AlertDialog(
+            title: const Text('提交结果不确定'),
+            content: Text(
+              '${e.message}\n\n报名请求可能已提交成功。请先到学工系统「我的申请」确认是否已有'
+              '该活动的申请记录，再决定是否重新提交（重复提交可能生成多条申请）。',
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('知道了')),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.message),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _signingUp = false);
+    }
+  }
+
+  void _showSignupResult(String iid) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('报名已提交'),
+        content: Text(iid.isEmpty
+            ? '申请已进入学校审批流。'
+            : '申请已进入学校审批流。\n\n申请编号：$iid\n（可在学工系统的「我的申请」中查看进度）'),
+        actions: [
+          if (iid.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: iid));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('已复制申请编号'),
+                  behavior: SnackBarBehavior.floating,
+                ));
+              },
+              child: const Text('复制编号'),
+            ),
+          TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('知道了')),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final signup = (_data?['signup'] as Map<String, dynamic>?) ?? {};
     final a = _data;
+    final state = a == null ? null : _stateOf(a);
     return Scaffold(
       appBar: AppBar(title: const Text('活动详情')),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+          child: _signupButton(state),
+        ),
+      ),
       body: PageStateView(
         loading: _loading,
         error: _err,
@@ -294,6 +397,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                       runSpacing: 4,
                       children: [
                         Capsule(_stateText(_stateOf(a)), color: _stateColor(_stateOf(a))),
+                        if (_signed) Capsule('已报名', color: SemColors.success),
                         if (a['backfill'] as bool? ?? false) Capsule('事后补录', color: SemColors.info),
                         Capsule('${a['dlmc']}', color: SemColors.accent),
                         Capsule('${a['lbmc']}', color: SemColors.accent),
@@ -365,6 +469,28 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         ),
       );
 
+  /// 底部报名按钮：只在报名窗口内可点；已报名（学校说的或刚报的）/ 加载中禁用。
+  Widget _signupButton(_ActState? state) {
+    if (_signed) {
+      return FilledButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.check_circle_rounded, size: 18),
+        label: const Text('已报名'),
+      );
+    }
+    final enabled = state == _ActState.signing && !_loading && !_signingUp;
+    return FilledButton.icon(
+      onPressed: enabled ? _openSignupSheet : null,
+      icon: const Icon(Icons.how_to_reg_rounded, size: 18),
+      label: Text(switch (state) {
+        _ActState.signing => '在线报名',
+        _ActState.upcoming => '未开始报名',
+        _ActState.ended => '报名已结束',
+        null => '在线报名',
+      }),
+    );
+  }
+
   Widget _bullet(String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
@@ -396,4 +522,117 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           ],
         ),
       );
+}
+
+/// 报名自述项（字段名、表单标签、长度上限，全部选填，与学校报名表一致）。
+const List<(String, String, int)> _signupExtraFields = [
+  ('bmyy', '报名原因', 500),
+  ('grjs', '个人角色', 200),
+  ('zyjn', '专业技能', 200),
+  ('grgzjl', '个人工作经历', 500),
+  ('hjry', '合影人员', 200),
+];
+
+/// 报名表单弹层。控制器跟着组件 State 的生命周期走：路由退场动画放完才 dispose，
+/// 不会出现「sheet 关了但 TextField 还在用已释放的控制器」的报错。
+class _SignupSheet extends StatefulWidget {
+  const _SignupSheet({
+    required this.title,
+    required this.submit,
+    required this.onSuccess,
+  });
+
+  final String title;
+
+  /// 提交：返回申请编号（null = 失败，错误提示由调用方弹给用户）。
+  final Future<String?> Function(Map<String, String> extras) submit;
+
+  /// 成功收尾（关掉弹层后由页面弹结果框）。
+  final void Function(String instanceId) onSuccess;
+
+  @override
+  State<_SignupSheet> createState() => _SignupSheetState();
+}
+
+class _SignupSheetState extends State<_SignupSheet> {
+  final _controllers = {
+    for (final (key, _, _) in _signupExtraFields) key: TextEditingController(),
+  };
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _go() async {
+    setState(() => _submitting = true);
+    final iid = await widget.submit({
+      for (final e in _controllers.entries) e.key: e.value.text,
+    });
+    if (!mounted) return;
+    if (iid == null) {
+      // 失败：弹层留在原地，学校原文错误（如「该活动已报名」）用户看完即关，
+      // 输入的自述内容也不丢
+      setState(() => _submitting = false);
+      return;
+    }
+    // 先关弹层再弹结果：此刻结果弹窗还没推入，Navigator.pop 掉的才是报名表单本身
+    Navigator.of(context).pop();
+    widget.onSuccess(iid);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('报名：${widget.title}',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text('以下均为选填；学籍、学分等报名信息由学校系统自动填写。',
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+            const SizedBox(height: 4),
+            Text('提交后进入学校审批流，请确认信息无误——重复提交可能生成多条申请。',
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+            const SizedBox(height: 12),
+            for (final (key, label, max) in _signupExtraFields)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: TextField(
+                  controller: _controllers[key],
+                  maxLength: max,
+                  maxLines: 1,
+                  enabled: !_submitting,
+                  decoration: InputDecoration(
+                    labelText: label,
+                    hintText: '选填',
+                    counterStyle: TextStyle(fontSize: 10, color: SemColors.textMuted),
+                  ),
+                ),
+              ),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _submitting ? null : _go,
+                icon: _submitting
+                    ? const SizedBox(
+                        width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.how_to_reg_rounded, size: 18),
+                label: Text(_submitting ? '提交中…' : '提交报名'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

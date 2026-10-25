@@ -295,10 +295,20 @@ class CampusDirect {
           'data': {
             'id': aid,
             'hdms': hdms,
+            // 学校详情接口的 bm = 本人是否已报名（实测 int 1 / str '1' 两态），归一成字符串比较
+            'signed': '${data['bm']}' == '1',
             'quota': extractQuota(hdms),
             'signup': extractSignup(hdms),
           },
         };
+      }, _ensureXg);
+
+  /// 活动报名（写操作：客户端只提交一次）。[extras] 的键见 [XgClient.signupExtraFields]。
+  /// 会话失效时重登一次再走是安全的——学校还没见到过提交（失败发生在表单拉取阶段）。
+  Future<Map<String, dynamic>> activitySignup(String aid, Map<String, String?> extras) =>
+      _withRelogin(() async {
+        await _ensureXg();
+        return {'ok': true, 'data': await _xg!.signupActivity(aid, extras)};
       }, _ensureXg);
 
   // ==================== 教务：成绩 / 课表 / 考试 ====================

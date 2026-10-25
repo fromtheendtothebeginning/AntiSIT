@@ -59,6 +59,9 @@ class MockCampusServer {
   /// 测试用：替换教务成绩单（造多页数据验证分页）。null = 内置样例成绩。
   List<Map<String, Object?>>? debugGrades;
 
+  /// 测试用：最近一次收到的报名提交体（验证预填回传 / 自述字段透传 / 附件字段剔除）。
+  Map<String, String>? debugLastSignupForm;
+
   bool get running => _server != null;
   Uri get baseUri => Uri.parse('http://127.0.0.1:$_port');
   String get baseUrl => baseUri.toString();
@@ -427,11 +430,75 @@ $casErrorSkeleton
 
       case '/zftal-xgxt-web/hdgl/details.zf':
         if (!s.xg) return _redirect(res, _casLoginUrl(path));
-        final a = _activityItems[req.uri.queryParameters['id'] ?? ''];
+        final id = req.uri.queryParameters['id'] ?? '';
+        final a = _activityItems[id];
         if (a == null) return _json(res, {'code': 1, 'msg': '活动不存在'});
         return _json(res, {
           'code': 0,
-          'data': {'id': a['id'], 'hdmc': a['hdmc'], 'hdms': a['hdms']},
+          'data': {
+            'id': a['id'],
+            'hdmc': a['hdmc'],
+            'hdms': a['hdms'],
+            // 学校实测 bm 是 int/str 两态：mock 直接给 int 1/0，覆盖归一比较
+            'bm': s.signedUpActivities.contains(id) ? 1 : 0,
+          },
+        });
+
+      // 活动报名（学工工作流 hdsq）：先取动态表单定义（预填值全部由学校生成），
+      // 再 urlencoded 平铺提交，成功返回工作流实例 ID——与真实系统同款协议。
+      case '/zftal-xgxt-web/dynamic/form/find/hdsq/default.zf':
+        if (!s.xg) return _redirect(res, _casLoginUrl(path));
+        final dataId = req.uri.queryParameters['dataId'] ?? '';
+        final aid = dataId.split('|').last;
+        if (!_activityItems.containsKey(aid)) {
+          return _json(res, {'code': 1, 'msg': '活动不存在'});
+        }
+        return _json(res, {
+          'code': 0,
+          'data': {
+            'saveUrl': '/hdgl/flow/apply/hdsq.zf',
+            'fields': [
+              {'fieldCode': 'hdid', 'defaultValue': aid},
+              {'fieldCode': 'xh', 'defaultValue': studentId},
+              {'fieldCode': 'xm', 'defaultValue': realName},
+              {'fieldCode': 'xb', 'defaultValue': '男'},
+              {'fieldCode': 'csrq', 'defaultValue': '2006-01-01'},
+              {'fieldCode': 'zzmm', 'defaultValue': '共青团员'},
+              {'fieldCode': 'mz', 'defaultValue': '汉族'},
+              {'fieldCode': 'sjh', 'defaultValue': '13800000000'},
+              {'fieldCode': 'zjhm', 'defaultValue': '310101200601010011'},
+              {'fieldCode': 'bmmc', 'defaultValue': '计算机学院'},
+              {'fieldCode': 'zymc', 'defaultValue': '计算机科学与技术'},
+              {'fieldCode': 'bjmc', 'defaultValue': '计科2501'},
+              {'fieldCode': 'nj', 'defaultValue': '2025'},
+              {'fieldCode': 'xnxq', 'defaultValue': '2025-2026-1'},
+              {'fieldCode': 'hdkssj|hdjssj', 'defaultValue': '2026-10-10 14:00:00,2026-10-10 16:00:00'},
+              {'fieldCode': 'dqxf', 'defaultValue': '5.5'},
+              {'fieldCode': 'ljxf', 'defaultValue': '5.5'},
+              {'fieldCode': 'bmfj', 'defaultValue': null}, // 附件字段：客户端应跳过
+              {'fieldCode': 'grjs', 'defaultValue': ''},
+              {'fieldCode': 'grgzjl', 'defaultValue': ''},
+              {'fieldCode': 'hjry', 'defaultValue': ''},
+              {'fieldCode': 'bmyy', 'defaultValue': ''},
+              {'fieldCode': 'zyjn', 'defaultValue': ''},
+            ],
+          },
+        });
+
+      case '/zftal-xgxt-web/hdgl/flow/apply/hdsq.zf':
+        if (!s.xg) return _redirect(res, _casLoginUrl(path));
+        debugLastSignupForm = form;
+        final aid = form['hdid'] ?? '';
+        if (aid.isEmpty || form['xh'] != studentId || (form['hdkssj'] ?? '').isEmpty) {
+          return _json(res, {'code': 1, 'msg': '报名表单校验失败'});
+        }
+        if (s.signedUpActivities.contains(aid)) {
+          return _json(res, {'code': 1, 'msg': '该活动已报名，请勿重复报名'});
+        }
+        s.signedUpActivities.add(aid);
+        return _json(res, {
+          'code': 0,
+          'data': {'instanceId': 'inst-${DateTime.now().millisecondsSinceEpoch}'},
         });
     }
     _text(res, 404, 'mock: 未实现的学工路径 $path', 'text/plain; charset=utf-8');
@@ -831,4 +898,5 @@ class _MockSession {
   double cardBalance = 56.70; // 校园卡余额（元）
   String? pendingBillno;
   double pendingAmount = 0; // 分
+  final Set<String> signedUpActivities = {}; // 已报名活动（重复提交据此拒绝）
 }

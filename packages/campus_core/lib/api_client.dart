@@ -334,6 +334,35 @@ class ApiClient {
       ? CampusDirect.I.activityDetail(aid)
       : _call('GET', '/api/campus-open/activities/$aid', tunnel: true);
 
+  /// 活动报名（写操作）。超时 / 网络错误后**绝不自动重发**——结果不确定时先引导用户
+  /// 到学工系统确认是否已生成申请。202 / 401 / need_captcha 的重试是安全的（请求
+  /// 还没到达学校），交给 [_call] 的默认循环处理即可（不能用 once：那会把 202 当成功）。
+  Future<Map<String, dynamic>> activitySignup(
+    String aid, {
+    String? grjs,
+    String? grgzjl,
+    String? hjry,
+    String? bmyy,
+    String? zyjn,
+  }) =>
+      _useDirect
+          ? CampusDirect.I.activitySignup(aid, {
+              'grjs': grjs,
+              'grgzjl': grgzjl,
+              'hjry': hjry,
+              'bmyy': bmyy,
+              'zyjn': zyjn,
+            })
+          : _call('POST', '/api/campus-open/activities/$aid/signup',
+              body: {
+                'grjs': grjs ?? '',
+                'grgzjl': grgzjl ?? '',
+                'hjry': hjry ?? '',
+                'bmyy': bmyy ?? '',
+                'zyjn': zyjn ?? '',
+              },
+              tunnel: true);
+
   Future<Map<String, dynamic>> timetableWeek(String xnm, String xqm, int zs) =>
       _useDirect
           ? CampusDirect.I.timetableWeek(xnm, xqm, zs)

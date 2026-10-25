@@ -34,7 +34,7 @@ class DemoData {
       case '/api/campus-open/grades':
         return {'ok': true, 'data': _grades(query: query)};
       case '/api/campus-open/activities':
-        return {'ok': true, 'data': {'student_id': '25110001', 'activities': _activities}};
+        return {'ok': true, 'data': {'student_id': '25110001', 'activities': _demoActivities()}};
       case '/api/campus-open/timetable/week':
         return _week((body?['zs'] ?? 1) as int);
       case '/api/campus-open/timetable/exams':
@@ -67,11 +67,37 @@ class DemoData {
         };
     }
     if (path.startsWith('/api/campus-open/activities/')) {
-      final aid = path.split('/').last;
-      final a = _activities.firstWhere((e) => e['id'] == aid, orElse: () => _activities.first);
-      return {'ok': true, 'data': a};
+      if (method == 'POST' && path.endsWith('/signup')) {
+        return {
+          'ok': true,
+          'data': {'instance_id': 'demo-${DateTime.now().millisecondsSinceEpoch.toRadixString(16)}'},
+        };
+      }
+      final aid = path.split('/')[4];
+      final all = _demoActivities();
+      final a = all.firstWhere((e) => e['id'] == aid, orElse: () => all.first);
+      return {
+        'ok': true,
+        'data': {...a, 'signed': aid == 'a002'}, // a002 演示「已报名」态（学校详情接口的 bm 透传）
+      };
     }
     throw StateError('demo 未实现的接口: $path');
+  }
+
+  static String _dt(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')} ${d.hour.toString().padLeft(2, '0')}:'
+      '${d.minute.toString().padLeft(2, '0')}:00';
+
+  /// 演示活动：第一条的报名窗口相对「现在」生成（报名中），其余按固定日期（多已结束）——
+  /// 这样无论什么时候打开演示模式，报名状态看板和详情页的报名入口都有东西可看。
+  static List<Map<String, dynamic>> _demoActivities() {
+    final now = DateTime.now();
+    _activities.first['bm_start'] = _dt(now.subtract(const Duration(days: 2)));
+    _activities.first['bm_end'] = _dt(now.add(const Duration(days: 5)));
+    _activities.first['start'] = _dt(now.add(const Duration(days: 7)));
+    _activities.first['end'] = _dt(now.add(const Duration(days: 7, hours: 2)));
+    return _activities;
   }
 
   /// 电费历史：余额缓慢下降 + 周期性充值，升序。
