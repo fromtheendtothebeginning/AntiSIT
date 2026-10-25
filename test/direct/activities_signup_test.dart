@@ -31,11 +31,11 @@ void main() {
   }
 
   group('学工活动报名（hdsq 工作流）', () {
-    test('成功：预填原样回传 + 自述字段透传 + 复合时间拆开 + 附件剔除', () async {
+    test('成功：预填原样回传 + 复合时间拆开 + 附件剔除 + 自述项保持学校空值', () async {
       final c = await login();
       // 报名前详情的 bm = 0（未报名），报名后变 1——服务端以此透传 signed
       expect((await c.fetchActivityDetail('m001'))['bm'], 0);
-      final r = await c.signupActivity('m001', {'bmyy': '对活动主题感兴趣', 'grjs': '参与者'});
+      final r = await c.signupActivity('m001');
       expect((r['instance_id'] as String), isNotEmpty);
       expect((await c.fetchActivityDetail('m001'))['bm'], 1);
 
@@ -48,15 +48,14 @@ void main() {
       expect(form['decisionSignature'], ''); // 前端固定附加的空签名域
       expect(form.containsKey('hdkssj|hdjssj'), isFalse);
       expect(form.containsKey('bmfj'), isFalse, reason: '附件字段不参与提交');
-      expect(form['bmyy'], '对活动主题感兴趣');
-      expect(form['grjs'], '参与者');
+      expect(form['bmyy'], '', reason: 'App 不填自述项：学校的空预填值原样回传');
     });
 
     test('重复报名同一活动 → 学校原文拒绝', () async {
       final c = await login();
-      await c.signupActivity('m001', const {});
+      await c.signupActivity('m001');
       await expectLater(
-        () => c.signupActivity('m001', const {}),
+        () => c.signupActivity('m001'),
         throwsA(isA<ApiError>().having((e) => e.message, 'message', contains('已报名'))),
       );
     });
@@ -64,7 +63,7 @@ void main() {
     test('活动不存在 → 表单接口的业务错误原文抛出', () async {
       final c = await login();
       await expectLater(
-        () => c.signupActivity('nope', const {}),
+        () => c.signupActivity('nope'),
         throwsA(isA<ApiError>().having((e) => e.message, 'message', contains('活动不存在'))),
       );
     });

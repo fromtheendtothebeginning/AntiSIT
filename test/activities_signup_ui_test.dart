@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_activities/plugin_activities.dart';
 
 /// 活动详情页在线报名的全流程（演示模式）：报名中的活动给「在线报名」入口，
-/// 弹层里填自述项提交，成功后给出申请编号并把入口置为「已提交报名」防重复。
+/// 点开是确认弹窗（无需填写任何内容，报名信息由学校预填），确认后提交，
+/// 成功给出申请编号并把入口置为「已报名」防重复。
 void main() {
-  testWidgets('报名中 → 填表提交 → 申请编号 → 按钮变已提交', (tester) async {
+  testWidgets('报名中 → 确认 → 申请编号 → 按钮变已报名', (tester) async {
     AppState.I.demo = true;
     addTearDown(() => AppState.I.demo = false);
 
@@ -23,16 +24,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('在线报名'), findsOneWidget);
 
-    // 打开报名弹层，填一个自述项
+    // 确认弹窗：没有输入框，只有取消 / 确认报名（标题与按钮同名）
     await tester.tap(find.text('在线报名'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('报名：AI 赋能学习效率提升讲座'), findsOneWidget);
-    await tester.enterText(
-        find.widgetWithText(TextField, '报名原因'), '对活动主题感兴趣');
-    await tester.pump();
+    expect(find.text('确认报名'), findsWidgets);
+    expect(find.byType(TextField), findsNothing, reason: '报名不需要用户填写任何内容');
 
-    // 提交（演示接口有 400ms 延迟）
-    await tester.tap(find.text('提交报名'));
+    // 确认提交（演示接口有 400ms 延迟）
+    await tester.tap(find.widgetWithText(FilledButton, '确认报名'));
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
@@ -45,6 +44,30 @@ void main() {
     // 入口变为已报名（含绿色徽章），不可再点
     expect(find.text('已报名'), findsWidgets);
     expect(find.text('在线报名'), findsNothing);
+  });
+
+  testWidgets('确认弹窗点取消：不发请求，入口不变', (tester) async {
+    AppState.I.demo = true;
+    addTearDown(() => AppState.I.demo = false);
+
+    await tester.pumpWidget(const MaterialApp(
+      home: ActivityDetailPage(id: 'a001', activity: {
+        'id': 'a001',
+        'name': 'AI 赋能学习效率提升讲座',
+        'bm_start': '2026-10-23 10:00:00',
+        'bm_end': '2026-10-30 22:00:00',
+        'start': '2026-11-01 14:00:00',
+        'end': '2026-11-01 16:00:00',
+      }),
+    ));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('在线报名'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('报名已提交'), findsNothing);
+    expect(find.text('在线报名'), findsOneWidget);
   });
 
   testWidgets('学校说已报名（signed）→ 徽章 + 禁用按钮，不给报名入口', (tester) async {

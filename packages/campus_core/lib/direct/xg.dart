@@ -342,14 +342,11 @@ class XgClient {
   static const String _signupUrlPath = '/hdgl/flow/apply/hdsq.zf';
   static const String _signupFormUrlPath = '/dynamic/form/find/hdsq/default.zf';
 
-  /// 用户可在报名表单里自述的可选字段（对应学校表单项 grjs/grgzjl/hjry/bmyy/zyjn）。
-  static const List<String> signupExtraFields = ['grjs', 'grgzjl', 'hjry', 'bmyy', 'zyjn'];
-
   /// 活动报名：先 GET 动态表单定义（约 30 个预填字段全部来自学校 defaultValue——学籍、
-  /// 身份证、内部学期码、当前学分等只能由学校生成，绝不自行拼装），合并可选自述字段后
-  /// 原样 urlencoded 提交到 saveUrl。成功返回 {'instance_id': 工作流实例 ID}。
+  /// 身份证、内部学期码、当前学分等只能由学校生成，绝不自行拼装），原样 urlencoded
+  /// 提交到 saveUrl。成功返回 {'instance_id': 工作流实例 ID}。
   /// 写操作：只提交一次、绝不重试（重复提交可能生成多条申请记录）。
-  Future<Map<String, dynamic>> signupActivity(Object id, Map<String, String?> extras) async {
+  Future<Map<String, dynamic>> signupActivity(Object id) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final formResp = await _http.get(
       '$_api$_signupFormUrlPath?dataId=${Uri.encodeComponent('xsxx|&hdsq|$id')}',
@@ -381,10 +378,6 @@ class XgClient {
     }
     form['hdid'] = '$id';
     form.putIfAbsent('decisionSignature', () => '');
-    for (final k in signupExtraFields) {
-      final v = (extras[k] ?? '').trim();
-      if (v.isNotEmpty) form[k] = v;
-    }
     final resp = await _http.postForm(
       '$_api${d['saveUrl'] ?? _signupUrlPath}',
       form,

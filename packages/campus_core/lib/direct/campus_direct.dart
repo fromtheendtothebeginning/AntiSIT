@@ -303,12 +303,11 @@ class CampusDirect {
         };
       }, _ensureXg);
 
-  /// 活动报名（写操作：客户端只提交一次）。[extras] 的键见 [XgClient.signupExtraFields]。
+  /// 活动报名（写操作：客户端只提交一次，报名内容由学校表单预填）。
   /// 会话失效时重登一次再走是安全的——学校还没见到过提交（失败发生在表单拉取阶段）。
-  Future<Map<String, dynamic>> activitySignup(String aid, Map<String, String?> extras) =>
-      _withRelogin(() async {
+  Future<Map<String, dynamic>> activitySignup(String aid) => _withRelogin(() async {
         await _ensureXg();
-        return {'ok': true, 'data': await _xg!.signupActivity(aid, extras)};
+        return {'ok': true, 'data': await _xg!.signupActivity(aid)};
       }, _ensureXg);
 
   // ==================== 教务：成绩 / 课表 / 考试 ====================
