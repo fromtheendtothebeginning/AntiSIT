@@ -50,7 +50,18 @@ fi
 cp "$APK" "$OUT"
 (cd "$OUT_DIR" && sha256sum "$OUT_NAME" > "$OUT_NAME.sha256")
 REL_JSON=$(mktemp)
-if ! curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$REL_JSON"; then
+# Gitee 对「tag 还没有 Release」返回 200 + null（不是 404），不能只看 curl 退出码
+curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$REL_JSON" || true
+rel_id() {
+  python -c 'import json,sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    d = None
+print(d.get("id", "") if isinstance(d, dict) else "")' "$REL_JSON"
+}
+REL_ID=$(rel_id)
+if [ -z "$REL_ID" ]; then
   PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
   NOTES_FILE=$(mktemp)
   {
@@ -74,11 +85,17 @@ if ! curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$RE
     --data-urlencode "name=AntiSIT $VERSION" \
     --data-urlencode "body@$NOTES_FILE" \
     -o "$REL_JSON"
+  REL_ID=$(rel_id)
 fi
-REL_ID=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$REL_JSON")
+[ -n "$REL_ID" ] || { echo "创建 Gitee Release 失败：" >&2; head -c 500 "$REL_JSON" >&2; echo >&2; exit 1; }
 
 # 5) 上传 APK 与校验文件（重跑时跳过同名附件，避免重复）
-EXISTING=$(python -c 'import json,sys; print("\n".join(a.get("name","") for a in json.load(open(sys.argv[1])).get("assets",[])))' "$REL_JSON")
+EXISTING=$(python -c 'import json,sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    d = None
+print("\n".join(a.get("name", "") for a in (d.get("assets", []) if isinstance(d, dict) else [])))' "$REL_JSON")
 for f in "$OUT" "$OUT.sha256"; do
   name=$(basename "$f")
   if printf '%s\n' "$EXISTING" | grep -Fxq "$name"; then
