@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'direct/school.dart';
+import 'json_num.dart';
 import 'secure_store.dart';
 
 /// 二课分数快照（/score 的 data 节点）：宫格副标题与「学籍信息」的常用字段
@@ -17,8 +18,9 @@ class ScoreSnapshot {
   final Map<String, dynamic> raw;
 
   /// 已得分 / 达标分（缺字段按 0，副标题不至于显示 null）。
-  num get credit => raw['credit'] is num ? raw['credit'] as num : 0;
-  num get total => raw['total'] is num ? raw['total'] as num : 0;
+  /// 学工接口的 zxs/sjxf 是字符串（如 "8.0"），只认 num 会让卡面显示 0/0。
+  num get credit => asNum(raw['credit']) ?? 0;
+  num get total => asNum(raw['total']) ?? 0;
 
   /// 学籍信息节点（院系 / 专业 / 班级），「我的 → 学籍信息」用。
   Map<String, dynamic>? get student =>
@@ -34,7 +36,7 @@ class ElectricitySnapshot {
   final Map<String, dynamic> raw;
 
   /// 当前余额（元）。
-  num get balance => raw['balance'] is num ? raw['balance'] as num : 0;
+  num get balance => asNum(raw['balance']) ?? 0;
 }
 
 /// 工具页与子页共享的缓存数值（用于宫格卡面速览）。
