@@ -17,8 +17,13 @@ API="https://gitee.com/api/v5"
 VERSION=$(sed -n 's/^version: *\([0-9][0-9.]*\)+.*/\1/p' pubspec.yaml)
 TAG="v$VERSION"
 APK="build/app/outputs/flutter-apk/app-release.apk"
-OUT_DIR=$(mktemp -d)
-trap 'rm -rf "$OUT_DIR"' EXIT
+# 临时文件放在工作区的 build/ 下：Git Bash 的 /tmp 路径和 Windows 版 curl/python
+# 不互通（body@/tmp/... 会读不到），用相对路径最稳；EXIT 时清掉。
+TMP_DIR="build/gitee_release"
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_DIR"
+trap 'rm -rf "$TMP_DIR"' EXIT
+OUT_DIR="$TMP_DIR"
 OUT_NAME="AntiSIT-$VERSION.apk"
 OUT="$OUT_DIR/$OUT_NAME"
 
@@ -49,7 +54,7 @@ fi
 [ -f "$APK" ] || { echo "找不到 $APK，先 flutter build apk --release" >&2; exit 1; }
 cp "$APK" "$OUT"
 (cd "$OUT_DIR" && sha256sum "$OUT_NAME" > "$OUT_NAME.sha256")
-REL_JSON=$(mktemp)
+REL_JSON="$TMP_DIR/release.json"
 # Gitee 对「tag 还没有 Release」返回 200 + null（不是 404），不能只看 curl 退出码
 curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$REL_JSON" || true
 rel_id() {
@@ -63,7 +68,7 @@ print(d.get("id", "") if isinstance(d, dict) else "")' "$REL_JSON"
 REL_ID=$(rel_id)
 if [ -z "$REL_ID" ]; then
   PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-  NOTES_FILE=$(mktemp)
+  NOTES_FILE="$TMP_DIR/notes.txt"
   {
     echo "## AntiSIT $VERSION"
     echo
