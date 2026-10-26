@@ -4,12 +4,15 @@
 #   GITEE_TOKEN=xxx tool/release_gitee.sh    # 完整发布（建仓库 + 推代码 + Release + APK）
 #   tool/release_gitee.sh                    # 只推代码和 tag（仓库需已存在；Release 到网页建）
 #   GITEE_TOKEN  Gitee 私人令牌（https://gitee.com/profile/personal_access_tokens，勾选 projects）
+#                也可写到 ~/.gitee_token（一行，仅令牌），不必贴进命令行
 #   GITEE_REPO   可选，默认 ender123/AntiSIT
 # 前置：本机 SSH key 已加到 Gitee（git@gitee.com 可免密），当前版本 APK 已构建。
 set -euo pipefail
 
 REPO="${GITEE_REPO:-ender123/AntiSIT}"
 TOKEN="${GITEE_TOKEN:-}"
+# 不想把令牌贴进聊天/命令行时，写到 ~/.gitee_token（一行，仅令牌）
+[ -n "$TOKEN" ] || TOKEN=$(cat "$HOME/.gitee_token" 2>/dev/null || true)
 API="https://gitee.com/api/v5"
 VERSION=$(sed -n 's/^version: *\([0-9][0-9.]*\)+.*/\1/p' pubspec.yaml)
 TAG="v$VERSION"
