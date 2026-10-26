@@ -62,6 +62,8 @@ class _TimetablePageState extends State<TimetablePage> {
   static const _slotH = 56.0;
   static const _bandH = 20.0;
   static const _noonH = 12.0;
+  /// 16:30–18:00 没有节次（晚饭空档）：留一行给这个时段的日程，否则保存了也看不见。
+  static const _gapH = 40.0;
   static const _headerH = 44.0;
 
   /// 课程/日程的 slotStart/slotEnd = 小节序号（0 起，0-10），与网站渲染一致。
@@ -1726,7 +1728,7 @@ class _TimetablePageState extends State<TimetablePage> {
   double _rowY(int row) {
     if (row <= 3) return _bandH + row * _slotH;
     if (row <= 7) return _bandH + 4 * _slotH + _noonH + _bandH + (row - 4) * _slotH;
-    return _bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH + _bandH + (row - 8) * _slotH;
+    return _bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH + _gapH + _bandH + (row - 8) * _slotH;
   }
 
   double get _gridH => _rowY(10) + _slotH;
@@ -1860,7 +1862,13 @@ class _TimetablePageState extends State<TimetablePage> {
                                       ),
                                     ),
                                   ),
-                                if (group != const [8, 9, 10]) SizedBox(width: _axisW, height: _bandH + (group == const [0, 1, 2, 3] ? _noonH : 0)),
+                                if (group != const [8, 9, 10])
+                                  SizedBox(
+                                    width: _axisW,
+                                    height: _bandH +
+                                        (group == const [0, 1, 2, 3] ? _noonH : 0) +
+                                        (group == const [4, 5, 6, 7] ? _gapH : 0),
+                                  ),
                               ],
                             ],
                           ),
@@ -1908,7 +1916,7 @@ class _TimetablePageState extends State<TimetablePage> {
                         // 时段色带最后绘制：盖在天分隔竖线上方，且不进入左侧时间列
                         _band(0, '上午'),
                         _band(_bandH + 4 * _slotH + _noonH, '下午'),
-                        _band(_bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH, '晚上'),
+                        _band(_bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH + _gapH, '晚上'),
                       ],
                       ),
                     ),
@@ -2091,7 +2099,56 @@ class _TimetablePageState extends State<TimetablePage> {
         last = s;
       }
     }
-    if (first < 0) return const [];
+    if (first < 0) {
+      // 16:30–18:00 没有节次（晚饭空档）。这里不落任何节次行，
+      // 但用户的日程确实在这个时段：单独画在空档行里，别让它「保存了却看不见」。
+      final gapStart = _hm(TimetableStore.slotEnds[7]);
+      final gapEnd = _hm(TimetableStore.slotStarts[8]);
+      if (em <= gapStart || sm >= gapEnd) return const [];
+      final isExam = e.kind == 'exam';
+      final gapTop = _bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH;
+      return [
+        Positioned(
+          top: gapTop + 2,
+          height: _gapH - 4,
+          left: 2,
+          right: 2,
+          child: GestureDetector(
+            onTap: () => _showEventDetail(e),
+            child: Opacity(
+              opacity: _eventPast(e, colISO) && _dimPast ? 0.55 : 1,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isExam ? SemColors.dangerSoft : SemColors.accentSoft,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: (isExam ? SemColors.danger : SemColors.accent)
+                          .withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${e.start}~${e.end}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 8,
+                            color: isExam ? SemColors.danger : SemColors.accent)),
+                    Text(e.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 9.5, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
     final rowStart = first;
     final rowEnd = last + 1;
     final top = _rowY(rowStart);

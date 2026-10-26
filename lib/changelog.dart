@@ -19,6 +19,9 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.19.2', date: '2026-10-26', notes: [
+    '课表周视图新增 16:30–18:00 晚饭空档行：17:40–18:00 等没有节次时段的日程不再保存后看不见',
+  ]),
   ChangelogEntry(version: '1.19.1', date: '2026-10-26', notes: [
     '修复工具页「二课分数」卡面显示 0 / 0（接口返回字符串数值时未解析）',
   ]),
