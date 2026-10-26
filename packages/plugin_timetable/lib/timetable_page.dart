@@ -1965,22 +1965,26 @@ class _TimetablePageState extends State<TimetablePage> {
                       color: isToday ? SemColors.accentStrong : null,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Column(
-                      children: [
-                        Text('周${'一二三四五六日'[i]}',
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('周${'一二三四五六日'[i]}',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: wdColor)),
+                          Text(
+                            dates.isEmpty ? '-' : (dates[i].isEmpty ? '-' : dates[i]),
                             style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: wdColor)),
-                        Text(
-                          dates.isEmpty ? '-' : (dates[i].isEmpty ? '-' : dates[i]),
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: isToday
-                                  ? SemColors.accent
-                                  : SemColors.textMuted.withValues(alpha: 0.85)),
-                        ),
-                      ],
+                                fontSize: 10,
+                                color: isToday
+                                    ? SemColors.accent
+                                    : SemColors.textMuted.withValues(alpha: 0.85)),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -2055,35 +2059,52 @@ class _TimetablePageState extends State<TimetablePage> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(TimetableStore.slotStarts[rowStart.clamp(0, 10)],
-                      style: TextStyle(
-                          fontSize: 9,
-                          color: past ? SemColors.textMuted : SemColors.textSecondary)),
-                  Text(name,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          height: 1.2,
-                          color: past ? SemColors.textMuted : SemColors.textPrimary)),
-                  const Spacer(),
-                  Text(c.place.isEmpty ? '' : c.place,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 10,
-                          height: 1.15,
-                          color: past ? SemColors.textMuted : SemColors.textSecondary)),
-                  if (c.teachers.isNotEmpty)
-                    Text(c.teachers,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 9.5, color: SemColors.textMuted)),
-                ],
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.15,
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    // 1 节课只有 ~52px：只留时间 + 课名，地点/教师放到详情里；
+                    // 两节以上再逐步放出地点/教师，避免小卡片里文字叠在一起。
+                    final showTime = box.maxHeight >= 60;
+                    final showPlace = box.maxHeight >= 68;
+                    final showTeacher = box.maxHeight >= 100;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (showTime)
+                          Text(TimetableStore.slotStarts[rowStart.clamp(0, 10)],
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  color: past ? SemColors.textMuted : SemColors.textSecondary)),
+                        Text(name,
+                            maxLines: showTeacher ? 3 : 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                height: 1.2,
+                                color: past ? SemColors.textMuted : SemColors.textPrimary)),
+                        if ((showPlace && c.place.isNotEmpty) ||
+                            (showTeacher && c.teachers.isNotEmpty))
+                          const Spacer(),
+                        if (showPlace && c.place.isNotEmpty)
+                          Text(c.place,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  height: 1.15,
+                                  color:
+                                      past ? SemColors.textMuted : SemColors.textSecondary)),
+                        if (showTeacher && c.teachers.isNotEmpty)
+                          Text(c.teachers,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 9.5, color: SemColors.textMuted)),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -2134,22 +2155,25 @@ class _TimetablePageState extends State<TimetablePage> {
                       color: (isExam ? SemColors.danger : SemColors.accent)
                           .withValues(alpha: 0.4)),
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('${e.start}~${e.end}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 8,
-                            color: isExam ? SemColors.danger : SemColors.accent)),
-                    Text(e.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 9.5, fontWeight: FontWeight.w600)),
-                  ],
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.15,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${e.start}~${e.end}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 8,
+                              color: isExam ? SemColors.danger : SemColors.accent)),
+                      Text(e.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 9.5, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2181,33 +2205,50 @@ class _TimetablePageState extends State<TimetablePage> {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: (isExam ? SemColors.danger : SemColors.accent).withValues(alpha: 0.4)),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${e.start}${e.end.isNotEmpty ? '~${e.end}' : ''}',
-                    style: TextStyle(fontSize: 9, color: isExam ? SemColors.danger : SemColors.accent)),
-                Text(e.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        height: 1.2,
-                        color: isExam ? SemColors.danger : SemColors.textPrimary)),
-                const Spacer(),
-                if (e.place.isNotEmpty)
-                  Text(e.place,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 9.5, color: SemColors.textSecondary)),
-                if (e.seat.isNotEmpty)
-                  Text('座位 ${e.seat}',
-                      style: TextStyle(fontSize: 9, color: SemColors.textSecondary)),
-              ],
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.15,
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  // 1 节高的日程只留时间 + 名称，地点/座位在详情里看。
+                  final showTime = box.maxHeight >= 60;
+                  final showPlace = box.maxHeight >= 68;
+                  final showSeat = box.maxHeight >= 100;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (showTime)
+                        Text('${e.start}${e.end.isNotEmpty ? '~${e.end}' : ''}',
+                            style: TextStyle(
+                                fontSize: 9,
+                                color: isExam ? SemColors.danger : SemColors.accent)),
+                      Text(e.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                              color: isExam ? SemColors.danger : SemColors.textPrimary)),
+                      if ((showPlace && e.place.isNotEmpty) ||
+                          (showSeat && e.seat.isNotEmpty))
+                        const Spacer(),
+                      if (showPlace && e.place.isNotEmpty)
+                        Text(e.place,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 9.5, color: SemColors.textSecondary)),
+                      if (showSeat && e.seat.isNotEmpty)
+                        Text('座位 ${e.seat}',
+                            style: TextStyle(fontSize: 9, color: SemColors.textSecondary)),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
-          ),
         ),
+      ),
       ),
     ];
   }

@@ -19,6 +19,9 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.20.1', date: '2026-10-26', notes: [
+    '课表小卡片文字重叠修复：窄屏 1 节课程/日程只保留名称，地点/教师/时间在详情里看；周标题自动缩放',
+  ]),
   ChangelogEntry(version: '1.20.0', date: '2026-10-26', notes: [
     '二课分数新增「达标线设置」三级页面：可按年级调整总目标与各板块分数，修改只保存在本机，默认规则不变',
     '直连模式新增「年级（入学年）」填写，用于二课达标线与学期标签；手填优先，未填时用教务返回的年级',
