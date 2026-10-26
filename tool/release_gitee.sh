@@ -49,20 +49,28 @@ sha256sum "$OUT" > "$OUT.sha256"
 REL_JSON=$(mktemp)
 if ! curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$REL_JSON"; then
   PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-  if [ -n "$PREV" ]; then
-    NOTES=$(git log --no-merges --pretty='- %s' "$PREV..HEAD")
-  else
-    NOTES=$(git log --no-merges --pretty='- %s' -n 10)
-  fi
-  BODY=$(VERSION="$VERSION" NOTES="$NOTES" python -c '
-import json, os
-v = os.environ["VERSION"]
-print(json.dumps({"tag_name": "v" + v, "target_commitish": "main",
-                  "name": "AntiSIT " + v,
-                  "body": "## AntiSIT " + v + "\n\n安装包见附件。\n\n### 本次更新\n" + os.environ["NOTES"] + "\n"}))
-')
-  curl -fsS -X POST "$API/repos/$REPO/releases?access_token=$TOKEN" \
-    -H 'Content-Type: application/json' -d "$BODY" -o "$REL_JSON"
+  NOTES_FILE=$(mktemp)
+  {
+    echo "## AntiSIT $VERSION"
+    echo
+    echo "APK 直装（Android 7.0+）：下载 \`$OUT\` 安装，首次需允许「未知来源」。"
+    echo
+    echo "### 本次更新"
+    if [ -n "$PREV" ]; then
+      git log --no-merges --pretty='- %s' "$PREV..HEAD"
+    else
+      git log --no-merges --pretty='- %s' -n 10
+    fi
+  } > "$NOTES_FILE"
+  # Gitee 建 Release 只认表单（JSON 会返回 null）；body 用文件交给 curl 编码，
+  # 避免 Git Bash 的 GBK 终端把中文写成乱码。
+  curl -fsS -X POST "$API/repos/$REPO/releases" \
+    --data-urlencode "access_token=$TOKEN" \
+    --data-urlencode "tag_name=$TAG" \
+    --data-urlencode "target_commitish=main" \
+    --data-urlencode "name=AntiSIT $VERSION" \
+    --data-urlencode "body@$NOTES_FILE" \
+    -o "$REL_JSON"
 fi
 REL_ID=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$REL_JSON")
 
