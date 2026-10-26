@@ -83,6 +83,50 @@ void main() {
       );
     });
 
+    test('正方教务：body 带防闪屏 display:none 时，可见 #tips 仍要读出原因', () async {
+      // 真实登录页用 <body style="...display:none"> 防闪屏、由 JS 显示；去噪时若把 body 整块删掉，
+      // 服务端渲染在可见 #tips 里的失败原因（账号密码错误 / 验证码错误）会一起消失
+      mock.debugJwxtLoginFailBody =
+          '<!doctype html><html lang="zh-CN"><head><title>教学管理信息服务平台</title></head>'
+          '<body style="background:#fafafa; display: none;">'
+          '<p id="tips" class="bg_danger sl_danger">'
+          '<span class="glyphicon glyphicon-minus-sign"></span>用户名或密码不正确，请重新输入！'
+          '</p></body></html>';
+      addTearDown(() => mock.debugJwxtLoginFailBody = null);
+
+      final c = JwxtClient(mock.baseUrl);
+      addTearDown(c.dispose);
+      await c.prepareLogin(MockCampusServer.studentId, MockCampusServer.password);
+      await expectLater(
+        () => c.completeLogin('0000'),
+        throwsA(isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('用户名或密码不正确'), isNot(contains('没有错误文案'))),
+        )),
+      );
+    });
+
+    test('正方教务：body 隐藏时，隐藏的 #tips 骨架仍不许当成原因', () async {
+      mock.debugJwxtLoginFailBody =
+          '<html><body style="display: none;">'
+          '<p id="tips" style="display:none;">请输入密码</p>'
+          '</body></html>';
+      addTearDown(() => mock.debugJwxtLoginFailBody = null);
+
+      final c = JwxtClient(mock.baseUrl);
+      addTearDown(c.dispose);
+      await c.prepareLogin(MockCampusServer.studentId, MockCampusServer.password);
+      await expectLater(
+        () => c.completeLogin('0000'),
+        throwsA(isA<ApiError>().having(
+          (e) => e.message,
+          'message',
+          allOf(isNot(contains('请输入密码')), contains('没有错误文案')),
+        )),
+      );
+    });
+
     test('正方教务：<script> 里的静态提示文案不是学校的判定结果', () async {
       // 登录页常在脚本里写「用户名或密码错误」这类文案给 JS 改 DOM 用（服务端本次判定为空）
       mock.debugJwxtLoginFailBody =

@@ -115,15 +115,18 @@ class JwxtClient {
     final obj = RegExp(r'验证码|密码|账号|用户名');
     final err = RegExp(r'错误|不正确|失效|过期|为空|不存在|无效|请输入');
     final hidden = RegExp(r'display\s*:\s*none|visibility\s*:\s*hidden', caseSensitive: false);
+    // 闭合标签按同名标签配对：正方 `#tips` 里先有一个空 `<span class="glyphicon"></span>` 再跟文案，
+    // 若匹配到任意闭合标签就收尾（原来的 `</(?:div|span|p|...)>`），只会拿到那个空 span；
+    // 文案虽还能被下面的文本节点兜底捞到，但超过 60 字就会被截断/漏掉。
     for (final re in <RegExp>[
-      RegExp(r'<[^>]*id="(?:tips|msg|tipsMsg|errorMsg|loginError)"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
+      RegExp(r'<([a-zA-Z][\w]*)\b[^>]*id="(?:tips|msg|tipsMsg|errorMsg|loginError)"[^>]*>(.*?)</\1>',
           dotAll: true),
-      RegExp(r'<[^>]*class="[^"]*(?:tips|error|msg)[^"]*"[^>]*>(.*?)</(?:div|span|p|em|strong)>',
+      RegExp(r'<([a-zA-Z][\w]*)\b[^>]*class="[^"]*(?:tips|error|msg)[^"]*"[^>]*>(.*?)</\1>',
           dotAll: true),
     ]) {
       for (final m in re.allMatches(clean)) {
         if (hidden.hasMatch(m.group(0)!)) continue;
-        final t = m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
+        final t = m.group(2)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
         if (t.isEmpty) continue;
         if (!obj.hasMatch(t) || !err.hasMatch(t)) continue;
         return t;
@@ -166,13 +169,15 @@ class JwxtClient {
   /// 给登录页 HTML 去噪：注释、<script>、<style>、以及带 display:none / visibility:hidden 的
   /// 元素整块删掉。它们要么是模板垃圾、要么是给 JS 改写用的静态骨架，都不是服务端对本次登录的
   /// 判定结果——留着只会被当成错误原因（「请输入密码」）抛给账号密码正确的用户。
+  /// 但 html / body 例外：正方新版登录页用 `<body style="...display:none">` 防闪屏，由 JS 显示；
+  /// 整块删会把正文（含服务端渲染好的可见 #tips）全删掉，登录失败就永远只剩「没有错误文案」。
   static String _stripNoise(String html) => html
       .replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ')
       .replaceAll(RegExp(r'<script\b.*?</script>', dotAll: true, caseSensitive: false), ' ')
       .replaceAll(RegExp(r'<style\b.*?</style>', dotAll: true, caseSensitive: false), ' ')
       .replaceAll(
           RegExp(
-              r'<(\w+)\b[^>]*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^>]*>[\s\S]*?</\1>',
+              r'<(?!html\b|body\b)(\w+)\b[^>]*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^>]*>[\s\S]*?</\1>',
               dotAll: true,
               caseSensitive: false),
           ' ');
