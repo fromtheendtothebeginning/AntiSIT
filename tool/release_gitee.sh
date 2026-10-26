@@ -17,7 +17,10 @@ API="https://gitee.com/api/v5"
 VERSION=$(sed -n 's/^version: *\([0-9][0-9.]*\)+.*/\1/p' pubspec.yaml)
 TAG="v$VERSION"
 APK="build/app/outputs/flutter-apk/app-release.apk"
-OUT="AntiSIT-$VERSION.apk"
+OUT_DIR=$(mktemp -d)
+trap 'rm -rf "$OUT_DIR"' EXIT
+OUT_NAME="AntiSIT-$VERSION.apk"
+OUT="$OUT_DIR/$OUT_NAME"
 
 [ -n "$VERSION" ] || { echo "读不到 pubspec.yaml 的 version" >&2; exit 1; }
 
@@ -45,7 +48,7 @@ fi
 # 4) 建 Release（已存在就复用）
 [ -f "$APK" ] || { echo "找不到 $APK，先 flutter build apk --release" >&2; exit 1; }
 cp "$APK" "$OUT"
-sha256sum "$OUT" > "$OUT.sha256"
+(cd "$OUT_DIR" && sha256sum "$OUT_NAME" > "$OUT_NAME.sha256")
 REL_JSON=$(mktemp)
 if ! curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$REL_JSON"; then
   PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
@@ -53,7 +56,7 @@ if ! curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$RE
   {
     echo "## AntiSIT $VERSION"
     echo
-    echo "APK 直装（Android 7.0+）：下载 \`$OUT\` 安装，首次需允许「未知来源」。"
+    echo "APK 直装（Android 7.0+）：下载 \`$OUT_NAME\` 安装，首次需允许「未知来源」。"
     echo
     echo "### 本次更新"
     if [ -n "$PREV" ]; then
@@ -74,8 +77,14 @@ if ! curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$RE
 fi
 REL_ID=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$REL_JSON")
 
-# 5) 上传 APK 与校验文件
+# 5) 上传 APK 与校验文件（重跑时跳过同名附件，避免重复）
+EXISTING=$(python -c 'import json,sys; print("\n".join(a.get("name","") for a in json.load(open(sys.argv[1])).get("assets",[])))' "$REL_JSON")
 for f in "$OUT" "$OUT.sha256"; do
+  name=$(basename "$f")
+  if printf '%s\n' "$EXISTING" | grep -Fxq "$name"; then
+    echo "跳过已存在附件：$name"
+    continue
+  fi
   curl -fsS -X POST "$API/repos/$REPO/releases/$REL_ID/attach_files?access_token=$TOKEN" \
     -F "file=@$f" -o /dev/null
 done
