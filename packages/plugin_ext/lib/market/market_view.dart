@@ -135,7 +135,7 @@ class _MarketViewState extends State<MarketView> {
       await installer.install(e);
       widget.onInstalled?.call(update ? '已更新「${e.name}」' : '已安装「${e.name}」');
     } catch (err) {
-      _say('装不上：${_short(err)}');
+      if (mounted) showErr(context, err, title: update ? '更新失败' : '安装失败');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

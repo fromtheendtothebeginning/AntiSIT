@@ -118,6 +118,7 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
   late Uint8List _image = widget.image;
   bool _refreshing = false;
   bool _aiPending = false;
+  String? _refreshError;
   bool _stale = false; // 用户换过图：AI 认的是上一张，结果不能再采用
 
   @override
@@ -146,15 +147,14 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
     setState(() {
       _refreshing = true;
       _stale = true;
+      _refreshError = null;
     });
     try {
       final img = await widget.onRefresh();
       if (mounted) setState(() => _image = img);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.toString()), behavior: SnackBarBehavior.floating));
-      }
+      // 弹窗里再叠一个弹窗会打断输入，原因直接显示在弹窗内，别让用户只看到转圈停下
+      if (mounted) setState(() => _refreshError = e.toString());
     } finally {
       if (mounted) setState(() => _refreshing = false);
     }
@@ -184,6 +184,20 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
                 border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
               ),
               child: Text('上次提交失败：${widget.error}',
+                  style: TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.5)),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (_refreshError != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: SemColors.dangerSoft,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
+              ),
+              child: Text('换验证码失败：$_refreshError',
                   style: TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.5)),
             ),
             const SizedBox(height: 10),

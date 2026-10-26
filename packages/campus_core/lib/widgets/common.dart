@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -14,16 +16,32 @@ export 'theme_palette.dart';
 
 final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 
-/// 统一错误处理：snackbar 提示；401 只提示不跳转——保留导航界面，
-/// 用户通过「我的 → 点击登录」主动重新登录。
-void showErr(BuildContext context, Object e, {StackTrace? st}) {
+/// 已有错误弹窗时（多周课表并发失败等）不叠弹：同一轮失败原因通常相同，
+/// 关掉当前这个再让下一次失败重新弹即可。
+bool _errDialogOpen = false;
+
+/// 统一错误弹窗：把学校 / 服务器返回的原文完整展示出来（可长按复制）。
+/// SnackBar 4 秒就消失，失败原因很容易错过；各组件加载 / 刷新 / 导入 / 报名 / 安装失败
+/// 都走这里，页面背后仍保留整页错误态与「重试」，弹窗只负责把原因讲清楚。
+void showErr(BuildContext context, Object e, {String title = '操作失败', StackTrace? st}) {
   final msg = e is ApiError ? e.message : e.toString();
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(
-        content: Text(msg, style: const TextStyle(fontSize: 13)),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4)));
+  if (!context.mounted || _errDialogOpen) return;
+  _errDialogOpen = true;
+  unawaited(showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 360),
+        child: SingleChildScrollView(
+          child: SelectableText(msg, style: const TextStyle(fontSize: 13.5, height: 1.6)),
+        ),
+      ),
+      actions: [
+        FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+      ],
+    ),
+  ).whenComplete(() => _errDialogOpen = false));
 }
 
 /// 页面级加载中 / 出错重试 / 空数据 三态容器。

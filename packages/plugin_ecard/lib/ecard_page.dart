@@ -105,7 +105,7 @@ class _EcardPageState extends State<EcardPage> {
       _err = null;
       _countdown = ecardCountdownSeconds(asInt(_data?['refresh']));
     } catch (e) {
-      _err = e is ApiError ? e.message : '加载失败';
+      _err = e is ApiError ? e.message : e.toString();
       _countdown = 10;
     } finally {
       _loading = false;

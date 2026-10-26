@@ -31,6 +31,7 @@ class _ExamsPageState extends State<ExamsPage> {
       _exams = ((r['exams'] as List?) ?? const []).cast<Map<String, dynamic>>();
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
+      if (mounted) showErr(context, e, title: '考试安排加载失败');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -36,6 +36,7 @@ class _ScorePageState extends State<ScorePage> {
       AppState.I.studentInfo = ToolCache.score?.student;
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
+      if (mounted) showErr(context, e, title: '成绩加载失败');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

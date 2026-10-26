@@ -171,7 +171,7 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
       if (await _copyToClipboard(text)) {
         _toast('分享不可用（$e）：日历内容已复制，粘进文本编辑器另存为 .ics 即可');
       } else {
-        _toast('导出失败：$e');
+        if (mounted) showErr(context, e, title: '导出失败');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -219,7 +219,7 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
         const XTypeGroup(label: '日历文件', extensions: ['ics', 'ical']),
       ]);
     } catch (e) {
-      _toast('打开文件选择器失败：$e');
+      if (mounted) showErr(context, '打开文件选择器失败：$e', title: '导入失败');
       return;
     }
     if (picked == null) return;
@@ -228,7 +228,7 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
     try {
       parsed = TimetableIcs.parse(utf8.decode(await picked.readAsBytes(), allowMalformed: true));
     } catch (e) {
-      _toast('这个文件读不出来：$e');
+      if (mounted) showErr(context, '这个文件读不出来：$e', title: '导入失败');
       return;
     }
     if (!mounted) return;

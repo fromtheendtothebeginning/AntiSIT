@@ -68,9 +68,12 @@ class _ProfilePageState extends State<ProfilePage> {
       await showUpdateDialog(context, info);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(uc.error != null ? '检查更新失败：${uc.error}' : '已是最新版本'),
-        behavior: SnackBarBehavior.floating));
+    if (uc.error != null) {
+      showErr(context, '检查更新失败：${uc.error}', title: '检查更新失败');
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('已是最新版本'), behavior: SnackBarBehavior.floating));
   }
 
   /// 「设置」卡里的「检查更新」条目：平时显示当前版本，查到新版本就地标出来。

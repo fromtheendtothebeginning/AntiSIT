@@ -62,6 +62,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
       _list = (((r['data'] as Map?)?['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
+      if (mounted) showErr(context, e, title: '活动加载失败');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -261,9 +262,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       // 详情接口结果（完整说明/名额/报名方式）覆盖列表数据；其余元信息保留列表项内容。
       _data = {...?_data, ...?r['data'] as Map<String, dynamic>?};
     } catch (e) {
-      // 已有列表项数据时不必因详情拉取失败而整页报错。
+      // 已有列表项数据时不必因详情拉取失败而整页报错，但要让用户知道失败的原因。
       if (_data == null || _data!.isEmpty) {
         _err = e is ApiError ? e.message : e.toString();
+        if (mounted) showErr(context, e, title: '活动详情加载失败');
+      } else if (mounted) {
+        showErr(context, e, title: '刷新失败');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -332,10 +336,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e.message),
-          behavior: SnackBarBehavior.floating,
-        ));
+        showErr(context, e, title: '报名失败');
       }
       return null;
     } finally {

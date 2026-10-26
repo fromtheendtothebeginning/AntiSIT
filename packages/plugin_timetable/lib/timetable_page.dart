@@ -215,9 +215,11 @@ class _TimetablePageState extends State<TimetablePage> {
       final resp = await ApiClient.I.timetableWeek(xnm, xqm, zs);
       _storeWeek(zs, resp);
     } on ApiError catch (e) {
-      if (!e.message.contains('没有课表') && mounted) showErr(context, e);
+      if (!e.message.contains('没有课表') && mounted) {
+        showErr(context, e, title: '课表加载失败');
+      }
     } catch (e) {
-      if (mounted) showErr(context, e);
+      if (mounted) showErr(context, e, title: '课表加载失败');
     } finally {
       _loadingWeeks.remove(zs);
       if (mounted) setState(() {});
@@ -341,7 +343,7 @@ class _TimetablePageState extends State<TimetablePage> {
         behavior: SnackBarBehavior.floating,
       ));
     } catch (e) {
-      if (mounted) showErr(context, e);
+      if (mounted) showErr(context, e, title: '考试导入失败');
     }
   }
 

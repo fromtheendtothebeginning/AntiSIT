@@ -36,6 +36,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
       ToolCache.electricity = ToolCache.electricityOf(_data);
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
+      if (mounted) showErr(context, e, title: '电费加载失败');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

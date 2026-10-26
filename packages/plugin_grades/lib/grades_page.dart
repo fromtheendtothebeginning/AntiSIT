@@ -64,6 +64,7 @@ class _GradesPageState extends State<GradesPage> {
       _err = null;
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
+      if (mounted) showErr(context, e, title: '成绩加载失败');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
