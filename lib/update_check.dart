@@ -6,14 +6,18 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 更新检查的来源：发行 APK 挂在 GitHub Release 上（见 .github/workflows/release.yml）。
+/// 更新检查的来源：GitHub Release 与 Gitee 镜像同步发行（见 tool/release_gitee.sh）。
 const String updateRepo = 'fromtheendtothebeginning/AntiSIT';
 
-/// 依次尝试的更新源：GitHub 官方接口优先；它访问不了（国内网络常见）时退回
-/// 自建镜像——`anticraft.top/apk/latest.json` 放一份**同结构**的 Release JSON
-/// （发版后从 GitHub API 导出即可；assets 的下载地址可换成站内 HTTPS 直链，
-/// 手机端下载就不用翻 GitHub）。第一个成功的胜出。
+/// Gitee 镜像仓库：国内直连更快，更新检查与下载都优先走它。
+const String giteeUpdateRepo = 'ender123/AntiSIT';
+
+/// 更新源：Gitee 优先（国内访问快，APK 也从这里下）；读不到再 GitHub；
+/// 两个都访问不了时退回自建镜像——`anticraft.top/apk/latest.json` 放一份**同结构**的
+/// Release JSON。所有源会并发查询，取版本最高的那份；同版本优先靠前的源，
+/// 这样 Gitee 镜像偶尔滞后也不会把 GitHub 上的新版藏起来。
 final List<Uri> latestReleaseApis = [
+  Uri.parse('https://gitee.com/api/v5/repos/$giteeUpdateRepo/releases/latest'),
   Uri.parse('https://api.github.com/repos/$updateRepo/releases/latest'),
   Uri.parse('https://anticraft.top/apk/latest.json'),
 ];
@@ -224,25 +228,45 @@ class UpdateChecker extends ChangeNotifier {
   String _reason(Object e) {
     if (e is TimeoutException) return '网络超时';
     final s = '$e';
-    if (s.contains('403')) return 'GitHub 接口限流（403），过一会儿再试';
+    if (s.contains('403')) return '更新源接口限流（403），过一会儿再试';
     if (s.contains('404')) return '仓库里还没有发布过版本';
-    return '网络不可用（GitHub 与镜像都访问不了）';
+    return '网络不可用（Gitee、GitHub 与镜像都访问不了）';
   }
 }
 
-/// 依次尝试更新源，第一个成功的胜出；全部失败抛出**最后一个**错误
-/// （先试的 GitHub，错误文案以最后的镜像为准没有意义，保留原错误更利于定位）。
+/// 并发查询所有更新源，取版本最高的那份；同版本优先靠前的源（Gitee 在前，
+/// 下载地址就走 Gitee）。全部失败抛出**最后一个源**的错误——先试的源报错
+/// 往往是限流/被墙，末尾镜像的错误更利于说明整体不可用。
 Future<Map<String, dynamic>> fetchLatestFrom(
   Iterable<Uri> sources,
   Future<Map<String, dynamic>> Function(Uri) fetch,
 ) async {
-  Object? last;
-  for (final api in sources) {
+  final list = sources.toList();
+  if (list.isEmpty) throw StateError('没有可用的更新源');
+  final found = <(int, String, Map<String, dynamic>)>[];
+  final errors = List<Object?>.filled(list.length, null);
+
+  Future<void> one(int i) async {
     try {
-      return await fetch(api);
+      final j = await fetch(list[i]);
+      final info = parseRelease(j);
+      if (info != null) found.add((i, info.version, j));
     } catch (e) {
-      last = e;
+      errors[i] = e;
     }
   }
-  throw last ?? StateError('没有可用的更新源');
+
+  await Future.wait([for (var i = 0; i < list.length; i++) one(i)]);
+  if (found.isEmpty) {
+    for (var i = errors.length - 1; i >= 0; i--) {
+      final e = errors[i];
+      if (e != null) throw e;
+    }
+    throw const FormatException('更新源都没有返回版本信息');
+  }
+  found.sort((a, b) {
+    final c = compareVersions(a.$2, b.$2);
+    return c != 0 ? -c : a.$1.compareTo(b.$1);
+  });
+  return found.first.$3;
 }

@@ -179,9 +179,28 @@ void main() {
       );
     });
 
-    test('镜像源已配置（anticraft.top）', () {
-      expect(latestReleaseApis.first.host, 'api.github.com');
+    test('镜像源已配置（Gitee 优先，GitHub 次之，anticraft.top 兜底）', () {
+      expect(latestReleaseApis.first.host, 'gitee.com');
+      expect(latestReleaseApis.first.path, contains(giteeUpdateRepo));
+      expect(latestReleaseApis[1].host, 'api.github.com');
       expect(latestReleaseApis.last.host, 'anticraft.top');
+    });
+
+    test('多源都成功时取版本最高的，镜像滞后不会藏住新版', () async {
+      final j = await fetchLatestFrom(
+          [Uri.parse('https://gitee.com/a'), Uri.parse('https://api.github.com/b')], (api) async {
+        return api.host == 'gitee.com' ? releaseJson('v1.18.0') : releaseJson('v1.19.0');
+      });
+      expect(parseRelease(j)!.version, '1.19.0');
+    });
+
+    test('同版本优先靠前的源（Gitee 下载地址）', () async {
+      final a = {'tag_name': 'v1.19.0', 'marker': 'gitee'};
+      final b = {'tag_name': 'v1.19.0', 'marker': 'github'};
+      final j = await fetchLatestFrom(
+          [Uri.parse('https://gitee.com/a'), Uri.parse('https://api.github.com/b')],
+          (api) async => api.host == 'gitee.com' ? a : b);
+      expect(j['marker'], 'gitee');
     });
   });
 

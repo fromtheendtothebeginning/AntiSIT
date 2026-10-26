@@ -19,6 +19,12 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.19.0', date: '2026-10-26', notes: [
+    '教务导入失败时显示学校返回的真实原因（修复失败原因被误判成「登录页改版」）',
+    '成绩、考试、二课、电费、校园卡、拓展市场等组件失败时统一弹窗展示学校 / 服务器返回的原因，可长按复制',
+    '验证码换图失败的原因直接显示在验证码弹窗内',
+    '更新检查优先从 Gitee 下载，Gitee 不可用时自动回退 GitHub / 镜像',
+  ]),
   ChangelogEntry(version: '1.18.1', date: '2026-10-25', notes: [
     '在线报名再简化：去掉自述信息填写，报名内容全部由学校系统预填，确认后直接提交',
   ]),
