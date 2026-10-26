@@ -100,10 +100,12 @@ class CampusCreds {
   String payPassword = ''; // 校付宝支付密码
   String dorm = ''; // 如「24号楼1016」
   String realName = ''; // 校付宝登录需真实姓名；空则查学工自动补全
+  String grade = ''; // 入学年（4 位，如 2027）；二课达标线/学期标签用，空则自动读教务
 
   bool get hasLogin => studentId.trim().isNotEmpty && password.isNotEmpty;
   bool get hasPay => payPassword.isNotEmpty;
   bool get hasDorm => dorm.trim().isNotEmpty;
+  bool get hasGrade => RegExp(r'^\d{4}$').hasMatch(grade.trim());
 
   void clearSession() {
     // 凭据保留，仅清空会话（token/会话由 CampusDirect 持有）
@@ -115,6 +117,7 @@ class CampusCreds {
         'payPassword': payPassword,
         'dorm': dorm,
         'realName': realName,
+        'grade': grade,
       };
 
   static CampusCreds fromJson(Map<String, dynamic>? j) {
@@ -125,6 +128,7 @@ class CampusCreds {
     c.payPassword = (j['payPassword'] ?? '').toString();
     c.dorm = (j['dorm'] ?? '').toString();
     c.realName = (j['realName'] ?? '').toString();
+    c.grade = (j['grade'] ?? '').toString();
     return c;
   }
 }

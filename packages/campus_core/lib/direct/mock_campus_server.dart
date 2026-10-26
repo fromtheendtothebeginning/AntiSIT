@@ -38,6 +38,7 @@ class MockCampusServer {
   static const String payPassword = '888888';
   static const String realName = '张三';
   static const String dorm = '24号楼1016';
+  static const String grade = '2026';
 
   static const List<int> _ports = [18780, 18781, 18782, 18783];
 
@@ -827,7 +828,7 @@ $casErrorSkeleton
   ];
 
   static const Map<String, Object?> _scoreItem = {
-    'xh': studentId, 'xm': realName, 'nj': '2026',
+    'xh': studentId, 'xm': realName, 'nj': grade,
     'bmmc': '计算机学院', 'zymc': '计算机科学与技术', 'bjmc': '计科2501',
     'zxs': '8.0', 'sjxf': '5.5',
     'dlxs_dy': '2.0', 'rdxs_dy_jzbg': '0.8', 'rdxs_dy_ztjy': '0.4', 'rdxs_dy_zygy': '0.8',

@@ -1,0 +1,23 @@
+{
+  "_note": "二课达标线配置。default 是所有年级的兜底策略；cohorts 按入学年 nj 覆盖（键为 4 位入学年）。App 缓存 24 小时。",
+  "version": 1,
+  "default": {
+    "total": 8,
+    "groups": [
+      { "keywords": ["德育"], "target": 3.0 },
+      { "keywords": ["劳育"], "target": 3.0 },
+      { "keywords": ["美育"], "target": 1.0, "noExpand": true },
+      { "keywords": ["健康"], "target": 1.0, "noExpand": true }
+    ],
+    "subs": [
+      { "keywords": ["讲座", "报告", "讲坛", "沙龙", "主题教育", "团日"], "target": 1.8 },
+      { "keywords": ["安全教育", "安全"], "target": 0.2 },
+      { "keywords": ["志愿", "公益"], "target": 1.0 },
+      { "keywords": ["三创", "竞赛", "论文", "专利", "技能证书", "社团活动"], "target": 1.5 },
+      { "keywords": ["社会实践", "挂职", "学长导航", "境外交流"], "target": 1.0 },
+      { "keywords": ["劳动教育", "劳动课堂"] },
+      { "keywords": ["校园文明", "文明寝室"] }
+    ]
+  },
+  "cohorts": {}
+}

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'score_target_settings_page.dart';
+
 /// 第二课堂分：精确复刻 anticraft.top 网站排版
 /// （单面板：学生信息行 + 总得分/实践学分 CountUp + 分组手风琴带达标胶囊）。
 class ScorePage extends StatefulWidget {
@@ -18,6 +20,12 @@ class _ScorePageState extends State<ScorePage> {
   String? _err;
   Map<String, dynamic>? _data;
 
+  /// 达标线按入学年级（nj）取：远端配置/本机自定义优先，未配置时用默认规则。
+  ScoreTargetPolicy _policy = const ScoreTargetPolicy();
+
+  /// 当前生效的入学年：教务返回优先，直连模式手填兜底。
+  String _cohort = '';
+
   @override
   void initState() {
     super.initState();
@@ -30,8 +38,17 @@ class _ScorePageState extends State<ScorePage> {
       _err = null;
     });
     try {
+      // 达标线配置和分数并发拉：配置走公网、分数走校园链路，互不拖慢。
+      final targetsFuture = ScoreTargets.load();
       final r = await ApiClient.I.score();
+      final targets = await targetsFuture;
       _data = r['data'] as Map<String, dynamic>?;
+      final student = _data?['student'];
+      final apiNj = student is Map ? '${student['nj'] ?? ''}'.trim() : '';
+      // 直连模式手填的年级优先：学校没回或回的年级不合用时以用户填的为准。
+      final manual = AppState.I.direct ? AppState.I.creds.grade.trim() : '';
+      _cohort = manual.isNotEmpty ? manual : apiNj;
+      _policy = targets.forCohort(_cohort);
       ToolCache.score = ToolCache.scoreOf(_data);
       AppState.I.studentInfo = ToolCache.score?.student;
     } catch (e) {
@@ -42,6 +59,14 @@ class _ScorePageState extends State<ScorePage> {
     }
   }
 
+  /// 三级页面：调整本机达标线；返回后重拉分数与策略。
+  Future<void> _openTargetSettings() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ScoreTargetSettingsPage(cohort: _cohort.isEmpty ? null : _cohort),
+    ));
+    if (mounted) _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = _data;
@@ -50,7 +75,16 @@ class _ScorePageState extends State<ScorePage> {
     final empty = total == null && groups.isEmpty;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('第二课堂分')),
+      appBar: AppBar(
+        title: const Text('第二课堂分'),
+        actions: [
+          IconButton(
+            tooltip: '达标线设置',
+            icon: const Icon(Icons.tune_rounded),
+            onPressed: _openTargetSettings,
+          ),
+        ],
+      ),
       body: PageStateView(
         loading: _loading,
         error: _err,
@@ -68,15 +102,21 @@ class _ScorePageState extends State<ScorePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (data != null) _studentLine(data),
+                    if (data != null && _policy.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text('本年级达标线尚未配置，仅显示实际分数',
+                            style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                      ),
                     if (data != null && total != null) ...[
                       const SizedBox(height: 14),
-                      _stats(data, total),
+                      _stats(data, total, _policy),
                       const SizedBox(height: 16),
                     ],
                     for (var gi = 0; gi < groups.length; gi++)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: _groupTile(groups[gi], gi, groups.length),
+                        child: _groupTile(groups[gi], gi, groups.length, _policy),
                       ),
                   ],
                 ),
@@ -105,10 +145,11 @@ class _ScorePageState extends State<ScorePage> {
     );
   }
 
-  // ── 总得分 / 实践学分 两个大数字（cs-stats）──
-  Widget _stats(Map<String, dynamic> data, num total) {
+  // ── 总得分 / 实践学分 两个大数字（cs-stats） ──
+  Widget _stats(Map<String, dynamic> data, num total, ScoreTargetPolicy policy) {
     final credit = asNum(data['credit']);
-    final reached = credit != null && credit >= 8; // TOTAL_TARGET = 8（2025 级）
+    final target = policy.total;
+    final reached = target != null && credit != null && credit >= target;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -137,15 +178,17 @@ class _ScorePageState extends State<ScorePage> {
                   value: credit?.toDouble(),
                   style: TextStyle(
                       fontSize: 30, fontWeight: FontWeight.w600, height: 1.1,
-                      color: credit == null
+                      color: target == null || credit == null
                           ? SemColors.textPrimary
                           : (reached ? SemColors.success : SemColors.danger)),
                 ),
-                const SizedBox(width: 4),
-                Text('/ 8',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w700,
-                        color: SemColors.textSecondary)),
+                if (target != null) ...[
+                  const SizedBox(width: 4),
+                  Text('/ ${_fmtNum(target)}',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700,
+                          color: SemColors.textSecondary)),
+                ],
               ],
             ),
           ],
@@ -155,8 +198,8 @@ class _ScorePageState extends State<ScorePage> {
   }
 
   // ── 分组（cs-group）：美育/健康教育单行平铺，其余可展开 ──
-  Widget _groupTile(Map<String, dynamic> group, int gi, int groupCount) {
-    final target = _matchScoreTarget('${group['name'] ?? ''}');
+  Widget _groupTile(Map<String, dynamic> group, int gi, int groupCount, ScoreTargetPolicy policy) {
+    final target = policy.groupFor('${group['name'] ?? ''}');
     final actual = asNum(group['subtotal']);
     final targetVal = target?.target;
     final rowsCount = ((group['rows'] as List?) ?? const []).length;
@@ -178,6 +221,7 @@ class _ScorePageState extends State<ScorePage> {
       name: '${group['name'] ?? ''}',
       actual: actual,
       targetVal: targetVal,
+      policy: policy,
       rows: ((group['rows'] as List?) ?? const []).cast<Map<String, dynamic>>(),
       defaultOpen: gi < groupCount - 2 && rowsCount <= 4,
     );
@@ -200,52 +244,15 @@ class _ScorePageState extends State<ScorePage> {
         ? SemColors.accent
         : (reached ? SemColors.success : SemColors.danger);
     return Capsule(
-      '${_fmtNum(actual)} / ${targetVal != null ? _fmtNum(targetVal) : '—'}',
+      targetVal != null
+          ? '${_fmtNum(actual)} / ${_fmtNum(targetVal)}'
+          : _fmtNum(actual),
       color: color,
       soft: targetVal == null
           ? SemColors.accentSoft
           : (reached ? SemColors.successSoft : SemColors.dangerSoft),
     );
   }
-}
-
-// ── 达标规则（与网站 SCORE_TARGETS / SUB_TARGETS 一致，2025 级）──
-
-class _Target {
-  const _Target(this.target, {this.noExpand = false});
-  final double? target;
-  final bool noExpand;
-}
-
-const Map<List<String>, _Target> _scoreTargets = {
-  ['德育']: _Target(3.0),
-  ['劳育']: _Target(3.0),
-  ['美育']: _Target(1.0, noExpand: true),
-  ['健康']: _Target(1.0, noExpand: true),
-};
-
-const Map<List<String>, double?> _subTargets = {
-  ['讲座', '报告', '讲坛', '沙龙', '主题教育', '团日']: 1.8,
-  ['安全教育', '安全']: 0.2,
-  ['志愿', '公益']: 1.0,
-  ['三创', '竞赛', '论文', '专利', '技能证书', '社团活动']: 1.5,
-  ['社会实践', '挂职', '学长导航', '境外交流']: 1.0,
-  ['劳动教育', '劳动课堂']: null,
-  ['校园文明', '文明寝室']: null,
-};
-
-_Target? _matchScoreTarget(String groupName) {
-  for (final e in _scoreTargets.entries) {
-    if (e.key.any((kw) => groupName.contains(kw))) return e.value;
-  }
-  return null;
-}
-
-double? _matchSubTarget(String rowName) {
-  for (final e in _subTargets.entries) {
-    if (e.key.any((kw) => rowName.contains(kw))) return e.value;
-  }
-  return null;
 }
 
 // ── 可展开分组（受控手风琴，复刻 cs-group-summary / cs-group-body）──
@@ -255,6 +262,7 @@ class _ScoreGroupTile extends StatefulWidget {
     required this.name,
     required this.actual,
     required this.targetVal,
+    required this.policy,
     required this.rows,
     required this.defaultOpen,
   });
@@ -262,6 +270,7 @@ class _ScoreGroupTile extends StatefulWidget {
   final String name;
   final num? actual;
   final double? targetVal;
+  final ScoreTargetPolicy policy;
   final List<Map<String, dynamic>> rows;
   final bool defaultOpen;
 
@@ -304,7 +313,9 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
                   ),
                   if (actual != null) ...[
                     Capsule(
-                      '${_fmtNum(actual)} / ${targetVal != null ? _fmtNum(targetVal) : '—'}',
+                      targetVal != null
+                          ? '${_fmtNum(actual)} / ${_fmtNum(targetVal)}'
+                          : _fmtNum(actual),
                       color: color,
                       soft: targetVal == null
                           ? SemColors.accentSoft
@@ -356,7 +367,7 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
   /// 二级行（cs-mini-table）：名称左、值右对齐加粗；有子目标时绿/红着色。
   Widget _miniRow(Map<String, dynamic> row, bool last) {
     final name = '${row['name'] ?? ''}';
-    final subTarget = _matchSubTarget(name);
+    final subTarget = widget.policy.subFor(name);
     final hasTarget = subTarget != null;
     final value = asNum(row['value']);
     final raw = row['value'];

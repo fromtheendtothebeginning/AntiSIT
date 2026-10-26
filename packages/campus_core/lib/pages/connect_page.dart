@@ -52,6 +52,7 @@ class _ConnectPageState extends State<ConnectPage> {
   final _payPwd = TextEditingController();
   final _dorm = TextEditingController();
   final _realName = TextEditingController();
+  final _grade = TextEditingController();
 
   bool _hidePwd = true;
   bool _hidePayPwd = true;
@@ -77,6 +78,7 @@ class _ConnectPageState extends State<ConnectPage> {
     _payPwd.text = st.creds.payPassword;
     _dorm.text = st.creds.dorm;
     _realName.text = st.creds.realName;
+    _grade.text = st.creds.grade;
   }
 
   void _loadSchool(SchoolProfile s) {
@@ -101,7 +103,7 @@ class _ConnectPageState extends State<ConnectPage> {
   void dispose() {
     for (final c in [
       _server, _schoolName, _authBase, _jwxtBase, _xgBase, _ecardBase, _aesKey,
-      _sid, _pwd, _payPwd, _dorm, _realName,
+      _sid, _pwd, _payPwd, _dorm, _realName, _grade,
     ]) {
       c.dispose();
     }
@@ -259,7 +261,8 @@ class _ConnectPageState extends State<ConnectPage> {
         ..password = MockCampusServer.password
         ..payPassword = MockCampusServer.payPassword
         ..dorm = MockCampusServer.dorm
-        ..realName = MockCampusServer.realName;
+        ..realName = MockCampusServer.realName
+        ..grade = MockCampusServer.grade;
       await st.setMode(AppMode.direct);
       await st.persistDirect();
       CampusDirect.I.forgetLoginState();
@@ -274,6 +277,7 @@ class _ConnectPageState extends State<ConnectPage> {
         _payPwd.text = MockCampusServer.payPassword;
         _dorm.text = MockCampusServer.dorm;
         _realName.text = MockCampusServer.realName;
+        _grade.text = MockCampusServer.grade;
         _ok = '已切换到本地模拟服务（${MockCampusServer.instance.baseUrl}）：'
             '教务 / 统一认证 / 学工 / 校园卡都在本机模拟。返回首页查询会弹出验证码，'
             '图片上的数字就是答案（日志里也会打印）。';
@@ -386,6 +390,11 @@ class _ConnectPageState extends State<ConnectPage> {
       setState(() => _error = '直连模式需要四个学校系统地址（教务 / 学工 / 统一认证 / 校园卡）');
       return;
     }
+    final grade = _grade.text.trim();
+    if (grade.isNotEmpty && !RegExp(r'^\d{4}$').hasMatch(grade)) {
+      setState(() => _error = '年级请填 4 位入学年，如 2027');
+      return;
+    }
     await st.upsertSchool(school);
     await st.setSchool(school);
     st.creds
@@ -393,7 +402,8 @@ class _ConnectPageState extends State<ConnectPage> {
       ..password = _pwd.text
       ..payPassword = _payPwd.text
       ..dorm = _dorm.text.trim()
-      ..realName = _realName.text.trim();
+      ..realName = _realName.text.trim()
+      ..grade = grade;
     await st.setMode(AppMode.direct);
     CampusDirect.I.forgetLoginState();
     await st.persistDirect();
@@ -694,6 +704,13 @@ class _ConnectPageState extends State<ConnectPage> {
               label: '姓名（可留空）',
               controller: _realName,
               prefixIcon: const Icon(Icons.person_outline),
+            ),
+            const SizedBox(height: 10),
+            GlassField(
+              label: '年级（入学年，可留空）',
+              controller: _grade,
+              hintText: '如 2027；用于二课达标线与学期标签',
+              prefixIcon: const Icon(Icons.school_outlined),
             ),
             const SizedBox(height: 12),
             Row(

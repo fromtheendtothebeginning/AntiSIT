@@ -3,3 +3,4 @@ library;
 
 export 'score_page.dart';
 export 'score_plugin.dart';
+export 'score_target_settings_page.dart';

@@ -160,6 +160,10 @@ class _TimetablePageState extends State<TimetablePage> {
     if (mounted) setState(() => _booting = true);
     await TimetableStore.instance.load();
     final adopted = await TimetableStore.instance.syncCloud();
+    final manualGrade = AppState.I.direct ? AppState.I.creds.grade.trim() : '';
+    if (manualGrade.isNotEmpty && TimetableStore.instance.nj != manualGrade) {
+      TimetableStore.instance.nj = manualGrade;
+    }
     if (adopted && !keepSemester) {
       // 云端数据覆盖本地后学期可能变化：重置到推断学期。
       // 显式切换学期（keepSemester）时不重置，否则切换会被弹回当前学期。
@@ -242,7 +246,11 @@ class _TimetablePageState extends State<TimetablePage> {
       }
     }
     final nj = resp['nj'];
-    if (nj is String && nj.isNotEmpty) {
+    final manual = AppState.I.direct ? AppState.I.creds.grade.trim() : '';
+    if (manual.isNotEmpty) {
+      // 直连模式手填的年级优先：教务没回或回的年级不合用时以用户填的为准。
+      TimetableStore.instance.nj = manual;
+    } else if (nj is String && nj.isNotEmpty) {
       TimetableStore.instance.nj = nj; // 内部会 persist
     } else {
       TimetableStore.instance.save();

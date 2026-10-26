@@ -42,6 +42,7 @@ export 'plugins/registry.dart';
 export 'plugins/reminder_capability.dart';
 export 'plugins/risk_capability.dart';
 export 'plugins/webview_capability.dart';
+export 'score_targets.dart';
 export 'timetable_ics.dart';
 export 'timetable_store.dart';
 export 'widgets/balance_chart.dart';

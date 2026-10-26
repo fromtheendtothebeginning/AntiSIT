@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 import 'score_page.dart';
+import 'score_target_settings_page.dart';
 
 /// 二课分数：达标分数与明细；顺手把学籍信息缓存给「我的」页用。
 class ScorePlugin extends FeaturePlugin {
@@ -26,6 +27,22 @@ class ScorePlugin extends FeaturePlugin {
           title: '二课分数',
           subtitle: _subtitle,
           open: () => const ScorePage(),
+        ),
+      ];
+
+  @override
+  int get settingsOrder => 48;
+
+  @override
+  List<Widget> settingsTiles(BuildContext context, PluginRegistry registry) => [
+        ListTile(
+          leading: const Icon(Icons.military_tech_outlined),
+          title: const Text('第二课堂达标线'),
+          subtitle: const Text('按年级调整各板块的达标分数'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ScoreTargetSettingsPage()),
+          ),
         ),
       ];
 
