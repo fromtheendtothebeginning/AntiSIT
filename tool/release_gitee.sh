@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # 把当前版本同步发布到 Gitee：建仓库（如不存在）→ 推 main/tag → 建 Release → 上传 APK。
-# 用法：GITEE_TOKEN=xxx tool/release_gitee.sh
+# 用法：
+#   GITEE_TOKEN=xxx tool/release_gitee.sh    # 完整发布（建仓库 + 推代码 + Release + APK）
+#   tool/release_gitee.sh                    # 只推代码和 tag（仓库需已存在；Release 到网页建）
 #   GITEE_TOKEN  Gitee 私人令牌（https://gitee.com/profile/personal_access_tokens，勾选 projects）
 #   GITEE_REPO   可选，默认 ender123/AntiSIT
 # 前置：本机 SSH key 已加到 Gitee（git@gitee.com 可免密），当前版本 APK 已构建。
@@ -14,15 +16,10 @@ TAG="v$VERSION"
 APK="build/app/outputs/flutter-apk/app-release.apk"
 OUT="AntiSIT-$VERSION.apk"
 
-[ -n "$TOKEN" ] || {
-  echo "缺少 GITEE_TOKEN：到 https://gitee.com/profile/personal_access_tokens 生成（勾选 projects）" >&2
-  exit 1
-}
 [ -n "$VERSION" ] || { echo "读不到 pubspec.yaml 的 version" >&2; exit 1; }
-[ -f "$APK" ] || { echo "找不到 $APK，先 flutter build apk --release" >&2; exit 1; }
 
-# 1) 仓库不存在就创建（公开仓库，Release 附件才能匿名下载）
-if ! curl -fsS "$API/repos/$REPO?access_token=$TOKEN" -o /dev/null; then
+# 1) 有令牌时：仓库不存在就创建（公开仓库，Release 附件才能匿名下载）
+if [ -n "$TOKEN" ] && ! curl -fsS "$API/repos/$REPO?access_token=$TOKEN" -o /dev/null; then
   echo "创建 Gitee 仓库 $REPO ..."
   curl -fsS -X POST "$API/user/repos?access_token=$TOKEN" \
     -H 'Content-Type: application/json' \
@@ -35,7 +32,15 @@ git remote get-url gitee >/dev/null 2>&1 || git remote add gitee "git@gitee.com:
 git push gitee main
 git push gitee "$TAG"
 
-# 3) 建 Release（已存在就复用）
+# 3) 没有令牌：只推代码，Release 交给网页
+if [ -z "$TOKEN" ]; then
+  echo "代码与 tag 已推送。创建 Release（上传 $APK）："
+  echo "  https://gitee.com/$REPO/releases/new?tag=$TAG"
+  exit 0
+fi
+
+# 4) 建 Release（已存在就复用）
+[ -f "$APK" ] || { echo "找不到 $APK，先 flutter build apk --release" >&2; exit 1; }
 cp "$APK" "$OUT"
 sha256sum "$OUT" > "$OUT.sha256"
 REL_JSON=$(mktemp)
@@ -58,7 +63,7 @@ print(json.dumps({"tag_name": "v" + v, "target_commitish": "main",
 fi
 REL_ID=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$REL_JSON")
 
-# 4) 上传 APK 与校验文件
+# 5) 上传 APK 与校验文件
 for f in "$OUT" "$OUT.sha256"; do
   curl -fsS -X POST "$API/repos/$REPO/releases/$REL_ID/attach_files?access_token=$TOKEN" \
     -F "file=@$f" -o /dev/null
