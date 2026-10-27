@@ -19,6 +19,11 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.20.2', date: '2026-10-27', notes: [
+    '课表小卡片重新露出教室号：地点拆成楼名与编号，一节课高也能看到 A301',
+    '周视图日程按真实时间定位：前后相接的日程不再都挤到同一节次上叠在一起',
+    '日程真重叠时改用不透明底色，不再透出下面那张卡的文字',
+  ]),
   ChangelogEntry(version: '1.20.1', date: '2026-10-26', notes: [
     '课表小卡片文字重叠修复：窄屏 1 节课程/日程只保留名称，地点/教师/时间在详情里看；周标题自动缩放',
   ]),

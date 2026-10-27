@@ -42,7 +42,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.text('晚饭空档日程'), findsWidgets);
-    expect(find.text('17:40~18:00'), findsOneWidget);
+    // 窄列放不下完整区间时只留开始时刻（结束时刻在详情里），避免折行撑出卡片
+    expect(find.text('17:40'), findsWidgets);
     // 周视图的日程块是 Positioned；日视图卡片不是。确保不是只靠日视图/近期日程兜住。
     expect(
       find.ancestor(

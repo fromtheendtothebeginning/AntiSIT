@@ -61,6 +61,9 @@ void main() {
 
     expect(find.text('高等数学（一）与工程应用基础'), findsWidgets);
     expect(find.text('临时班会与学生座谈交流安排'), findsWidgets);
-
+    // 一节课高的卡片也要露教室号（地点拆成「楼名 + 编号」，编号单独一行）
+    expect(find.text('A301'), findsWidgets);
+    // 卡片内容按像素预算取舍，不能再有 RenderFlex 溢出（文字叠在一起）
+    expect(tester.takeException(), isNull);
   });
 }

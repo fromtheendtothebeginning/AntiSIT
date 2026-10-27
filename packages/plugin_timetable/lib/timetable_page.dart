@@ -63,7 +63,8 @@ class _TimetablePageState extends State<TimetablePage> {
   static const _bandH = 20.0;
   static const _noonH = 12.0;
   /// 16:30–18:00 没有节次（晚饭空档）：留一行给这个时段的日程，否则保存了也看不见。
-  static const _gapH = 40.0;
+  /// 48px 才放得下「时间 + 两行课名」，40px 时时间会被挤掉。
+  static const _gapH = 48.0;
   static const _headerH = 44.0;
 
   /// 课程/日程的 slotStart/slotEnd = 小节序号（0 起，0-10），与网站渲染一致。
@@ -1894,11 +1895,14 @@ class _TimetablePageState extends State<TimetablePage> {
                               final dayCourses = eff == null
                                   ? const <TtCourse>[]
                                   : all.where((c) => c.day == eff && TimetableStore.coversWeek(c, zs)).toList();
+                              // 按开始时刻排序：后开始的后画，真重叠时压在上层，
+                              // 不会被先开始的日程盖住（原来顺序取决于数据顺序）。
                               final dayEvents = tt.events
                                   .where((e) => e.date.isEmpty
                                       ? (eff != null && e.day == eff)
                                       : e.date == _colISO(zs, di))
-                                  .toList();
+                                  .toList()
+                                ..sort((a, b) => _hm(a.start).compareTo(_hm(b.start)));
                               return Expanded(
                                 child: Container(
                                   decoration: BoxDecoration(
@@ -1913,7 +1917,13 @@ class _TimetablePageState extends State<TimetablePage> {
                                     children: [
                                       for (final c in dayCourses) _courseBlock(c, zs, _colISO(zs, di)),
                                       for (final e in dayEvents)
-                                        ..._eventBlock(e, _colISO(zs, di)),
+                                        ..._eventBlock(
+                                          e,
+                                          _colISO(zs, di),
+                                          // 真重叠的日程改用不透明底色：半透明叠半透明
+                                          // 会让上下两张卡的文字透过来糊成一片。
+                                          solid: _eventOverlaps(e, dayEvents, dayCourses),
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -2040,6 +2050,7 @@ class _TimetablePageState extends State<TimetablePage> {
     final rowEnd = c.slotEnd.clamp(0, 10) + 1; // 半开区间
     final top = _rowY(rowStart);
     final height = (rowEnd - rowStart) * _slotH - 4;
+    final (placePrefix, placeCode) = _splitPlace(c.place);
     return Positioned(
       top: top + 2,
       height: height,
@@ -2062,48 +2073,8 @@ class _TimetablePageState extends State<TimetablePage> {
               child: MediaQuery.withClampedTextScaling(
                 maxScaleFactor: 1.15,
                 child: LayoutBuilder(
-                  builder: (context, box) {
-                    // 1 节课只有 ~52px：只留时间 + 课名，地点/教师放到详情里；
-                    // 两节以上再逐步放出地点/教师，避免小卡片里文字叠在一起。
-                    final showTime = box.maxHeight >= 60;
-                    final showPlace = box.maxHeight >= 68;
-                    final showTeacher = box.maxHeight >= 100;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (showTime)
-                          Text(TimetableStore.slotStarts[rowStart.clamp(0, 10)],
-                              style: TextStyle(
-                                  fontSize: 9,
-                                  color: past ? SemColors.textMuted : SemColors.textSecondary)),
-                        Text(name,
-                            maxLines: showTeacher ? 3 : 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                height: 1.2,
-                                color: past ? SemColors.textMuted : SemColors.textPrimary)),
-                        if ((showPlace && c.place.isNotEmpty) ||
-                            (showTeacher && c.teachers.isNotEmpty))
-                          const Spacer(),
-                        if (showPlace && c.place.isNotEmpty)
-                          Text(c.place,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  height: 1.15,
-                                  color:
-                                      past ? SemColors.textMuted : SemColors.textSecondary)),
-                        if (showTeacher && c.teachers.isNotEmpty)
-                          Text(c.teachers,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 9.5, color: SemColors.textMuted)),
-                      ],
-                    );
-                  },
+                  builder: (context, box) => _courseCardBody(
+                      context, box, c, past, rowStart, placePrefix, placeCode),
                 ),
               ),
             ),
@@ -2113,28 +2084,193 @@ class _TimetablePageState extends State<TimetablePage> {
     );
   }
 
-  /// 日程 / 考试块：按时间覆盖的小节行定位（同网站考试卡规则）。
-  List<Widget> _eventBlock(TtEvent e, String colISO) {
+  /// 课程卡内容：按真实像素预算取舍，不再用固定行数硬塞。
+  /// 优先级：课名（1-3 行）→ 教室号 → 上课时间 → 楼名 → 教师。
+  /// 一节课高的卡片（内高约 46px）也会保住 2 行课名 + 教室号——
+  /// 窄列里课名/楼名都会折行，唯独教室号要整段露出来。
+  Widget _courseCardBody(
+    BuildContext context,
+    BoxConstraints box,
+    TtCourse c,
+    bool past,
+    int rowStart,
+    String placePrefix,
+    String placeCode,
+  ) {
+    final w = box.maxWidth;
+    final avail = box.maxHeight - 1; // 1px 余量，避免量高和实际排版差一点点就溢出
+    final nameStyle = TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        color: past ? SemColors.textMuted : SemColors.textPrimary);
+    final timeStyle = TextStyle(
+        fontSize: 9, color: past ? SemColors.textMuted : SemColors.textSecondary);
+    final placeStyle = TextStyle(
+        fontSize: 10,
+        height: 1.15,
+        color: past ? SemColors.textMuted : SemColors.textSecondary);
+    final teacherStyle = TextStyle(fontSize: 9.5, color: SemColors.textMuted);
+
+    double nameAt(int lines) =>
+        _textHeight(context, c.name, nameStyle, maxWidth: w, maxLines: lines);
+    final codeH = placeCode.isEmpty
+        ? 0.0
+        : _textHeight(context, placeCode, placeStyle, maxWidth: w, oneLine: true);
+    final prefixH1 = placePrefix.isEmpty
+        ? 0.0
+        : _textHeight(context, placePrefix, placeStyle, maxWidth: w, maxLines: 1);
+    // 课名先给 3 行；地点放不下就降到 2/1 行，课名永远至少留一行。
+    // 有教室号先保编号；只有汉字楼名（没有编号）时也留一行，别把地点整个藏掉。
+    final reserveH = placeCode.isNotEmpty ? codeH : prefixH1;
+    var nameLines = 1;
+    for (final n in const [3, 2, 1]) {
+      if (nameAt(n) + reserveH <= avail) {
+        nameLines = n;
+        break;
+      }
+    }
+    var used = nameAt(nameLines);
+
+    var showCode = false;
+    if (placeCode.isNotEmpty && used + codeH <= avail) {
+      showCode = true;
+      used += codeH;
+    }
+    // 地点排在时间前面：左侧节次轴已经写着上课时间，教室号比重复的时间更该保。
+    var prefixLines = 0;
+    if (placePrefix.isNotEmpty) {
+      final h2 =
+          _textHeight(context, placePrefix, placeStyle, maxWidth: w, maxLines: 2);
+      if (used + h2 <= avail) {
+        prefixLines = 2;
+        used += h2;
+      } else if (used + prefixH1 <= avail) {
+        prefixLines = 1;
+        used += prefixH1;
+      }
+    }
+    final timeText = TimetableStore.slotStarts[rowStart];
+    final timeH =
+        _textHeight(context, timeText, timeStyle, maxWidth: w, oneLine: true);
+    var showTime = false;
+    if (used + timeH <= avail) {
+      showTime = true;
+      used += timeH;
+    }
+    final teacherH = c.teachers.isEmpty
+        ? 0.0
+        : _textHeight(context, c.teachers, teacherStyle, maxWidth: w, maxLines: 1);
+    var showTeacher = false;
+    if (c.teachers.isNotEmpty && used + teacherH <= avail) {
+      showTeacher = true;
+      used += teacherH;
+    }
+    final pushDown =
+        avail - used >= 6 && (showCode || prefixLines > 0 || showTeacher);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showTime)
+          Text(timeText,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: timeStyle),
+        Text(c.name,
+            maxLines: nameLines, overflow: TextOverflow.ellipsis, style: nameStyle),
+        if (pushDown) const Spacer(),
+        if (prefixLines > 0)
+          Text(placePrefix,
+              maxLines: prefixLines,
+              overflow: TextOverflow.ellipsis,
+              style: placeStyle),
+        if (showCode)
+          Text(placeCode,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: placeStyle),
+        if (showTeacher)
+          Text(c.teachers,
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: teacherStyle),
+      ],
+    );
+  }
+
+  /// 用和 [Text] 一样的样式、宽度和文字缩放来量高度：
+  /// 卡片据此决定放哪几行，量出来放不下就不放，避免靠 Clip 硬裁或文字叠字。
+  static double _textHeight(
+    BuildContext context,
+    String text,
+    TextStyle style, {
+    required double maxWidth,
+    int maxLines = 1,
+    bool oneLine = false,
+  }) {
+    final tp = TextPainter(
+      text: TextSpan(
+          text: text, style: DefaultTextStyle.of(context).style.merge(style)),
+      maxLines: maxLines,
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: oneLine ? double.infinity : maxWidth);
+    final h = tp.height;
+    tp.dispose();
+    return h;
+  }
+
+  static double _textWidth(BuildContext context, String text, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(
+          text: text, style: DefaultTextStyle.of(context).style.merge(style)),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final w = tp.width;
+    tp.dispose();
+    return w;
+  }
+
+  /// 地点拆成「楼名 + 教室编号」：「第二教学楼 A301 多媒体教室」→（第二教学楼, A301）。
+  /// 单独的「3」多半是「3号楼」的楼号，不当教室号拆出来。
+  static (String, String) _splitPlace(String place) {
+    final p = place.trim();
+    if (p.isEmpty) return ('', '');
+    final matches = RegExp(r'[A-Za-z]*\d[A-Za-z0-9-]*').allMatches(p).toList();
+    if (matches.isEmpty) return (p, '');
+    final m = matches.last;
+    final code = m.group(0)!;
+    if (code.length < 2 && !RegExp(r'[A-Za-z]').hasMatch(code)) return (p, '');
+    final prefix = p
+        .substring(0, m.start)
+        .replaceAll(RegExp(r'[\s·,，、/|-]+$'), '')
+        .trim();
+    return (prefix, code);
+  }
+
+  /// 日程 / 考试块：按真实时刻定位（同网站日程卡规则）。
+  /// 不再吸附到整节——09:00–09:30 和 09:30–10:00 原来都会落到第 2 节，
+  /// 两张卡直接叠在一起；按分钟插值后它们首尾相接、互不遮挡。
+  List<Widget> _eventBlock(TtEvent e, String colISO, {bool solid = false}) {
     final sm = _hm(e.start);
     final em = _hm(e.end);
     if (sm < 0 || em < 0) return const [];
     var first = -1;
-    var last = -1;
     for (var s = 0; s <= 10; s++) {
       final bMin = _hm(TimetableStore.slotStarts[s]);
       final eMin = _hm(TimetableStore.slotEnds[s]);
-      if (em > bMin && sm < eMin) {
-        if (first < 0) first = s;
-        last = s;
-      }
+      if (em > bMin && sm < eMin && first < 0) first = s;
     }
+    final isExam = e.kind == 'exam';
     if (first < 0) {
       // 16:30–18:00 没有节次（晚饭空档）。这里不落任何节次行，
       // 但用户的日程确实在这个时段：单独画在空档行里，别让它「保存了却看不见」。
       final gapStart = _hm(TimetableStore.slotEnds[7]);
       final gapEnd = _hm(TimetableStore.slotStarts[8]);
       if (em <= gapStart || sm >= gapEnd) return const [];
-      final isExam = e.kind == 'exam';
       final gapTop = _bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH;
       return [
         Positioned(
@@ -2148,8 +2284,9 @@ class _TimetablePageState extends State<TimetablePage> {
               opacity: _eventPast(e, colISO) && _dimPast ? 0.55 : 1,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: isExam ? SemColors.dangerSoft : SemColors.accentSoft,
+                  color: _eventBg(isExam, solid),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                       color: (isExam ? SemColors.danger : SemColors.accent)
@@ -2157,22 +2294,9 @@ class _TimetablePageState extends State<TimetablePage> {
                 ),
                 child: MediaQuery.withClampedTextScaling(
                   maxScaleFactor: 1.15,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${e.start}~${e.end}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 8,
-                              color: isExam ? SemColors.danger : SemColors.accent)),
-                      Text(e.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 9.5, fontWeight: FontWeight.w600)),
-                    ],
+                  child: LayoutBuilder(
+                    builder: (context, box) =>
+                        _eventCardBody(context, box, e, isExam, compact: true),
                   ),
                 ),
               ),
@@ -2181,15 +2305,18 @@ class _TimetablePageState extends State<TimetablePage> {
         ),
       ];
     }
-    final rowStart = first;
-    final rowEnd = last + 1;
-    final top = _rowY(rowStart);
-    final height = (rowEnd - rowStart) * _slotH - 4;
-    final isExam = e.kind == 'exam';
+    final gridTop = _hm(TimetableStore.slotStarts.first);
+    final gridBottom = _hm(TimetableStore.slotEnds.last);
+    final from = math.max(sm, gridTop);
+    final to = math.min(em, gridBottom);
+    final top = _yOfMinute(from);
+    var bottom = _yOfMinute(to);
+    // 太短的日程给一个能放下一行字的可见高度（不吸附回整节，避免又和邻居叠上）
+    if (bottom - top < 26) bottom = math.min(top + 26, _gridH);
     return [
       Positioned(
         top: top + 2,
-        height: height,
+        height: math.max(bottom - top - 4, 8),
         left: 2,
         right: 2,
         // 周视图的日程块原先没有点击手势，点它没反应（只有日视图能点开详情）
@@ -2199,58 +2326,203 @@ class _TimetablePageState extends State<TimetablePage> {
           child: Opacity(
             opacity: _eventPast(e, colISO) && _dimPast ? 0.55 : 1,
             child: Container(
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: isExam ? SemColors.dangerSoft : SemColors.accentSoft,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: (isExam ? SemColors.danger : SemColors.accent).withValues(alpha: 0.4)),
-            ),
-            child: MediaQuery.withClampedTextScaling(
-              maxScaleFactor: 1.15,
-              child: LayoutBuilder(
-                builder: (context, box) {
-                  // 1 节高的日程只留时间 + 名称，地点/座位在详情里看。
-                  final showTime = box.maxHeight >= 60;
-                  final showPlace = box.maxHeight >= 68;
-                  final showSeat = box.maxHeight >= 100;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (showTime)
-                        Text('${e.start}${e.end.isNotEmpty ? '~${e.end}' : ''}',
-                            style: TextStyle(
-                                fontSize: 9,
-                                color: isExam ? SemColors.danger : SemColors.accent)),
-                      Text(e.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              height: 1.2,
-                              color: isExam ? SemColors.danger : SemColors.textPrimary)),
-                      if ((showPlace && e.place.isNotEmpty) ||
-                          (showSeat && e.seat.isNotEmpty))
-                        const Spacer(),
-                      if (showPlace && e.place.isNotEmpty)
-                        Text(e.place,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 9.5, color: SemColors.textSecondary)),
-                      if (showSeat && e.seat.isNotEmpty)
-                        Text('座位 ${e.seat}',
-                            style: TextStyle(fontSize: 9, color: SemColors.textSecondary)),
-                    ],
-                  );
-                },
+              padding: const EdgeInsets.all(3),
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: _eventBg(isExam, solid),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: (isExam ? SemColors.danger : SemColors.accent)
+                        .withValues(alpha: 0.4)),
+              ),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.15,
+                child: LayoutBuilder(
+                  builder: (context, box) =>
+                      _eventCardBody(context, box, e, isExam),
+                ),
               ),
             ),
           ),
         ),
       ),
-      ),
     ];
+  }
+
+  /// 一天中的分钟 → 网格 y。节次内按分钟线性插值，午休 / 晚饭空档
+  /// 按空档自身高度插值，所以 09:20 的日程不会从 09:10 那一行顶部开始画。
+  double _yOfMinute(int minute) {
+    for (var s = 0; s <= 10; s++) {
+      final st = _hm(TimetableStore.slotStarts[s]);
+      final en = _hm(TimetableStore.slotEnds[s]);
+      if (minute <= st) return _rowY(s);
+      if (minute <= en) return _rowY(s) + (minute - st) / (en - st) * _slotH;
+      if (s < 10) {
+        final nextSt = _hm(TimetableStore.slotStarts[s + 1]);
+        if (minute < nextSt) {
+          final segTop = _rowY(s) + _slotH;
+          final segBottom = _rowY(s + 1);
+          return segTop + (minute - en) / (nextSt - en) * (segBottom - segTop);
+        }
+      }
+    }
+    return _rowY(10) + _slotH;
+  }
+
+  /// 日程卡内容：课名优先，其次时间，再放地点/座位；
+  /// 每一行都按真实像素高度量过，放不下就不放，避免文字折行撑出卡片。
+  Widget _eventCardBody(
+    BuildContext context,
+    BoxConstraints box,
+    TtEvent e,
+    bool isExam, {
+    bool compact = false,
+  }) {
+    final w = box.maxWidth;
+    final avail = box.maxHeight - 1;
+    final nameStyle = TextStyle(
+        fontSize: compact ? 9.5 : 10.5,
+        fontWeight: FontWeight.w600,
+        height: 1.2,
+        color: isExam ? SemColors.danger : SemColors.textPrimary);
+    final timeStyle = TextStyle(
+        fontSize: compact ? 8 : 9,
+        color: isExam ? SemColors.danger : SemColors.accent);
+    final placeStyle =
+        TextStyle(fontSize: compact ? 9 : 9.5, color: SemColors.textSecondary);
+    final seatStyle = TextStyle(fontSize: 9, color: SemColors.textSecondary);
+    final (placePrefix, placeCode) = _splitPlace(e.place);
+
+    double nameAt(int lines) =>
+        _textHeight(context, e.name, nameStyle, maxWidth: w, maxLines: lines);
+    if (nameAt(1) > avail) return const SizedBox.shrink();
+
+    // 时间先压成一行；窄列放不下完整区间就只留开始时刻，别折成两行把卡片撑爆。
+    var timeText = '${e.start}${e.end.isNotEmpty ? '~${e.end}' : ''}';
+    if (e.end.isNotEmpty && _textWidth(context, timeText, timeStyle) > w) {
+      timeText = e.start;
+    }
+    final timeH = timeText.isEmpty
+        ? 0.0
+        : _textHeight(context, timeText, timeStyle, maxWidth: w, oneLine: true);
+
+    // 课名尽量多留行；为了塞时间可以把 3 行降到 2 行，但不降到 1 行——
+    // 位置本身已经说明时段，课名比时间更重要。
+    var nameLines = 1;
+    for (final n in const [3, 2, 1]) {
+      if (nameAt(n) <= avail) {
+        nameLines = n;
+        break;
+      }
+    }
+    var used = nameAt(nameLines);
+    var showTime = false;
+    if (timeH > 0 && used + timeH <= avail) {
+      showTime = true;
+      used += timeH;
+    } else if (nameLines > 2 && nameAt(2) + timeH <= avail) {
+      nameLines = 2;
+      used = nameAt(2) + timeH;
+      showTime = true;
+    }
+
+    final codeH = placeCode.isEmpty
+        ? 0.0
+        : _textHeight(context, placeCode, placeStyle, maxWidth: w, oneLine: true);
+    var showCode = false;
+    if (placeCode.isNotEmpty && used + codeH <= avail) {
+      showCode = true;
+      used += codeH;
+    }
+    var prefixLines = 0;
+    if (placePrefix.isNotEmpty) {
+      final h2 =
+          _textHeight(context, placePrefix, placeStyle, maxWidth: w, maxLines: 2);
+      final h1 =
+          _textHeight(context, placePrefix, placeStyle, maxWidth: w, maxLines: 1);
+      if (used + h2 <= avail) {
+        prefixLines = 2;
+        used += h2;
+      } else if (used + h1 <= avail) {
+        prefixLines = 1;
+        used += h1;
+      }
+    }
+    final seatH = e.seat.isEmpty
+        ? 0.0
+        : _textHeight(context, '座位 ${e.seat}', seatStyle,
+            maxWidth: w, maxLines: 1, oneLine: true);
+    var showSeat = false;
+    if (e.seat.isNotEmpty && used + seatH <= avail) {
+      showSeat = true;
+      used += seatH;
+    }
+    final pushDown =
+        !compact && avail - used >= 6 && (showCode || prefixLines > 0 || showSeat);
+
+    return Column(
+      mainAxisAlignment:
+          compact ? MainAxisAlignment.center : MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showTime)
+          Text(timeText,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: timeStyle),
+        Text(e.name,
+            maxLines: nameLines, overflow: TextOverflow.ellipsis, style: nameStyle),
+        if (pushDown) const Spacer(),
+        if (prefixLines > 0)
+          Text(placePrefix,
+              maxLines: prefixLines,
+              overflow: TextOverflow.ellipsis,
+              style: placeStyle),
+        if (showCode)
+          Text(placeCode,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: placeStyle),
+        if (showSeat)
+          Text('座位 ${e.seat}',
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: seatStyle),
+      ],
+    );
+  }
+
+  /// 重叠的日程用不透明底色（先把玻璃卡面压到底色上）：
+  /// 半透明卡叠半透明卡时，下面那张的文字会透上来，看起来就是「重叠在一起」。
+  static Color _eventBg(bool isExam, bool solid) {
+    final soft = isExam ? SemColors.dangerSoft : SemColors.accentSoft;
+    if (!solid) return soft;
+    final grid = Color.alphaBlend(SemColors.card, SemColors.bg);
+    return Color.alphaBlend(soft, grid);
+  }
+
+  /// 这条日程是否和同一天的其他日程 / 课程在时间上真重叠。
+  static bool _eventOverlaps(
+      TtEvent e, List<TtEvent> events, List<TtCourse> courses) {
+    final sm = _hm(e.start);
+    final em = _hm(e.end);
+    if (sm < 0 || em < 0) return false;
+    bool hit(int start, int end) => start < em && end > sm;
+    for (final o in events) {
+      if (identical(o, e)) continue;
+      final os = _hm(o.start);
+      final oe = _hm(o.end);
+      if (os >= 0 && oe >= 0 && hit(os, oe)) return true;
+    }
+    for (final c in courses) {
+      final cs = _hm(TimetableStore.slotStarts[c.slotStart.clamp(0, 10)]);
+      final ce = _hm(TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)]);
+      if (hit(cs, ce)) return true;
+    }
+    return false;
   }
 
   static int _hm(String s) {
