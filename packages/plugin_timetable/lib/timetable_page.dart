@@ -565,6 +565,8 @@ class _TimetablePageState extends State<TimetablePage> {
     var slotStart = existing?.slotStart ?? 0;
     var slotEnd = existing?.slotEnd ?? 1;
     var weekType = existing?.weekType ?? 'all';
+    // 校验提示画在弹层里：SnackBar 挂在页面 Scaffold 上，会被底部弹层盖住。
+    String? error;
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -602,6 +604,19 @@ class _TimetablePageState extends State<TimetablePage> {
                 const SizedBox(width: 10),
                 Expanded(child: TextField(controller: weC, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: '结束周（共 $_weekCount 周）', isDense: true))),
               ]),
+              if (error != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: SemColors.dangerSoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(error!,
+                      style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
+                ),
+              ],
               const SizedBox(height: 14),
               Align(
                 alignment: Alignment.centerRight,
@@ -611,8 +626,11 @@ class _TimetablePageState extends State<TimetablePage> {
                     final ws = int.tryParse(wsC.text.trim()) ?? 0;
                     final we = int.tryParse(weC.text.trim()) ?? 0;
                     if (name.isEmpty || slotStart > slotEnd || ws < 1 || we < ws || we > _weekCount) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-                          content: Text('请检查：课程名必填、节次/周次范围有效'), behavior: SnackBarBehavior.floating));
+                      setS(() => error = name.isEmpty
+                          ? '请填写课程名'
+                          : slotStart > slotEnd
+                              ? '开始节次不能晚于结束节次'
+                              : '周次范围需在 1~$_weekCount 周之间');
                       return;
                     }
                     final data = TtCourse(
@@ -783,6 +801,8 @@ class _TimetablePageState extends State<TimetablePage> {
     var day = existing?.day ?? 0;
     TimeOfDay start = _toTOD(existing?.start) ?? const TimeOfDay(hour: 19, minute: 0);
     TimeOfDay end = _toTOD(existing?.end) ?? const TimeOfDay(hour: 20, minute: 0);
+    // 校验提示画在弹层里：SnackBar 挂在页面 Scaffold 上，会被底部弹层盖住。
+    String? error;
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -857,6 +877,19 @@ class _TimetablePageState extends State<TimetablePage> {
               ]),
               const SizedBox(height: 8),
               TextField(controller: noteC, decoration: const InputDecoration(labelText: '备注', isDense: true)),
+              if (error != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: SemColors.dangerSoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(error!,
+                      style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
+                ),
+              ],
               const SizedBox(height: 14),
               Align(
                 alignment: Alignment.centerRight,
@@ -864,8 +897,9 @@ class _TimetablePageState extends State<TimetablePage> {
                   onPressed: () {
                     final name = nameC.text.trim();
                     if (name.isEmpty || (!weekly && date == null)) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-                          content: Text('请填写名称，单次日程需选择日期'), behavior: SnackBarBehavior.floating));
+                      setS(() => error = name.isEmpty
+                          ? '请填写日程名称'
+                          : '单次日程需要选择日期');
                       return;
                     }
                     final ev = TtEvent(

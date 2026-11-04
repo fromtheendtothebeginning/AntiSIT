@@ -109,6 +109,8 @@ class _TimetableSettingsPageState extends State<TimetableSettingsPage> {
 /// 保存后背景立即在课表页生效（[TtBackground] 变更通知带动重建）。
 Future<void> showBackgroundSettingsSheet(BuildContext context, {VoidCallback? onSaved}) async {
   final picker = ImagePicker();
+  // 提示画在弹层里：SnackBar 挂在页面 Scaffold 上，会被底部弹层盖住。
+  String? error;
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -126,27 +128,43 @@ Future<void> showBackgroundSettingsSheet(BuildContext context, {VoidCallback? on
                 child: Text('课表背景',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.image_outlined),
-                title: const Text('选择图片'),
-                subtitle: Text(
-                    TtBackground.I.path == null ? '从相册选一张图垫在课表底下' : '点按更换',
-                    style: const TextStyle(fontSize: 12)),
-                onTap: () async {
-                  final picked = await picker.pickImage(source: ImageSource.gallery);
-                  if (picked == null) return;
-                  final saved = await TtBackground.I.copyIntoAppDir(picked.path);
-                  if (saved == null) {
-                    if (ctx.mounted) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-                          content: Text('图片保存失败'),
-                          behavior: SnackBarBehavior.floating));
-                    }
-                    return;
-                  }
-                  await TtBackground.I.set(saved);
-                },
+              StatefulBuilder(
+                builder: (ctx, setS) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.image_outlined),
+                      title: const Text('选择图片'),
+                      subtitle: Text(
+                          TtBackground.I.path == null ? '从相册选一张图垫在课表底下' : '点按更换',
+                          style: const TextStyle(fontSize: 12)),
+                      onTap: () async {
+                        final picked = await picker.pickImage(source: ImageSource.gallery);
+                        if (picked == null) return;
+                        final saved = await TtBackground.I.copyIntoAppDir(picked.path);
+                        if (saved == null) {
+                          if (ctx.mounted) setS(() => error = '图片保存失败，请换一张再试');
+                          return;
+                        }
+                        if (ctx.mounted) setS(() => error = null);
+                        await TtBackground.I.set(saved);
+                      },
+                    ),
+                    if (error != null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: SemColors.dangerSoft,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(error!,
+                            style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
+                      ),
+                  ],
+                ),
               ),
               Row(
                 children: [
