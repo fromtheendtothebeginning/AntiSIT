@@ -15,10 +15,10 @@ void main() {
       home: ActivityDetailPage(id: 'a001', activity: {
         'id': 'a001',
         'name': 'AI 赋能学习效率提升讲座',
-        'bm_start': '2026-10-23 10:00:00',
-        'bm_end': '2026-10-30 22:00:00',
-        'start': '2026-11-01 14:00:00',
-        'end': '2026-11-01 16:00:00',
+        'bm_start': '2020-01-01 00:00:00',
+        'bm_end': '2099-12-31 23:59:00',
+        'start': '2099-11-01 14:00:00',
+        'end': '2099-11-01 16:00:00',
       }),
     ));
     await tester.pumpAndSettle();
@@ -54,10 +54,10 @@ void main() {
       home: ActivityDetailPage(id: 'a001', activity: {
         'id': 'a001',
         'name': 'AI 赋能学习效率提升讲座',
-        'bm_start': '2026-10-23 10:00:00',
-        'bm_end': '2026-10-30 22:00:00',
-        'start': '2026-11-01 14:00:00',
-        'end': '2026-11-01 16:00:00',
+        'bm_start': '2020-01-01 00:00:00',
+        'bm_end': '2099-12-31 23:59:00',
+        'start': '2099-11-01 14:00:00',
+        'end': '2099-11-01 16:00:00',
       }),
     ));
     await tester.pump(const Duration(milliseconds: 500));

@@ -122,6 +122,62 @@ class PageStateView extends StatelessWidget {
   }
 }
 
+/// 工具页顶部刷新条：拉新数据时左上角转圈，右侧常驻手动刷新按钮。
+/// 转圈期间页面继续展示本机缓存，新数据到达后再整体替换，不闪空态。
+class ToolRefreshBar extends StatelessWidget {
+  const ToolRefreshBar({
+    super.key,
+    required this.refreshing,
+    required this.onRefresh,
+    this.fromCache = false,
+    this.failed = false,
+  });
+
+  final bool refreshing;
+  final VoidCallback onRefresh;
+
+  /// 当前内容来自本机缓存（不是本次新拉到的数据）。
+  final bool fromCache;
+
+  /// 刷新失败：保留缓存并在这里提示，不再弹窗打断浏览。
+  final bool failed;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = failed ? SemColors.danger : SemColors.textMuted;
+    final text = refreshing
+        ? '正在刷新…'
+        : failed
+            ? '刷新失败，显示本地数据'
+            : fromCache
+                ? '显示本地缓存'
+                : '已是最新数据';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 4, 0),
+      child: Row(
+        children: [
+          if (refreshing)
+            const SizedBox(
+                width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2))
+          else
+            Icon(failed ? Icons.cloud_off_outlined : Icons.schedule_rounded,
+                size: 15, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text, style: TextStyle(fontSize: 11.5, color: color)),
+          ),
+          IconButton(
+            onPressed: refreshing ? null : onRefresh,
+            icon: const Icon(Icons.refresh_rounded, size: 20),
+            tooltip: '刷新',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 未登录提示卡：数据页在游客模式下的占位内容（文案随数据来源模式变化）。
 class LoginPrompt extends StatelessWidget {
   const LoginPrompt({super.key, this.title = '未登录'});

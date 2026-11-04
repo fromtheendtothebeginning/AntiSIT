@@ -172,6 +172,10 @@ class PluginRegistry extends ChangeNotifier {
   List<Widget> settingsTiles(BuildContext context) =>
       _tilesOrdered((p) => p.settingsTiles(context, this));
 
+  /// 「我的 → 配置」里由插件贡献的条目（刷新设置 / 二课达标线等偏好）。
+  List<Widget> configTiles(BuildContext context) =>
+      _tilesOrdered((p) => p.configTiles(context, this));
+
   /// 「课程表设置」二级页里由插件贡献的条目（课表相关设置集中在这一页，别再往「我的」里撒）。
   List<Widget> timetableSettingsTiles(BuildContext context) =>
       _tilesOrdered((p) => p.timetableSettingsTiles(context, this));

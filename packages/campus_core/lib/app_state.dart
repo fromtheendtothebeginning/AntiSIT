@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'direct/school.dart';
 import 'json_num.dart';
 import 'secure_store.dart';
+import 'tool_page_cache.dart';
 
 /// 二课分数快照（/score 的 data 节点）：宫格副标题与「学籍信息」的常用字段
 /// 强类型访问；详情页要挖别的字段走 [raw]。
@@ -91,6 +92,14 @@ class AppState extends ChangeNotifier {
   /// 关 = 手势期间画面不动，松手按普通返回（淡入淡出）。开关在「我的 → 设置 → 外观」里。
   bool predictiveBack = true;
 
+  /// 工具页（电费 / 二课 / 活动 / 考试 / 成绩）进入时是否自动刷新。
+  /// 关掉后只展示本机缓存，由页面右上角的手动刷新按钮更新。开关在「我的 → 配置」里。
+  bool autoRefreshTools = true;
+
+  /// 校园码换码间隔（秒）：动态付款码每 N 秒重取一张。可在「我的 → 配置」调整。
+  /// 服务端给的有效期更短时仍听服务端的（见 ecardCountdownSeconds）。
+  int ecardRefreshSeconds = 10;
+
   /// 直连模式：学校档案（可多个）+ 当前学校 + 校园凭据。
   List<SchoolProfile> schools = [];
   SchoolProfile school = SchoolProfile.sit();
@@ -120,6 +129,8 @@ class AppState extends ChangeNotifier {
     dimCompleted = sp.getBool('dim_completed') ?? true;
     followSlider = sp.getBool('follow_slider') ?? true;
     predictiveBack = sp.getBool('predictive_back') ?? true;
+    autoRefreshTools = sp.getBool('tool_auto_refresh') ?? true;
+    ecardRefreshSeconds = (sp.getInt('ecard_refresh_seconds') ?? 10).clamp(5, 30);
     mode = sp.getString('app_mode') == 'direct' ? AppMode.direct : AppMode.server;
     schools = SchoolProfile.decodeList(sp.getString('direct_schools'));
     if (schools.isEmpty) schools = [SchoolProfile.sit()];
@@ -169,6 +180,8 @@ class AppState extends ChangeNotifier {
     await sp.setBool('dim_completed', dimCompleted);
     await sp.setBool('follow_slider', followSlider);
     await sp.setBool('predictive_back', predictiveBack);
+    await sp.setBool('tool_auto_refresh', autoRefreshTools);
+    await sp.setInt('ecard_refresh_seconds', ecardRefreshSeconds);
     await sp.setString('app_mode', direct ? 'direct' : 'server');
     await sp.setString('direct_schools', SchoolProfile.encodeList(schools));
     await sp.setString('direct_school', school.name);
@@ -214,6 +227,7 @@ class AppState extends ChangeNotifier {
     this.username = username;
     if (password != null && password.isNotEmpty) this.password = password;
     demo = false;
+    await ToolPageCache.clearAll(); // 换账号后别显示上一个账号的工具页缓存
     await _persist();
     notifyListeners();
   }
@@ -296,6 +310,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 工具页进入时是否自动刷新（见 [autoRefreshTools]）。
+  Future<void> setAutoRefreshTools(bool v) async {
+    autoRefreshTools = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 校园码换码间隔（见 [ecardRefreshSeconds]），限制在 5–30 秒。
+  Future<void> setEcardRefreshSeconds(int v) async {
+    ecardRefreshSeconds = v.clamp(5, 30);
+    await _persist();
+    notifyListeners();
+  }
+
   /// 直连模式：切换当前学校（保留各校凭据不区分，切换即重新登录）。
   Future<void> setSchool(SchoolProfile s) async {
     school = s;
@@ -333,6 +361,7 @@ class AppState extends ChangeNotifier {
       username = null;
       password = null;
     }
+    await ToolPageCache.clearAll();
     await _persist();
     notifyListeners();
   }
@@ -343,6 +372,7 @@ class AppState extends ChangeNotifier {
     creds.payPassword = '';
     statusInfo = null;
     studentInfo = null;
+    await ToolPageCache.clearAll();
     await _persist();
     notifyListeners();
   }

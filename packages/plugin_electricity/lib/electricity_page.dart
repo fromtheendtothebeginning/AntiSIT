@@ -12,46 +12,107 @@ class ElectricityPage extends StatefulWidget {
 
 class _ElectricityPageState extends State<ElectricityPage> {
   bool _loading = true;
-  bool _historyLoading = true;
+  bool _historyLoading = false;
   String? _err;
   Map<String, dynamic>? _data;
   List<Map<String, dynamic>> _history = [];
   int _days = 90;
 
+  /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用）。
+  bool _fromCache = false;
+  bool _refreshFailed = false;
+
+  static const _queryKey = 'electricity';
+  static String _historyKey(int days) => 'electricity.history.$days';
+
   @override
   void initState() {
     super.initState();
-    _load();
-    _loadHistory();
+    _restore();
   }
 
+  /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否后台拉新。
+  Future<void> _restore() async {
+    final cached = await ToolPageCache.read(_queryKey);
+    final cachedHistory = await ToolPageCache.read(_historyKey(_days));
+    if (!mounted) return;
+    final data = (cached?['data'] as Map?)?.cast<String, dynamic>();
+    final history =
+        ((cachedHistory?['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    if (data != null || history.isNotEmpty) {
+      setState(() {
+        _data = data;
+        _history = history;
+        _loading = false;
+        _fromCache = true;
+      });
+    }
+    if (!AppState.I.autoRefreshTools && (_data != null || _history.isNotEmpty)) {
+      return;
+    }
+    await _refreshAll();
+  }
+
+  Future<void> _refreshAll() => Future.wait([_load(), _loadHistory()]);
+
   Future<void> _load() async {
+    if (_loading && _data != null) return;
     setState(() {
       _loading = true;
-      _err = null;
+      _refreshFailed = false;
+      if (_data == null) _err = null;
     });
     try {
       final r = await ApiClient.I.electricityQuery();
-      _data = r['data'] as Map<String, dynamic>?;
-      ToolCache.electricity = ToolCache.electricityOf(_data);
+      final data = r['data'] as Map<String, dynamic>?;
+      _data = data;
+      ToolCache.electricity = ToolCache.electricityOf(data);
+      _fromCache = false;
+      await ToolPageCache.write(_queryKey, {'data': data});
     } catch (e) {
-      _err = e is ApiError ? e.message : e.toString();
-      if (mounted) showErr(context, e, title: '电费加载失败');
+      // 有缓存时保留旧数据、只在顶部提示失败，不弹窗打断。
+      if (_data == null) {
+        _err = e is ApiError ? e.message : e.toString();
+        if (mounted) showErr(context, e, title: '电费加载失败');
+      } else {
+        _refreshFailed = true;
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _loadHistory() async {
-    setState(() => _historyLoading = true);
+    final days = _days;
+    setState(() {
+      _historyLoading = _history.isEmpty;
+      _refreshFailed = false;
+    });
     try {
-      final r = await ApiClient.I.electricityHistory(days: _days);
+      final r = await ApiClient.I.electricityHistory(days: days);
+      if (_days != days) return; // 期间切了天数，别把旧请求的结果盖上去
       _history = ((r['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      await ToolPageCache.write(_historyKey(days), {'records': _history});
     } catch (_) {
-      _history = [];
+      // 历史拉取失败保留已有曲线（查余额本身不受影响）
     } finally {
       if (mounted) setState(() => _historyLoading = false);
     }
+  }
+
+  /// 切天数：先显示该天数的本地缓存，再拉新（缓存里没有就转圈等新数据）。
+  Future<void> _switchDays(int days) async {
+    if (_days == days) return;
+    final cached = await ToolPageCache.read(_historyKey(days));
+    if (!mounted || _days != days) return;
+    final records =
+        ((cached?['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    setState(() {
+      _days = days;
+      _history = records;
+      _fromCache = records.isNotEmpty;
+    });
+    await _loadHistory();
   }
 
   Future<void> _recharge() async {
@@ -178,13 +239,19 @@ class _ElectricityPageState extends State<ElectricityPage> {
       body: PageStateView(
         loading: _loading && _data == null,
         error: _err,
-        onRetry: _load,
+        onRetry: _refreshAll,
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: _refreshAll,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             children: [
+              ToolRefreshBar(
+                refreshing: _loading || _historyLoading,
+                fromCache: _fromCache,
+                failed: _refreshFailed,
+                onRefresh: _refreshAll,
+              ),
               AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,10 +342,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
                             index: const [7, 30, 90].indexOf(_days),
                             onChanged: (i) {
                               final d = const [7, 30, 90][i];
-                              if (_days != d) {
-                                setState(() => _days = d);
-                                _loadHistory();
-                              }
+                              _switchDays(d);
                             },
                             height: 28,
                             fontSize: 11,

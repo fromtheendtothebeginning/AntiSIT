@@ -46,23 +46,56 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   String _query = '';
   int _filter = 0; // 0全部 1报名中 2即将报名 3已结束
 
+  /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用）。
+  bool _fromCache = false;
+  bool _refreshFailed = false;
+
+  static const _cacheKey = 'activities';
+
   @override
   void initState() {
     super.initState();
-    _load();
+    _restore();
+  }
+
+  /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否后台拉新。
+  Future<void> _restore() async {
+    final cached = await ToolPageCache.read(_cacheKey);
+    final list = ((((cached?['data'] as Map?)?['activities'] as List?) ?? const []))
+        .cast<Map<String, dynamic>>();
+    if (!mounted) return;
+    if (list.isNotEmpty) {
+      setState(() {
+        _list = list;
+        _loading = false;
+        _fromCache = true;
+      });
+    }
+    if (!AppState.I.autoRefreshTools && _list.isNotEmpty) return;
+    await _load();
   }
 
   Future<void> _load() async {
+    if (_loading && _list.isNotEmpty) return;
     setState(() {
       _loading = true;
-      _err = null;
+      _refreshFailed = false;
+      if (_list.isEmpty) _err = null;
     });
     try {
       final r = await ApiClient.I.activities();
-      _list = (((r['data'] as Map?)?['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      final data = r['data'] as Map?;
+      _list = ((data?['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      _fromCache = false;
+      await ToolPageCache.write(_cacheKey, {'data': data});
     } catch (e) {
-      _err = e is ApiError ? e.message : e.toString();
-      if (mounted) showErr(context, e, title: '活动加载失败');
+      // 有缓存时保留旧列表、只在顶部提示失败，不弹窗打断。
+      if (_list.isEmpty) {
+        _err = e is ApiError ? e.message : e.toString();
+        if (mounted) showErr(context, e, title: '活动加载失败');
+      } else {
+        _refreshFailed = true;
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -121,7 +154,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('第二课堂活动')),
       body: PageStateView(
-        loading: _loading,
+        loading: _loading && _list.isEmpty,
         error: _err,
         empty: !_loading && _err == null && _list.isEmpty,
         emptyText: '暂无活动',
@@ -132,6 +165,12 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
             children: [
+              ToolRefreshBar(
+                refreshing: _loading,
+                fromCache: _fromCache,
+                failed: _refreshFailed,
+                onRefresh: _load,
+              ),
               TextField(
                 onChanged: (v) => setState(() => _query = v.trim()),
                 decoration: const InputDecoration(

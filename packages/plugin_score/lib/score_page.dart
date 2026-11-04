@@ -20,22 +20,65 @@ class _ScorePageState extends State<ScorePage> {
   String? _err;
   Map<String, dynamic>? _data;
 
+  /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用）。
+  bool _fromCache = false;
+  bool _refreshFailed = false;
+
   /// 达标线按入学年级（nj）取：远端配置/本机自定义优先，未配置时用默认规则。
   ScoreTargetPolicy _policy = const ScoreTargetPolicy();
 
   /// 当前生效的入学年：教务返回优先，直连模式手填兜底。
   String _cohort = '';
 
+  static const _cacheKey = 'score';
+
   @override
   void initState() {
     super.initState();
-    _load();
+    _restore();
+  }
+
+  /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否拉新。
+  Future<void> _restore() async {
+    final cached = await ToolPageCache.read(_cacheKey);
+    final data = (cached?['data'] as Map?)?.cast<String, dynamic>();
+    if (!mounted) return;
+    if (data != null) {
+      // 分数先出来，达标线胶囊随后补（读本地规则很快，远端配置最长 3 秒）。
+      setState(() {
+        _data = data;
+        _loading = false;
+        _fromCache = true;
+      });
+    }
+    if (!AppState.I.autoRefreshTools) {
+      if (data == null) {
+        await _load();
+      } else {
+        final targets = await ScoreTargets.load();
+        if (!mounted) return;
+        setState(() => _applyCohort(targets, data));
+      }
+      return;
+    }
+    await _load();
+  }
+
+  /// 达标线策略与当前年级：直连手填的年级优先，其次教务返回的年级。
+  void _applyCohort(ScoreTargets targets, Map<String, dynamic>? data) {
+    final student = data?['student'];
+    final apiNj = student is Map ? '${student['nj'] ?? ''}'.trim() : '';
+    final manual = AppState.I.direct ? AppState.I.creds.grade.trim() : '';
+    _cohort = manual.isNotEmpty ? manual : apiNj;
+    _policy = targets.forCohort(_cohort);
   }
 
   Future<void> _load() async {
+    if (_loading && _data != null) return;
     setState(() {
       _loading = true;
-      _err = null;
+      _refreshFailed = false;
+      if (_data == null) _err = null;
     });
     try {
       // 达标线配置和分数并发拉：配置走公网、分数走校园链路，互不拖慢。
@@ -43,17 +86,19 @@ class _ScorePageState extends State<ScorePage> {
       final r = await ApiClient.I.score();
       final targets = await targetsFuture;
       _data = r['data'] as Map<String, dynamic>?;
-      final student = _data?['student'];
-      final apiNj = student is Map ? '${student['nj'] ?? ''}'.trim() : '';
-      // 直连模式手填的年级优先：学校没回或回的年级不合用时以用户填的为准。
-      final manual = AppState.I.direct ? AppState.I.creds.grade.trim() : '';
-      _cohort = manual.isNotEmpty ? manual : apiNj;
-      _policy = targets.forCohort(_cohort);
+      _applyCohort(targets, _data);
+      _fromCache = false;
       ToolCache.score = ToolCache.scoreOf(_data);
       AppState.I.studentInfo = ToolCache.score?.student;
+      await ToolPageCache.write(_cacheKey, {'data': _data});
     } catch (e) {
-      _err = e is ApiError ? e.message : e.toString();
-      if (mounted) showErr(context, e, title: '成绩加载失败');
+      // 有缓存时保留旧数据、只在顶部提示失败，不弹窗打断。
+      if (_data == null) {
+        _err = e is ApiError ? e.message : e.toString();
+        if (mounted) showErr(context, e, title: '成绩加载失败');
+      } else {
+        _refreshFailed = true;
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -86,7 +131,7 @@ class _ScorePageState extends State<ScorePage> {
         ],
       ),
       body: PageStateView(
-        loading: _loading,
+        loading: _loading && _data == null,
         error: _err,
         empty: !_loading && _err == null && empty,
         emptyText: '暂无第二课堂数据，请稍后重试',
@@ -97,6 +142,12 @@ class _ScorePageState extends State<ScorePage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
             children: [
+              ToolRefreshBar(
+                refreshing: _loading,
+                fromCache: _fromCache,
+                failed: _refreshFailed,
+                onRefresh: _load,
+              ),
               AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

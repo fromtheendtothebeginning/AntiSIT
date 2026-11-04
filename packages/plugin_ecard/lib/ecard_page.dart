@@ -9,16 +9,17 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-/// 校园码刷新间隔的上限（秒）：服务端 `refresh` 标的是**码的有效期**（现在回 55），
-/// 照它倒计时意味着屏幕上的码最长 52 秒才换一张——扫码慢一点、截图转发就可能扫到
-/// 快过期的码。客户端最多 [ecardMaxRefreshSeconds] 秒就重取一次。
+/// 校园码刷新间隔的上限（秒）。默认 10 秒换一张，用户可在「我的 → 配置」调整；
+/// 服务端 `refresh` 标的是**码的有效期**（现在回 55），客户端按配置间隔更频繁地
+/// 重取，扫码慢一点、截图转发也不会扫到快过期的码。
 const int ecardMaxRefreshSeconds = 30;
 
-/// 校园码的刷新倒计时（秒）：取 `min(服务端 refresh, 30)`——仍然尊重「有效期更短」的
-/// 服务端（比如某校只给 20 秒），再提前 3 秒换码，免得扫码那一刻手里那张正好过期。
-int ecardCountdownSeconds(int? fromServer) {
-  final refresh = math.min(fromServer ?? ecardMaxRefreshSeconds, ecardMaxRefreshSeconds);
-  final left = refresh - 3;
+/// 校园码的刷新倒计时（秒）：按配置的 [interval] 换码；服务端给的有效期更短时
+/// 听服务端的，再提前 3 秒换码（别把过期码留在屏幕上）。
+int ecardCountdownSeconds(int? fromServer, {int interval = 10}) {
+  final server = fromServer ?? interval;
+  final base = math.min(interval, server);
+  final left = server < interval ? base - 3 : base;
   return left < 5 ? 5 : left;
 }
 
@@ -57,6 +58,7 @@ class _EcardPageState extends State<EcardPage> {
     super.initState();
     widget.activeTab?.addListener(_onTabChanged);
     PluginRegistry.I.addListener(_onRegistryChanged);
+    AppState.I.addListener(_onSettingsChanged);
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     _active = (widget.activeTab?.value ?? widget.myTab) == widget.myTab;
     _blockedSeen = _blocked;
@@ -76,6 +78,16 @@ class _EcardPageState extends State<EcardPage> {
       _fetch();
     }
     setState(() {});
+  }
+
+  /// 「配置」里改了换码间隔：倒计时立刻按新间隔收敛，不用等下一轮取码。
+  void _onSettingsChanged() {
+    if (!mounted || _data == null || _loading) return;
+    final interval = AppState.I.ecardRefreshSeconds;
+    if (_countdown > interval) {
+      setState(() => _countdown =
+          ecardCountdownSeconds(asInt(_data?['refresh']), interval: interval));
+    }
   }
 
   void _onTabChanged() {
@@ -103,10 +115,13 @@ class _EcardPageState extends State<EcardPage> {
       final r = await ApiClient.I.ecard();
       _data = r['data'] as Map<String, dynamic>?;
       _err = null;
-      _countdown = ecardCountdownSeconds(asInt(_data?['refresh']));
+      _countdown = ecardCountdownSeconds(
+        asInt(_data?['refresh']),
+        interval: AppState.I.ecardRefreshSeconds,
+      );
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
-      _countdown = 10;
+      _countdown = AppState.I.ecardRefreshSeconds;
     } finally {
       _loading = false;
       if (mounted) setState(() {});
@@ -117,6 +132,7 @@ class _EcardPageState extends State<EcardPage> {
   void dispose() {
     widget.activeTab?.removeListener(_onTabChanged);
     PluginRegistry.I.removeListener(_onRegistryChanged);
+    AppState.I.removeListener(_onSettingsChanged);
     _ticker?.cancel();
     WakelockPlus.disable();
     super.dispose();

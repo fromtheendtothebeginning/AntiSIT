@@ -90,6 +90,10 @@ abstract class FeaturePlugin {
   /// 设置卡片里的条目（返回现成 widget：开关 / 跳转 / 分组由插件自己定）。
   List<Widget> settingsTiles(BuildContext context, PluginRegistry registry) => const [];
 
+  /// 「我的 → 配置」页里的条目（刷新设置、二课达标线等用户偏好收在这一页）。
+  /// 与 [settingsTiles] 同一套 widget 约定，只是宿主换成配置页；顺序同样按 [settingsOrder]。
+  List<Widget> configTiles(BuildContext context, PluginRegistry registry) => const [];
+
   /// 「课程表设置」二级页里的条目（学期 / 调休 / 上课提醒 / 已上完的课淡化都收在那儿）。
   /// 与 [settingsTiles] 同一套 widget 约定，只是宿主换成了课表设置页；
   /// 顺序同样按 [settingsOrder]——课表页自己不贡献，它自己那几项直接写死在页面里。

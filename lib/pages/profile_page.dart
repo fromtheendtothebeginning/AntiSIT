@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:campus_core/campus_core.dart';
 import '../update_check.dart';
 import '../widgets/update_dialog.dart';
+import 'config_page.dart';
 import 'plugin_manager_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -474,6 +475,16 @@ class _ProfilePageState extends State<ProfilePage> {
                           onChanged: (v) => AppState.I.setRemember(v),
                         ),
                       ),
+                    // 刷新行为与长期偏好（二课达标线等）收在「配置」二级页里。
+                    ListTile(
+                      leading: const Icon(Icons.tune_rounded),
+                      title: const Text('配置'),
+                      subtitle: const Text('工具页自动刷新 · 校园码刷新间隔 · 二课达标线',
+                          style: TextStyle(fontSize: 12)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ConfigPage())),
+                    ),
                     // 由各插件贡献（课程表设置 / AI 设置 / 外观 / 提交反馈）：
                     // 插件停用或从清单里删掉，这里的条目自动消失。
                     // 课表相关的那几项（学期 / 调休 / 上课提醒 / 淡化）收在自己的二级页里，

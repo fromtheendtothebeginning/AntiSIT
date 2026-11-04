@@ -45,6 +45,7 @@ export 'plugins/webview_capability.dart';
 export 'score_targets.dart';
 export 'timetable_ics.dart';
 export 'timetable_store.dart';
+export 'tool_page_cache.dart';
 export 'widgets/balance_chart.dart';
 export 'widgets/captcha_dialog.dart';
 export 'widgets/common.dart';

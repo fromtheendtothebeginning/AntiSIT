@@ -33,8 +33,9 @@ class ScorePlugin extends FeaturePlugin {
   @override
   int get settingsOrder => 48;
 
+  /// 达标线属于「长期偏好」，入口收在「我的 → 配置」页里（二课页里也留了一个快捷按钮）。
   @override
-  List<Widget> settingsTiles(BuildContext context, PluginRegistry registry) => [
+  List<Widget> configTiles(BuildContext context, PluginRegistry registry) => [
         ListTile(
           leading: const Icon(Icons.military_tech_outlined),
           title: const Text('第二课堂达标线'),

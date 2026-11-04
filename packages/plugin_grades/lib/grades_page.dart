@@ -39,32 +39,72 @@ class _GradesPageState extends State<GradesPage> {
   String _xnm = ''; // '' = 全部学期
   String _xqm = '';
 
+  /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用）。
+  bool _fromCache = false;
+  bool _refreshFailed = false;
+
+  /// 缓存按筛选条件隔离：切学期时先显示该学期上次的结果。
+  static String _cacheKey(String xnm, String xqm) =>
+      'grades:${xnm.isEmpty ? 'all' : xnm}:${xqm.isEmpty ? 'all' : xqm}';
+
   @override
   void initState() {
     super.initState();
-    _load();
+    _restore();
+  }
+
+  /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否后台拉新。
+  Future<void> _restore() async {
+    final cached = await ToolPageCache.read(_cacheKey(_xnm, _xqm));
+    final data = (cached?['data'] as Map?)?.cast<String, dynamic>();
+    if (!mounted) return;
+    if (data != null) {
+      setState(() {
+        _applyData(data);
+        _loading = false;
+        _fromCache = true;
+      });
+    }
+    if (!AppState.I.autoRefreshTools && data != null) return;
+    await _load();
+  }
+
+  void _applyData(Map<String, dynamic> data) {
+    _all = ((data['grades'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final terms = ((data['terms'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    if (terms.isNotEmpty) _terms = terms;
+    _gpa = asNum(data['gpa']) ?? 0;
+    _err = null;
   }
 
   Future<void> _load() async {
+    if (_loading && _all.isNotEmpty) return;
+    final xnm = _xnm;
+    final xqm = _xqm;
     setState(() {
       _loading = true;
-      _err = null;
+      _refreshFailed = false;
+      if (_all.isEmpty) _err = null;
     });
     try {
       // 选中学期时带 xnm/xqm 由服务端过滤（与网站一致）；不带则返回全部 + terms 列表
       final r = await ApiClient.I.grades(
-        xnm: _xnm.isEmpty ? null : _xnm,
-        xqm: _xqm.isEmpty ? null : _xqm,
+        xnm: xnm.isEmpty ? null : xnm,
+        xqm: xqm.isEmpty ? null : xqm,
       );
+      if (_xnm != xnm || _xqm != xqm) return; // 期间切了筛选，别把旧结果盖上去
       final data = r['data'] as Map<String, dynamic>? ?? {};
-      _all = ((data['grades'] as List?) ?? const []).cast<Map<String, dynamic>>();
-      final terms = ((data['terms'] as List?) ?? const []).cast<Map<String, dynamic>>();
-      if (terms.isNotEmpty) _terms = terms;
-      _gpa = asNum(data['gpa']) ?? 0;
-      _err = null;
+      _applyData(data);
+      _fromCache = false;
+      await ToolPageCache.write(_cacheKey(xnm, xqm), {'data': data});
     } catch (e) {
-      _err = e is ApiError ? e.message : e.toString();
-      if (mounted) showErr(context, e, title: '成绩加载失败');
+      // 有缓存时保留旧列表、只在顶部提示失败，不弹窗打断。
+      if (_all.isEmpty) {
+        _err = e is ApiError ? e.message : e.toString();
+        if (mounted) showErr(context, e, title: '成绩加载失败');
+      } else {
+        _refreshFailed = true;
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -104,7 +144,23 @@ class _GradesPageState extends State<GradesPage> {
     setState(() {
       _xnm = nxnm;
       _xqm = nxqm;
+      _all = [];
+      _fromCache = false;
+      _loading = true;
+      _err = null;
     });
+    // 先用该学期上次的缓存顶上，再按设置决定要不要拉新。
+    final cached = await ToolPageCache.read(_cacheKey(nxnm, nxqm));
+    final data = (cached?['data'] as Map?)?.cast<String, dynamic>();
+    if (!mounted) return;
+    if (data != null) {
+      setState(() {
+        _applyData(data);
+        _loading = false;
+        _fromCache = true;
+      });
+    }
+    if (!AppState.I.autoRefreshTools && data != null) return;
     await _load();
   }
 
@@ -124,7 +180,7 @@ class _GradesPageState extends State<GradesPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('成绩查询')),
       body: PageStateView(
-        loading: _loading,
+        loading: _loading && _all.isEmpty,
         error: _err,
         empty: !_loading && _err == null && _all.isEmpty,
         emptyText: '暂无成绩记录',
@@ -135,6 +191,12 @@ class _GradesPageState extends State<GradesPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
             children: [
+              ToolRefreshBar(
+                refreshing: _loading,
+                fromCache: _fromCache,
+                failed: _refreshFailed,
+                onRefresh: _load,
+              ),
               AppCard(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
