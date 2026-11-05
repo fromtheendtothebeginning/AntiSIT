@@ -35,6 +35,10 @@ class DemoData {
         return {'ok': true, 'data': _grades(query: query)};
       case '/api/campus-open/activities':
         return {'ok': true, 'data': {'student_id': '25110001', 'activities': _demoActivities()}};
+      case '/api/campus-open/activities/signed':
+        return {'ok': true, 'activities': _demoSignedActivities()};
+      case '/api/campus-open/score/credits':
+        return {'ok': true, 'records': _demoCredits()};
       case '/api/campus-open/timetable/week':
         return _week((body?['zs'] ?? 1) as int);
       case '/api/campus-open/timetable/exams':
@@ -88,6 +92,72 @@ class DemoData {
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')} ${d.hour.toString().padLeft(2, '0')}:'
       '${d.minute.toString().padLeft(2, '0')}:00';
+
+  /// 演示「我的报名」：两条已报名活动。
+  static List<Map<String, dynamic>> _demoSignedActivities() {
+    final now = DateTime.now();
+    return [
+      {
+        'id': 'a001',
+        'name': 'AI 赋能学习效率提升讲座',
+        'dlmc': '思想成长',
+        'lbmc': '讲座报告',
+        'start': _dt(now.subtract(const Duration(days: 3))),
+        'end': _dt(now.subtract(const Duration(days: 3, hours: -2))),
+        'place': '线下',
+        'status_text': '已报名',
+        'signed': true,
+      },
+      {
+        'id': 'a002',
+        'name': '秋季校园马拉松志愿者',
+        'dlmc': '社会实践',
+        'lbmc': '志愿服务',
+        'start': _dt(now.subtract(const Duration(days: 10))),
+        'end': _dt(now.subtract(const Duration(days: 10, hours: -6))),
+        'place': '线下',
+        'status_text': '无需报名',
+        'signed': true,
+      },
+    ];
+  }
+
+  /// 演示「加分明细」：每次活动 + 学分 + 审批状态。
+  static List<Map<String, dynamic>> _demoCredits() {
+    final now = DateTime.now();
+    return [
+      {
+        'id': 'c1',
+        'name': 'AI 赋能学习效率提升讲座',
+        'dldm': '德育',
+        'lbdm': '讲座报告',
+        'credit': '0.20',
+        'status': '通过',
+        'start': _dt(now.subtract(const Duration(days: 3))),
+        'date': _dt(now.subtract(const Duration(days: 2))),
+      },
+      {
+        'id': 'c2',
+        'name': '秋季校园马拉松志愿者',
+        'dldm': '劳育',
+        'lbdm': '志愿公益',
+        'credit': '0.50',
+        'status': '通过',
+        'start': _dt(now.subtract(const Duration(days: 10))),
+        'date': _dt(now.subtract(const Duration(days: 9))),
+      },
+      {
+        'id': 'c3',
+        'name': '程序设计实践结项答辩',
+        'dldm': '劳育',
+        'lbdm': '三创活动',
+        'credit': '0.30',
+        'status': '通过',
+        'start': _dt(now.subtract(const Duration(days: 20))),
+        'date': _dt(now.subtract(const Duration(days: 19))),
+      },
+    ];
+  }
 
   /// 演示活动：第一条的报名窗口相对「现在」生成（报名中），其余按固定日期（多已结束）——
   /// 这样无论什么时候打开演示模式，报名状态看板和详情页的报名入口都有东西可看。

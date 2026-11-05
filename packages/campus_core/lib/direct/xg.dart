@@ -337,6 +337,101 @@ class XgClient {
     return {'activities': acts, 'student_id': _studentId};
   }
 
+  // ==================== 我的报名 / 加分明细（学生侧）====================
+
+  /// 报名状态码（学校 `hdbmzt`）→ 中文；未知返回空串。
+  static String hdStatusText(Object? code) => switch ('$code') {
+        '1' => '流程设置中',
+        '2' => '报名已截止',
+        '3' => '报名未开始',
+        '4' => '报名已满',
+        '5' => '已报名',
+        '6' => '无需报名',
+        _ => '',
+      };
+
+  /// 已报名的第二课堂活动：POST /hdgl/list.zf `all=0`（`all=1` 是全部活动）。
+  /// 返回精简字段（名称/类别/时间/地点/报名状态），直接给「我的报名」列表用。
+  Future<List<Map<String, dynamic>>> signedActivities({int maxPages = 5}) async {
+    if (!loggedIn) throw ApiError('未登录学工系统');
+    final out = <Map<String, dynamic>>[];
+    for (var page = 1; page <= maxPages; page++) {
+      final resp = await _http.postForm(
+        '$_api/hdgl/list.zf',
+        {'all': '0', 'currentPage': '$page', 'showCount': '50'},
+        headers: _xgHeaders,
+        redirect: false,
+      );
+      if (resp.status >= 300 && resp.status < 400) _sessionLost();
+      final j = _parse(resp);
+      final data = j is Map ? j['data'] : null;
+      final items = data is Map ? data['items'] as List? : null;
+      if (items == null) {
+        if (j == null) _sessionLost();
+        throw ApiError('我的活动查询失败（${resp.status}）');
+      }
+      for (final raw in items) {
+        final it = raw is Map ? raw : const {};
+        final id = '${it['id'] ?? ''}';
+        if (id.isEmpty) continue;
+        out.add({
+          'id': id,
+          'name': (it['hdmc'] ?? '').toString(),
+          'dlmc': (it['dlmc'] ?? '').toString(),
+          'lbmc': (it['lbmc'] ?? '').toString(),
+          'start': it['hdkssj'],
+          'end': it['hdjssj'],
+          'place': (it['hddd'] ?? '').toString(),
+          'status_text': hdStatusText(it['hdbmzt']),
+          'signed': '${it['bm']}' == '1',
+        });
+      }
+      if (items.length < 50) break;
+    }
+    return out;
+  }
+
+  /// 第二课堂加分明细：POST /bizFlow/result/group/list.zf `groupCode=xshd`。
+  /// 每条 = 一次活动参与记录（活动名 / 大类 / 学分 / 审批状态 / 时间）。
+  Future<List<Map<String, dynamic>>> creditRecords({int maxPages = 10}) async {
+    if (!loggedIn) throw ApiError('未登录学工系统');
+    final out = <Map<String, dynamic>>[];
+    for (var page = 1; page <= maxPages; page++) {
+      final resp = await _http.postForm(
+        '$_api/bizFlow/result/group/list.zf',
+        {'groupCode': 'xshd', 'currentPage': '$page', 'showCount': '100'},
+        headers: _xgHeaders,
+        redirect: false,
+      );
+      if (resp.status >= 300 && resp.status < 400) _sessionLost();
+      final j = _parse(resp);
+      final data = j is Map ? j['data'] : null;
+      final rows = data is Map ? data['rows'] as List? : null;
+      if (rows == null) {
+        if (j == null) _sessionLost();
+        throw ApiError('加分明细查询失败（${resp.status}）');
+      }
+      for (final raw in rows) {
+        final it = raw is Map ? raw : const {};
+        final name = (it['hdmc'] ?? '').toString().trim();
+        if (name.isEmpty) continue;
+        out.add({
+          'id': '${it['INSTANCE_ID'] ?? it['ID'] ?? it['hdid'] ?? name}',
+          'name': name,
+          'dldm': (it['dldm'] ?? '').toString(),
+          'lbdm': (it['lbdm'] ?? '').toString(),
+          'credit': '${it['hdxf'] ?? it['jcxsxf'] ?? ''}',
+          'status': (it['flowstatusmc'] ?? it['FLOWSTATUS'] ?? '').toString(),
+          'start': it['hdkssj'],
+          'end': it['hdjssj'],
+          'date': it['CREATE_TIME'],
+        });
+      }
+      if (rows.length < 100) break;
+    }
+    return out;
+  }
+
   // ==================== 活动报名（学工工作流 hdsq，2026-10 上线）====================
 
   static const String _signupUrlPath = '/hdgl/flow/apply/hdsq.zf';

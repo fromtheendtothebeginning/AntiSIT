@@ -30,12 +30,79 @@ class _ScorePageState extends State<ScorePage> {
   /// 当前生效的入学年：教务返回优先，直连模式手填兜底。
   String _cohort = '';
 
+  // 左右滑动切换：0=分数概览，1=加分明细
+  final PageController _tabs = PageController();
+  int _tab = 0;
+  bool _creditsLoading = true;
+  String? _creditsErr;
+  List<Map<String, dynamic>> _credits = [];
+  bool _creditsFromCache = false;
+  bool _creditsRefreshFailed = false;
+  bool _creditsLoaded = false;
+  bool _creditsFetching = false;
+
   static const _cacheKey = 'score';
+  static const _creditsCacheKey = 'score.credits';
 
   @override
   void initState() {
     super.initState();
     _restore();
+    _restoreCredits();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  void _switchTab(int i) {
+    if (i == _tab) return;
+    setState(() => _tab = i);
+    if (i == 1 && !_creditsLoaded) _loadCredits();
+  }
+
+  /// 「加分明细」先读本机缓存；是否自动拉新同样看「工具页自动刷新」设置。
+  Future<void> _restoreCredits() async {
+    final cached = await ToolPageCache.read(_creditsCacheKey);
+    final list = ((cached?['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    if (!mounted) return;
+    if (list.isNotEmpty) {
+      setState(() {
+        _credits = list;
+        _creditsLoading = false;
+        _creditsFromCache = true;
+      });
+    }
+  }
+
+  Future<void> _loadCredits() async {
+    if (_creditsFetching) return;
+    _creditsFetching = true;
+    setState(() {
+      _creditsLoading = true;
+      _creditsRefreshFailed = false;
+      if (_credits.isEmpty) _creditsErr = null;
+    });
+    try {
+      final r = await ApiClient.I.creditRecords();
+      final list = ((r['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      _credits = list;
+      _creditsLoaded = true;
+      _creditsFromCache = false;
+      await ToolPageCache.write(_creditsCacheKey, {'records': list});
+    } catch (e) {
+      if (_credits.isEmpty) {
+        _creditsErr = e is ApiError ? e.message : e.toString();
+        if (mounted) showErr(context, e, title: '加分明细加载失败');
+      } else {
+        _creditsRefreshFailed = true;
+      }
+    } finally {
+      _creditsFetching = false;
+      if (mounted) setState(() => _creditsLoading = false);
+    }
   }
 
   /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否拉新。
@@ -113,24 +180,49 @@ class _ScorePageState extends State<ScorePage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('第二课堂分'),
+          actions: [
+            IconButton(
+              tooltip: '达标线设置',
+              icon: const Icon(Icons.tune_rounded),
+              onPressed: _openTargetSettings,
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: GlassTabs(
+                labels: const ['分数概览', '加分明细'],
+                index: _tab,
+                onChanged: (i) => _tabs.animateToPage(i,
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic),
+                height: 32,
+                fontSize: 11.5,
+              ),
+            ),
+            Expanded(
+              child: PageView(
+                controller: _tabs,
+                onPageChanged: _switchTab,
+                children: [_overviewView(), _creditsView()],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _overviewView() {
     final data = _data;
     final groups = ((data?['groups'] as List?) ?? const []).cast<Map<String, dynamic>>();
     final total = asNum(data?['total']);
     final empty = total == null && groups.isEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('第二课堂分'),
-        actions: [
-          IconButton(
-            tooltip: '达标线设置',
-            icon: const Icon(Icons.tune_rounded),
-            onPressed: _openTargetSettings,
-          ),
-        ],
-      ),
-      body: PageStateView(
+    return PageStateView(
         loading: _loading && _data == null,
         error: _err,
         empty: !_loading && _err == null && empty,
@@ -175,9 +267,121 @@ class _ScorePageState extends State<ScorePage> {
             ],
           ),
         ),
+    );
+  }
+
+  /// 「加分明细」：每次活动参与记录（活动 / 学分 / 审批状态 / 时间）。
+  Widget _creditsView() {
+    final sum = _credits.fold<double>(
+        0, (acc, r) => acc + (asNum(r['credit'])?.toDouble() ?? 0));
+    return PageStateView(
+      loading: _creditsLoading && _credits.isEmpty,
+      error: _creditsErr,
+      empty: !_creditsLoading && _creditsErr == null && _credits.isEmpty,
+      emptyText: '暂无加分明细',
+      onRetry: _loadCredits,
+      child: RefreshIndicator(
+        onRefresh: _loadCredits,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+          children: [
+            ToolRefreshBar(
+              refreshing: _creditsLoading,
+              fromCache: _creditsFromCache,
+              failed: _creditsRefreshFailed,
+              onRefresh: _loadCredits,
+            ),
+            if (_credits.isNotEmpty) ...[
+              AppCard(
+                child: Row(
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('加分记录',
+                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                        const SizedBox(height: 2),
+                        Text('${_credits.length} 条',
+                            style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                color: SemColors.textPrimary)),
+                      ],
+                    ),
+                    const Spacer(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text('累计学分',
+                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                        const SizedBox(height: 2),
+                        Text(_fmtNum(sum),
+                            style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                                color: SemColors.accent)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            for (final r in _credits) _creditTile(r),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _creditTile(Map<String, dynamic> r) {
+    final credit = asNum(r['credit']);
+    final status = '${r['status'] ?? ''}'.trim();
+    final cat = ['${r['dldm'] ?? ''}'.trim(), '${r['lbdm'] ?? ''}'.trim()]
+        .where((s) => s.isNotEmpty && s != 'null')
+        .join(' · ');
+    final start = '${r['start'] ?? ''}'.trim();
+    final date = '${r['date'] ?? ''}'.trim();
+    final when = start.isNotEmpty ? start : date;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        radius: 10,
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (credit != null)
+                  Capsule('${_fmtNum(credit)} 学分', color: SemColors.accent),
+                if (status.isNotEmpty)
+                  Capsule(status,
+                      color: status.contains('通过') ? SemColors.success : SemColors.textMuted),
+                if (cat.isNotEmpty) Capsule(cat),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('${r['name']}',
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: SemColors.textPrimary)),
+            if (when.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('时间：${_shortTime(when)}',
+                    style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _shortTime(String s) => s.length >= 16 ? s.substring(0, 16) : s;
 
   // ── 学生信息行（cs-student-line：12px，中点分隔）──
   Widget _studentLine(Map<String, dynamic> data) {

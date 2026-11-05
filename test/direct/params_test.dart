@@ -16,6 +16,25 @@ void main() {
     test('解析不了时明确报错', () {
       expect(() => parseDorm('东侧宿舍'), throwsA(isA<Exception>()));
     });
+
+    test('表单拆分楼号 / 寝室号，再拼回原串', () {
+      final d = splitDorm('24号楼1016');
+      expect(d.building, '24');
+      expect(d.room, '1016');
+      expect(composeDorm(d.building, d.room), '24号楼1016');
+      expect(composeDorm('24', '1016'), '24号楼1016');
+      // 只填一半 = 没填（保存时会提示一起填写）
+      expect(composeDorm('', '1016'), '');
+      expect(composeDorm('24', ''), '');
+    });
+
+    test('旧格式回填不丢输入', () {
+      expect(splitDorm('24-1016').building, '24');
+      expect(splitDorm('奉贤校区 24 号楼 1016').room, '1016');
+      final weird = splitDorm('东侧宿舍');
+      expect(weird.building, '');
+      expect(weird.room, '东侧宿舍');
+    });
   });
 
   group('教务字段解析', () {

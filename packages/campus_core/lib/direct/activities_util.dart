@@ -1,6 +1,8 @@
 // 第二课堂活动说明的解析工具：名额 / 报名线索 / 校区 / 事后补录。
 // 移植自 index 后端 campus/activities.py（报名线索规则源自 Second_Class_Notification）。
 
+import '../json_num.dart';
+
 final List<RegExp> _qqRes = [
   RegExp(r'(?:QQ\s*群|qq群|群号|群\s*号)\D{0,8}(\d{5,12})', caseSensitive: false),
   RegExp(r'(\d{6,12})\s*(?:的)?\s*(?:QQ|qq)\s*群', caseSensitive: false),
@@ -82,6 +84,48 @@ String? extractQuota(String? text) {
   return null;
 }
 
+/// 报名人数：学校活动字段 `bdrs`（旧版抓包里该字段存在但多为空）；兼容同义字段。
+int? enrolledOf(Map a) {
+  for (final k in ['bdrs', 'bmrs', 'ybmrs', 'bmsl']) {
+    final v = asInt(a[k]);
+    if (v != null) return v;
+  }
+  return null;
+}
+
+/// 报名状态原文：部分活动会写「名额已满」「条件不符」。数字状态码不参与判断。
+String signupStatusText(Map a) {
+  for (final k in ['bmztmc', 'bmzt', 'hdztmc', 'ztmc']) {
+    final v = '${a[k] ?? ''}'.trim();
+    if (v.isNotEmpty && RegExp(r'[\u4e00-\u9fa5]').hasMatch(v)) return v;
+  }
+  return '';
+}
+
+/// 从「30 人」这类名额文案里取数字。
+int? quotaCount(Object? quota) =>
+    int.tryParse(RegExp(r'\d+').firstMatch('${quota ?? ''}')?.group(0) ?? '');
+
+/// 报名人数已满：有结构化人数且达到名额，或状态 / 说明里明确写了「已满」。
+/// 名额本身可能从说明文字里提取（quota），没有名额信息时无法判定，返回 false。
+bool isFullSignup(Map a) {
+  // 学校报名状态码 hdbmzt=4 就是「报名已满」（实测值：1 流程设置中 / 2 报名已截止 /
+  // 3 报名未开始 / 4 报名已满 / 5 已报名 / 6 无需报名）。
+  if ('${a['status_code'] ?? a['hdbmzt'] ?? ''}' == '4') return true;
+  final enrolled = asInt(a['enrolled']) ?? enrolledOf(a);
+  final quota = quotaCount(a['quota']);
+  if (enrolled != null && quota != null && quota > 0 && enrolled >= quota) return true;
+  final status = '${a['status_text'] ?? signupStatusText(a)}';
+  if (RegExp(r'已满|满员|人满').hasMatch(status)) return true;
+  return RegExp(r'(?:名额|人数|报名)\s*已满|已满员|人满').hasMatch('${a['hdms'] ?? ''}');
+}
+
+/// 资格不符：只有学校明确给出文字状态才算（不根据说明里的「仅限××学院」猜）。
+bool isIneligibleSignup(Map a) {
+  final status = '${a['status_text'] ?? signupStatusText(a)}';
+  return RegExp(r'条件不符|不符合|不满足|无资格|资格不符').hasMatch(status);
+}
+
 DateTime? parseDt(Object? text) {
   final s = (text ?? '').toString().trim();
   if (s.isEmpty) return null;
@@ -122,6 +166,10 @@ Map<String, dynamic> activitySnapshot(Map a) {
     'campus': campusOf(a),
     'backfill': isBackfill(a),
     'quota': extractQuota(hdms),
+    // 报名人数 / 学校给的报名状态原文：前端据此把按钮显示成「已人满 / 条件不符」。
+    'enrolled': enrolledOf(a),
+    'status_code': '${a['hdbmzt'] ?? ''}',
+    'status_text': signupStatusText(a),
     'signup': extractSignup(hdms),
     'hdms': hdms.length > 2000 ? hdms.substring(0, 2000) : hdms,
   };

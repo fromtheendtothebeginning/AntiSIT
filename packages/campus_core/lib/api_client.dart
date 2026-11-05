@@ -330,6 +330,16 @@ class ApiClient {
       ? CampusDirect.I.activities()
       : _call('GET', '/api/campus-open/activities', tunnel: true);
 
+  /// 已报名的第二课堂活动（我的报名）。
+  Future<Map<String, dynamic>> signedActivities() => _useDirect
+      ? CampusDirect.I.signedActivities()
+      : _call('GET', '/api/campus-open/activities/signed', tunnel: true);
+
+  /// 第二课堂加分明细（每次活动参与记录 + 学分）。
+  Future<Map<String, dynamic>> creditRecords() => _useDirect
+      ? CampusDirect.I.creditRecords()
+      : _call('GET', '/api/campus-open/score/credits', tunnel: true);
+
   Future<Map<String, dynamic>> activityDetail(String aid) => _useDirect
       ? CampusDirect.I.activityDetail(aid)
       : _call('GET', '/api/campus-open/activities/$aid', tunnel: true);

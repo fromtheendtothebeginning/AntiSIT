@@ -203,7 +203,7 @@ class _GradesPageState extends State<GradesPage> {
                   children: [
                     BigStat(
                       label: '平均绩点',
-                      value: _gpa.toStringAsFixed(2),
+                      value: _gpa.toStringAsFixed(1),
                       color: SemColors.accent,
                     ),
                     const Spacer(),

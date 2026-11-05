@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../direct/campus_direct.dart';
+import '../direct/epay.dart';
 import '../direct/mock_campus_server.dart';
 import '../direct/school.dart';
 import '../widgets/common.dart';
@@ -50,7 +51,8 @@ class _ConnectPageState extends State<ConnectPage> {
   final _sid = TextEditingController();
   final _pwd = TextEditingController();
   final _payPwd = TextEditingController();
-  final _dorm = TextEditingController();
+  final _dormBuilding = TextEditingController(); // 楼号，如 24
+  final _dormRoom = TextEditingController(); // 寝室号，如 1016
   final _realName = TextEditingController();
   final _grade = TextEditingController();
 
@@ -76,7 +78,9 @@ class _ConnectPageState extends State<ConnectPage> {
     _sid.text = st.creds.studentId;
     _pwd.text = st.creds.password;
     _payPwd.text = st.creds.payPassword;
-    _dorm.text = st.creds.dorm;
+    final dorm = splitDorm(st.creds.dorm);
+    _dormBuilding.text = dorm.building;
+    _dormRoom.text = dorm.room;
     _realName.text = st.creds.realName;
     _grade.text = st.creds.grade;
   }
@@ -103,7 +107,7 @@ class _ConnectPageState extends State<ConnectPage> {
   void dispose() {
     for (final c in [
       _server, _schoolName, _authBase, _jwxtBase, _xgBase, _ecardBase, _aesKey,
-      _sid, _pwd, _payPwd, _dorm, _realName, _grade,
+      _sid, _pwd, _payPwd, _dormBuilding, _dormRoom, _realName, _grade,
     ]) {
       c.dispose();
     }
@@ -275,7 +279,9 @@ class _ConnectPageState extends State<ConnectPage> {
         _sid.text = MockCampusServer.studentId;
         _pwd.text = MockCampusServer.password;
         _payPwd.text = MockCampusServer.payPassword;
-        _dorm.text = MockCampusServer.dorm;
+        final dorm = splitDorm(MockCampusServer.dorm);
+        _dormBuilding.text = dorm.building;
+        _dormRoom.text = dorm.room;
         _realName.text = MockCampusServer.realName;
         _grade.text = MockCampusServer.grade;
         _ok = '已切换到本地模拟服务（${MockCampusServer.instance.baseUrl}）：'
@@ -303,19 +309,11 @@ class _ConnectPageState extends State<ConnectPage> {
               label: '学校名称',
               controller: name,
               autofocus: true,
-              hintText: '如 某某大学',
             ),
             const SizedBox(height: 12),
             GlassField(
-              label: '学校域名（可留空）',
+              label: '学校域名',
               controller: domain,
-              hintText: '如 sit.edu.cn',
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '填域名会按「子系统.学校域名」自动推导四个系统地址'
-              '（authserver. / jwxt. / xg. / ecard.），保存后可逐项改成学校实际地址。',
-              style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
             ),
           ],
         ),
@@ -395,13 +393,19 @@ class _ConnectPageState extends State<ConnectPage> {
       setState(() => _error = '年级请填 4 位入学年，如 2027');
       return;
     }
+    final dormBuilding = _dormBuilding.text.trim();
+    final dormRoom = _dormRoom.text.trim();
+    if (dormBuilding.isEmpty != dormRoom.isEmpty) {
+      setState(() => _error = '楼号和寝室号请一起填写（电费查询用，不用可都留空）');
+      return;
+    }
     await st.upsertSchool(school);
     await st.setSchool(school);
     st.creds
       ..studentId = _sid.text.trim()
       ..password = _pwd.text
       ..payPassword = _payPwd.text
-      ..dorm = _dorm.text.trim()
+      ..dorm = composeDorm(dormBuilding, dormRoom)
       ..realName = _realName.text.trim()
       ..grade = grade;
     await st.setMode(AppMode.direct);
@@ -670,7 +674,7 @@ class _ConnectPageState extends State<ConnectPage> {
             ),
             const SizedBox(height: 10),
             GlassField(
-              label: '统一身份认证密码（= 校园网 / VPN 密码）',
+              label: '统一身份认证密码',
               controller: _pwd,
               obscureText: _hidePwd,
               prefixIcon: const Icon(Icons.lock_outline),
@@ -682,7 +686,7 @@ class _ConnectPageState extends State<ConnectPage> {
             ),
             const SizedBox(height: 10),
             GlassField(
-              label: '校园卡支付密码（校园码 / 电费）',
+              label: '校园卡支付密码',
               controller: _payPwd,
               obscureText: _hidePayPwd,
               prefixIcon: const Icon(Icons.credit_card_outlined),
@@ -693,23 +697,37 @@ class _ConnectPageState extends State<ConnectPage> {
               ),
             ),
             const SizedBox(height: 10),
-            GlassField(
-              label: '寝室号（电费查询 / 充值）',
-              controller: _dorm,
-              hintText: '如 24号楼1016',
-              prefixIcon: const Icon(Icons.house_outlined),
+            // 楼号和寝室号分开填，内部仍拼成校付宝要的「24号楼1016」。
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: GlassField(
+                    label: '楼号',
+                    controller: _dormBuilding,
+                    prefixIcon: const Icon(Icons.apartment_outlined),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GlassField(
+                    label: '寝室号',
+                    controller: _dormRoom,
+                    prefixIcon: const Icon(Icons.house_outlined),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 10),
             GlassField(
-              label: '姓名（可留空）',
+              label: '姓名',
               controller: _realName,
               prefixIcon: const Icon(Icons.person_outline),
             ),
             const SizedBox(height: 10),
             GlassField(
-              label: '年级（入学年，可留空）',
+              label: '年级',
               controller: _grade,
-              hintText: '如 2027；用于二课达标线与学期标签',
               prefixIcon: const Icon(Icons.school_outlined),
             ),
             const SizedBox(height: 12),
@@ -803,13 +821,13 @@ class _ConnectPageState extends State<ConnectPage> {
             const SizedBox(height: 12),
             GlassField(label: '学校名称', controller: _schoolName),
             const SizedBox(height: 10),
-            _addrField(_jwxtBase, '教务系统', 'https://jwxt.example.edu.cn'),
+            _addrField(_jwxtBase, '教务系统'),
             const SizedBox(height: 10),
-            _addrField(_xgBase, '学工系统（第二课堂）', 'https://xg.example.edu.cn'),
+            _addrField(_xgBase, '学工系统'),
             const SizedBox(height: 10),
-            _addrField(_authBase, '统一身份认证', 'https://authserver.example.edu.cn/authserver'),
+            _addrField(_authBase, '统一身份认证'),
             const SizedBox(height: 10),
-            _addrField(_ecardBase, '校园卡（校园码 / 电费）', 'https://ecard.example.edu.cn'),
+            _addrField(_ecardBase, '校园卡'),
             const SizedBox(height: 10),
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
@@ -817,10 +835,8 @@ class _ConnectPageState extends State<ConnectPage> {
               title: const Text('高级', style: TextStyle(fontSize: 13.5)),
               children: [
                 GlassField(
-                  label: '响应解密密钥（留空即可）',
+                  label: '响应解密密钥',
                   controller: _aesKey,
-                  helperText: '个别学校接口返回 isEncrypt 加密数据时需要，向学校系统维护方索取',
-                  helperMaxLines: 2,
                 ),
               ],
             ),
@@ -847,10 +863,9 @@ class _ConnectPageState extends State<ConnectPage> {
         ],
       );
 
-  Widget _addrField(TextEditingController c, String label, String hint) => GlassField(
+  Widget _addrField(TextEditingController c, String label) => GlassField(
         label: label,
         controller: c,
-        hintText: hint,
         keyboardType: TextInputType.url,
       );
 

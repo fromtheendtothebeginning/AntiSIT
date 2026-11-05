@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -41,9 +42,28 @@ class ElectricitySnapshot {
 }
 
 /// 工具页与子页共享的缓存数值（用于宫格卡面速览）。
+///
+/// 快照同时写入闪存：进程被系统回收后重开，卡面副标题仍是上次的值；
+/// 工具页子界面打开时也能立刻有数据，不必先转圈等网络。
 class ToolCache {
-  static ScoreSnapshot? score;
-  static ElectricitySnapshot? electricity;
+  static const _scoreKey = 'tool_cache_score';
+  static const _electricityKey = 'tool_cache_electricity';
+
+  static ScoreSnapshot? _score;
+  static ElectricitySnapshot? _electricity;
+
+  static ScoreSnapshot? get score => _score;
+  static ElectricitySnapshot? get electricity => _electricity;
+
+  static set score(ScoreSnapshot? v) {
+    _score = v;
+    unawaited(_persist(_scoreKey, v?.raw));
+  }
+
+  static set electricity(ElectricitySnapshot? v) {
+    _electricity = v;
+    unawaited(_persist(_electricityKey, v?.raw));
+  }
 
   /// data 节点缺失 / 类型不对时给 null，把判空集中在这一处。
   static ScoreSnapshot? scoreOf(Object? data) =>
@@ -51,6 +71,49 @@ class ToolCache {
 
   static ElectricitySnapshot? electricityOf(Object? data) =>
       data is Map<String, dynamic> ? ElectricitySnapshot.fromJson(data) : null;
+
+  /// 启动时读回上次的快照（失败当作没有，不影响后续刷新）。
+  static Future<void> load() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final score = _decode(sp.getString(_scoreKey));
+      if (score != null) _score = ScoreSnapshot.fromJson(score);
+      final ele = _decode(sp.getString(_electricityKey));
+      if (ele != null) _electricity = ElectricitySnapshot.fromJson(ele);
+    } catch (_) {}
+  }
+
+  /// 退出登录 / 换账号时清空，别把上一个账号的数据留给下一个人。
+  static Future<void> clear() async {
+    _score = null;
+    _electricity = null;
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.remove(_scoreKey);
+      await sp.remove(_electricityKey);
+    } catch (_) {}
+  }
+
+  static Map<String, dynamic>? _decode(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final j = jsonDecode(raw);
+      return j is Map ? j.cast<String, dynamic>() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _persist(String key, Map<String, dynamic>? raw) async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      if (raw == null) {
+        await sp.remove(key);
+      } else {
+        await sp.setString(key, jsonEncode(raw));
+      }
+    } catch (_) {}
+  }
 }
 
 /// 数据来源模式：
@@ -141,6 +204,8 @@ class AppState extends ChangeNotifier {
       username = await _migrate(secure, sp, 'username');
       password = await _migrate(secure, sp, 'password');
     }
+    await ToolCache.load(); // 工具卡副标题 / 子页首屏直接用上次的快照
+    studentInfo ??= ToolCache.score?.student; // 「我的 → 学籍信息」也不必等分数页先加载
     loaded = true;
     // 主题等偏好可能在首帧后才异步加载完成，通知根组件按持久化偏好重建
     notifyListeners();
@@ -223,11 +288,18 @@ class AppState extends ChangeNotifier {
     required String username,
     String? password,
   }) async {
+    // 只有真的换账号才清工具页缓存：token 续期 / 掉线自动重登也是走这里，
+    // 每次都清会把用户上次看过的数据全抹掉，再进二级页就只剩转圈。
+    final switchedAccount =
+        username.isNotEmpty && this.username != null && this.username != username;
     this.token = token;
     this.username = username;
     if (password != null && password.isNotEmpty) this.password = password;
     demo = false;
-    await ToolPageCache.clearAll(); // 换账号后别显示上一个账号的工具页缓存
+    if (switchedAccount) {
+      await ToolPageCache.clearAll();
+      await ToolCache.clear();
+    }
     await _persist();
     notifyListeners();
   }
@@ -362,6 +434,7 @@ class AppState extends ChangeNotifier {
       password = null;
     }
     await ToolPageCache.clearAll();
+    await ToolCache.clear();
     await _persist();
     notifyListeners();
   }
@@ -373,6 +446,7 @@ class AppState extends ChangeNotifier {
     statusInfo = null;
     studentInfo = null;
     await ToolPageCache.clearAll();
+    await ToolCache.clear();
     await _persist();
     notifyListeners();
   }
