@@ -90,8 +90,10 @@ void main() {
     const remote = ExtensionItem(id: 'r', name: 'r', url: 'https://a.example.com/path/x');
     expect(remote.urlLine, 'https://a.example.com/path/x');
 
-    const bundled = ExtensionItem(id: 'b', name: 'b', url: '/data/ext/b/index.html', bundled: true);
-    expect(bundled.urlLine, '本地导入的压缩包');
+    const bundled = ExtensionItem(
+        id: 'b', name: 'b', url: '/data/ext/b/main.js', bundled: true,
+        runtime: ExtensionItem.runtimeCordis);
+    expect(bundled.urlLine, '本地 Cordis 拓展');
   });
 
   group('网站图标', () {
@@ -127,41 +129,40 @@ void main() {
     });
   });
 
-  group('压缩包导入', () {
-    test('解开 html/js/css 三件套：入口找得到，css/js 内联成自包含页面', () {
+  group('Cordis 压缩包导入', () {
+    Map<String, String> manifestZip({String id = 'sit.demo', String main = 'main.js'}) => {
+          'myapp/ext.json':
+              '{"id":"$id","name":"示例","version":"1.0.0","main":"$main","style":"style.css"}',
+          'myapp/$main': 'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }',
+          'myapp/style.css': 'body{color:red}',
+        };
+
+    test('解开 Cordis 拓展：ext.json 找到、main.js / style.css 都解出来', () {
       final dir = Directory.systemTemp.createTempSync('ext_test_');
       addTearDown(() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
-      final zip = makeZip({
-        'myapp/index.html':
-            '<link rel="stylesheet" href="a.css"><h1>hi</h1><script src="b.js"></script>',
-        'myapp/a.css': 'body{color:red}',
-        'myapp/b.js': 'console.log("x")',
-      });
 
-      final bundle = extractBundle(bytes: zip, dir: dir.path);
-      expect(bundle.entry, endsWith('myapp/index.html'),
-          reason: '顶层目录只去掉一层：入口还是 myapp/index.html');
-      final sib = File(bundle.entry).parent.path;
-      expect(File('$sib/a.css').existsSync(), isTrue, reason: '都解出来了');
-
-      final html = bundlePageHtml(bundle.entry);
-      expect(html, contains('body{color:red}'), reason: '同目录的 css 内联进去了');
-      expect(html, contains('console.log("x")'), reason: 'js 内联进去了');
-      expect(html, isNot(contains('href="a.css"')), reason: '外链已经换成内联');
+      final bundle = extractBundle(bytes: makeZip(manifestZip()), dir: dir.path);
+      expect(bundle.manifest.id, 'sit.demo');
+      expect(bundle.entry, endsWith('main.js'), reason: '顶层目录只去掉一层');
+      expect(File(bundle.entry).existsSync(), isTrue);
+      expect(File('${File(bundle.entry).parent.path}/style.css').existsSync(), isTrue);
     });
 
-    test('入口规则：优先 index.html，其次排序第一个 html；没有 html 就报错', () {
-      expect(entryFileOf(['a.css', 'z.html', 'index.html']), 'index.html');
-      expect(entryFileOf(['x/b.html', 'x/a.html']), 'x/a.html');
-      expect(entryFileOf(['readme.txt', 'app/logo.png']), isNull);
-
+    test('缺 ext.json / 缺入口就报错', () {
       final dir = Directory.systemTemp.createTempSync('ext_test_');
       addTearDown(() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
-      expect(() => extractBundle(bytes: makeZip({'readme.txt': 'hi'}), dir: dir.path),
+      expect(() => extractBundle(bytes: makeZip({'index.html': '<h1>x</h1>'}), dir: dir.path),
+          throwsA(isA<FormatException>()));
+      expect(
+          () => extractBundle(
+              bytes: makeZip({
+                'ext.json': '{"id":"sit.bad","name":"坏","main":"missing.js"}',
+              }),
+              dir: dir.path),
           throwsA(isA<FormatException>()));
     });
 
@@ -177,40 +178,53 @@ void main() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
       final bundle = extractBundle(
-          bytes: makeZip({'index.html': '<h1>ok</h1>', '../evil.txt': 'bad'}),
-          dir: dir.path);
+          bytes: makeZip({...manifestZip(), '../evil.txt': 'bad'}), dir: dir.path);
       expect(File('${dir.parent.path}/evil.txt').existsSync(), isFalse,
           reason: '没写到目标目录外面');
       expect(File(bundle.entry).existsSync(), isTrue);
     });
 
-    test('市场装的拓展：注入的 CSP 默认禁网，声明 network 才放开', () {
-      const page = '<!doctype html><html><head><title>x</title></head><body>hi</body></html>';
+    test('Cordis 页面：市场包默认禁网，声明 network 才放开；入口代码不裸奔', () async {
+      final dir = Directory.systemTemp.createTempSync('ext_test_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final bundle = extractBundle(bytes: makeZip(manifestZip()), dir: dir.path);
 
-      final closed = applyExtensionCsp(page, allowNetwork: false);
-      expect(closed, contains('Content-Security-Policy'));
-      expect(closed, contains("connect-src 'none'"));
-      expect(closed, contains("script-src 'unsafe-inline'"), reason: '内联进来的脚本要能跑');
-      expect(closed, contains("img-src data:"));
-      // 插在 head 之后：CSP 只从它出现的位置往后生效
-      expect(closed.indexOf('<meta http-equiv'), lessThan(closed.indexOf('<title>')));
-      expect(closed.startsWith('<!doctype html>'), isTrue, reason: '别把 doctype 顶掉');
+      final closed = await CordisBundleLoader.load(
+        ExtensionItem(
+          id: 'sit.demo',
+          name: '示例',
+          url: bundle.entry,
+          bundled: true,
+          runtime: ExtensionItem.runtimeCordis,
+          fromMarket: true,
+          permissions: const [],
+        ),
+        appVersion: '1.25.0',
+      );
+      expect(closed.html, contains('Content-Security-Policy'));
+      expect(closed.html, contains("connect-src 'none'"));
+      expect(closed.html, contains("script-src 'unsafe-inline' blob:"),
+          reason: 'Cordis 运行时和拓展代码要能跑');
+      expect(closed.html, contains('antisit-ready'));
+      expect(closed.html, isNot(contains('ctx.ui.root.textContent')),
+          reason: 'main.js 走 base64 注入，不能直接摊在 HTML 里');
 
-      final open = applyExtensionCsp(page, allowNetwork: true);
-      expect(open, contains('connect-src https:'));
-      expect(open, contains('img-src data: https:'));
-      expect(open, isNot(contains("connect-src 'none'")));
-    });
-
-    test('作者自己写了 CSP 就不动它（不跟人打架）', () {
-      const page = '<html><head><meta http-equiv="Content-Security-Policy" content="default-src self"></head></html>';
-      expect(applyExtensionCsp(page, allowNetwork: false), page);
-    });
-
-    test('没有 head 也插得进去（插在 doctype 之后）', () {
-      final out = applyExtensionCsp('<!doctype html><body>x</body>', allowNetwork: false);
-      expect(out.indexOf('<meta http-equiv'), lessThan(out.indexOf('<body>')));
-      expect(out.startsWith('<!doctype html>'), isTrue);
+      final open = await CordisBundleLoader.load(
+        ExtensionItem(
+          id: 'sit.demo',
+          name: '示例',
+          url: bundle.entry,
+          bundled: true,
+          runtime: ExtensionItem.runtimeCordis,
+          fromMarket: true,
+          permissions: const ['network'],
+        ),
+        appVersion: '1.25.0',
+      );
+      expect(open.html, contains('connect-src https:'));
+      expect(open.html, isNot(contains("connect-src 'none'")));
     });
   });
 
@@ -433,9 +447,10 @@ void main() {
     final installed = ExtensionItem(
       id: 'sit.demo-counter',
       name: '记一笔',
-      url: '/data/ext/sit.demo-counter/index.html',
+      url: '/data/ext/sit.demo-counter/main.js',
       desc: '数数小工具',
       bundled: true,
+      runtime: ExtensionItem.runtimeCordis,
       version: '1.0.0',
       sha256: 'a' * 64,
       permissions: ['storage'],
@@ -454,7 +469,7 @@ void main() {
       expect(back.sha256, 'a' * 64);
       expect(back.permissions, ['storage']);
       expect(back.fromMarket, isTrue);
-      expect(back.urlLine, '插件市场 · v1.0.0', reason: '卡片上写清来源与版本');
+      expect(back.urlLine, '插件市场 · Cordis · v1.0.0', reason: '卡片上写清来源与版本');
     });
 
     test('老版本落盘数据（没这些字段）照旧读得回，且不被当成市场装的', () {
@@ -799,10 +814,244 @@ void main() {
       );
     });
 
+    testWidgets('ai.chatTools：多轮消息 / 工具 schema 进能力，工具调用原样回网页', (tester) async {
+      ai.chatToolsReply = const AiChatReply(
+        text: '我看看',
+        finishReason: 'tool_calls',
+        usedTools: true,
+        toolCalls: [
+          AiToolCall(id: 'c1', name: 'read_file', argumentsJson: '{"path":"main.js"}'),
+        ],
+      );
+      final b = await bridge(tester);
+      final out = await b.call('ai.chatTools', {
+        'messages': [
+          {'role': 'system', 'content': '你是助手'},
+          {'role': 'user', 'content': '读 main.js'},
+          {
+            'role': 'assistant',
+            'content': '',
+            'toolCalls': [
+              {'id': 'c0', 'name': 'list_files', 'arguments': '{}'},
+            ],
+          },
+          {'role': 'tool', 'content': 'main.js 90 B', 'toolCallId': 'c0'},
+        ],
+        'tools': [
+          {
+            'type': 'function',
+            'function': {
+              'name': 'read_file',
+              'description': '读文件',
+              'parameters': {
+                'type': 'object',
+                'properties': {
+                  'path': {'type': 'string'},
+                },
+              },
+            },
+          },
+        ],
+        'maxTokens': 99999,
+      }) as Map;
+
+      expect(ai.chatToolsCalls, 1);
+      expect(ai.lastChatToolsMaxTokens, 4096);
+      expect(ai.lastMessages, hasLength(4));
+      expect(ai.lastMessages![0].role, 'system');
+      expect(ai.lastMessages![2].toolCalls.single.name, 'list_files');
+      expect(ai.lastMessages![3].toolCallId, 'c0', reason: '工具结果要带回对应的调用 id');
+      expect(ai.lastTools!.single.name, 'read_file');
+      expect(ai.lastTools!.single.description, '读文件');
+      expect(out['text'], '我看看');
+      expect(out['usedTools'], isTrue);
+      expect(out['finishReason'], 'tool_calls');
+      expect((out['toolCalls'] as List).single, {
+        'id': 'c1',
+        'name': 'read_file',
+        'arguments': '{"path":"main.js"}',
+      });
+    });
+
+    testWidgets('ai.chatTools：空 messages 报错；市场拓展同样要声明 ai 权限', (tester) async {
+      final b = await bridge(tester);
+      await expectLater(b.call('ai.chatTools', {'messages': []}), throwsArgumentError);
+      await expectLater(b.call('ai.chatTools', null), throwsArgumentError);
+      expect(ai.chatToolsCalls, 0);
+
+      final denied = await bridge(tester, item: _marketItem(permissions: const ['storage']));
+      await expectLater(
+          denied.call('ai.chatTools', {
+            'messages': [
+              {'role': 'user', 'content': 'x'},
+            ],
+          }),
+          throwsArgumentError);
+      expect(ai.chatToolsCalls, 0);
+    });
+
     test('ai 是敏感权限：安装弹窗的说明列表会带上它', () {
       final out = describeSensitivePermissions(['ai', 'storage']);
       expect(out, contains('调用 AI 对话（用你配置的模型与 API Key，可能产生费用）'));
       expect(out, hasLength(2));
+    });
+  });
+
+  group('接口：workshop.*（只给内置「拓展工坊」）', () {
+    late Directory dir;
+    late WorkshopStore workshop;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('ext_workshop_bridge_');
+      workshop = WorkshopStore(documentsDirectory: () async => dir.path);
+    });
+    tearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    Future<ExtBridge> bridge(WidgetTester tester, String extId) async {
+      await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+      return ExtBridge(
+        extId: extId,
+        context: tester.element(find.byType(SizedBox)),
+        workshop: workshop,
+      );
+    }
+
+    testWidgets('别的拓展调 workshop.* 直接拒；工坊能建草稿、读文件、自检', (tester) async {
+      final draft = await workshop.create(name: '喝水记录');
+      final other = await bridge(tester, 'e1');
+      await expectLater(
+        other.call('workshop.list', null),
+        throwsA(isA<ArgumentError>()
+            .having((e) => e.message, 'message', contains('只允许内置「拓展工坊」调用'))),
+      );
+
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+      final list = await ws.call('workshop.list', null) as Map;
+      expect((list['drafts'] as List).single['id'], draft.id);
+
+      final files = await ws.call('workshop.files', {'draftId': draft.id}) as Map;
+      expect((files['files'] as List).map((f) => f['path']),
+          containsAll(['ext.json', 'main.js', 'style.css']));
+
+      final read = await ws.call('workshop.read', {'draftId': draft.id, 'path': 'main.js'}) as Map;
+      expect(read['content'], contains('export default'));
+      expect(read['version'], matches(RegExp(r'^[0-9a-f]{64}$')));
+      final check = await ws.call('workshop.validate', {'draftId': draft.id}) as Map;
+      expect(check['ok'], isTrue);
+    });
+
+    testWidgets('写文件前弹原生确认；确认后才落盘', (tester) async {
+      final draft = await workshop.create(name: '喝水记录');
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+      const code = 'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }';
+      final read = await workshop.readFileVersioned(draft.id, 'main.js');
+
+      final pending = ws.call('workshop.write', {
+        'draftId': draft.id,
+        'path': 'main.js',
+        'content': code,
+        'expectedVersion': read.version,
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('写入 main.js'), findsOneWidget, reason: '确认框写清是哪个文件');
+      expect(await workshop.readFile(draft.id, 'main.js'), isNot(code),
+          reason: '用户点确认前不能写');
+
+      await tester.tap(find.widgetWithText(FilledButton, '写入'));
+      await tester.pumpAndSettle();
+      final result = await pending as Map;
+      expect(result['ok'], isTrue);
+      expect(result['version'], matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(await workshop.readFile(draft.id, 'main.js'), code);
+    });
+
+    testWidgets('已有文件没读就写：直接拒，连确认框都不弹', (tester) async {
+      final draft = await workshop.create(name: '喝水记录');
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+
+      await expectLater(
+        ws.call('workshop.write', {
+          'draftId': draft.id,
+          'path': 'main.js',
+          'content': 'export default {}',
+        }),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'message', contains('覆盖已有文件前先读取'))),
+      );
+      await tester.pump();
+      expect(find.text('写入 main.js'), findsNothing);
+    });
+
+    testWidgets('取消写入：草稿保持原样，工具结果告诉 Agent 被拒', (tester) async {
+      final draft = await workshop.create(name: '喝水记录');
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+      final before = await workshop.readFileVersioned(draft.id, 'main.js');
+
+      final pending = ws.call('workshop.write', {
+        'draftId': draft.id,
+        'path': 'main.js',
+        'content': 'export default {}',
+        'expectedVersion': before.version,
+      });
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, '取消'));
+      await tester.pumpAndSettle();
+      final result = await pending as Map;
+      expect(result['ok'], isFalse);
+      expect(result['denied'], isTrue);
+      expect((await workshop.readFileVersioned(draft.id, 'main.js')).content, before.content);
+    });
+
+    test('读后写版本门、隐藏文件与草稿 id 边界', () async {
+      final draft = await workshop.create(name: '喝水记录');
+      final first = await workshop.readFileVersioned(draft.id, 'main.js');
+      await workshop.writeFile(draft.id, 'main.js', 'export default {}',
+          expectedVersion: first.version);
+      await expectLater(
+        workshop.writeFile(draft.id, 'main.js', 'export default { apply() {} }',
+            expectedVersion: first.version),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'message', contains('已变化'))),
+        reason: '拿旧版本覆盖要拒绝',
+      );
+
+      await expectLater(
+        workshop.readFile(draft.id, '.workshop/session.json'),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'message', contains('隐藏文件'))),
+      );
+      await expectLater(
+        workshop.loadSession('../outside'),
+        throwsA(isA<FormatException>()
+            .having((e) => e.message, 'message', contains('id 不合法'))),
+      );
+
+      final bad = await workshop.create(name: '坏清单');
+      final manifest = await workshop.readFileVersioned(bad.id, 'ext.json');
+      await workshop.writeFile(
+        bad.id,
+        'ext.json',
+        '{"id":"sit.bad","name":"坏清单","main":"../evil.js"}',
+        expectedVersion: manifest.version,
+      );
+      expect((await workshop.validate(bad.id)).join(), contains('ext.json'));
+    });
+
+    testWidgets('会话日志按草稿保存与读取', (tester) async {
+      final draft = await workshop.create(name: '喝水记录');
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+      const payload = '{"version":1,"events":[{"type":"user/message","content":"hi"}]}';
+      expect(await ws.call('workshop.session.get', {'draftId': draft.id}), isNull);
+
+      expect(await ws.call('workshop.session.set',
+          {'draftId': draft.id, 'data': payload}), isTrue);
+      expect(await ws.call('workshop.session.get', {'draftId': draft.id}), payload);
+      expect(File('${draft.dir}/.workshop/session.json').existsSync(), isTrue);
+      expect((await workshop.listFiles(draft.id)).map((f) => f.path),
+          isNot(contains('.workshop/session.json')),
+          reason: '会话日志不该出现在文件树 / 安装内容里');
     });
   });
 
@@ -852,6 +1101,64 @@ void main() {
           reason: '版本门放行（测试环境内核不可用，会走平台不支持那句）');
     });
   });
+
+  group('拓展工坊（内置 Cordis 拓展）', () {
+    test('内置工坊的 asset 能拼出 Cordis 页面，main.js 不裸奔', () async {
+      final item = kBuiltinExtensions.first;
+      expect(item.id, 'builtin.workshop');
+      expect(item.runtime, ExtensionItem.runtimeCordis);
+      final page = await CordisBundleLoader.load(item, appVersion: '1.25.0');
+      expect(page.html, contains('正在启动「拓展工坊」'));
+      expect(page.html, contains('workshop.list'), reason: '宿主服务已注入');
+      expect(page.html, contains("script-src 'unsafe-inline' blob:"));
+      expect(page.html, isNot(contains('你是 AntiSIT「拓展工坊」里的编码 Agent')),
+          reason: 'main.js 走 base64，不应直接出现在 HTML 里');
+    });
+
+    test('草稿工作区：新建 / 读写 / 校验 / 安装', () async {
+      final dir = Directory.systemTemp.createTempSync('ext_workshop_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final savedDocs = ExtensionStore.documentsDirectory;
+      ExtensionStore.documentsDirectory = () async => dir.path;
+      addTearDown(() => ExtensionStore.documentsDirectory = savedDocs);
+
+      final workshop = WorkshopStore(documentsDirectory: () async => dir.path);
+      final draft = await workshop.create(name: '喝水记录');
+      expect(draft.manifest.name, '喝水记录');
+      final files = await workshop.listFiles(draft.id);
+      expect(files.map((f) => f.path), containsAll(['ext.json', 'main.js', 'style.css']));
+
+      final main = await workshop.readFileVersioned(draft.id, 'main.js');
+      expect(main.content, contains('export default'));
+      expect(main.version, matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(await workshop.validate(draft.id), isEmpty);
+
+      await workshop.writeFile(draft.id, 'main.js',
+          'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }',
+          expectedVersion: main.version);
+      expect((await workshop.validate(draft.id)), isEmpty);
+
+      await workshop.writeFile(draft.id, 'app.js', 'localStorage.setItem("x", 1)');
+      expect((await workshop.validate(draft.id)).join(), contains('localStorage'));
+
+      expect(() => workshop.readFile(draft.id, '../evil.txt'),
+          throwsA(isA<FormatException>()));
+
+      final app = await workshop.readFileVersioned(draft.id, 'app.js');
+      await workshop.deleteFile(draft.id, 'app.js', expectedVersion: app.version);
+      await expectLater(
+          workshop.deleteFile(draft.id, 'ext.json'), throwsA(isA<FormatException>()));
+      final item = await workshop.install(draft.id);
+      expect(item.id, draft.id);
+      expect(item.runtime, ExtensionItem.runtimeCordis);
+      expect(item.bundled, isTrue);
+      expect(File(item.url).existsSync(), isTrue);
+      expect(File(item.url).readAsStringSync(), contains('ctx.ui.root'));
+      expect(ExtensionStore.I.items.any((e) => e.id == draft.id), isTrue);
+    });
+  });
 }
 
 /// 市场装的测试拓展（权限门按它判断）。
@@ -889,6 +1196,12 @@ class _FakeAiCapability implements AiCapability {
   String? lastSystem;
   int? lastMaxTokens;
 
+  int chatToolsCalls = 0;
+  List<AiChatMessage>? lastMessages;
+  List<AiToolSpec>? lastTools;
+  int? lastChatToolsMaxTokens;
+  AiChatReply chatToolsReply = const AiChatReply(text: '好的');
+
   @override
   Future<void> load() async {}
 
@@ -916,6 +1229,19 @@ class _FakeAiCapability implements AiCapability {
     lastSystem = system;
     lastMaxTokens = maxTokens;
     return '好的';
+  }
+
+  @override
+  Future<AiChatReply> chatWithTools(
+    List<AiChatMessage> messages, {
+    List<AiToolSpec> tools = const [],
+    int? maxTokens,
+  }) async {
+    chatToolsCalls++;
+    lastMessages = messages;
+    lastTools = tools;
+    lastChatToolsMaxTokens = maxTokens;
+    return chatToolsReply;
   }
 }
 

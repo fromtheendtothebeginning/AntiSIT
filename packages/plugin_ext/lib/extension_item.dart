@@ -22,7 +22,17 @@ class ExtensionItem {
     this.fromMarket = false,
     this.sourceId = '',
     this.minAppVersion = '',
+    this.runtime = runtimeWeb,
   });
+
+  /// 远程网页（书签形态，不跑 Cordis）。
+  static const String runtimeWeb = 'web';
+
+  /// 本地 Cordis 拓展：`url` 是入口 main.js 的绝对路径。
+  static const String runtimeCordis = 'cordis';
+
+  /// 旧版 html 压缩包：运行时已切换到 Cordis，这种只能提示迁移。
+  static const String runtimeLegacy = 'legacy';
 
   /// 稳定 id：生成一次就跟着数据走（存储、每个拓展的键值数据隔离都按它）。
   /// **接口改名称不改 id**：卡片上显示的名字可以变，存储与隔离仍按 id。
@@ -76,6 +86,12 @@ class ExtensionItem {
   /// 打开时拦下（见 `ext_open.dart`）。
   final String minAppVersion;
 
+  /// 运行形态：`web`（远程网页）/ `cordis`（本地 Cordis 插件）/ `legacy`（旧版
+  /// html 压缩包，已不再执行）。落盘数据没有这个字段时，本地包按 legacy 处理。
+  final String runtime;
+
+  bool get isCordis => bundled && runtime == runtimeCordis;
+
   /// 当前 App 是否低于 [minAppVersion]。App 版本读不到（空串）不设门。
   bool needsNewerApp(String appVersion) =>
       minAppVersion.isNotEmpty &&
@@ -115,6 +131,7 @@ class ExtensionItem {
     bool? fromMarket,
     String? sourceId,
     String? minAppVersion,
+    String? runtime,
   }) =>
       ExtensionItem(
         id: id,
@@ -130,6 +147,7 @@ class ExtensionItem {
         fromMarket: fromMarket ?? this.fromMarket,
         sourceId: sourceId ?? this.sourceId,
         minAppVersion: minAppVersion ?? this.minAppVersion,
+        runtime: runtime ?? this.runtime,
       );
 
   /// 换掉卡片上的显示值（网页用 `card.setName` / `card.setDesc` / `card.setIcon` 接口改，
@@ -141,8 +159,9 @@ class ExtensionItem {
   /// （要不要显示这一行由「拓展」页右上角的总开关决定，见 ExtensionStore.hideUrls）。
   String get urlLine {
     if (!bundled) return url;
-    if (!fromMarket) return '本地导入的压缩包';
-    return version.isEmpty ? '插件市场' : '插件市场 · v$version';
+    if (runtime == runtimeLegacy) return '旧版网页拓展（需迁移）';
+    if (!fromMarket) return '本地 Cordis 拓展';
+    return version.isEmpty ? '插件市场 · Cordis' : '插件市场 · Cordis · v$version';
   }
 
   Map<String, dynamic> toJson() => {
@@ -158,6 +177,7 @@ class ExtensionItem {
         if (fromMarket) 'market': true,
         if (sourceId.isNotEmpty) 'source': sourceId,
         if (minAppVersion.isNotEmpty) 'minAppVersion': minAppVersion,
+        if (runtime != runtimeWeb) 'runtime': runtime,
         // builtin 不落盘：只有编译前的固定清单能置这个标记
       };
 
@@ -192,6 +212,11 @@ class ExtensionItem {
     final name = '${raw['name'] ?? ''}'.trim();
     final id = '${raw['id'] ?? ''}'.trim();
     final perms = raw['permissions'];
+    final rawRuntime = '${raw['runtime'] ?? ''}'.trim();
+    // 旧落盘数据：远程是网页；本地压缩包还没 runtime 字段 = 旧版 html 包。
+    final runtime = rawRuntime.isNotEmpty
+        ? rawRuntime
+        : (bundled ? runtimeLegacy : runtimeWeb);
     return ExtensionItem(
       id: id.isEmpty ? newId() : id,
       name: name.isEmpty ? (bundled ? '本地拓展' : Uri.parse(url).host) : name,
@@ -205,6 +230,7 @@ class ExtensionItem {
       fromMarket: raw['market'] == true,
       sourceId: '${raw['source'] ?? ''}'.trim(),
       minAppVersion: '${raw['minAppVersion'] ?? ''}'.trim(),
+      runtime: runtime,
     );
   }
 

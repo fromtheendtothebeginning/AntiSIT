@@ -74,7 +74,7 @@ void main() {
     return base64Encode(sig.bytes);
   }
 
-  /// 造一个 zip 压缩包（html / js / css 三件套）。
+  /// 造一个 zip 压缩包（Cordis：ext.json + main.js）。
   Uint8List makeZip(Map<String, String> files) {
     final archive = Archive();
     files.forEach((name, content) {
@@ -90,12 +90,14 @@ void main() {
     String version = '1.0.0',
     String name = '记一笔',
     String minAppVersion = '1.0.0',
-    Map<String, String> files = const {
-      'index.html': '<!doctype html><html><head></head><body>hi</body></html>',
-      'app.js': 'console.log(1)',
-    },
+    Map<String, String>? files,
   }) async {
-    final zip = makeZip(files);
+    final zip = makeZip(files ??
+        {
+          'ext.json':
+              '{"id":"sit.demo-counter","name":"$name","version":"$version","main":"main.js","permissions":["storage"]}',
+          'main.js': 'export default { apply() {} }',
+        });
     final sha = hex(zip);
     final catalog = {
       'schema': 1,
@@ -109,6 +111,7 @@ void main() {
           'category': '工具',
           'icon': '🧮',
           'type': 'bundle',
+          'runtime': 'cordis',
           'version': version,
           'zip': 'dist/sit.demo-counter/$version.zip',
           'sha256': sha,
@@ -236,9 +239,12 @@ void main() {
           signer: signer,
           version: version,
           minAppVersion: minAppVersion,
-          files: files ?? const {
-            'index.html': '<!doctype html><html><head></head><body>hi</body></html>',
-          });
+          files: files ??
+              {
+                'ext.json':
+                    '{"id":"sit.demo-counter","name":"记一笔","version":"$version","main":"main.js"}',
+                'main.js': 'export default { apply() {} }',
+              });
       serveMirror(catalog: catalog, sig: sig, files: {'dist/sit.demo-counter/$version.zip': zip});
       await MarketSource.I.load(force: true); // 每次都是新目录，强制重拉
       return MarketSource.I.entries.single;
@@ -302,7 +308,12 @@ void main() {
       await ExtensionStore.I.setCard('sit.demo-counter', name: '我改的名字');
 
       final v2 = await readyEntry(signer,
-          version: '1.1.0', files: {'index.html': '<!doctype html><body>新版本</body>'});
+          version: '1.1.0',
+          files: {
+            'ext.json':
+                '{"id":"sit.demo-counter","name":"记一笔","version":"1.1.0","main":"main.js"}',
+            'main.js': 'export default { apply() { /* 新版本 */ } }',
+          });
       expect(MarketInstaller().hasUpdate(v2), isTrue);
       await MarketInstaller().install(v2);
 
@@ -321,7 +332,12 @@ void main() {
       await MarketInstaller().install(v1);
 
       final same = await readyEntry(signer,
-          version: '1.0.0', files: {'index.html': '<!doctype html><body>改了点东西</body>'});
+          version: '1.0.0',
+          files: {
+            'ext.json':
+                '{"id":"sit.demo-counter","name":"记一笔","version":"1.0.0","main":"main.js"}',
+            'main.js': 'export default { apply() { /* 改了点东西 */ } }',
+          });
       expect(MarketInstaller().hasUpdate(same), isTrue);
     });
 
@@ -507,7 +523,9 @@ void main() {
         final entries = <Map<String, dynamic>>[];
         for (final (id, name) in [('sit.demo-counter', '记一笔'), ('sit.other', '另一个')]) {
           final zip = makeZip({
-            'index.html': '<!doctype html><html><body>$name $version</body></html>',
+            'ext.json':
+                '{"id":"$id","name":"$name","version":"$version","main":"main.js"}',
+            'main.js': 'export default { apply() {} }',
           });
           zips['dist/$id/$version.zip'] = zip;
           entries.add({
@@ -518,6 +536,7 @@ void main() {
             'category': '工具',
             'icon': '🧮',
             'type': 'bundle',
+            'runtime': 'cordis',
             'version': version,
             'zip': 'dist/$id/$version.zip',
             'sha256': hex(zip),

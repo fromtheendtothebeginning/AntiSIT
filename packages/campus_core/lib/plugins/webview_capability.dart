@@ -39,6 +39,35 @@ abstract class WebViewCapability extends PluginCapability {
   });
 }
 
+/// 网页里的接口垫片：把 `antiSIT.call/post` 变成一次消息 + 等 Promise 回填。
+///
+/// * 原始通道叫 `antiSITBridge`（内核 `addJavaScriptChannel` 给的名字，**不能**与
+///   垫片自己定义的 `antiSIT` 重名），网页只该用 `antiSIT`；
+/// * 每次导航加载完成后都要重注入（换页后旧上下文连同垫片一起没了）；
+/// * 与 App 的调用约定：`{id, method, args}` → App 回 `__antiSITResolve(id, 值)`
+///   或 `__antiSITReject(id, 错误文案)`。
+const String kWebViewBridgeShim = r'''
+(function () {
+  if (window.antiSIT) return;
+  var seq = 0, waits = {};
+  window.__antiSITResolve = function (id, v) { var w = waits[id]; if (w) { delete waits[id]; w.ok(v); } };
+  window.__antiSITReject = function (id, e) { var w = waits[id]; if (w) { delete waits[id]; w.fail(new Error(e)); } };
+  window.antiSIT = {
+    call: function (method, args) {
+      return new Promise(function (ok, fail) {
+        var id = ++seq;
+        waits[id] = { ok: ok, fail: fail };
+        window.antiSITBridge.postMessage(JSON.stringify({
+          id: id, method: String(method), args: args === undefined ? null : args
+        }));
+      });
+    },
+    // 不需要返回值时用它（内部吞掉错误，别让没接的 Promise 冒到控制台）
+    post: function (method, args) { this.call(method, args).catch(function () {}); }
+  };
+})();
+''';
+
 /// 网页 ↔ App 的调用通道：内核只负责把网页的调用送进来、把返回值送回网页，
 /// **支持哪些方法完全由调用方决定**（内置实现见 `plugin_ext`，方法表见
 /// `docs/extensions.md`）。网页侧统一走内核注入的垫片，一个入口：

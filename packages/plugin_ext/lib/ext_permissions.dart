@@ -31,6 +31,7 @@ const Map<String, String> kMethodPermissions = {
   'storage.set': 'storage',
   'storage.remove': 'storage',
   'ai.chat': 'ai',
+  'ai.chatTools': 'ai',
 };
 
 /// 敏感权限的中文说明列表（市场页 / 安装弹窗 / 详情页共用）。

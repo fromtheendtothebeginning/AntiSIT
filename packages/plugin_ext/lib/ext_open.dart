@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-import 'bundle_import.dart';
+import 'cordis_bundle.dart';
 import 'ext_bridge.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
@@ -26,6 +26,12 @@ Future<void> openExtension(
     return;
   }
 
+  // 旧版 html 压缩包：运行时已切到 Cordis，不能再把任意 html 当拓展跑
+  if (e.runtime == ExtensionItem.runtimeLegacy) {
+    say('「${e.name}」是旧版网页拓展，当前运行时已停止支持；请让作者用 Cordis 重新打包，或到「拓展工坊」重建');
+    return;
+  }
+
   final kernel = PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
   if (kernel == null) {
     say('WebView 内核没启用：到「插件管理」里打开它');
@@ -35,26 +41,28 @@ Future<void> openExtension(
     say('当前平台不支持网页拓展（内核只覆盖 Android / iOS）');
     return;
   }
-  // 压缩包导入的：把入口页读出来、同目录 css/js 内联成自包含页面再交给内核
+  // Cordis 拓展：读 ext.json + main.js，拼一份自包含页面交给内核
   String? html;
-  if (e.bundled) {
+  if (e.isCordis) {
     try {
-      html = bundlePageHtml(e.url);
-    } catch (_) {
-      say('这个压缩包的内容读不到了（可能被清理过），重新装一次即可');
+      final page = await CordisBundleLoader.load(
+        e,
+        appVersion: await ExtensionItem.appVersionLoader(),
+      );
+      html = page.html;
+    } on FormatException catch (err) {
+      say('「${e.name}」加载失败：${err.message}');
+      return;
+    } catch (err) {
+      say('「${e.name}」加载失败：$err');
       return;
     }
-    // 市场装的拓展默认禁网（声明 network 才放开）：审核过的页面不该在运行时
-    // 再去拉别处的脚本。用户自己导入的压缩包不上这条——跟权限门同一条边界。
-    if (e.fromMarket) {
-      html = applyExtensionCsp(html, allowNetwork: e.permissions.contains('network'));
-    }
   }
-  // 版本门 await 过了：页面可能已经不在树上
+  // 版本门 / 读文件都 await 过了：页面可能已经不在树上
   if (!context.mounted) return;
   await kernel.openPage(
     context,
-    url: e.bundled ? null : e.url,
+    url: e.isCordis ? null : e.url,
     html: html,
     title: e.name,
     bridge: ExtBridge(extId: e.id, context: context, item: e),

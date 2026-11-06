@@ -79,7 +79,9 @@ void main() {
   }) async {
     final zip = makeZip(files ??
         {
-          'index.html': '<!doctype html><html><head></head><body>作者的小工具</body></html>',
+          'ext.json':
+              '{"id":"$id","name":"作者的小工具","version":"$version","main":"main.js"}',
+          'main.js': 'export default { apply() {} }',
         });
     final catalog = utf8.encode('${const JsonEncoder.withIndent('  ').convert({
           'schema': 1,
@@ -93,6 +95,7 @@ void main() {
               'author': 'someone',
               'category': '工具',
               'type': 'bundle',
+              'runtime': 'cordis',
               'version': version,
               'zip': 'dist/$id/$version.zip',
               'sha256': hex(zip),
@@ -267,7 +270,8 @@ void main() {
       expect(item.sourceId, preview.draft.id, reason: '记住是哪个源装的');
       expect(item.version, '1.0.0');
       expect(File(item.url).existsSync(), isTrue);
-      expect(File(item.url).readAsStringSync(), contains('作者的小工具'));
+      expect(File('${File(item.url).parent.path}/ext.json').readAsStringSync(),
+          contains('作者的小工具'));
     });
 
     test('内容被换过（sha256 对不上）→ 不落盘', () async {
@@ -319,7 +323,12 @@ void main() {
       await ExtensionStore.I.dataSet('sit.by-author', 'n', 7);
 
       final v2 = await authorRepo(signer,
-          version: '1.1.0', files: {'index.html': '<!doctype html><body>新版</body>'});
+          version: '1.1.0',
+          files: {
+            'ext.json':
+                '{"id":"sit.by-author","name":"作者的小工具","version":"1.1.0","main":"main.js"}',
+            'main.js': 'export default { apply() {} }',
+          });
       serve(catalog: v2.catalog, sig: v2.sig,
           files: {'dist/sit.by-author/1.1.0.zip': v2.zip});
       await store.refresh();

@@ -1,261 +1,206 @@
-# 拓展（网页形态的小功能）
+# 拓展（Cordis 插件）
 
-「拓展」是底栏的一个页面（插件 id `ext`）：**默认开启**、**硬依赖 WebView 内核**
-（`webview`），装好即可用；关掉内核会把「拓展」一起关掉（关系图上是那条实线），
-不需要它也可以在「插件管理」里关掉。
+「拓展」是底栏的一个页面（插件 id `ext`）：**默认开启**、硬依赖 WebView 内核
+（`webview`），装好即可用；关掉内核会把「拓展」一起关掉，不需要它也可以在
+「插件管理」里关掉。
 
-App 端默认**没有内置拓展**——清单从空开始。加法有四种，见下。
+本版本的拓展运行时已经换成 **[Cordis](https://github.com/cordiverse/cordis)**
+（DSH 同款插件框架）：一个拓展就是一段在 WebView 里运行的 Cordis 插件，
+通过 `inject` 声明自己要用的服务，通过 `ctx.effect()` 注册可逆副作用。
+App 不再执行任意 `index.html`；旧的 html 压缩包会标成「旧版网页拓展（需迁移）」。
 
-## 四种加法
+App 内置一个 **「拓展工坊」**（`builtin.workshop`）：它本身也是一个 Cordis 拓展，
+用 Agent 帮你写新的 Cordis 拓展（见下文）。
+
+## 加法
 
 | 方式 | 说明 |
 |---|---|
-| 填写网址 | 名称 + `http(s)` 网址（没写协议按 `https` 补全，`tools.example.com` → `https://tools.example.com`） |
-| 导入压缩包 | 选一个 zip（html / js / css 三件套），**导入后自动解压**并内联成一份自包含页面 |
-| 导入 JSON | 粘贴单条或数组，字段见下 |
-| 编译前固定 | 发行方在 `packages/plugin_ext/lib/builtin_extensions.dart` 的 `kBuiltinExtensions` 里加，随包发布 |
+| 填写网址 | 名称 + `http(s)` 网址，作为网页书签打开；不跑 Cordis，也不注入拓展服务 |
+| 导入 Cordis 压缩包 | zip 根目录放 `ext.json` + `main.js`（可选 `style.css`），导入后解压到本地 |
+| 导入 JSON | 粘贴网页书签（单条或数组）；Cordis 拓展请用压缩包 |
+| 编译前固定 | 在 `packages/plugin_ext/lib/builtin_extensions.dart` 的 `kBuiltinExtensions` 里加 |
+| 拓展工坊 | 在「拓展」页打开内置工坊，用自然语言让 Agent 写一个 Cordis 拓展 |
 
-导入 JSON 的字段：
-
-```json
-[
-  {
-    "name": "我的工具",                     // 可省，缺省用域名
-    "url": "https://example.com/tool",
-    "desc": "一句话简介，显示在卡片名称下方",   // 可省
-    "icon": "https://example.com/icon.png",  // 可省：图片网址或 emoji；空 = 用网站 favicon
-  },
-  {"url": "tools.example.com/another"}
-]
-```
-
-### 压缩包的约定
+### Cordis 压缩包的约定
 
 * 打包方式随意：`zip -r myapp.zip myapp/` 这种「所有文件都在同一个顶层目录里」的，
   解压时会自动去掉那一层；
-* **入口**：根目录的 `index.html`；没有就取根目录排序后第一个 `*.html`；
-  一个 html 都没有 → 报错（消息会说明）；
-* **打开方式**：入口页里同目录的 `<link href="x.css">` 与 `<script src="x.js"></script>`
-  会被**内联**进 html，再当自包含页面交给内核打开——这样不依赖 WebView 的 `file://`
-  权限，也不会撞上新版 Android 的文件访问限制；
-  代价是**图片 / 字体这类相对路径资源不会被内联**（部分平台可能加载不出来），
-  所以三件套请写自包含；外链（`http(s)` / `//`）原样保留；
-* **点外链**：内联页是自包含页面，点到 `http(s)` 外链不会在应用内加载——内核把它**拦下来
-  交给系统浏览器**（免得带着 `antiSIT` 通道跳到别人的页面上）；
-* **垫片**：桥垫片直接写进交给内核的 html 里，所以网页**第一个同步脚本**就能用 `antiSIT`
-  （只靠「加载完成后注入」是页面脚本已经跑完之后，晚一步）；
+* **入口**：根目录必须有 `ext.json`，其中 `main` 指向入口 `.js`；
 * **安全**：绝对路径、`..`、盘符这类条目整条丢弃，绝不写到解压目录外面（zip-slip）；
-* 解压位置：`<应用文档目录>/ext/<拓展 id>/`；在列表里删除这条拓展时会连同目录一起清掉。
+  最多 200 个文件 / 解压后 8 MB；
+* 解压位置：`<应用文档目录>/ext/<拓展 id>/`；删除这条拓展时会连同目录一起清掉。
 
-### 内置（编译前固定）的拓展
+`ext.json`：
 
-在 `packages/plugin_ext/lib/builtin_extensions.dart` 里加一行就多一条，随包发布：
-
-```dart
-const List<ExtensionItem> kBuiltinExtensions = [
-  ExtensionItem(
-    id: 'builtin.demo',                 // 全局唯一，别改（改了等于换了一条）
-    name: '示例拓展',
-    url: 'https://example.com/app',
-    desc: '一句话简介',
-  ),
-];
+```json
+{
+  "id": "sit.my-tool",
+  "name": "我的工具",
+  "desc": "一句话简介",
+  "version": "1.0.0",
+  "main": "main.js",
+  "style": "style.css",
+  "permissions": ["storage"],
+  "minAppVersion": "1.25.0"
+}
 ```
 
-内置项不落盘（用户清单里没有它们），所以改完清单升级 App 就生效；用户端它们带
-「内置」标记、**不能删也不能改**（只能看详情）——但它们的网页仍可用 `card.*` 接口
-改自己卡片上的显示值（那层覆盖值另存，源码清单里的定义不动）。
+* `id`：小写字母 / 数字 / `. _ -`，3–64 位；安装目录与存储隔离都按它；
+* `name` ≤ 20 字，`desc` ≤ 60 字；
+* `version` 改动内容后必须升，市场靠它判断更新；
+* `permissions` 见下文「权限」；
+* `minAppVersion` 低于它的 App 会显示「需要升级 App」。
 
-## 卡片长什么样
+## 写一个 Cordis 拓展
 
-* **图标**：默认取**网站图标**——先抓一次页面，按 `apple-touch-icon`（PNG，通常
-  180×180，最清楚）→ `rel="icon"` 里的位图 → 显式声明的 `.ico` 的顺序找，都没有就退到
-  站点根 `/favicon.ico`；`.ico` 里嵌的 PNG 帧会被抠出来用（**Flutter 的图片解码器不认
-  `.ico`**，直接 `Image.network('.../favicon.ico')` 在多数站点上必然失败）；
-  可以在编辑里换成图片网址或 emoji；拿不到（或本地压缩包）就用名称首字——尺寸与
-  「工具」宫格一致（8 内边距的圆角色块 + 24 的图标）；
-* 名称下面一行是**简介**（可空）——用户在编辑里填，**拓展网页也能用
-  `antiSIT.call('card.setName' / 'card.setDesc' / 'card.setIcon', {text})` 自己改**
-  （见下表），再下面是**网址**；
-  标题栏右边那个**总开关**（睁眼 / 闭眼图标）管的是**全部**拓展：关掉后所有卡片上的
-  网址那一行都直接不显示，编辑 / 详情里始终看得到。开关状态记在本地
-  （`plugin.ext.hide_urls`），下次进来还是它；
-* 点卡片：打开对应网页（应用内浏览器：标题 + 加载进度 + 出错提示）；
-* 卡片角落「⋮」：详情 / 编辑 / 删除（内置的只有详情）。
-
-## 网页里能用的接口（`antiSIT`）
-
-打开拓展时内核会注入一段垫片，网页里就有 `window.antiSIT`：
+`main.js` 必须 `export default` 一个 Cordis 插件（函数，或带 `apply` 的对象）：
 
 ```js
-// 需要返回值：call 返回 Promise
-const theme = await antiSIT.call('theme');
-document.body.style.background = theme.bg;
+export default {
+  name: 'my-tool',
+  inject: ['ui', 'storage'],
+  async apply(ctx) {
+    const count = (await ctx.storage.get('count')) ?? 0;
 
-// 不需要返回值：post（内部吞掉错误，别拿它做需要确认的事）
-antiSIT.post('toast', { text: '已保存' });
+    ctx.ui.root.innerHTML = `
+      <main style="padding:20px;font-family:system-ui">
+        <h1>记一笔</h1>
+        <p>已经记了 <b id="n">${count}</b> 次</p>
+        <button id="add">记一笔</button>
+      </main>`;
+
+    const button = ctx.ui.root.querySelector('#add');
+    const onClick = async () => {
+      const next = ((await ctx.storage.get('count')) ?? 0) + 1;
+      await ctx.storage.set('count', next);
+      ctx.ui.root.querySelector('#n').textContent = String(next);
+      ctx.ui.toast('已记 ' + next);
+    };
+    button.addEventListener('click', onClick);
+
+    // 可逆副作用：页面关闭 / 插件 reload 时自动执行
+    ctx.effect(() => () => button.removeEventListener('click', onClick));
+  },
+};
 ```
 
-| 方法 | 参数 | 返回 |
+* `inject` 里的服务没就绪时，插件会等待；服务被卸载时插件也会跟着停；
+* 所有注册（事件、DOM、定时器）都应放进 `ctx.effect(() => disposer)`，
+  这样页面关闭时不会留下泄漏；
+* 插件是单文件 `main.js`，不支持 `import` 其他本地文件；需要多文件时在打包前自己合并；
+* 页面根节点是 `ctx.ui.root`，直接往里画；`style.css` 会被自动加载。
+
+### 宿主服务
+
+| 服务 | 方法 / 字段 | 说明 |
 |---|---|---|
-| `theme` | — | 当前配色：`isDark` / `accent` / `accentSoft` / `bg` / `card` / `border` / `textPrimary` / `textSecondary` / `textMuted` / `danger` / `success`，颜色是 `#RRGGBB` |
-| `toast` | `{text}` | `true`（弹一条 App 风格的提示） |
-| `close` | — | `true`（关掉当前网页，回到拓展列表） |
-| `card.setName` | `{text}` | `true`（换卡片上的名称，≤ 20 字；**id 不变**，存储与隔离仍按 id） |
-| `card.setDesc` | `{text}` | `true`（换卡片上的**简介**；空串 = 卡片上不显示简介） |
-| `card.setIcon` | `{text}` | `true`（换卡片上的图标：`http(s)` 图片网址，或 ≤ 4 字的文字 / emoji；空串 = 回到网站 favicon / 首字） |
-| `storage.get` | `{key}` | 该拓展自己存的值（任意 JSON），没有则 `null` |
-| `storage.set` | `{key, value}` | `true` |
-| `storage.remove` | `{key}` | `true` |
-| `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本（`maxTokens` 缺省 1024，16–4096）。提示词由 App **本地**转成当前 AI 提供商的请求发出（API Key / 模型配置不出 App，网页也摸不到），只把回答还回来；AI 没配置好 → Promise reject 并提示去「AI 设置」 |
+| `ctx.ui` | `root` | 页面根元素（一个 `div`） |
+| | `toast(text)` | 弹一条 App 风格提示 |
+| | `close()` | 关闭当前拓展页 |
+| | `theme` | 当前配色：`isDark` / `accent` / `bg` / `card` / `border` / `textPrimary` …（`#RRGGBB`） |
+| `ctx.storage` | `get(key)` / `set(key, value)` / `remove(key)` | 按拓展 id 隔离的本地存储，返回 Promise |
+| `ctx.card` | `setName(text)` / `setDesc(text)` / `setIcon(text)` | 改拓展列表卡片上的显示值 |
+| `ctx.ai` | `chat(prompt, {system, maxTokens})` | 走用户在「AI 设置」里配置的模型；Key 不出 App |
+| | `chatTools({messages, tools, maxTokens})` | 多轮 + OpenAI 兼容 function calling（拓展工坊用） |
+| `ctx.app` | `id` / `name` / `version` / `permissions` / `close()` | 当前拓展信息 |
+| `ctx.workshop` | `list` / `create` / `files` / `read` / `write` / `remove` / `validate` / `install` / `preview` / `loadSession` / `saveSession` | **只给内置「拓展工坊」**，其他拓展调用会被拒。`read` 返回 `{content, version}`；`write` / `remove` 要带 `expectedVersion`（读后写） |
 
-**市场装的拓展**用 `storage.*`、`ai.chat` 需要在清单里声明对应权限（见下节「权限」）；
-用户自己加的拓展不受这条限制。
+底层仍然有 `window.antiSIT.call(method, args)` 原始通道；上面的服务只是它的
+Cordis 包装。`theme` / `toast` / `close` / `card` 是基础接口，不声明权限也放行。
 
-约定：
+## 权限
 
-* 未知方法 / 参数不对会以 **Promise reject** 回给网页（不静默失败），消息里带原因，
-  方便拓展作者调试；
-* `card.setName` / `setDesc` / `setIcon` 改的是拓展列表里那张卡片**显示出来的字段**，
-  改完落盘，回到列表即可见；长度上限为 20 / 60 / 4（简介、图标都可空 = 不显示那一项），
-  超出直接 reject（**不截断**）。用户自己加的拓展与内置拓展都能改：前者直接改清单条目
-  （和用户在 App 里编辑的是同一条数据，**后写的生效**），内置项的改动记在一层覆盖值里
-  （它在源码清单里仍是原样，用户端本来就看不到编辑入口）；
-* `storage` 按拓展 id 隔离：读不到别的拓展的数据；
-* **App 里的用户数据（学号、课表、成绩、凭据）不在接口里**，也不会被注入到网页 ——
-  拓展是用户自己填的网址，不该默认可信；以后真要放开某类数据，也应走「拓展声明权限 +
-  用户同意」那套，而不是直接塞进网页。
-
-## 一个最小可用的拓展
-
-```html
-<!doctype html>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<body style="font-family:system-ui;padding:16px">
-  <h3 id="t">你好</h3>
-  <button onclick="save()">记一笔</button>
-  <script>
-    async function read() {
-      return (await antiSIT.call('storage.get', {key: 'count'})) ?? 0;
-    }
-    (async () => {
-      const theme = await antiSIT.call('theme');   // 跟着 App 配色走
-      document.body.style.background = theme.bg;
-      document.body.style.color = theme.textPrimary;
-      document.getElementById('t').textContent = '记了 ' + (await read()) + ' 次';
-    })();
-    async function save() {
-      const n = (await read()) + 1;
-      await antiSIT.call('storage.set', {key: 'count', value: n});
-      await antiSIT.call('card.setDesc', {text: '已记 ' + n + ' 次'});  // 卡片简介跟着数据走
-      document.getElementById('t').textContent = '记了 ' + n + ' 次';
-      antiSIT.post('toast', {text: '已记 ' + n});
-    }
-  </script>
-</body>
-```
-
-三件套版：把 html / js / css 放进一个 zip（根目录放 `index.html`），在「拓展」页
-「导入压缩包」即可——改网页内容不用重发 App。
-
-## 插件市场
-
-「拓展」页顶部两个标签：**我的**（上面说的那些加法加进来的）与**市场**——
-从一个**单独的目录仓库**里发现并安装拓展。装的是同一套 zip，装完就出现在「我的」里。
-
-* **目录**：App 依次尝试内置的几个镜像（jsDelivr → raw.githubusercontent）拿
-  `market.json` 与它的签名，**验签通过才显示**；目录里的每个 zip 还带 sha256，
-  下载后对不上就不解压（连文件都不落盘）。
-* **信任根**：目录签名用的公钥写死在 App 里
-  （`packages/plugin_ext/lib/market/market_source.dart` 的 `kMarketPublicKeys`），
-  私钥只在维护者本机、不进仓库也不进 CI。所以**镜像改不了内容**——这也是为什么
-  目录可以随便挂镜像。
-* **装 / 更新 / 卸载**：更新就是再装一次，拓展 id 不变，所以解压目录被换掉、
-  而它的数据（`plugin.ext.data.<id>.*`）留着；你在卡片上改过的名字 / 简介 / 图标也留着。
-  卸载把条目、解压目录、它的数据一起清掉。
-* **限定 App 版本**：条目（和导入的 JSON）可以声明 `minAppVersion`。当前 App 低于它 →
-  市场卡片标「需要升级 App」、按钮变「装不了」（安装器也会拦，`全部更新`不把它算进来）；
-  已经装上的会在拓展列表标「需升级 App」，打开时提示升级。App 版本读不到时不设门。
-* **投稿有源码体检**：市场工具（`dart run tool/market_tool.dart check`）会拦下两道
-  在内置页里必然踩坑的写法——用 `localStorage` / `sessionStorage` / `document.cookie`
-  （opaque origin，读它直接抛错，要存数据走 `antiSIT` 的 `storage`），以及没声明
-  `network` 却引外链资源（会被上面的 CSP 拦掉，插件静默坏掉）。
-* **网址型**：市场里也可以只登记一个 `https` 网址（不下载任何东西）。这类条目的内容
-  由站点自己控制、随时可能变化，市场只能保证「这个地址是登记过的」。
-* **健康状态**：断网时用上次**验签通过的缓存**（缓存同样验签，不然改个文件就能骗过 App），
-  页面顶上会说明「用的是缓存」。
-
-### 第三方源（作者自己发，不用官方收录）
-
-除了官方目录，用户还能自己「添加源」：作者把插件放在**他自己的仓库**里，用同一套工具
-打包 + 签名（`dart run tool/market_tool.dart publish`），把「`所有者/仓库` + 公钥指纹」
-发给别人；对方在市场页「插件源 → 添加第三方源」粘贴仓库名，核对指纹后就能装。
-
-* **信任模型**：目录里的公钥是**源自报**的（官方目录相反——公钥内置在 App 里）。所以添加时
-  App 会把指纹摆出来让用户和作者公布的那串对照；加进来之后公钥就**固定**了，作者换钥匙
-  （或有人在中间替换）会被自动停用，并把新旧指纹摆出来。
-* **来源固定**：同一个拓展 id 只能由一个源管。已装官方某条拓展时，第三方源拿同名 id 想顶替
-  会被拒——否则「用别人的 id 悄悄换掉已装内容」就成了后门。
-* **标注**：第三方条目在卡片和安装弹窗里都标「第三方源 · 谁」+「没有经过官方审核（收录 ≠ 背书）」。
-* 权限声明、`network` 禁网、sha256 校验、`LICENSE` 随包这些**官方目录有的约束它一样都有**
-  （同一套打包工具与同一道体检）。
-* 一个源拉不到只影响它自己（页面上单列一条错误 + 重试），官方目录拉不到也不影响第三方源列表。
-* 官方目录的镜像会**跨会话记住上次可用的那条**；如果某个镜像回的是网页/错误页而不是目录，
-  会明确说「返回的不是目录」，而不是含糊地报「签名校验不过」。
-
-### 权限
-
-拓展要在清单里声明它用到哪些**敏感接口**，安装弹窗会把它们翻成人话列给用户：
+市场装的拓展要在 `ext.json` 里声明敏感接口，安装弹窗会翻成人话列给用户：
 
 | 权限 | 说明 |
 |---|---|
-| `storage` | 在本机保存数据（记设置、记历史）；不声明就调用 `storage.*` → 直接拒（Promise reject） |
-| `network` | 运行时联网。**市场装的 zip 默认禁网**（打开时由 `plugin_ext` 注入 `connect-src 'none'` 的 CSP，`img-src` / `font-src` 只放 `data:`）：审核过的那份代码就是手机上跑的那份，不会运行时再去作者服务器拉新脚本。用户自己导入的压缩包不受这条限制 |
-| `ai` | 调用 AI 对话（`ai.chat`，走用户在「AI 设置」里配置的模型与 API Key，可能产生费用）；不声明就调用 → 直接拒 |
+| `storage` | 在本机保存数据（记设置、记历史）；不声明就调用 `ctx.storage` → Promise reject |
+| `network` | 运行时联网。**市场装的拓展默认禁网**（CSP `connect-src 'none'`），声明后才放开 `https:` |
+| `ai` | 调用 AI（`ctx.ai.*`，走用户的模型与 Key，可能产生费用）；不声明就拒 |
 
-`theme` / `toast` / `close` / `card` 是**基础接口**，只跟界面有关，不声明也放行
-（写进 `permissions` 只是为了拦住拼写错误）。用户自己填网址 / 自己挑压缩包装的拓展
-照旧全量放行——来源是他自己选的，App 不替他设限。
+用户自己填网址 / 自己导入的压缩包不受这条限制——来源是他自己选的。
+权限门是**防误用**，不是沙箱；App 的用户数据（学号、课表、成绩、凭据）不在接口里。
 
-诚实边界：权限门是**防误用**，不是沙箱。声明了 `storage` 的网页照样能读写它自己那份
-存储；网页本身仍跑在不受限的 WebView 里。真正的隔离在下一步——**App 的用户数据
-（学号、课表、成绩、凭据）根本不在这套接口里**。
+## 插件市场
 
-### 投稿一条拓展
+「拓展」页顶部两个标签：**我的** 与 **市场**。市场目录由维护者签名，App 验签通过才显示；
+每个 zip 还带 sha256，对不上就不解压。
 
-目录仓库是独立的（`AntiSIT-market`），流程与目录格式见它的 README：
+**本版本起，市场里的 `type: "bundle"` 条目必须带 `"runtime": "cordis"`**，
+并且 zip 里必须是 `ext.json` + `main.js`。旧目录（没有 `runtime`）的 bundle 条目
+会提示「还是旧版网页格式，请等作者升级后再装」，不会再执行旧 html。
+`type: "web"` 的网址型条目不受影响，仍然只是打开一个网址。
 
-```bash
-mkdir -p ext/sit.my-tool            # 目录名 = ext.json 里的 id
-cp ext/_template/ext.json ext/sit.my-tool/
-# 写 index.html / style.css / app.js，然后：
-dart run tool/market_tool.dart pack   # 打包（可复现：同样的源 = 同样的字节）
-dart run tool/market_tool.dart check  # 自检：清单、产物、目录、签名
-```
+投稿流程、目录格式与签名工具在独立仓库 `AntiSIT-market`；打包前用
+`dart run tool/market_tool.dart check` 自检（会拦下 `localStorage` / `document.cookie`
+与未声明 `network` 却引外链资源这类写法）。
 
-`ext.json` 的字段：`id` / `name`（≤20 字）/ `desc`（≤60 字）/ `author` / `category`
-（学习 · 工具 · 生活 · 娱乐 · 其他）/ `icon`（图片网址或 ≤4 字）/ `type`
-（`bundle` | `web`）/ `version`（`x.y.z`，改了内容必须升）/ `permissions` /
-`minAppVersion`（低于它的 App 显示「需要升级 App」）。改完提 PR，CI 会重算一遍
-（打包产物、目录、签名三者必须一致），维护者合并后跑 `all` 生成目录与签名再推送。
+## 拓展工坊（Agent）
 
-仓库里的 `ext/_template` 可以作为起点，写完用同一套工具打包、自检。
+「拓展工坊」是 App 内置的 Cordis 拓展（id `builtin.workshop`），内部是一个轻量版的
+**DSH Agent 架构**：会话是 append-only 事件日志，模型请求从日志派生，而不是维护一份
+随时可能和界面不同步的 `messages` 数组。
 
-## 实现位置与扩展点
+### 一次运行
 
-* **前端**（底栏页、清单、导入、接口实现）：`packages/plugin_ext`；
-  清单落在 `plugin.ext.items`，每个拓展的数据落在 `plugin.ext.data.<id>.*`，
-  压缩包解压在 `<文档目录>/ext/<id>/`；打不开的公共件在
-  `ext_open.dart`（打开 + 删除确认）、`ext_icon.dart`（卡片图标）、
-  `ext_permissions.dart`（权限表）；
-* **市场**：`packages/plugin_ext/lib/market/`——`market_source.dart`（拉目录 + 验签 +
-  缓存 + 下载）、`market_entry.dart`（目录解析、版本比较）、`market_installer.dart`
-  （装 / 更新 / 卸载）、`market_view.dart`（页面）；
-* **内核**（网页视图、垫片注入、Promise 回填、导航拦截）：`packages/plugin_webview`，
-  纯逻辑在 `webview_policy.dart`（导航判定 + 垫片预注入，可单测）；
-  通道契约 `WebBridge`（`call(method, args)`）定义在 `campus_core`，所以别的插件
-  也能直接复用这套网页通道。
-* **加新接口**：在 `packages/plugin_ext/lib/ext_bridge.dart` 的 `call` 里加一个
-  `case`，更新上面的表即可——内核不用动；涉及数据 / 联网的接口记得同步
-  `ext_permissions.dart` 的 `kMethodPermissions`。
-* **平台**：内核只覆盖 Android / iOS；桌面端打开拓展会提示「当前平台不支持」。
+1. `send` 把你说的话放进 inbox；空闲时开一个新 turn，运行中则排到下一步（steering）。
+2. 每个 step 先拼 system prompt 和 runtime context（草稿 id / 权限 / 文件树），
+   再按日志派生消息，带工具 schema 请求模型。
+3. 模型返回的 assistant message 和每个 `tool/call` / `tool/result` 都写进日志；
+   连续的只读工具（`list_files` / `read_file` / `validate_extension`）可以并发，
+   写入 / 删除 / 安装 / 预览形成独占屏障。
+4. 模型不再调工具就结束 turn；期间插的话会在下一步被 claim，不会丢。
+5. 日志落在 `<草稿>/.workshop/session.json`，重新打开草稿会恢复聊天；上次崩溃留下的
+   未闭合 turn、没有结果的 tool call 会自动补一条错误结果，保持请求历史合法。
+
+### 工具
+
+| 工具 | 说明 |
+|---|---|
+| `list_files` | 看草稿文件树 |
+| `read_file` | 读文本文件，支持 `offset` / `limit`；返回内容和版本号 |
+| `write_file` | 创建或整文件覆盖；已有文件必须先读过，写入带版本校验 |
+| `edit_file` | 按字面量替换（默认要求唯一匹配），比整文件覆盖更安全 |
+| `delete_file` | 删除文件；必须先读过 |
+| `validate_extension` | 自检清单、入口、`localStorage`、未声明 `network` 却 `fetch` 等 |
+| `preview_extension` | 用当前草稿打开 App 内预览 |
+| `install_extension` | 复制到正式拓展目录；只有你明确要求时才调用 |
+
+写入、删除、安装都会弹**原生确认**。读后写由 Dart 层按内容 sha256 校验：没读过、
+或读完之后文件被别处改过，都会拒绝写入，Agent 必须重新读。草稿位置与文件限制不变：
+`<应用文档目录>/ext-workshop/<id>/`，只能读写 `js/json/css/html/md/txt`，单文件 ≤ 256 KB。
+`.workshop/` 是隐藏目录，不会出现在文件树、也不会被安装。
+
+工坊自己也是一个 Cordis 拓展：它的 `workshop.*` 接口只对 `builtin.workshop` 开放，
+别的拓展即使知道方法名也会被拒。
+
+模型调用走用户在「AI 设置」里的提供商，优先用原生 function calling；提供商不支持 tools 时
+自动退回「每次输出一个 JSON 工具调用」的文本协议，不需要用户改配置。
+
+### 与 DSH 的差异
+
+这套实现借用了 DSH 的 session / turn / step / inbox / tool registry / runtime context
+结构，但没有搬 DSH 的完整运行时：没有流式输出、subagent、skills、compaction 和
+provider 中间件；单轮最多 40 step，日志超过约 400 条事件会按完整 turn 丢弃最旧的一段。
+「停止」会在当前模型请求返回后生效（WebView ↔ App 的 AI 通道没有取消令牌），
+不是 DSH 那种立刻 abort 网络请求。移动端 WebView 里这些取舍是为了可控的包体和
+可解释的行为。
+
+## 旧拓展迁移
+
+* 旧 html 压缩包（`index.html` 三件套）不再执行，列表里标「旧版网页拓展（需迁移）」；
+* 迁移方式：把页面逻辑改成 `main.js` 里的 Cordis 插件，`ext.json` 填好 id / 权限，
+  重新打成 zip 导入；或者直接在拓展工坊里让 Agent 重写；
+* 旧拓展的键值数据（`plugin.ext.data.<id>.*`）仍按 id 保留；迁移后 id 不变就能接着读。
+
+## 安全边界
+
+* 内联页是 opaque origin：`localStorage` / `sessionStorage` / `document.cookie` 会抛错，
+  请用 `ctx.storage`；
+* 市场包默认禁网；声明 `network` 才允许 `https:` 的 fetch / 图片 / 字体；
+* 不引外部脚本：审核过的代码就是手机上跑的那份；
+* 拓展工坊的写文件 / 删除 / 安装全部经过 App 原生确认，模型不能静默改你的拓展；
+  写已有文件必须先读，Dart 层再用 sha256 版本校验拦截「拿旧内容覆盖」；
+* 工坊会话日志在草稿的隐藏目录 `.workshop/`，模型不能访问，也不会被安装进正式拓展；
+* 网页本身仍跑在 WebView 里，权限门防的是误用，不是完整沙箱。

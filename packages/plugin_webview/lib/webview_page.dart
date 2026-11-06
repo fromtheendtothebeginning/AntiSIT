@@ -32,35 +32,7 @@ class WebViewPage extends StatefulWidget {
   State<WebViewPage> createState() => _WebViewPageState();
 }
 
-/// 网页里的接口垫片：把 `antiSIT.call/post` 变成一次消息 + 等 Promise 回填。
-///
-/// * 原始通道叫 `antiSITBridge`（内核 `addJavaScriptChannel` 给的名字，**不能**与
-///   垫片自己定义的 `antiSIT` 重名），网页只该用 `antiSIT`；
-/// * 每次导航加载完成后都要重注入（换页后旧上下文连同垫片一起没了）；
-/// * 与 App 的调用约定：`{id, method, args}` → App 回 `__antiSITResolve(id, 值)`
-///   或 `__antiSITReject(id, 错误文案)`。
-const String _kBridgeShim = r'''
-(function () {
-  if (window.antiSIT) return;
-  var seq = 0, waits = {};
-  window.__antiSITResolve = function (id, v) { var w = waits[id]; if (w) { delete waits[id]; w.ok(v); } };
-  window.__antiSITReject = function (id, e) { var w = waits[id]; if (w) { delete waits[id]; w.fail(new Error(e)); } };
-  window.antiSIT = {
-    call: function (method, args) {
-      return new Promise(function (ok, fail) {
-        var id = ++seq;
-        waits[id] = { ok: ok, fail: fail };
-        window.antiSITBridge.postMessage(JSON.stringify({
-          id: id, method: String(method), args: args === undefined ? null : args
-        }));
-      });
-    },
-    // 不需要返回值时用它（内部吞掉错误，别让没接的 Promise 冒到控制台）
-    post: function (method, args) { this.call(method, args).catch(function () {}); }
-  };
-})();
-''';
-
+/// 网页里的接口垫片由 [kWebViewBridgeShim] 提供；内核只在加载前后负责注入与回填。
 class _WebViewPageState extends State<WebViewPage> {
   late final WebViewController _controller;
   double _progress = 0; // 0 = 没在加载
@@ -135,7 +107,7 @@ class _WebViewPageState extends State<WebViewPage> {
       // 内联页：垫片写进 html 本身，网页第一个同步脚本就能用 antiSIT
       final html = widget.bridge == null
           ? widget.html!
-          : injectBridgeShim(widget.html!, _kBridgeShim);
+          : injectBridgeShim(widget.html!, kWebViewBridgeShim);
       await _controller.loadHtmlString(html);
     }
   }
@@ -144,7 +116,7 @@ class _WebViewPageState extends State<WebViewPage> {
   Future<void> _injectBridge() async {
     if (widget.bridge == null) return;
     try {
-      await _controller.runJavaScript(_kBridgeShim);
+      await _controller.runJavaScript(kWebViewBridgeShim);
     } catch (_) {
       // 注入失败（页面拒绝执行脚本之类）不该把整页搞崩：网页仍可正常使用
     }

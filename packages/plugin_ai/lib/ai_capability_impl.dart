@@ -41,4 +41,13 @@ class AiCapabilityImpl implements AiCapability {
   @override
   Future<String> chat(String prompt, {String? system, int? maxTokens}) =>
       AiVision.I.chat(prompt, system: system, maxTokens: maxTokens ?? 1024);
+
+  @override
+  Future<AiChatReply> chatWithTools(
+    List<AiChatMessage> messages, {
+    List<AiToolSpec> tools = const [],
+    int? maxTokens,
+  }) =>
+      AiVision.I.chatWithTools(messages,
+          tools: tools, maxTokens: maxTokens ?? 2048);
 }

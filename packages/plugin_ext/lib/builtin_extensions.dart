@@ -6,17 +6,31 @@ import 'extension_item.dart';
 /// 想在某个版本里临时下线一条，把对应的那一行注释掉再出包即可——
 /// 它们不落盘（用户的清单里没有它们），所以改完清单升级 App 就生效。
 ///
-/// 加一条就是加一行：
+/// 内置 Cordis 拓展的 `url` 写成 `asset:<main.js 的 asset key>`，
+/// 文件放在 `assets/builtin/<name>/`（见 pubspec 的 assets）。
 ///
 /// ```dart
 /// const List<ExtensionItem> kBuiltinExtensions = [
 ///   ExtensionItem(
-///     id: 'builtin.demo',                    // 全局唯一，别改（改了等于换了一条）
-///     name: '示例拓展',                       // 卡片标题
-///     url: 'https://example.com/app',        // 打开哪个网页
-///     desc: '一句话简介，显示在卡片名称下方',      // 可空
-///     icon: '',                              // 图片网址或 emoji；空 = 用网站 favicon
+///     id: 'builtin.demo',
+///     name: '示例拓展',
+///     url: 'asset:packages/plugin_ext/assets/builtin/demo/main.js',
+///     bundled: true,
+///     builtin: true,
+///     runtime: ExtensionItem.runtimeCordis,
 ///   ),
 /// ];
 /// ```
-const List<ExtensionItem> kBuiltinExtensions = [];
+const List<ExtensionItem> kBuiltinExtensions = [
+  ExtensionItem(
+    id: 'builtin.workshop',
+    name: '拓展工坊',
+    desc: '和 Agent 一起写 Cordis 拓展：改代码、预览、安装',
+    url: 'asset:packages/plugin_ext/assets/builtin/workshop/main.js',
+    bundled: true,
+    builtin: true,
+    runtime: ExtensionItem.runtimeCordis,
+    version: '1.0.0',
+    permissions: ['storage', 'ai'],
+  ),
+];

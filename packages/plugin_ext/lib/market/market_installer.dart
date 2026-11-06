@@ -96,6 +96,9 @@ class MarketInstaller {
       return item;
     }
 
+    if (entry.isLegacyBundle) {
+      throw StateError('这个拓展还是旧版网页格式（目录里没有 runtime: cordis），请等作者升级后再装');
+    }
     final bytes = await download(entry);
     final actual = sha256.convert(bytes).toString();
     if (actual != entry.sha256) {
@@ -111,6 +114,9 @@ class MarketInstaller {
     } on FileSystemException catch (e) {
       throw StateError('解压失败（${e.message}）');
     }
+    if (bundle.manifest.id != entry.id) {
+      throw StateError('拓展包里的 id（${bundle.manifest.id}）与市场记录（${entry.id}）不一致，已放弃安装');
+    }
 
     final ExtensionItem item;
     if (have == null) {
@@ -121,6 +127,7 @@ class MarketInstaller {
         desc: entry.desc,
         icon: entry.icon,
         bundled: true,
+        runtime: ExtensionItem.runtimeCordis,
         version: entry.version,
         sha256: entry.sha256,
         permissions: entry.permissions,
@@ -134,6 +141,7 @@ class MarketInstaller {
       item = have.copyWith(
         url: bundle.entry,
         bundled: true,
+        runtime: ExtensionItem.runtimeCordis,
         version: entry.version,
         sha256: entry.sha256,
         permissions: entry.permissions,

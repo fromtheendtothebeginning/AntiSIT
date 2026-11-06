@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:campus_core/campus_core.dart';
 
 import 'bundle_import.dart';
+import 'cordis_bundle.dart';
 import 'ext_bridge.dart';
 import 'ext_icon.dart';
 import 'ext_open.dart';
@@ -118,8 +119,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             ),
             ListTile(
               leading: const Icon(Icons.folder_zip_outlined),
-              title: const Text('导入压缩包'),
-              subtitle: const Text('html / js / css 打成 zip；导入后自动解压',
+              title: const Text('导入 Cordis 压缩包'),
+              subtitle: const Text('ext.json + main.js 打成 zip；导入后自动解压',
                   style: TextStyle(fontSize: 12)),
               onTap: () => Navigator.pop(ctx, 'zip'),
             ),
@@ -173,10 +174,25 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
     if (picked == null) return;
 
-    final id = ExtensionItem.newId();
+    final bytes = await picked.readAsBytes();
+    final CordisManifest manifest;
+    try {
+      manifest = readBundleManifest(bytes);
+    } on FormatException catch (e) {
+      _toast(e.message);
+      return;
+    } catch (e) {
+      _toast('读取压缩包失败：$e');
+      return;
+    }
+    if (_store.items.any((e) => e.id == manifest.id)) {
+      _toast('已存在 id 为「${manifest.id}」的拓展，请先删除或让作者换一个 id');
+      return;
+    }
+
     ExtBundle bundle;
     try {
-      bundle = extractBundle(bytes: await picked.readAsBytes(), dir: await _store.bundleDir(id));
+      bundle = extractBundle(bytes: bytes, dir: await _store.bundleDir(manifest.id));
     } on FormatException catch (e) {
       _toast(e.message);
       return;
@@ -186,29 +202,28 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
     if (!mounted) return;
 
-    // 预设好名称（压缩包名去掉扩展名）与入口，用户再补简介 / 图标
+    // 清单已经带了名称 / 简介 / 权限，导入后仍让用户确认卡片显示值。
     final preset = ExtensionItem(
-      id: id,
-      name: _bundleName(picked.name),
+      id: manifest.id,
+      name: manifest.name,
       url: bundle.entry,
+      desc: manifest.desc,
       bundled: true,
+      runtime: ExtensionItem.runtimeCordis,
+      version: manifest.version,
+      permissions: manifest.permissions,
+      minAppVersion: manifest.minAppVersion,
     );
     final item = await showDialog<ExtensionItem>(
       context: context,
       builder: (_) => _AddEditDialog(item: preset, isNew: true),
     );
     if (item == null) {
-      await _store.remove(id); // 用户取消了：把刚解压出来的目录一并清掉
+      await _store.deleteBundleDir(manifest.id); // 用户取消了：把刚解压出来的目录一并清掉
       return;
     }
     await _store.add(item);
     _toast('已导入「${item.name}」');
-  }
-
-  static String _bundleName(String fileName) {
-    final base = fileName.split(RegExp(r'[/\\]')).last;
-    final dot = base.lastIndexOf('.');
-    return dot > 0 ? base.substring(0, dot) : base;
   }
 
   /// 导入 JSON：粘贴一份拓展 JSON（单条或数组），全部校验通过才入列。

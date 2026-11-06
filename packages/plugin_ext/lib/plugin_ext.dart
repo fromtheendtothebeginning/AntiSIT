@@ -3,6 +3,8 @@ library;
 
 export 'builtin_extensions.dart';
 export 'bundle_import.dart';
+export 'cordis_bundle.dart';
+export 'cordis_runtime.dart';
 export 'ext_bridge.dart';
 export 'ext_icon.dart';
 export 'ext_open.dart';
@@ -18,3 +20,4 @@ export 'market/market_sources.dart';
 export 'market/market_sources_view.dart';
 export 'market/market_view.dart';
 export 'site_icon.dart';
+export 'workshop/workshop_store.dart';

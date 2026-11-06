@@ -1,0 +1,9 @@
+{
+  "id": "builtin.workshop",
+  "name": "拓展工坊",
+  "desc": "和 Agent 一起写 Cordis 拓展：改代码、预览、安装",
+  "version": "1.0.0",
+  "main": "main.js",
+  "style": "style.css",
+  "permissions": ["storage", "ai"]
+}

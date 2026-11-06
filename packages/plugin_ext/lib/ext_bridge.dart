@@ -1,10 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'cordis_bundle.dart';
 import 'ext_permissions.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
+import 'workshop/workshop_store.dart';
 
 /// 拓展网页能用的接口（方法表见 `docs/extensions.md`，网页侧统一 `antiSIT.call(...)`）：
 ///
@@ -20,6 +25,7 @@ import 'extension_store.dart';
 /// | `storage.set` | `{key, value}` | true |
 /// | `storage.remove` | `{key}` | true |
 /// | `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本。提示词由 App 本地转成当前 AI 提供商的请求（Key / 模型不出 App）；没配好 AI 或市场拓展没声明 `ai` 权限都直接报错 |
+/// | `ai.chatTools` | `{messages, tools?, maxTokens?}` | 多轮消息 + OpenAI 兼容 function calling；返回 `{text, toolCalls, usedTools, finishReason}`。提供商不支持 tools 时自动降级 |
 ///
 /// 每个拓展一个实例：绑定自己的 [extId]（数据互相隔离）与打开网页那个 [context]
 /// （提示条 / 关页要用）。未知方法一律报错回网页，不静默失败——拓展作者调试时
@@ -31,7 +37,12 @@ class ExtBridge extends WebBridge {
     required this.context,
     this.item,
     ExtensionStore? store,
-  }) : store = store ?? ExtensionStore.I;
+    WorkshopStore? workshop,
+  })  : store = store ?? ExtensionStore.I,
+        workshop = workshop ?? WorkshopStore();
+
+  /// 内置「拓展工坊」的固定 id：`workshop.*` 只给它用。
+  static const String workshopExtId = 'builtin.workshop';
 
   final String extId;
   final BuildContext context;
@@ -40,9 +51,20 @@ class ExtBridge extends WebBridge {
   final ExtensionItem? item;
   final ExtensionStore store;
 
+  /// 工坊草稿工作区（只有 [workshopExtId] 能碰）。
+  final WorkshopStore workshop;
+
+  bool get _isWorkshop => extId == workshopExtId;
+
   @override
   Future<Object?> call(String method, Object? args) async {
     _checkPermission(method);
+    if (method.startsWith('workshop.')) {
+      if (!_isWorkshop) {
+        throw ArgumentError('workshop.* 只允许内置「拓展工坊」调用');
+      }
+      return _workshopCall(method, args);
+    }
     switch (method) {
       case 'theme':
         return _theme();
@@ -69,6 +91,8 @@ class ExtBridge extends WebBridge {
         return true;
       case 'ai.chat':
         return _aiChat(args);
+      case 'ai.chatTools':
+        return _aiChatTools(args);
       default:
         throw ArgumentError('未知接口：$method');
     }
@@ -150,6 +174,239 @@ class ExtBridge extends WebBridge {
       throw ArgumentError('AI 还没配好：到「我的 → AI 设置」选择提供商并填写 Key 与模型');
     }
     return ai.chat(prompt, system: system, maxTokens: maxTokens);
+  }
+
+  Future<Object?> _aiChatTools(Object? args) async {
+    if (args is! Map) throw ArgumentError('ai.chatTools 要带 {messages}');
+    final rawMessages = args['messages'];
+    if (rawMessages is! List || rawMessages.isEmpty) {
+      throw ArgumentError('messages 不能为空');
+    }
+    final messages = <AiChatMessage>[];
+    for (final raw in rawMessages) {
+      if (raw is! Map) continue;
+      final role = '${raw['role'] ?? ''}'.trim();
+      if (role.isEmpty) continue;
+      final calls = <AiToolCall>[];
+      final rawCalls = raw['toolCalls'] ?? raw['tool_calls'];
+      if (rawCalls is List) {
+        for (final c in rawCalls) {
+          if (c is! Map) continue;
+          final name = '${c['name'] ?? (c['function'] is Map ? (c['function'] as Map)['name'] : '') ?? ''}'
+              .trim();
+          if (name.isEmpty) continue;
+          final rawArgs = c['arguments'] ??
+              (c['function'] is Map ? (c['function'] as Map)['arguments'] : null) ??
+              '{}';
+          calls.add(AiToolCall(
+            id: '${c['id'] ?? ''}'.trim(),
+            name: name,
+            argumentsJson: rawArgs is String ? rawArgs : jsonEncode(rawArgs),
+          ));
+        }
+      }
+      messages.add(AiChatMessage(
+        role: role,
+        content: '${raw['content'] ?? ''}',
+        toolCalls: calls,
+        toolCallId: '${raw['toolCallId'] ?? raw['tool_call_id'] ?? ''}',
+      ));
+    }
+    if (messages.isEmpty) throw ArgumentError('messages 里没有有效消息');
+    final tools = <AiToolSpec>[];
+    final rawTools = args['tools'];
+    if (rawTools is List) {
+      for (final raw in rawTools) {
+        if (raw is! Map) continue;
+        final fn = raw['function'] is Map ? raw['function'] as Map : raw;
+        final name = '${fn['name'] ?? ''}'.trim();
+        if (name.isEmpty) continue;
+        tools.add(AiToolSpec(
+          name: name,
+          description: '${fn['description'] ?? ''}',
+          parameters: fn['parameters'] is Map
+              ? Map<String, dynamic>.from(fn['parameters'] as Map)
+              : const {'type': 'object', 'properties': {}},
+        ));
+      }
+    }
+    final rawMax = args['maxTokens'];
+    final maxTokens = rawMax is num ? rawMax.toInt().clamp(256, 4096).toInt() : 4096;
+    final ai = PluginRegistry.I.capability<AiCapability>(PluginIds.ai);
+    if (ai == null || !ai.available) {
+      throw ArgumentError('AI 还没配好：到「我的 → AI 设置」选择提供商并填写 Key 与模型');
+    }
+    final reply = await ai.chatWithTools(messages, tools: tools, maxTokens: maxTokens);
+    return {
+      'text': reply.text,
+      'usedTools': reply.usedTools,
+      'finishReason': reply.finishReason,
+      'toolCalls': [
+        for (final c in reply.toolCalls)
+          {'id': c.id, 'name': c.name, 'arguments': c.argumentsJson},
+      ],
+    };
+  }
+
+  // ==================== 拓展工坊（内置拓展专用）====================
+
+  Future<Object?> _workshopCall(String method, Object? args) async {
+    final a = args is Map ? Map<String, Object?>.from(args) : <String, Object?>{};
+    switch (method) {
+      case 'workshop.list':
+        final drafts = await workshop.listDrafts();
+        return {'drafts': [for (final d in drafts) d.toJson()]};
+
+      case 'workshop.create':
+        final name = '${a['name'] ?? '未命名拓展'}'.trim();
+        final draft = await workshop.create(name: name.isEmpty ? '未命名拓展' : name);
+        return draft.toJson();
+
+      case 'workshop.files':
+        final id = _argString(a, 'draftId');
+        final files = await workshop.listFiles(id);
+        return {'files': [for (final f in files) f.toJson()]};
+
+      case 'workshop.read':
+        final read = await workshop.readFileVersioned(
+            _argString(a, 'draftId'), _argString(a, 'path'));
+        return {'content': read.content, 'version': read.version};
+
+      case 'workshop.write':
+        final id = _argString(a, 'draftId');
+        final path = _argString(a, 'path');
+        final content = a['content'] is String ? a['content'] as String : '${a['content'] ?? ''}';
+        final expectedVersion = a['expectedVersion'] as String?;
+        await workshop.ensureWritable(id, path, expectedVersion);
+        final ok = await _approve(
+          title: '写入 $path',
+          detail: '${content.length} 字符\n\n${_previewText(content)}',
+        );
+        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝写入'};
+        final version = await workshop.writeFile(id, path, content,
+            expectedVersion: expectedVersion);
+        return {'ok': true, 'version': version};
+
+      case 'workshop.delete':
+        final id = _argString(a, 'draftId');
+        final path = _argString(a, 'path');
+        final expectedVersion = a['expectedVersion'] as String?;
+        await workshop.ensureDeletable(id, path, expectedVersion);
+        final ok = await _approve(
+          title: '删除 $path',
+          detail: '这个文件会从草稿里删掉。',
+          danger: true,
+        );
+        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除'};
+        await workshop.deleteFile(id, path, expectedVersion: expectedVersion);
+        return {'ok': true};
+
+      case 'workshop.session.get':
+        return workshop.loadSession(_argString(a, 'draftId'));
+
+      case 'workshop.session.set':
+        final id = _argString(a, 'draftId');
+        final data = a['data'] is String ? a['data'] as String : '${a['data'] ?? ''}';
+        await workshop.saveSession(id, data);
+        return true;
+
+      case 'workshop.validate':
+        final problems = await workshop.validate(_argString(a, 'draftId'));
+        return {'ok': problems.isEmpty, 'problems': problems};
+
+      case 'workshop.install':
+        final draft = await workshop.load(_argString(a, 'draftId'));
+        if (draft == null) throw ArgumentError('草稿不存在或 ext.json 已损坏');
+        if (ExtensionStore.I.isBuiltin(draft.id)) {
+          throw ArgumentError('这是内置拓展的 id，换一个 id 再安装');
+        }
+        final problems = await workshop.validate(draft.id);
+        if (problems.isNotEmpty) throw FormatException(problems.join('\n'));
+        final ok = await _approve(
+          title: '安装「${draft.manifest.name}」',
+          detail: '会把草稿复制成正式拓展并加入「拓展」列表。\n'
+              'id：${draft.id}\nversion：${draft.manifest.version}\n'
+              'permissions：${draft.manifest.permissions.isEmpty ? '无' : draft.manifest.permissions.join(', ')}',
+          danger: true,
+        );
+        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝安装'};
+        final item = await workshop.install(draft.id);
+        return {'ok': true, 'id': item.id, 'name': item.name};
+
+      case 'workshop.preview':
+        final draft = await workshop.load(_argString(a, 'draftId'));
+        if (draft == null) throw ArgumentError('草稿不存在或 ext.json 已损坏');
+        final kernel =
+            PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
+        if (kernel == null || !kernel.available) {
+          throw ArgumentError('WebView 内核没启用，无法预览');
+        }
+        final item = workshop.itemOf(draft);
+        final page = await CordisBundleLoader.load(
+          item,
+          appVersion: await ExtensionItem.appVersionLoader(),
+        );
+        if (context.mounted) {
+          unawaited(kernel.openPage(
+            context,
+            html: page.html,
+            title: '预览 · ${draft.manifest.name}',
+            bridge: ExtBridge(extId: draft.id, context: context, item: item),
+          ));
+        }
+        return {'ok': true};
+
+      default:
+        throw ArgumentError('未知工坊接口：$method');
+    }
+  }
+
+  static String _argString(Map<String, Object?> args, String key,
+      {bool allowEmpty = false}) {
+    final value = '${args[key] ?? ''}'.trim();
+    if (!allowEmpty && value.isEmpty) throw ArgumentError('要带 $key');
+    return value;
+  }
+
+  Future<bool> _approve({
+    required String title,
+    required String detail,
+    bool danger = false,
+  }) async {
+    if (!context.mounted) return false;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: ConstrainedBox(
+          constraints:
+              BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.5),
+          child: SingleChildScrollView(
+            child: SelectableText(
+              detail,
+              style: const TextStyle(
+                  fontSize: 12.5, height: 1.5, fontFamily: 'monospace'),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(
+            style: danger
+                ? FilledButton.styleFrom(backgroundColor: SemColors.danger)
+                : null,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(danger ? '确认执行' : '写入'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  static String _previewText(String content) {
+    if (content.length <= 1200) return content;
+    return '${content.substring(0, 1200)}\n…（共 ${content.length} 字符）';
   }
 
   /// 当前配色：拓展照着 App 的样子画，不用自己猜深浅色。

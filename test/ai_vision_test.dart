@@ -134,4 +134,115 @@ void main() {
       );
     });
   });
+
+  group('chatWithTools（拓展工坊 Agent 的底层）', () {
+    Map<String, dynamic> toolReply(String name, String args, {String id = 'call_1'}) => {
+          'choices': [
+            {
+              'message': {
+                'content': '',
+                'tool_calls': [
+                  {
+                    'id': id,
+                    'type': 'function',
+                    'function': {'name': name, 'arguments': args},
+                  }
+                ],
+              },
+              'finish_reason': 'tool_calls',
+            }
+          ],
+        };
+
+    const spec = AiToolSpec(
+      name: 'write_file',
+      description: '写一个文件',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string'},
+          'content': {'type': 'string'},
+        },
+        'required': ['path', 'content'],
+      },
+    );
+
+    test('原生工具调用：请求带 tools / tool_choice，回复解析出 name 与参数', () async {
+      await configured();
+      final bodies = stub([toolReply('write_file', '{"path":"main.js","content":"x"}')]);
+
+      final reply = await AiVision.I.chatWithTools(
+        [AiChatMessage.system('你是拓展工坊'), AiChatMessage.user('写个页面')],
+        tools: const [spec],
+      );
+
+      expect(reply.usedTools, isTrue);
+      expect(reply.toolCalls.single.name, 'write_file');
+      expect(reply.toolCalls.single.id, 'call_1');
+      expect(jsonDecode(reply.toolCalls.single.argumentsJson)['path'], 'main.js');
+      expect(bodies.single['tool_choice'], 'auto');
+      expect((bodies.single['tools'] as List).single['function']['name'], 'write_file');
+    });
+
+    test('多轮：assistant 的 tool_calls 与 tool 结果按协议回传', () async {
+      await configured();
+      final bodies = stub([reply('好了', 'stop')]);
+
+      await AiVision.I.chatWithTools([
+        AiChatMessage.system('s'),
+        AiChatMessage.user('u'),
+        AiChatMessage.assistant('', toolCalls: const [
+          AiToolCall(id: 'call_9', name: 'read_file', argumentsJson: '{"path":"main.js"}'),
+        ]),
+        AiChatMessage.tool('call_9', '文件内容'),
+      ], tools: const [spec]);
+
+      final msgs = bodies.single['messages'] as List;
+      expect(msgs[2]['role'], 'assistant');
+      expect(msgs[2]['tool_calls'][0]['id'], 'call_9');
+      expect(msgs[2]['tool_calls'][0]['function']['name'], 'read_file');
+      expect(msgs[3], {'role': 'tool', 'content': '文件内容', 'tool_call_id': 'call_9'});
+    });
+
+    test('提供商不认 tools：自动去掉 tools 重试，标记 usedTools=false', () async {
+      await configured();
+      final bodies = <Map<String, dynamic>>[];
+      AiVision.clientOverride = MockClient((req) async {
+        bodies.add(jsonDecode(utf8.decode(req.bodyBytes)) as Map<String, dynamic>);
+        if (bodies.length == 1) {
+          return http.Response('{"error":"tools unsupported"}', 400);
+        }
+        return http.Response.bytes(utf8.encode(jsonEncode(reply('好的', 'stop'))), 200);
+      });
+
+      final out = await AiVision.I.chatWithTools(
+        [AiChatMessage.user('x')],
+        tools: const [spec],
+      );
+
+      expect(out.text, '好的');
+      expect(out.usedTools, isFalse);
+      expect(bodies.length, 2);
+      expect(bodies.first['tools'], isNotEmpty);
+      expect(bodies.last.containsKey('tools'), isFalse);
+    });
+
+    test('空回复带 tools 也先关思考重试，不丢 tools', () async {
+      await configured();
+      final bodies = stub([
+        reply('', 'length'),
+        toolReply('write_file', '{"path":"a.js","content":"x"}'),
+      ]);
+
+      final out = await AiVision.I.chatWithTools(
+        [AiChatMessage.user('x')],
+        tools: const [spec],
+      );
+
+      expect(out.toolCalls, hasLength(1));
+      expect(bodies.length, 2);
+      expect(bodies.last['thinking'], {'type': 'disabled'});
+      expect(bodies.last['tools'], isNotEmpty);
+    });
+  });
 }

@@ -58,11 +58,11 @@ void main() {
     addTearDown(() => tmp.deleteSync(recursive: true));
 
     for (final e in parseCatalog(catalog)) {
-      if (!e.isBundle) continue;
+      if (!e.isCordis) continue; // 旧 html 包等市场仓库迁移后再验
       final bytes = File('${repo.path}/${e.zip}').readAsBytesSync();
       final bundle = extractBundle(bytes: bytes, dir: '${tmp.path}/${e.id}');
-      expect(File(bundle.entry).existsSync(), isTrue, reason: '${e.id} 的入口 html 解出来了');
-      expect(File(bundle.entry).readAsStringSync().toLowerCase(), contains('<html'));
+      expect(File(bundle.entry).existsSync(), isTrue, reason: '${e.id} 的 main.js 解出来了');
+      expect(File(bundle.entry).readAsStringSync(), contains('export default'));
     }
   }, skip: skip);
 
@@ -117,6 +117,7 @@ void main() {
       expect(sha256.convert(zip).toString(), e.sha256, reason: '${e.id} 的哈希与目录一致');
       final dir = Directory.systemTemp.createTempSync('author_ext');
       addTearDown(() => dir.deleteSync(recursive: true));
+      if (!e.isCordis) continue;
       final bundle = extractBundle(bytes: zip, dir: '${dir.path}/${e.id}');
       expect(File(bundle.entry).existsSync(), isTrue, reason: '工具打的包 App 解得开');
     }

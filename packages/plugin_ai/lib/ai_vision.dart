@@ -284,6 +284,12 @@ class AiVision {
     Map<String, dynamic> body,
     Duration timeout,
   ) async {
+    final j = await _postChat(body, timeout);
+    return (text: _extractText(j).trim(), finishReason: _finishReason(j));
+  }
+
+  /// 真正发请求并解出 JSON；失败时把提供商返回的前 200 字带进错误里。
+  Future<dynamic> _postChat(Map<String, dynamic> body, Duration timeout) async {
     final c = _config;
     final url = '${c.baseUrl.replaceAll(RegExp(r'/+$'), '')}/chat/completions';
     http.Response resp;
@@ -304,8 +310,152 @@ class AiVision {
       throw ApiError(
           'AI 返回 ${resp.statusCode}：${detail.length > 200 ? detail.substring(0, 200) : detail}');
     }
-    final j = _decode(resp.bodyBytes);
-    return (text: _extractText(j).trim(), finishReason: _finishReason(j));
+    return _decode(resp.bodyBytes);
+  }
+
+  // ==================== 多轮对话 + 工具调用 ====================
+
+  /// 多轮对话；[tools] 非空时按 OpenAI 兼容的 function calling 发。
+  /// 提供商不认 tools（400 / 422 且错误里提到 tool/function）时自动去掉 tools 重试，
+  /// 返回的 [AiChatReply.usedTools] 为 false，调用方可据此改走文本协议。
+  Future<AiChatReply> chatWithTools(
+    List<AiChatMessage> messages, {
+    List<AiToolSpec> tools = const [],
+    int maxTokens = 2048,
+    Duration timeout = const Duration(seconds: 90),
+  }) async {
+    await load();
+    if (!_config.ready) {
+      throw ApiError('尚未配置 AI：请在「我的 → AI 设置」填写 API Key 与模型');
+    }
+    var useTools = tools.isNotEmpty;
+    var reply = await _requestMessages(messages,
+        tools: useTools ? tools : const [],
+        maxTokens: maxTokens,
+        thinkingOff: false,
+        timeout: timeout,
+        usedTools: useTools);
+    if (useTools && reply.toolCalls.isEmpty && reply.text.isEmpty) {
+      // 空回复常见于「思考把 max_tokens 吃光」；先关思考再试一次，别急着丢 tools。
+      reply = await _requestMessages(messages,
+          tools: tools,
+          maxTokens: maxTokens,
+          thinkingOff: true,
+          timeout: timeout,
+          usedTools: true);
+    }
+    if (reply.text.isEmpty && reply.toolCalls.isEmpty) {
+      throw ApiError(reply.finishReason == 'length'
+          ? 'AI 输出被截断（撞上 token 上限），没有给出结果：请重试或换一个模型'
+          : 'AI 未返回内容');
+    }
+    return reply;
+  }
+
+  Future<AiChatReply> _requestMessages(
+    List<AiChatMessage> messages, {
+    required List<AiToolSpec> tools,
+    required int maxTokens,
+    required bool thinkingOff,
+    required Duration timeout,
+    required bool usedTools,
+  }) async {
+    final body = _messagesPayload(messages, tools, maxTokens, thinkingOff);
+    try {
+      return _parseReply(await _postChat(body, timeout), usedTools: usedTools);
+    } on ApiError catch (e) {
+      if (tools.isEmpty || !_looksLikeToolsUnsupported(e.message)) rethrow;
+      // 这家模型 / 端点不支持 function calling：去掉 tools 再来一次。
+      final fallback = _messagesPayload(messages, const [], maxTokens, thinkingOff);
+      return _parseReply(await _postChat(fallback, timeout), usedTools: false);
+    }
+  }
+
+  static bool _looksLikeToolsUnsupported(String message) {
+    final m = message.toLowerCase();
+    return (m.contains('400') || m.contains('422') || m.contains('invalid')) &&
+        (m.contains('tool') || m.contains('function') || m.contains('unsupported'));
+  }
+
+  Map<String, dynamic> _messagesPayload(
+    List<AiChatMessage> messages,
+    List<AiToolSpec> tools,
+    int maxTokens,
+    bool thinkingOff,
+  ) {
+    final c = _config;
+    final body = <String, dynamic>{
+      'model': c.model.trim(),
+      'max_tokens': maxTokens,
+      'stream': false,
+      'messages': [
+        for (final m in messages)
+          {
+            'role': m.role,
+            'content': m.content,
+            if (m.toolCalls.isNotEmpty)
+              'tool_calls': [
+                for (final call in m.toolCalls)
+                  {
+                    'id': call.id,
+                    'type': 'function',
+                    'function': {
+                      'name': call.name,
+                      'arguments': call.argumentsJson,
+                    },
+                  },
+              ],
+            if (m.toolCallId.isNotEmpty) 'tool_call_id': m.toolCallId,
+          },
+      ],
+      if (tools.isNotEmpty) ...{
+        'tools': [
+          for (final t in tools)
+            {
+              'type': 'function',
+              'function': {
+                'name': t.name,
+                'description': t.description,
+                'parameters': t.parameters,
+              },
+            },
+        ],
+        'tool_choice': 'auto',
+      },
+      if (thinkingOff) ...applyThinkingOff(c.providerId, c.model.trim()),
+    };
+    return body;
+  }
+
+  AiChatReply _parseReply(dynamic j, {required bool usedTools}) {
+    final toolCalls = <AiToolCall>[];
+    if (j is Map) {
+      final choices = j['choices'];
+      if (choices is List && choices.isNotEmpty && choices.first is Map) {
+        final msg = (choices.first as Map)['message'];
+        if (msg is Map && msg['tool_calls'] is List) {
+          for (final raw in msg['tool_calls'] as List) {
+            if (raw is! Map) continue;
+            final fn = raw['function'];
+            if (fn is! Map) continue;
+            final name = '${fn['name'] ?? ''}'.trim();
+            if (name.isEmpty) continue;
+            final args = fn['arguments'];
+            toolCalls.add(AiToolCall(
+              id: '${raw['id'] ?? ''}'.trim(),
+              name: name,
+              argumentsJson: args is String ? args : jsonEncode(args ?? const {}),
+            ));
+          }
+        }
+      }
+    }
+    return AiChatReply(
+      text: _extractText(j).trim(),
+      toolCalls: toolCalls,
+      finishReason: _finishReason(j),
+      usedTools: usedTools,
+    );
   }
 
   // ==================== 请求构造 ====================

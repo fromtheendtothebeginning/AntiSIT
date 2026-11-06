@@ -18,6 +18,78 @@ class HolidayRule {
       };
 }
 
+/// 一条对话消息（OpenAI 兼容形状，供 Agent 循环使用）。
+class AiChatMessage {
+  const AiChatMessage({
+    required this.role,
+    this.content = '',
+    this.toolCalls = const [],
+    this.toolCallId = '',
+  });
+
+  final String role; // system / user / assistant / tool
+
+  final String content;
+
+  /// assistant 消息里的工具调用（原生 tool calling）。
+  final List<AiToolCall> toolCalls;
+
+  /// role=tool 时对应哪一次调用。
+  final String toolCallId;
+
+  factory AiChatMessage.system(String text) =>
+      AiChatMessage(role: 'system', content: text);
+  factory AiChatMessage.user(String text) =>
+      AiChatMessage(role: 'user', content: text);
+  factory AiChatMessage.assistant(String text, {List<AiToolCall> toolCalls = const []}) =>
+      AiChatMessage(role: 'assistant', content: text, toolCalls: toolCalls);
+  factory AiChatMessage.tool(String callId, String text) =>
+      AiChatMessage(role: 'tool', content: text, toolCallId: callId);
+}
+
+/// 模型要求调用的一次工具。
+class AiToolCall {
+  const AiToolCall({required this.id, required this.name, required this.argumentsJson});
+
+  final String id;
+  final String name;
+
+  /// 参数 JSON 原文（模型给的，不保证合法，执行前要解析校验）。
+  final String argumentsJson;
+}
+
+/// 暴露给模型的一份工具 schema。
+class AiToolSpec {
+  const AiToolSpec({
+    required this.name,
+    required this.description,
+    required this.parameters,
+  });
+
+  final String name;
+  final String description;
+
+  /// JSON Schema（type=object + properties + required）。
+  final Map<String, dynamic> parameters;
+}
+
+/// 一次模型回复：文本和/或工具调用。
+class AiChatReply {
+  const AiChatReply({
+    this.text = '',
+    this.toolCalls = const [],
+    this.finishReason = '',
+    this.usedTools = false,
+  });
+
+  final String text;
+  final List<AiToolCall> toolCalls;
+  final String finishReason;
+
+  /// 本次请求是否真的带了 tools（false = 走的是纯文本降级）。
+  final bool usedTools;
+}
+
 /// AI 识图能力（提供方：AI 设置插件 `PluginIds.ai`）。
 ///
 /// 课表页（校历识别）与 core 的验证码弹窗（自动识码）都通过
@@ -49,4 +121,13 @@ abstract class AiCapability implements PluginCapability {
   /// 请求由 App 本地按当前提供商的协议构造（Key / 模型都不出 App），失败抛 ApiError。
   /// [maxTokens] 缺省由实现决定；没配置模型 / 插件被停用时先用 [available] 判断。
   Future<String> chat(String prompt, {String? system, int? maxTokens});
+
+  /// 多轮对话 + 原生工具调用（拓展工坊的 Agent 循环走这里）。
+  /// [tools] 为空就是普通多轮文本；提供商不支持 tools 时实现应尽量降级为空工具重试，
+  /// 调用方也可以根据 [AiChatReply.usedTools] 判断是否要改走文本协议。
+  Future<AiChatReply> chatWithTools(
+    List<AiChatMessage> messages, {
+    List<AiToolSpec> tools = const [],
+    int? maxTokens,
+  });
 }

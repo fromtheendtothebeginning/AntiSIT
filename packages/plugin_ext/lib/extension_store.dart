@@ -174,6 +174,9 @@ class ExtensionStore extends ChangeNotifier {
     }
   }
 
+  /// 删掉某个拓展的解压目录（导入取消时清刚解出来的文件用）。
+  Future<void> deleteBundleDir(String id) => _deleteBundle(id);
+
   // ==================== 拓展自己的存储（按拓展 id 隔离）====================
 
   Future<Object?> dataGet(String extId, String key) async {

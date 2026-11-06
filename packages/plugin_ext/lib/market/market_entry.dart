@@ -26,6 +26,7 @@ class MarketEntry {
     required this.size,
     required this.permissions,
     required this.minAppVersion,
+    this.runtime = '',
     this.base = '',
     this.sourceId = '',
   });
@@ -53,6 +54,9 @@ class MarketEntry {
   final int size;
   final List<String> permissions;
 
+  /// bundle 的运行形态：`cordis`；旧目录没有这个字段 = 旧版 html 包，安装时拒绝。
+  final String runtime;
+
   /// 低于它的 App 装不了（`''` = 没要求）。
   final String minAppVersion;
 
@@ -67,6 +71,10 @@ class MarketEntry {
   bool get official => sourceId.isEmpty;
 
   bool get isBundle => type == 'bundle';
+
+  bool get isCordis => isBundle && runtime == 'cordis';
+
+  bool get isLegacyBundle => isBundle && runtime != 'cordis';
 
   /// 「需要升级 App」的判断。[appVersion] 形如 `1.16.0`；
   /// 读不到（空串）不设门——拿不到本机版本时宁可放行，别把市场锁死。
@@ -99,6 +107,7 @@ class MarketEntry {
       size: size is int ? size : 0,
       permissions: perms is List ? [for (final p in perms) '$p'] : const [],
       minAppVersion: str('minAppVersion'),
+      runtime: str('runtime'),
       base: base,
       sourceId: sourceId,
     );
