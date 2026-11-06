@@ -671,7 +671,8 @@ class _AddEditDialogState extends State<_AddEditDialog> {
               controller: _icon,
               enabled: !ro,
               decoration: const InputDecoration(
-                  labelText: '图标（可空）', hintText: '图片网址或 emoji；留空用网站 favicon'),
+                  labelText: '图标（可空）',
+                  hintText: 'line:handyman / 图片网址 / emoji；留空用网站 favicon'),
             ),
             if (_error != null) ...[
               const SizedBox(height: 4),

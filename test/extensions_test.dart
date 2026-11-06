@@ -96,6 +96,13 @@ void main() {
     expect(bundled.urlLine, '本地 Cordis 拓展');
   });
 
+  test('镂空图标：line:<name> 映射到 Material Outlined，未知名字回退', () {
+    expect(ExtIcon.lineIcon('line:flag'), Icons.flag_outlined);
+    expect(ExtIcon.lineIcon('line:handyman'), Icons.handyman_outlined);
+    expect(ExtIcon.lineIcon('line:no-such'), Icons.extension_outlined);
+    expect(ExtIcon.lineIcon('🔢'), isNull);
+  });
+
   group('网站图标', () {
     test('.ico 里嵌的 PNG 帧能抠出来（Flutter 自己解不了 .ico，这是没显示出来的原因）', () {
       final png = fakePng();
@@ -581,6 +588,10 @@ void main() {
     expect(ExtensionStore.I.items.single.icon, '🛠');
     await bridge.call('card.setIcon', {'text': 'https://x.example.com/i.png'});
     expect(ExtensionStore.I.items.single.iconIsImage, isTrue, reason: '图片网址照旧按图片渲染');
+    await bridge.call('card.setIcon', {'text': 'line:flag'});
+    expect(ExtensionStore.I.items.single.icon, 'line:flag', reason: '镂空图标名合法');
+    await expectLater(bridge.call('card.setIcon', {'text': 'line:no-such'}),
+        throwsArgumentError, reason: '图标名不认识要报错，不静默回退');
 
     await expectLater(bridge.call('card.setName', {'text': '   '}),
         throwsArgumentError, reason: '名称不能空（否则卡片没标题）');

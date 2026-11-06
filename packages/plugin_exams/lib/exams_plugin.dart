@@ -21,7 +21,7 @@ class ExamsPlugin extends FeaturePlugin {
   @override
   List<PluginTool> tools(PluginRegistry registry) => [
         PluginTool(
-          icon: Icons.event_note_rounded,
+          icon: Icons.event_note_outlined,
           color: Colors.orange,
           title: '考试安排',
           subtitle: () => '期中 / 期末的考试时间、地点与座位',

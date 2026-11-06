@@ -22,7 +22,7 @@ class ScorePlugin extends FeaturePlugin {
   @override
   List<PluginTool> tools(PluginRegistry registry) => [
         PluginTool(
-          icon: Icons.military_tech_rounded,
+          icon: Icons.military_tech_outlined,
           color: Colors.green,
           title: '二课分数',
           subtitle: _subtitle,

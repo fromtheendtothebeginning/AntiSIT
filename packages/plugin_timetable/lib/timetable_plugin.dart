@@ -31,7 +31,7 @@ class TimetablePlugin extends FeaturePlugin {
   List<PluginNavItem> navItems(registry, tab) => [
         PluginNavItem(
           icon: Icons.calendar_month_outlined,
-          activeIcon: Icons.calendar_month,
+          activeIcon: Icons.calendar_month_outlined,
           label: '课程表',
           order: 10,
           build: (_) => const TimetablePage(),

@@ -28,7 +28,7 @@ class EcardPlugin extends FeaturePlugin {
   List<PluginNavItem> navItems(registry, tab) => [
         PluginNavItem(
           icon: Icons.qr_code_2_outlined,
-          activeIcon: Icons.qr_code_2,
+          activeIcon: Icons.qr_code_2_outlined,
           label: '校园码',
           order: 20,
           // myTab 取底栏实时下标：前面有插件被停用时会前移，不能写死。

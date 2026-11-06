@@ -21,7 +21,7 @@ class ActivitiesPlugin extends FeaturePlugin {
   @override
   List<PluginTool> tools(PluginRegistry registry) => [
         PluginTool(
-          icon: Icons.local_activity_rounded,
+          icon: Icons.local_activity_outlined,
           color: Colors.purple,
           title: '二课活动',
           subtitle: () => '第二课堂活动：报名状态、时间名额与在线报名',

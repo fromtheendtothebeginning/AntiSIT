@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:campus_core/campus_core.dart';
 
 import 'cordis_bundle.dart';
+import 'ext_icon.dart';
 import 'ext_permissions.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
@@ -20,7 +21,7 @@ import 'workshop/workshop_store.dart';
 /// | `close` | — | 关掉当前网页（回拓展列表） |
 /// | `card.setName` | `{text}` | 换卡片上的名称（≤ 20 字；id 不变） |
 /// | `card.setDesc` | `{text}` | 换卡片上的简介（≤ 60 字；空串 = 不显示简介） |
-/// | `card.setIcon` | `{text}` | 换卡片上的图标（图片网址，或 ≤ 4 字的文字 / emoji；空串 = 用网站 favicon） |
+/// | `card.setIcon` | `{text}` | 换卡片上的图标（`line:<name>` 镂空图标、图片网址，或 ≤ 4 字的文字 / emoji；空串 = 用网站 favicon） |
 /// | `storage.get` | `{key}` | 该拓展自己存的任意 JSON；没有则 null |
 /// | `storage.set` | `{key, value}` | true |
 /// | `storage.remove` | `{key}` | true |
@@ -114,7 +115,7 @@ class ExtBridge extends WebBridge {
 
   /// 改自己卡片上的一个字段（名称 / 简介 / 图标），改完落盘，回到列表即可见。
   /// 校验不过直接报错，不静默截断：名称不能空、简介可空（= 不显示）、
-  /// 图标要么是图片网址，要么是几个字以内的文字 / emoji。
+  /// 图标可以是 `line:<name>` 镂空图标、图片网址，或几个字以内的文字 / emoji。
   Future<Object?> _setCard(Object? args, {required String field}) async {
     if (args is! Map) throw ArgumentError('card.set$field 要带 {text}');
     final text = '${args['text'] ?? ''}'.trim();
@@ -124,10 +125,15 @@ class ExtBridge extends WebBridge {
         throw ArgumentError('名称最多 ${ExtensionItem.nameMaxLength} 个字');
       }
     } else if (field == 'icon') {
-      // 图片网址不受「几个字」的限制，这里只给个长度上限
-      if (text.length > (_isUrl(text) ? 300 : ExtensionItem.iconTextMaxLength)) {
-        throw ArgumentError(_isUrl(text)
-            ? '图标网址过长'
+      // 图片网址 / 镂空图标不受「几个字」的限制，这里只给个长度上限
+      final isLine = text.startsWith('line:');
+      if (isLine && !ExtIcon.lineIcons.containsKey(text.substring(5))) {
+        throw ArgumentError('镂空图标名不认识：${text.substring(5)}（可用：'
+            '${ExtIcon.lineIcons.keys.join(' / ')}）');
+      }
+      if (text.length > (_isUrl(text) || isLine ? 300 : ExtensionItem.iconTextMaxLength)) {
+        throw ArgumentError(_isUrl(text) || isLine
+            ? '图标值过长'
             : '图标最多 ${ExtensionItem.iconTextMaxLength} 个字（要用图片就填 http/https 网址）');
       }
     } else if (text.length > ExtensionItem.descMaxLength) {

@@ -26,7 +26,7 @@ class ElectricityPlugin extends FeaturePlugin {
   @override
   List<PluginTool> tools(PluginRegistry registry) => [
         PluginTool(
-          icon: Icons.bolt_rounded,
+          icon: Icons.bolt_outlined,
           color: Colors.amber.shade700,
           title: '宿舍电费',
           subtitle: _subtitle,

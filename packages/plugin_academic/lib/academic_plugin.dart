@@ -27,7 +27,7 @@ class AcademicPlugin extends FeaturePlugin {
       ? const [] // 演示模式是本地假数据，学业情况没有对应假数据，不显示入口
       : [
           PluginTool(
-            icon: Icons.school_rounded,
+            icon: Icons.school_outlined,
             color: Colors.teal,
             title: '学业情况',
             subtitle: () => '学分要求、已修情况与类别课程明细',

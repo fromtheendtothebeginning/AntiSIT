@@ -27,7 +27,7 @@ class CourseSelectPlugin extends FeaturePlugin {
       ? const [] // 演示模式没有真实选课数据
       : [
           PluginTool(
-            icon: Icons.bolt_rounded,
+            icon: Icons.bolt_outlined,
             color: Colors.orange,
             title: '抢课',
             subtitle: () => '选课轮次 / 余量 / 自动抢课',

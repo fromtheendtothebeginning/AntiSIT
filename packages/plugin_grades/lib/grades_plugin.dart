@@ -21,7 +21,7 @@ class GradesPlugin extends FeaturePlugin {
   @override
   List<PluginTool> tools(PluginRegistry registry) => [
         PluginTool(
-          icon: Icons.fact_check_rounded,
+          icon: Icons.fact_check_outlined,
           color: Colors.blue,
           title: '成绩单',
           subtitle: () => '各学期成绩、学分与 GPA',

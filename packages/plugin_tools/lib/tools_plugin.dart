@@ -23,7 +23,7 @@ class ToolsPlugin extends FeaturePlugin {
     return [
       PluginNavItem(
         icon: Icons.widgets_outlined,
-        activeIcon: Icons.widgets,
+        activeIcon: Icons.widgets_outlined,
         label: '工具',
         order: 30,
         build: (_) => const ToolsPage(),

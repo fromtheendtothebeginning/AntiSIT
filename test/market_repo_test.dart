@@ -75,8 +75,8 @@ void main() {
     expect(byId['sit.game-2048']!.permissions, contains('storage'), reason: '最高分要落盘');
     expect(byId['sit.game-minesweeper']!.permissions, isEmpty,
         reason: '扫雷不存数据不联网，正好当「零权限插件」的样例');
-    expect(byId['sit.game-2048']!.needsNewerApp('1.15.0'), isTrue, reason: '要求 1.16.0 以上的 App');
-    expect(byId['sit.game-2048']!.needsNewerApp('1.16.0'), isFalse);
+    expect(byId['sit.game-2048']!.needsNewerApp('1.24.0'), isTrue, reason: '要求 1.25.0 以上的 App');
+    expect(byId['sit.game-2048']!.needsNewerApp('1.25.0'), isFalse);
   }, skip: skip);
 
   // ==================== 第三方源（作者自己发的那种） ====================

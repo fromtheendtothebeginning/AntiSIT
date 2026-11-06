@@ -51,7 +51,8 @@ class ExtensionItem {
   /// 简介：显示在卡片名称下方（可空）。
   final String desc;
 
-  /// 自定义图标：一个图片网址，或一段短文字 / emoji（空 = 用网站 favicon）。
+  /// 自定义图标：`line:<name>` 镂空线性图标、一个图片网址，或一段短文字 / emoji
+  /// （空 = 用网站 favicon；Cordis 拓展空着则用镂空拓展图标）。
   final String icon;
 
   /// 来自导入的压缩包（[url] 是本地入口文件路径，不是网址）。
