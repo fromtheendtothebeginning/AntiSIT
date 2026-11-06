@@ -396,6 +396,8 @@ class XgClient {
   Future<List<Map<String, dynamic>>> creditRecords({int maxPages = 10}) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final out = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    var total = 0;
     for (var page = 1; page <= maxPages; page++) {
       final resp = await _http.postForm(
         '$_api/bizFlow/result/group/list.zf',
@@ -411,10 +413,16 @@ class XgClient {
         if (j == null) _sessionLost();
         throw ApiError('加分明细查询失败（${resp.status}）');
       }
+      final reportedTotal = int.tryParse('${data is Map ? data['totalCount'] ?? '' : ''}');
+      if (reportedTotal != null && reportedTotal > 0) total = reportedTotal;
       for (final raw in rows) {
         final it = raw is Map ? raw : const {};
         final name = (it['hdmc'] ?? '').toString().trim();
         if (name.isEmpty) continue;
+        // 翻页期间学校数据变动可能让同一工作流实例出现在两页里：按实例 ID 去重。
+        final instanceId =
+            '${it['INSTANCE_ID'] ?? it['ID'] ?? ''}'.trim();
+        if (instanceId.isNotEmpty && !seen.add(instanceId)) continue;
         out.add({
           'id': '${it['INSTANCE_ID'] ?? it['ID'] ?? it['hdid'] ?? name}',
           'name': name,
@@ -427,7 +435,14 @@ class XgClient {
           'date': it['CREATE_TIME'],
         });
       }
-      if (rows.length < 100) break;
+      // 学校若把 showCount 截到更小（比如一页 50），不能因为“本页不满 100”就收手：
+      // 有 totalCount 时按总数续页，没有时才用旧的「不满一页即结束」规则。
+      if (rows.isEmpty) break;
+      if (total > 0) {
+        if (out.length >= total) break;
+      } else if (rows.length < 100) {
+        break;
+      }
     }
     return out;
   }

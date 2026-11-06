@@ -1,6 +1,7 @@
 /// score 插件包：宿主与测试只通过这个 barrel 认识它。
 library;
 
+export 'credit_math.dart';
 export 'score_page.dart';
 export 'score_plugin.dart';
 export 'score_target_settings_page.dart';

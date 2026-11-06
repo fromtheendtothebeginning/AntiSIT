@@ -131,11 +131,11 @@ void main() {
 <div id="alertBox">平均学分绩点：3.4</div>
 <script>
 \$("<ul id='ul1'><li id='li1' class='' fxfyqjd_id='' >" +
-  "<div class='title' xfyqjd_id='1'><p class='title1' id='pA1B2C3D4E5F60718293A4B5C6D7E8F900' yxxf='52.5' yqzdxf='170' sftg='0'>" +
+  "<div class='title' xfyqjd_id='1' jdkcsx='1'><p class='title1' id='pA1B2C3D4E5F60718293A4B5C6D7E8F900' yxxf='52.5' yqzdxf='170' sftg='0'>" +
   "主修&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":170.0&nbsp;" +
   "<span id='showKcA1B2C3D4E5F60718293A4B5C6D7E8F900'></span></p></div></li></ul>").appendTo("body");
 \$("<ul id='ul2'><li id='li2' class='' fxfyqjd_id='A1B2C3D4E5F60718293A4B5C6D7E8F900' >" +
-  "<div class='title' xfyqjd_id='2'><p class='title1' id='pB1B2C3D4E5F60718293A4B5C6D7E8F901' yxxf='28.0' yqzdxf='33.0' sftg='0'>" +
+  "<div class='title' xfyqjd_id='2' jdkcsx='4'><p class='title1' id='pB1B2C3D4E5F60718293A4B5C6D7E8F901' yxxf='28.0' yqzdxf='33.0' sftg='0'>" +
   "专业核心课&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":33.0&nbsp;" +
   "<span id='showKcB1B2C3D4E5F60718293A4B5C6D7E8F901'></span></p></div></li></ul>").appendTo("body");
 </script>
@@ -156,9 +156,11 @@ void main() {
     expect(cats[0]['required'], 170);
     expect(cats[0]['earned'], 52.5);
     expect(cats[0]['missed'], 117.5);
+    expect(cats[0]['jdkcsx'], '1');
     expect(cats[1]['name'], '专业核心课');
     expect(cats[1]['parent'], 'A1B2C3D4E5F60718293A4B5C6D7E8F900');
     expect(cats[1]['level'], 1);
+    expect(cats[1]['jdkcsx'], '4');
     expect(cats[1]['passed'], isFalse);
   });
 

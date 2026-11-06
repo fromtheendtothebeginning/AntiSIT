@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'credit_math.dart';
 import 'score_target_settings_page.dart';
 
 /// 第二课堂分：精确复刻 anticraft.top 网站排版
@@ -272,8 +273,9 @@ class _ScorePageState extends State<ScorePage> {
 
   /// 「加分明细」：每次活动参与记录（活动 / 学分 / 审批状态 / 时间）。
   Widget _creditsView() {
-    final sum = _credits.fold<double>(
-        0, (acc, r) => acc + (asNum(r['credit'])?.toDouble() ?? 0));
+    // 学分按「千分位整数」累加：double 直接相加会出现 0.1+0.2=0.30000000000000004
+    // 这类二进制浮点尾巴（页面上曾显示 5.930000000000002），最后再换算回学分。
+    final sum = sumCreditThousandths(_credits.map((r) => r['credit'])) / 1000;
     return PageStateView(
       loading: _creditsLoading && _credits.isEmpty,
       error: _creditsErr,
@@ -657,8 +659,9 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
   }
 }
 
-String _fmtNum(num v) =>
-    v == v.roundToDouble() ? v.round().toString() : v.toString();
+/// 数字显示：先按千分位取整再输出，抹掉 0.1+0.2 这类二进制浮点尾巴
+/// （例如 5.930000000000002 → 5.93，0.7000000000000001 → 0.7）。
+String _fmtNum(num v) => formatCredit(v);
 
 /// 数字增长动画（网站 CountUp：0 → 终值，700ms 缓出；值变化重播）。
 class _CountUpText extends StatefulWidget {

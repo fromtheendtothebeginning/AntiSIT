@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 学业情况（N105515）直连链路：真 HTTP 打本地模拟服务，验证
-/// 「登录 → 首页（整体统计 + 节点树 + 隐藏域）→ 只对叶子节点 POST 课程明细」整条协议，
+/// 「登录 → 首页（整体统计 + 节点树 + 隐藏域）→ 按 jdkcsx 选接口、只对叶子并发拉明细」，
 /// 以及会话失效、学校业务错误、页面改版、明细非 JSON 几个分支。
 void main() {
   final mock = MockCampusServer.instance;
@@ -22,7 +22,9 @@ void main() {
     mock.debugAcademicIndexHtml = null;
     mock.debugAcademicCourses = null;
     mock.debugAcademicCoursesBody = null;
+    mock.debugAcademicNonCourses = null;
     mock.debugLastAcademicForm = null;
+    mock.debugAcademicRequestLog.clear();
   });
 
   Future<JwxtClient> loggedIn() async {
@@ -33,7 +35,10 @@ void main() {
     return c;
   }
 
-  test('首页统计 + 节点树（含层级）+ 叶子节点课程明细都拿得到', () async {
+  Map<String, dynamic> byName(List<Map<String, dynamic>> cats, String name) =>
+      cats.firstWhere((c) => c['name'] == name);
+
+  test('首页统计 + 5 层节点树 + 叶子课程（含非课程接口）都拿得到', () async {
     final c = await loggedIn();
     final r = await c.academicStatus();
 
@@ -45,31 +50,57 @@ void main() {
     expect((stats['unplaned'] as Map)['failed'], 1);
 
     final cats = (r['categories'] as List).cast<Map<String, dynamic>>();
-    expect(cats.map((e) => e['name']).toList(), ['主修', '专业核心课', '专业选修课']);
-    expect(cats.map((e) => e['id']).toList(), ['9001', '9002', '9003']);
-    expect(cats.map((e) => e['level']).toList(), [0, 1, 1]);
-    expect(cats[1]['parent'], '9001');
-    expect(cats[1]['required'], 33.0);
-    expect(cats[1]['earned'], 28.0);
+    expect(cats, hasLength(12));
 
-    // 父节点没有课程明细接口可拉（真实接口返回空数组），客户端应跳过请求。
-    expect(cats[0]['courses'], isEmpty);
+    // 5 层：主修 → 公共基础课 → 数理课程 → 高等数学 → 工科
+    expect(byName(cats, '主修')['level'], 0);
+    expect(byName(cats, '公共基础课')['parent'], '1000');
+    expect(byName(cats, '数理课程')['level'], 2);
+    expect(byName(cats, '高等数学')['level'], 3);
+    expect(byName(cats, '工科')['level'], 4);
 
-    final core = (cats[1]['courses'] as List).cast<Map<String, dynamic>>();
-    expect(core.length, 2, reason: '9002 叶子节点应返回 2 门课程');
-    expect(core[0]['name'], '高等数学(下)');
-    expect(core[0]['credit'], '4.0');
-    expect(core[0]['score'], '92');
-    expect(core[0]['point'], '4.2');
-    expect(core[0]['statusText'], '在修');
-    expect(core[0]['term'], '大二上');
-    expect(core[0]['coursesError'], isNull);
+    // 通识课：有学分（4.0）且子类课程能通过「非课程信息」接口拿到
+    final general = byName(cats, '通识课');
+    expect(general['earned'], 4.0);
+    expect(general['courses'], isEmpty, reason: '父节点本来就不发明细请求');
+    final culture = byName(cats, '企业文化与职业素养');
+    expect(culture['jdkcsx'], '4');
+    final cultureCourses = (culture['courses'] as List).cast<Map<String, dynamic>>();
+    expect(cultureCourses, hasLength(1), reason: '通识课叶子不能再显示 0 门');
+    expect(cultureCourses.first['name'], '企业文化与职业素养（慕课）');
+    expect(cultureCourses.first['score'], '85');
+    expect(cultureCourses.first['point'], '3.5');
 
-    final elective = (cats[2]['courses'] as List).cast<Map<String, dynamic>>();
-    expect(elective.length, 1);
-    expect(elective.first['name'], '人工智能导论');
-    expect(elective.first['statusText'], '未过');
-    expect(elective.first['score'], isEmpty, reason: '未出分的课程没有成绩');
+    // 深层叶子（level 4）课程正常
+    final engineering = (byName(cats, '工科')['courses'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(engineering, hasLength(3));
+    expect(engineering.first['name'], '高等数学（工）2');
+    expect(engineering.first['score'], '92');
+
+    // 根节点直接挂课程
+    final others = (byName(cats, '其他课程')['courses'] as List)
+        .cast<Map<String, dynamic>>();
+    expect(others, hasLength(2));
+    expect(others.first['score'], '88');
+  });
+
+  test('按 jdkcsx 选接口：课程节点走教学计划、非课程节点走非课程信息', () async {
+    final c = await loggedIn();
+    await c.academicStatus();
+    final log = mock.debugAcademicRequestLog;
+
+    // 通识课叶子（jdkcsx='4'）→ 非课程信息接口
+    expect(log, contains('noncourse:1112'));
+    expect(log, contains('noncourse:1113'));
+    // 工科 / 思政课程 / 其他课程（jdkcsx='1'）→ 教学计划接口
+    expect(log, contains('plan:1212'));
+    expect(log, contains('plan:1220'));
+    expect(log, contains('plan:2000'));
+    // 父节点不发明细请求
+    for (final parent in ['1000', '1100', '1200', '1210', '1211']) {
+      expect(log.any((e) => e.endsWith(':$parent')), isFalse, reason: '父节点 $parent 不该发请求');
+    }
   });
 
   test('明细请求带上首页隐藏域（学号 / 成绩录入学年学期），不只传 xfyqjd_id', () async {
@@ -87,15 +118,16 @@ void main() {
     expect(form['xfyqjd_id'], isNotEmpty);
   });
 
-  test('老版静态页面（节点直接渲染 HTML）仍能解析并拉明细', () async {
+  test('老版静态页面（没有 jdkcsx 属性）：先教学计划、空结果兜底到非课程接口', () async {
     final c = await loggedIn();
     mock.debugAcademicIndexHtml = MockCampusServer.debugAcademicStaticPage;
     final r = await c.academicStatus();
     final cats = (r['categories'] as List).cast<Map<String, dynamic>>();
     expect(cats, hasLength(1));
-    expect(cats.first['name'], '专业核心课');
-    expect(cats.first['required'], 33.0);
-    expect((cats.first['courses'] as List), hasLength(2));
+    final core = cats.first;
+    expect(core['name'], '专业核心课');
+    expect(core['jdkcsx'], isEmpty);
+    expect(core['courses'], hasLength(2), reason: '教学计划接口有数据，不应被非课程接口覆盖');
   });
 
   test('会话被服务端清掉：查学业情况抛「失效」而不是静默空数据', () async {
@@ -133,28 +165,28 @@ void main() {
     expect(r['categories'], isEmpty);
   });
 
-  test('叶子节点明细返回非 JSON：标 coursesError 而不是当成「没有课」', () async {
+  test('教学计划接口返回非 JSON：课程节点标 coursesError，非课程接口照常出数据', () async {
     final c = await loggedIn();
     mock.debugAcademicCoursesBody = '<html><body>接口改版了</body></html>';
     final r = await c.academicStatus();
     final cats = (r['categories'] as List).cast<Map<String, dynamic>>();
-    expect(cats, isNotEmpty);
-    // 父节点本来就没有明细请求，不该带错误；叶子节点要明确标失败。
-    expect(cats[0]['courses'], isEmpty);
-    expect(cats[0]['coursesError'], isNull);
-    for (final cat in cats.skip(1)) {
-      expect(cat['courses'], isEmpty);
-      expect('${cat['coursesError']}', contains('HTTP 200'));
-    }
+
+    final engineering = byName(cats, '工科');
+    expect(engineering['courses'], isEmpty);
+    expect('${engineering['coursesError']}', contains('HTTP 200'));
+
+    final culture = byName(cats, '企业文化与职业素养');
+    expect(culture['courses'], isNotEmpty);
+    expect(culture['coursesError'], isNull);
   });
 
   test('某个节点确实没有课程（空数组）时不影响其它节点', () async {
     final c = await loggedIn();
-    mock.debugAcademicCourses = const {'9002': []};
+    mock.debugAcademicCourses = const {'1220': []};
     final r = await c.academicStatus();
     final cats = (r['categories'] as List).cast<Map<String, dynamic>>();
-    expect(cats[1]['courses'], isEmpty);
-    expect(cats[1]['coursesError'], isNull);
-    expect(cats[2]['courses'], isNotEmpty);
+    expect(byName(cats, '思政课程')['courses'], isEmpty);
+    expect(byName(cats, '思政课程')['coursesError'], isNull);
+    expect(byName(cats, '工科')['courses'], isNotEmpty);
   });
 }
