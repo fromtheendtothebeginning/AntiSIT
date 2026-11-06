@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../api_error.dart';
+import 'academic.dart';
 import 'crypto.dart';
 import 'http_session.dart';
 
@@ -499,5 +500,88 @@ class JwxtClient {
       });
     }
     return exams;
+  }
+
+  // ==================== 学业情况（学生学业情况查询） ====================
+
+  /// 学业情况：整体统计（GPA / 计划内外课程通过数）+ 各课程类别学分要求 + 类别课程明细。
+  ///
+  /// 首页 `xsxyqk_cxXsxyqkIndex.html` 是服务端渲染 HTML（学号、整体统计、类别节点与
+  /// `showKc<id>` 占位都在里面）；每个类别的课程再 POST `xsxyqk_cxJxzxjhxfyqKcxx.html`
+  /// （`xfyqjd_id=<id>`）取 JSON 数组。协议见 [academic.dart] 顶部注释。
+  Future<Map<String, dynamic>> academicStatus() async {
+    if (!loggedIn) throw ApiError('未登录教务系统');
+    final page = await _http.get(
+      '$_jwglxt$academicIndexPath',
+      headers: {'Referer': '$base/jwglxt/xtgl/index_initMenu.html'},
+      redirect: false,
+    );
+    if (_deadSession(page)) _sessionLost();
+    final parsed = parseAcademicIndex(page.text);
+    if (parsed['login'] == true) _sessionLost(); // 200 + 登录页 HTML
+    final err = '${parsed['error'] ?? ''}'.trim();
+    if (err.isNotEmpty) throw ApiError('学业情况查询失败：$err');
+
+    // 页面结构完全对不上（既没学号 / 统计，也没有任何类别）时不要返回空数据：
+    // 用户会以为「真的没有学业数据」，而实际是教务改版或回了别的页面。
+    final stats = (parsed['statistics'] as Map?) ?? const {};
+    final hasAny = '${parsed['sid'] ?? ''}'.trim().isNotEmpty ||
+        stats['gpa'] != null ||
+        stats['planed'] != null ||
+        stats['unplaned'] != null ||
+        ((parsed['categories'] as List?) ?? const []).isNotEmpty;
+    if (!hasAny) {
+      throw ApiError('学业情况页面解析失败（页面结构可能已改版）：${_pageSnippet(page.text)}');
+    }
+
+    final sid = '${parsed['sid'] ?? ''}';
+    final cats = ((parsed['categories'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+
+    // 只有叶子节点能取到课程明细：父节点（主修 / 通识课 / 公共基础课…）的明细接口
+    // 返回空数组，课程都在叶子节点下（真实页面也是点叶子才拉）。父节点集合从
+    // 各节点的 parent 字段反推，避免白打一轮请求。
+    final parentIds = <String>{
+      for (final c in cats)
+        if ('${c['parent'] ?? ''}'.trim().isNotEmpty) '${c['parent']}'.trim(),
+    };
+    final params = ((parsed['params'] as Map?) ?? const {}).cast<String, String>();
+    final leaves = cats.where((c) {
+      final id = '${c['id'] ?? ''}'.trim();
+      return id.isNotEmpty && !parentIds.contains(id);
+    }).toList();
+
+    // 并行拉（都是只读 GET/POST，会话共享没问题）：27 个节点串行要好几秒，
+    // 并行基本等于最慢那一次；单个节点失败不拖垮整页，标 coursesError 交给 UI。
+    await Future.wait(leaves.map((cat) async {
+      final id = '${cat['id']}'.trim();
+      try {
+        final resp = await _http.postForm(
+          '$_jwglxt$academicCoursesPath',
+          {...params, 'fromXh_id': '', 'xfyqjd_id': id},
+          headers: _jwxtHeaders,
+          redirect: false,
+        );
+        if (_deadSession(resp)) _sessionLost();
+        final j = _parse(resp);
+        if (j == null) {
+          // 接口改版/被学校改回 HTML 时，别静默当成「该类没有课」：
+          // 明确标记失败，UI 可以提示，也方便用户反馈截图。
+          cat['courses'] = const [];
+          cat['coursesError'] = 'HTTP ${resp.status}';
+          return;
+        }
+        cat['courses'] = parseAcademicCourses(j, sid: sid);
+      } on ApiError catch (e) {
+        if (e.message.contains('失效')) rethrow; // 会话失效要走自动重登
+        cat['courses'] = const [];
+        cat['coursesError'] = e.message;
+      }
+    }));
+    for (final c in cats) {
+      c.putIfAbsent('courses', () => const []);
+    }
+    return parsed;
   }
 }

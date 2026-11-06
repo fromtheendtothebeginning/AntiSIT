@@ -330,6 +330,13 @@ class CampusDirect {
         return {'ok': true, 'exams': await _jwxt!.exams(xnm, xqm)};
       }, _ensureJwxt);
 
+  /// 学业情况（学生学业情况查询）：整体统计 + 各类别学分要求 + 类别课程明细。
+  /// 只有教务直连实现；服务器模式的开放接口里暂时还没有这一项。
+  Future<Map<String, dynamic>> academicStatus() => _withRelogin(() async {
+        await _ensureJwxt();
+        return {'ok': true, 'data': await _jwxt!.academicStatus()};
+      }, _ensureJwxt);
+
   // ==================== 校付宝：校园码 / 电费 ====================
 
   Future<Map<String, dynamic>> ecard() async {

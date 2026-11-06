@@ -16,6 +16,7 @@ export 'api_error.dart';
 export 'app_state.dart';
 export 'demo_data.dart';
 export 'direct/activities_util.dart';
+export 'direct/academic.dart';
 export 'direct/campus_direct.dart';
 export 'direct/crypto.dart';
 export 'direct/epay.dart';

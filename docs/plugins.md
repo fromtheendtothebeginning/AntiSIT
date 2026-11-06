@@ -74,6 +74,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_score` | `score` | `network`、`tools` | — | — | ✓ | 工具卡片 + 卡面预取 |
 | `plugin_exams` | `exams` | `network`、`tools` | — | — | ✓ | 工具卡片 |
 | `plugin_grades` | `grades` | `network`、`tools` | — | — | ✓ | 工具卡片 |
+| `plugin_academic` | `academic` | `network`、`tools` | — | — | ✓ | 工具卡片 |
 | `plugin_timetable` | `timetable` | `network` | `ai`、`reminder` | `ai`、`reminder` | ✓ | 底栏页 + 设置条目 |
 | `plugin_webview` | `webview` | — | — | — | ✓ | 无界面 |
 | `plugin_ext` | `ext` | `webview` | `ai` | `ai`、`webview` | ✓ | 底栏页 |
