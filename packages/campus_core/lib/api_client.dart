@@ -8,6 +8,7 @@ import 'api_error.dart';
 import 'app_state.dart';
 import 'demo_data.dart';
 import 'direct/campus_direct.dart';
+import 'direct/course_select.dart';
 
 export 'api_error.dart';
 
@@ -369,6 +370,49 @@ class ApiClient {
   Future<Map<String, dynamic>> academicStatus() => _useDirect
       ? CampusDirect.I.academicStatus()
       : _call('GET', '/api/campus-open/academic', tunnel: true);
+
+  // ==================== 抢课（正方 9.0 选课） ====================
+  // 暂只实现直连模式：选课是写操作，开放接口还没有对应端点；
+  // 直连需要设备在校园网 / 校内 VPN 内（或在系统层把流量转进校园网）。
+
+  void _requireDirectSelection() {
+    if (!_useDirect) {
+      throw ApiError('抢课目前只支持直连模式：请到「我的 → 连接设置」切换到直连模式，'
+          '并在校园网 / 校内 VPN 下使用');
+    }
+  }
+
+  Future<List<CourseScope>> courseScopes() {
+    _requireDirectSelection();
+    return CampusDirect.I.courseScopes();
+  }
+
+  Future<List<CourseOffer>> courseOffers(
+    CourseScope scope, {
+    String keyword = '',
+    int start = 0,
+    int pageSize = 50,
+  }) {
+    _requireDirectSelection();
+    return CampusDirect.I.courseOffers(scope,
+        keyword: keyword, start: start, pageSize: pageSize);
+  }
+
+  Future<List<CourseSection>> courseSections(CourseOffer offer) {
+    _requireDirectSelection();
+    return CampusDirect.I.courseSections(offer);
+  }
+
+  Future<CourseSelectResult> selectCourse(
+      CourseOffer offer, CourseSection section) {
+    _requireDirectSelection();
+    return CampusDirect.I.selectCourse(offer, section);
+  }
+
+  Future<List<SelectedCourse>> selectedCourses(CourseScope scope) {
+    _requireDirectSelection();
+    return CampusDirect.I.selectedCourses(scope);
+  }
 
   Future<Map<String, dynamic>> ecard() =>
       _useDirect ? CampusDirect.I.ecard() : _call('GET', '/api/campus-open/ecard');

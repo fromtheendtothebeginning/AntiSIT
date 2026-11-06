@@ -17,6 +17,7 @@ import 'package:plugin_score/plugin_score.dart' as plugin_score;
 import 'package:plugin_exams/plugin_exams.dart' as plugin_exams;
 import 'package:plugin_grades/plugin_grades.dart' as plugin_grades;
 import 'package:plugin_academic/plugin_academic.dart' as plugin_academic;
+import 'package:plugin_course_select/plugin_course_select.dart' as plugin_course_select;
 import 'package:plugin_timetable/plugin_timetable.dart' as plugin_timetable;
 import 'package:plugin_webview/plugin_webview.dart' as plugin_webview;
 import 'package:plugin_ext/plugin_ext.dart' as plugin_ext;
@@ -48,6 +49,7 @@ List<PluginBundle> get pluginBundles => [
       if (!const bool.fromEnvironment('EXCLUDE_EXAMS')) plugin_exams.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_GRADES')) plugin_grades.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_ACADEMIC')) plugin_academic.pluginBundle,
+      if (!const bool.fromEnvironment('EXCLUDE_COURSE_SELECT')) plugin_course_select.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_TIMETABLE')) plugin_timetable.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_WEBVIEW')) plugin_webview.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_EXT')) plugin_ext.pluginBundle,

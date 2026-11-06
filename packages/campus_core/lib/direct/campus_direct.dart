@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api_error.dart';
 import '../app_state.dart';
 import 'activities_util.dart';
+import 'course_select.dart';
 import 'epay.dart';
 import 'jwxt.dart';
 import 'school.dart';
@@ -238,8 +239,8 @@ class CampusDirect {
   /// 学校会话可能在两次查询之间失效（教务会话尤其短，学工也会掉）。客户端在内存里
   /// `loggedIn` 仍是 true，就会次次失败、只能靠手动「清除直连会话」恢复——所以这里
   /// 一旦认出会话失效就自动重登一次再试，用户最多再输一次验证码。
-  Future<Map<String, dynamic>> _withRelogin(
-    Future<Map<String, dynamic>> Function() run,
+  Future<T> _withReloginT<T>(
+    Future<T> Function() run,
     Future<void> Function() login,
   ) async {
     try {
@@ -250,6 +251,12 @@ class CampusDirect {
       return run();
     }
   }
+
+  Future<Map<String, dynamic>> _withRelogin(
+    Future<Map<String, dynamic>> Function() run,
+    Future<void> Function() login,
+  ) =>
+      _withReloginT(run, login);
 
   /// 校付宝登录用的真实姓名：优先用填写值，其次查学工补全。
   Future<String> _realName() async {
@@ -371,6 +378,45 @@ class CampusDirect {
   Future<Map<String, dynamic>> academicStatus() => _withRelogin(() async {
         await _ensureJwxt();
         return {'ok': true, 'data': await _jwxt!.academicStatus()};
+      }, _ensureJwxt);
+
+  // ==================== 教务：选课（正方 9.0 zzxk） ====================
+
+  Future<List<CourseScope>> courseScopes() => _withReloginT(() async {
+        await _ensureJwxt();
+        return _jwxt!.courseScopes();
+      }, _ensureJwxt);
+
+  Future<List<CourseOffer>> courseOffers(
+    CourseScope scope, {
+    String keyword = '',
+    int start = 0,
+    int pageSize = 50,
+  }) =>
+      _withReloginT(() async {
+        await _ensureJwxt();
+        return _jwxt!.courseOffers(scope,
+            keyword: keyword, start: start, pageSize: pageSize);
+      }, _ensureJwxt);
+
+  Future<List<CourseSection>> courseSections(CourseOffer offer) =>
+      _withReloginT(() async {
+        await _ensureJwxt();
+        return _jwxt!.courseSections(offer);
+      }, _ensureJwxt);
+
+  /// 提交一次选课；名额满等业务结果用返回值表达，登录失效会抛「失效」触发重登重试。
+  Future<CourseSelectResult> selectCourse(
+          CourseOffer offer, CourseSection section) =>
+      _withReloginT(() async {
+        await _ensureJwxt();
+        return _jwxt!.selectCourse(offer, section);
+      }, _ensureJwxt);
+
+  Future<List<SelectedCourse>> selectedCourses(CourseScope scope) =>
+      _withReloginT(() async {
+        await _ensureJwxt();
+        return _jwxt!.selectedCourses(scope);
       }, _ensureJwxt);
 
   // ==================== 校付宝：校园码 / 电费 ====================

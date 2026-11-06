@@ -19,6 +19,7 @@ export 'direct/activities_util.dart';
 export 'direct/academic.dart';
 export 'direct/campus_direct.dart';
 export 'direct/cas.dart';
+export 'direct/course_select.dart';
 export 'direct/crypto.dart';
 export 'direct/epay.dart';
 export 'direct/http_session.dart';

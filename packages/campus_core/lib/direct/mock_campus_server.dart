@@ -79,6 +79,21 @@ class MockCampusServer {
   /// 测试用：学业情况明细请求的流水（`文件名:xfyqjd_id`），验证按 jdkcsx 选对了接口。
   final List<String> debugAcademicRequestLog = <String>[];
 
+  /// 测试用：选课前 N 次返回「名额已满」，之后成功（验证抢课自动重试）。
+  int debugSelectFailures = 0;
+
+  /// 测试用：最近一次选课提交的表单体（验证 jxb_ids / kch_id / 控制参数）。
+  Map<String, String>? debugLastSelectForm;
+
+  /// 测试用：清空本地模拟的已选课程与抢课状态。
+  void debugResetCourseSelection() {
+    debugSelectFailures = 0;
+    debugLastSelectForm = null;
+    _selectedCourses.clear();
+  }
+
+  final List<Map<String, String>> _selectedCourses = <Map<String, String>>[];
+
   /// 测试用：最近一次收到的报名提交体（验证预填回传 / 自述字段透传 / 附件字段剔除）。
   Map<String, String>? debugLastSignupForm;
 
@@ -322,6 +337,150 @@ class MockCampusServer {
           res,
           (debugAcademicNonCourses ?? _academicNonCourses)[nonCourseId] ?? const [],
         );
+
+      // ===== 选课（正方 9.0 zzxk）=====
+      // 首页：选课轮次参数藏在隐藏域里，类别由 queryCourse(...) 声明。
+      case '/jwglxt/xsxk/zzxkyzb_cxZzxkYzbIndex.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        return _html(res, _courseIndexPage);
+
+      // 展示页：返回该类别最新的 xkkz_id / xkkz_xh（两者独立，不能互相推导）。
+      case '/jwglxt/xsxk/zzxkyzb_cxZzxkYzbDisplay.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        final displayCategory = form['kklxdm'] ?? '1';
+        final displayControl = displayCategory == '2'
+            ? const ['KZ2', 'XH2', '通识选课']
+            : const ['KZ1', 'XH1', '主修选课'];
+        return _html(res, '''
+<html><body>
+<input type="hidden" name="xkkz_id" value="${displayControl[0]}"/>
+<input type="hidden" name="xkkz_xh" value="${displayControl[1]}"/>
+<input type="hidden" name="kklxmc" value="${displayControl[2]}"/>
+</body></html>''');
+
+      // 课程列表：kspage/jspage 是 1 基记录号（不是页码），filter_list[0] 是关键词。
+      case '/jwglxt/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        final listCategory = form['kklxdm'] ?? '1';
+        final keyword = (form['filter_list[0]'] ?? '').trim();
+        final offers = <Map<String, Object?>>[
+          if (listCategory == '1') ...[
+            {
+              'kch_id': 'K001',
+              'kcmc': '高等数学',
+              'jsxm': '李老师',
+              'sksj': '周一 1-2节',
+              'jxdd': 'A101',
+              'xf': '4.0',
+              'jxbrl': '60',
+              'yxzrs': '60',
+            },
+            {
+              'kch_id': 'K002',
+              'kcmc': '大学英语',
+              'jsxm': '王老师',
+              'sksj': '周三 3-4节',
+              'jxdd': 'B202',
+              'xf': '3.0',
+              'jxbrl': '40',
+              'yxzrs': '12',
+            },
+          ] else if (listCategory == '2') ...[
+            {
+              'kch_id': 'K003',
+              'kcmc': '中国近现代史纲要',
+              'jsxm': '赵老师',
+              'sksj': '周五 5-6节',
+              'jxdd': 'C303',
+              'xf': '2.0',
+              'jxbrl': '80',
+              'yxzrs': '3',
+            },
+          ],
+        ]
+            .where((c) =>
+                keyword.isEmpty || '${c['kcmc']}'.contains(keyword))
+            .toList();
+        final from = ((int.tryParse(form['kspage'] ?? '') ?? 1) - 1).clamp(0, offers.length);
+        final to = (int.tryParse(form['jspage'] ?? '') ?? offers.length)
+            .clamp(from, offers.length);
+        return _json(res, {'tmpList': offers.sublist(from, to)});
+
+      // 教学班：jxb_id 与提交用的 do_jxb_id 可以不同，客户端应优先用后者。
+      case '/jwglxt/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        final sectionCourse = form['kch_id'] ?? '';
+        final sections = <Map<String, Object?>>[
+          if (sectionCourse == 'K001') ...[
+            {
+              'jxb_id': 'JXB1',
+              'do_jxb_id': 'TOKEN1',
+              'jxbmc': '高等数学01班',
+              'jsxm': '李老师',
+              'sksj': '周一 1-2节',
+              'jxdd': 'A101',
+              'jxbrl': '60',
+              'yxzrs': '60',
+            },
+            {
+              'jxb_id': 'JXB2',
+              'do_jxb_id': 'TOKEN2',
+              'jxbmc': '高等数学02班',
+              'jsxm': '李老师',
+              'sksj': '周二 3-4节',
+              'jxdd': 'A102',
+              'jxbrl': '60',
+              'yxzrs': '59',
+            },
+          ] else if (sectionCourse == 'K002') ...[
+            {
+              'jxb_id': 'JXB3',
+              'do_jxb_id': 'TOKEN3',
+              'jxbmc': '大学英语01班',
+              'jsxm': '王老师',
+              'sksj': '周三 3-4节',
+              'jxdd': 'B202',
+              'jxbrl': '40',
+              'yxzrs': '12',
+            },
+          ] else if (sectionCourse == 'K003') ...[
+            {
+              'jxb_id': 'JXB4',
+              'do_jxb_id': 'TOKEN4',
+              'jxbmc': '近现代史01班',
+              'jsxm': '赵老师',
+              'sksj': '周五 5-6节',
+              'jxdd': 'C303',
+              'jxbrl': '80',
+              'yxzrs': '3',
+            },
+          ],
+        ];
+        return _json(res, {'tmpList': sections});
+
+      // 选课提交：正常返回纯文本 1；名额满返回 flag=-1 + "已报人数,jxb_id,剩余,"。
+      case '/jwglxt/xsxk/zzxkyzbjk_xkBcZyZzxkYzb.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        debugLastSelectForm = Map<String, String>.from(form);
+        if (debugSelectFailures > 0) {
+          debugSelectFailures--;
+          return _json(res, {'flag': '-1', 'msg': '60,TOKEN2,0,'});
+        }
+        final jxb = form['jxb_ids'] ?? '';
+        if (_selectedCourses.any((c) => c['jxb_id'] == jxb)) {
+          return _json(res, {'flag': '-1', 'msg': '已选该教学班'});
+        }
+        _selectedCourses.add({
+          'jxb_id': jxb,
+          'do_jxb_id': jxb,
+          'kch_id': form['kch_id'] ?? '',
+          'kcmc': form['kcmc'] ?? '',
+        });
+        return _text(res, 200, '1', 'text/plain; charset=utf-8');
+
+      case '/jwglxt/xsxk/zzxkyzb_cxZzxkYzbChoosedDisplay.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        return _json(res, {'tmpList': _selectedCourses});
     }
     _text(res, 404, 'mock: 未实现的教务路径 $path', 'text/plain; charset=utf-8');
   }
@@ -353,6 +512,21 @@ class MockCampusServer {
 </body></html>''';
 
   String get _loginPageHtml => debugJwxtNoSsoEntry ? _jwxtLoginPageNoSso : _jwxtLoginPage;
+
+  /// 选课首页：隐藏域给出学期与控制参数，queryCourse(...) 给出可选类别。
+  /// 两个类别的 xkkz_id / xkkz_xh 故意互不相同，用来测「两者独立、不能互相推导」。
+  static const String _courseIndexPage = '''
+<html><body>
+<input type="hidden" name="xkxnm" value="2026"/>
+<input type="hidden" name="xkxqm" value="12"/>
+<input type="hidden" name="firstXkkzId" value="KZ1"/>
+<input type="hidden" name="firstXkkzXh" value="XH1"/>
+<script>
+function queryCourse(kklxdm, xkkzId, njdmId, zyhId, xkkzXh) {}
+queryCourse('1', 'KZ1', '2025', 'ZY1', 'XH1');
+queryCourse('2', 'KZ2', '2025', 'ZY1', 'XH2');
+</script>
+</body></html>''';
 
   void _tips(HttpResponse res, String msg) =>
       _html(res, '<html><body><div id="tips">$msg</div></body></html>');

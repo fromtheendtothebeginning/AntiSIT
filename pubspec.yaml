@@ -31,6 +31,7 @@ workspace:
   - packages/plugin_exams
   - packages/plugin_grades
   - packages/plugin_academic
+  - packages/plugin_course_select
   - packages/campus_core
   - packages/plugin_timetable
   - packages/plugin_webview
@@ -94,6 +95,8 @@ dependencies:
     path: packages/plugin_grades
   plugin_academic:
     path: packages/plugin_academic
+  plugin_course_select:
+    path: packages/plugin_course_select
   # 导入插件 = 在这里加一行 + `dart run tool/gen_plugins.dart`；删掉这一行即下线。
   # 每个包自动获得一个编译期剔除开关 EXCLUDE_<包名去掉 plugin_ 前缀大写>。
   plugin_timetable:
