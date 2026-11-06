@@ -53,5 +53,8 @@ void main() {
     expect(find.text('AI 赋能学习效率提升讲座'), findsOneWidget);
     expect(find.text('秋季校园马拉松志愿者'), findsOneWidget);
     expect(find.textContaining('0.2 学分'), findsOneWidget);
+    // 累计学分是 0.2+0.5+0.3：必须显示 1，而不是 1.0000000000000002
+    expect(find.textContaining('0000000'), findsNothing);
+    expect(find.text('1'), findsOneWidget);
   });
 }
