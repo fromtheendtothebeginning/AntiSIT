@@ -65,7 +65,34 @@ void main() {
     });
   });
 
-  testWidgets('详情页：报名人数满了 → 按钮显示「已人满」且禁用', (tester) async {
+  group('活动广场状态胶囊', () {
+    String dt(DateTime t) =>
+        t.toIso8601String().replaceFirst('T', ' ').substring(0, 19);
+
+    Map<String, dynamic> act({required bool full, bool ended = false}) {
+      final now = DateTime.now();
+      return {
+        'bm_start': dt(now.subtract(const Duration(days: 2))),
+        'bm_end': dt(ended ? now.subtract(const Duration(days: 1)) : now.add(const Duration(days: 1))),
+        'quota': '30 人',
+        if (full) 'enrolled': 30,
+      };
+    }
+
+    test('报名中且满员 → 直接显示「已人满」', () {
+      expect(marketStateText(act(full: true)), '已人满');
+    });
+
+    test('报名中未满 → 仍显示「报名中」', () {
+      expect(marketStateText(act(full: false)), '报名中');
+    });
+
+    test('已结束不显示满员标记', () {
+      expect(marketStateText(act(full: true, ended: true)), '报名已结束');
+    });
+  });
+
+  testWidgets('详情页：报名人数满了 → 按钮显示「人满，不可报名」且禁用', (tester) async {
     AppState.I.demo = true;
     addTearDown(() => AppState.I.demo = false);
 
@@ -86,7 +113,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final button = tester.widget<FilledButton>(find.ancestor(
-        of: find.text('已人满'), matching: find.bySubtype<FilledButton>()));
+        of: find.text('人满，不可报名'), matching: find.bySubtype<FilledButton>()));
     expect(button.onPressed, isNull, reason: '满员后不能再报名');
     expect(find.text('在线报名'), findsNothing);
   });

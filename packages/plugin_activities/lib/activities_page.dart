@@ -42,6 +42,18 @@ Color _stateColor(_ActState s) => switch (s) {
       _ActState.ended => SemColors.textMuted,
     };
 
+/// 活动广场卡片的状态胶囊：报名窗口内且名额已满时直接标「已人满」，
+/// 不用等用户点进详情、提交报名才知道报不了。
+String marketStateText(Map<String, dynamic> a) {
+  final st = _stateOf(a);
+  return st == _ActState.signing && isFullSignup(a) ? '已人满' : _stateText(st);
+}
+
+Color _marketStateColor(Map<String, dynamic> a) {
+  final st = _stateOf(a);
+  return st == _ActState.signing && isFullSignup(a) ? SemColors.danger : _stateColor(st);
+}
+
 /// 校区胶囊文字；「未标注」（学校没写校区）返回空串，调用方据此不画胶囊。
 String campusTagOf(Map a) {
   final c = '${a['campus'] ?? ''}'.trim();
@@ -328,7 +340,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                           runSpacing: 4,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Capsule(_stateText(_stateOf(a)), color: _stateColor(_stateOf(a))),
+                            Capsule(marketStateText(a), color: _marketStateColor(a)),
                             if (a['backfill'] as bool? ?? false)
                               Capsule('事后补录', color: SemColors.info),
                             // 没标校区的活动不显示「未标注」胶囊
@@ -755,7 +767,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         icon: Icon(
             block == SignupBlock.full ? Icons.group_off_rounded : Icons.block_rounded,
             size: 18),
-        label: Text(block == SignupBlock.full ? '已人满' : '条件不符'),
+        label: Text(block == SignupBlock.full ? '人满，不可报名' : '条件不符'),
       );
     }
     final enabled = state == _ActState.signing && !_loading && !_signingUp;

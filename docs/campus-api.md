@@ -343,8 +343,23 @@
 `GET /api/campus-open/activities/{aid}`（Bearer，隧道类，学工；`aid` = 活动列表里的 `id`）
 
 ```json
-{ "ok": true, "data": { "id": "1a2b3c", "hdms": "活动说明全文（不截断）", "quota": "30 人", "signup": { "qq": ["…"] } } }
+{
+  "ok": true,
+  "data": {
+    "id": "1a2b3c",
+    "hdms": "活动说明全文（不截断）",
+    "signed": false,
+    "quota": "30 人",
+    "enrolled": 30,
+    "status_code": "4",
+    "status_text": "报名已满",
+    "signup": { "qq": ["…"] }
+  }
+}
 ```
+
+- `quota` / `enrolled` / `status_code` / `status_text` / `hdms` / `signup` **仅在详情接口确实取到值时出现**；客户端应与列表项数据合并，空值不应覆盖列表里已有的名额 / 满员信息。
+- `enrolled` / `status_code` / `status_text` 与列表项同义（见 §3.4 字段表）；客户端据此在提交报名前把按钮显示成「人满，不可报名」或「条件不符」。
 
 ### 3.5.1 我的报名（已报名的第二课堂活动）
 
