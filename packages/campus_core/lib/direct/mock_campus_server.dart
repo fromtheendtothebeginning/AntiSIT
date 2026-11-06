@@ -60,6 +60,19 @@ class MockCampusServer {
   /// 测试用：替换教务成绩单（造多页数据验证分页）。null = 内置样例成绩。
   List<Map<String, Object?>>? debugGrades;
 
+  /// 测试用：替换学业情况首页 HTML（造「页面改版 / 学校报错 / 缺统计」等变体）。
+  /// null = 内置样例页面。
+  String? debugAcademicIndexHtml;
+
+  /// 测试用：替换学业情况各节点的课程明细（key = xfyqjd_id）。null = 内置样例。
+  Map<String, List<Map<String, Object?>>>? debugAcademicCourses;
+
+  /// 测试用：让节点课程明细接口返回这段非 JSON 内容（模拟接口改版被改回 HTML）。
+  String? debugAcademicCoursesBody;
+
+  /// 测试用：最近一次节点课程明细请求的表单（验证首页隐藏域是否原样回传）。
+  Map<String, String>? debugLastAcademicForm;
+
   /// 测试用：最近一次收到的报名提交体（验证预填回传 / 自述字段透传 / 附件字段剔除）。
   Map<String, String>? debugLastSignupForm;
 
@@ -270,6 +283,27 @@ class MockCampusServer {
       case '/jwglxt/kwgl/kscx_cxXsksxxIndex.html':
         if (!s.jwxt) return _jwxtExpired(res);
         return _json(res, {'items': _exams});
+
+      // 学业情况：首页由服务端渲染 HTML（整体统计 + 各节点学分要求 + showKc 占位），
+      // 某个节点的课程再由前端 POST xfyqjd_id 换 JSON 数组——照真实协议分两步。
+      case '/jwglxt/xsxy/xsxyqk_cxXsxyqkIndex.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        return _html(res, debugAcademicIndexHtml ?? _academicIndexPage);
+
+      case '/jwglxt/xsxy/xsxyqk_cxJxzxjhxfyqKcxx.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        debugLastAcademicForm = Map<String, String>.from(form);
+        final rawBody = debugAcademicCoursesBody;
+        if (rawBody != null) {
+          return _text(res, 200, rawBody, 'text/html; charset=utf-8');
+        }
+        final id = form['xfyqjd_id'] ?? '';
+        // debug 覆盖按节点合并（只覆盖指定 id，其余仍用内置样例），方便单点造变体。
+        final override = debugAcademicCourses;
+        final data = (override != null && override.containsKey(id))
+            ? override[id]!
+            : _academicCourses[id] ?? const [];
+        return _json(res, data);
     }
     _text(res, 404, 'mock: 未实现的教务路径 $path', 'text/plain; charset=utf-8');
   }
@@ -907,6 +941,92 @@ $casErrorSkeleton
     _grade('中国近现代史纲要', '92', '2.0', '必修', '考查',
         xnm: '2025', xqm: '3', xnmmc: '2025-2026学年'),
   ];
+
+  /// 学业情况首页：复刻 SIT 这版真实页面的关键结构——
+  /// 学号等隐藏域（明细 POST 要回传）、`div#alertBox` 整体统计、以及**写在 JS 模板
+  /// 字符串里**的节点树：`<p class='title1' id='p<id>' yxxf='已获学分'
+  /// yqzdxf='要求学分' sftg='0|1'>" + "类别名&nbsp;" + $.i18n.get('yqxf')/* 要求学分 */
+  /// + ":33.0&nbsp;" ...`，父子关系在模板里的 `fxfyqjd_id='父id'`。
+  static const String _academicIndexPage = '''
+<html><body>
+<h5>学生学业情况查询</h5>
+<input type="hidden" name="xh_id" value="25110001" id="xh_id"/>
+<input type="hidden" name="cjlrxn" value="2026" id="cjlrxn"/>
+<input type="hidden" name="cjlrxq" value="3" id="cjlrxq"/>
+<input type="hidden" name="bkcjlrxn" value="2026" id="bkcjlrxn"/>
+<input type="hidden" name="bkcjlrxq" value="3" id="bkcjlrxq"/>
+<input type="hidden" name="xscjcxkz" value="0" id="xscjcxkz"/>
+<input type="hidden" name="cjcxkzzt" value="1" id="cjcxkzzt"/>
+<input type="hidden" name="cjztkz" value="0" id="cjztkz"/>
+<input type="hidden" name="cjzt" value="" id="cjzt"/>
+<div id="alertBox">
+  平均学分绩点：<font size="2px">3.52</font>&nbsp;
+  计划总课程 60 门 通过 52 门 未通过 3 门 未修 4 门 在读 1 门，
+  计划外 通过 3 门 未通过 1 门
+</div>
+<script>
+\$("<ul id='ul9001'><li id='li9001' class='' fxfyqjd_id='' >" +
+  "<div class='title' xfyqjd_id='9001' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p9001' yxxf='83.0' yqzdxf='160.0' sftg='0'>" +
+  "主修&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":160.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":83.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":77.0&nbsp;" +
+  "<span id='showKc9001'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul9002'><li id='li9002' class='' fxfyqjd_id='9001' >" +
+  "<div class='title' xfyqjd_id='9002' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p9002' yxxf='28.0' yqzdxf='33.0' sftg='0'>" +
+  "专业核心课&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":33.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":28.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":5.0&nbsp;" +
+  "<span id='showKc9002'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul9003'><li id='li9003' class='' fxfyqjd_id='9001' >" +
+  "<div class='title' xfyqjd_id='9003' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p9003' yxxf='28.0' yqzdxf='125.0' sftg='0'>" +
+  "专业选修课&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":125.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":28.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":97.0&nbsp;" +
+  "<span id='showKc9003'></span></p></div></li></ul>").appendTo("body");
+</script>
+</body></html>
+''';
+
+  /// 老版/静态方言的页面（节点直接渲染成 HTML，没有 JS 模板）：
+  /// 用于回归「其它学校/旧版正方」的解析回退。
+  static const String debugAcademicStaticPage = '''
+<html><body>
+<h5>学生学业情况查询</h5>
+<form id="form"><input type="hidden" id="xh_id" value="25110001"/></form>
+<div id="alertBox">
+  平均学分绩点：<font size="2px">3.52</font>&nbsp;
+  计划总课程 60 门 通过 52 门 未通过 3 门 未修 4 门 在读 1 门，
+  计划外 通过 3 门 未通过 1 门
+</div>
+<div class="panel"><div class="panel-heading">
+  <a data-toggle="collapse">专业核心课</a>
+  <span>要求学分：33.0&nbsp;获得学分：28.0&nbsp;未获得学分：5.0</span>
+  <span id='showKc9002'></span>
+</div></div>
+</body></html>
+''';
+
+  /// 学业情况节点课程明细（真实接口是大写字段，按 xfyqjd_id 分组）。
+  static const Map<String, List<Map<String, Object?>>> _academicCourses = {
+    '9001': [
+      {'KCH': 'MA1102', 'KCMC': '高等数学(下)', 'XF': '4.0', 'KCXZMC': '必修',
+        'KCLBMC': '专业核心课', 'XDZT': '1', 'MAXCJ': '92', 'JD': '4.2',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第一学期'},
+      {'KCH': 'CS2101', 'KCMC': '数据结构', 'XF': '3.5', 'KCXZMC': '必修',
+        'KCLBMC': '专业核心课', 'XDZT': '1', 'MAXCJ': '88', 'JD': '3.3',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第一学期'},
+      {'KCH': 'EN1102', 'KCMC': '大学英语(二)', 'XF': '3.0', 'KCXZMC': '必修',
+        'KCLBMC': '通识必修', 'XDZT': '1', 'MAXCJ': '76', 'JD': '2.6',
+        'JYXDXNM': '2025', 'JYXDXQMC': '第二学期'},
+    ],
+    '9002': [
+      {'KCH': 'MA1102', 'KCMC': '高等数学(下)', 'XF': '4.0', 'KCXZMC': '必修',
+        'KCLBMC': '专业核心课', 'XDZT': '1', 'MAXCJ': '92', 'JD': '4.2',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第一学期'},
+      {'KCH': 'CS2101', 'KCMC': '数据结构', 'XF': '3.5', 'KCXZMC': '必修',
+        'KCLBMC': '专业核心课', 'XDZT': '1', 'MAXCJ': '88', 'JD': '3.3',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第一学期'},
+    ],
+    '9003': [
+      {'KCH': 'AI2201', 'KCMC': '人工智能导论', 'XF': '2.0', 'KCXZMC': '选修',
+        'KCLBMC': '专业选修课', 'XDZT': '2', 'MAXCJ': '', 'JD': '',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第二学期'},
+    ],
+  };
 
   static const List<Map<String, String>> _scoreHeader = [
     {'fieldCode': 'xh', 'fieldName': '学号', 'fieldTh': '基本信息'},
