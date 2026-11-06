@@ -5,6 +5,16 @@ import 'package:campus_core/campus_core.dart';
 
 enum _ActState { signing, upcoming, ended }
 
+/// 报名按钮的不可报名状态：学校已明确给出原因（名额满 / 资格不符）。
+enum SignupBlock { full, ineligible }
+
+/// 学校报名失败文案 → 按钮状态。识别不出返回 null（保持原来的错误弹窗）。
+SignupBlock? signupBlockOfError(String msg) {
+  if (RegExp(r'名额|人数|已满|满员|人满').hasMatch(msg)) return SignupBlock.full;
+  if (RegExp(r'条件|资格|不符|不满足').hasMatch(msg)) return SignupBlock.ineligible;
+  return null;
+}
+
 /// 报名状态：按本机时间对 bm_start / bm_end 判断。
 _ActState _stateOf(Map<String, dynamic> a) {
   DateTime? p(dynamic s) {
@@ -32,6 +42,18 @@ Color _stateColor(_ActState s) => switch (s) {
       _ActState.ended => SemColors.textMuted,
     };
 
+/// 校区胶囊文字；「未标注」（学校没写校区）返回空串，调用方据此不画胶囊。
+String campusTagOf(Map a) {
+  final c = '${a['campus'] ?? ''}'.trim();
+  return c.isEmpty || c == '未标注' || c == 'null' ? '' : c;
+}
+
+/// 「大类 · 小类」：缺哪项就不显示哪项，两个都没有返回空串（不画这一行）。
+String categoryTextOf(Map a) => [
+      '${a['dlmc'] ?? ''}'.trim(),
+      '${a['lbmc'] ?? ''}'.trim(),
+    ].where((s) => s.isNotEmpty && s != 'null').join(' · ');
+
 class ActivitiesPage extends StatefulWidget {
   const ActivitiesPage({super.key});
 
@@ -50,12 +72,79 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   bool _fromCache = false;
   bool _refreshFailed = false;
 
+  // 左右滑动切换：0=活动广场，1=我的报名
+  final PageController _tabs = PageController();
+  int _tab = 0;
+  bool _signedLoading = true;
+  String? _signedErr;
+  List<Map<String, dynamic>> _signed = [];
+  bool _signedFromCache = false;
+  bool _signedRefreshFailed = false;
+  bool _signedLoaded = false; // 本次进入是否已经拉过（懒加载，切到该页才拉）
+  bool _signedFetching = false;
+
   static const _cacheKey = 'activities';
+  static const _signedCacheKey = 'activities.signed';
 
   @override
   void initState() {
     super.initState();
     _restore();
+    _restoreSigned();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  void _switchTab(int i) {
+    if (i == _tab) return;
+    setState(() => _tab = i);
+    if (i == 1 && !_signedLoaded) _loadSigned();
+  }
+
+  /// 「我的报名」先读本机缓存；是否自动拉新同样看「工具页自动刷新」设置。
+  Future<void> _restoreSigned() async {
+    final cached = await ToolPageCache.read(_signedCacheKey);
+    final list = ((cached?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    if (!mounted) return;
+    if (list.isNotEmpty) {
+      setState(() {
+        _signed = list;
+        _signedLoading = false;
+        _signedFromCache = true;
+      });
+    }
+  }
+
+  Future<void> _loadSigned() async {
+    if (_signedFetching) return;
+    _signedFetching = true;
+    setState(() {
+      _signedLoading = true;
+      _signedRefreshFailed = false;
+      if (_signed.isEmpty) _signedErr = null;
+    });
+    try {
+      final r = await ApiClient.I.signedActivities();
+      final list = ((r['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      _signed = list;
+      _signedLoaded = true;
+      _signedFromCache = false;
+      await ToolPageCache.write(_signedCacheKey, {'items': list});
+    } catch (e) {
+      if (_signed.isEmpty) {
+        _signedErr = e is ApiError ? e.message : e.toString();
+        if (mounted) showErr(context, e, title: '我的报名加载失败');
+      } else {
+        _signedRefreshFailed = true;
+      }
+    } finally {
+      _signedFetching = false;
+      if (mounted) setState(() => _signedLoading = false);
+    }
   }
 
   /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否后台拉新。
@@ -149,11 +238,36 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('第二课堂活动')),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: GlassTabs(
+                labels: const ['活动广场', '我的报名'],
+                index: _tab,
+                onChanged: (i) => _tabs.animateToPage(i,
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic),
+                height: 32,
+                fontSize: 11.5,
+              ),
+            ),
+            Expanded(
+              child: PageView(
+                controller: _tabs,
+                onPageChanged: _switchTab,
+                children: [_marketView(), _signedView()],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _marketView() {
     final list = _filtered;
-    return Scaffold(
-      appBar: AppBar(title: const Text('第二课堂活动')),
-      body: PageStateView(
+    return PageStateView(
         loading: _loading && _list.isEmpty,
         error: _err,
         empty: !_loading && _err == null && _list.isEmpty,
@@ -217,7 +331,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                             Capsule(_stateText(_stateOf(a)), color: _stateColor(_stateOf(a))),
                             if (a['backfill'] as bool? ?? false)
                               Capsule('事后补录', color: SemColors.info),
-                            Capsule('${a['campus']}'),
+                            // 没标校区的活动不显示「未标注」胶囊
+                            if (campusTagOf(a).isNotEmpty) Capsule(campusTagOf(a)),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -226,8 +341,9 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                                 fontSize: 15, fontWeight: FontWeight.w600,
                                 color: SemColors.textPrimary)),
                         const SizedBox(height: 4),
-                        Text('${a['dlmc']} · ${a['lbmc']}',
-                            style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+                        if (categoryTextOf(a).isNotEmpty)
+                          Text(categoryTextOf(a),
+                              style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
                         const SizedBox(height: 6),
                         _row('主办：${a['host']}  ·  名额：${a['quota'] ?? '—'}'),
                         const SizedBox(height: 2),
@@ -239,6 +355,85 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                 ),
             ],
           ),
+        ),
+    );
+  }
+
+  /// 「我的报名」：已报名的第二课堂活动（与活动广场左右滑动切换）。
+  Widget _signedView() => PageStateView(
+        loading: _signedLoading && _signed.isEmpty,
+        error: _signedErr,
+        empty: !_signedLoading && _signedErr == null && _signed.isEmpty,
+        emptyText: '还没有报名活动',
+        onRetry: _loadSigned,
+        child: RefreshIndicator(
+          onRefresh: _loadSigned,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+            children: [
+              ToolRefreshBar(
+                refreshing: _signedLoading,
+                fromCache: _signedFromCache,
+                failed: _signedRefreshFailed,
+                onRefresh: _loadSigned,
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('共 ${_signed.length} 个活动',
+                    style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+              ),
+              const SizedBox(height: 6),
+              for (final a in _signed) _signedCard(a),
+            ],
+          ),
+        ),
+      );
+
+  Widget _signedCard(Map<String, dynamic> a) {
+    final status = '${a['status_text'] ?? ''}'.trim();
+    final cat = categoryTextOf(a);
+    final statusColor = switch (status) {
+      '已报名' => SemColors.success,
+      '报名已满' => SemColors.danger,
+      '无需报名' => SemColors.textMuted,
+      _ => SemColors.accent,
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        radius: 10,
+        padding: const EdgeInsets.all(14),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => ActivityDetailPage(id: '${a['id']}', activity: {
+                  'id': a['id'],
+                  'name': a['name'],
+                  'start': a['start'],
+                  'end': a['end'],
+                  'dlmc': a['dlmc'],
+                  'lbmc': a['lbmc'],
+                  'signed': true,
+                }))),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (status.isNotEmpty) Capsule(status, color: statusColor),
+                if (cat.isNotEmpty) Capsule(cat, color: SemColors.accent),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('${a['name']}',
+                style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600, color: SemColors.textPrimary)),
+            const SizedBox(height: 6),
+            _row('活动时间：${_short(a['start'])} ~ ${_short(a['end'])}'),
+            if ('${a['place'] ?? ''}'.trim().isNotEmpty) _row('地点：${a['place']}'),
+          ],
         ),
       ),
     );
@@ -280,8 +475,26 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   /// 报名成功后的工作流实例 ID（学校侧审批记录，可凭它追溯进度）。
   String? _signedInstanceId;
 
-  /// 已报名：学校详情接口的 signed（他人会话查回来的不透传 true）或本次会话刚报过。
-  bool get _signed => _signedInstanceId != null || _data?['signed'] == true;
+  /// 报名被学校明确拒绝后记住原因（名额满 / 条件不符），按钮直接显示对应状态。
+  SignupBlock? _blocked;
+
+  /// 已报名：学校详情接口的 signed（他人会话查回来的不透传 true）、列表项自带的
+  /// signed，或本次会话刚报过。详情接口对「无需报名」的活动可能回 bm=0，
+  /// 不能让合并后的 false 把列表已经确认的「已报名」擦掉。
+  bool get _signed =>
+      _signedInstanceId != null ||
+      _data?['signed'] == true ||
+      widget.activity?['signed'] == true;
+
+  /// 不可报名状态：本次提交被拒的原因优先，其次看学校数据里的人数 / 状态原文。
+  SignupBlock? get _blockState {
+    if (_blocked != null) return _blocked;
+    final a = _data;
+    if (a == null) return null;
+    if (isIneligibleSignup(a)) return SignupBlock.ineligible;
+    if (isFullSignup(a)) return SignupBlock.full;
+    return null;
+  }
 
   @override
   void initState() {
@@ -357,6 +570,16 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       return iid;
     } on ApiError catch (e) {
       if (!mounted) return null;
+      // 学校明确说名额满了 / 条件不符：把原因记到按钮上，不用弹窗反复打扰。
+      final block = signupBlockOfError(e.message);
+      if (block != null) {
+        setState(() => _blocked = block);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.message),
+          behavior: SnackBarBehavior.floating,
+        ));
+        return null;
+      }
       final uncertain = e.message.contains('超时') || e.message.contains('网络错误');
       if (uncertain) {
         // 请求可能已经到达学校：再提交一次可能生成重复申请，必须先人工确认。
@@ -442,8 +665,11 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                         Capsule(_stateText(_stateOf(a)), color: _stateColor(_stateOf(a))),
                         if (_signed) Capsule('已报名', color: SemColors.success),
                         if (a['backfill'] as bool? ?? false) Capsule('事后补录', color: SemColors.info),
-                        Capsule('${a['dlmc']}', color: SemColors.accent),
-                        Capsule('${a['lbmc']}', color: SemColors.accent),
+                        // 大类 / 小类没标注就不画空胶囊
+                        if ('${a['dlmc'] ?? ''}'.trim().isNotEmpty)
+                          Capsule('${a['dlmc']}', color: SemColors.accent),
+                        if ('${a['lbmc'] ?? ''}'.trim().isNotEmpty)
+                          Capsule('${a['lbmc']}', color: SemColors.accent),
                       ],
                     ),
                   if (a != null) const SizedBox(height: 10),
@@ -512,13 +738,24 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         ),
       );
 
-  /// 底部报名按钮：只在报名窗口内可点；已报名（学校说的或刚报的）/ 加载中禁用。
+  /// 底部报名按钮：只在报名窗口内可点；已报名 / 人满 / 条件不符 / 加载中禁用。
   Widget _signupButton(_ActState? state) {
     if (_signed) {
       return FilledButton.icon(
         onPressed: null,
         icon: const Icon(Icons.check_circle_rounded, size: 18),
         label: const Text('已报名'),
+      );
+    }
+    // 只有在报名窗口内才谈得上「人满 / 条件不符」；窗口外仍显示未开始 / 已结束。
+    final block = state == _ActState.signing ? _blockState : null;
+    if (block != null) {
+      return FilledButton.icon(
+        onPressed: null,
+        icon: Icon(
+            block == SignupBlock.full ? Icons.group_off_rounded : Icons.block_rounded,
+            size: 18),
+        label: Text(block == SignupBlock.full ? '已人满' : '条件不符'),
       );
     }
     final enabled = state == _ActState.signing && !_loading && !_signingUp;

@@ -40,10 +40,12 @@ class ElectricityPlugin extends FeaturePlugin {
     return '余额 ¥${e.balance}';
   }
 
+  /// 卡面速览与电费二级页共用同一份数据：落盘后进页面先显示上次余额。
   @override
   Future<void> prefetch() async {
     final r = await ApiClient.I.electricityQuery();
     ToolCache.electricity = ToolCache.electricityOf(r['data']);
+    await ToolPageCache.write('electricity', {'data': r['data']});
   }
 }
 

@@ -76,6 +76,13 @@ class MockCampusServer {
   /// 测试用：最近一次收到的报名提交体（验证预填回传 / 自述字段透传 / 附件字段剔除）。
   Map<String, String>? debugLastSignupForm;
 
+  /// 测试用：模拟新生账号在正方侧没有可用密码（浏览器里只能点统一身份认证登入），
+  /// 账号密码表单永远回「用户名或密码错误」；统一认证 CAS 仍可用同一密码登录。
+  bool debugJwxtPasswordLoginRejected = false;
+
+  /// 测试用：登录页不放统一认证入口，且 SSO 兜底路径 404（学校未开 SSO）。
+  bool debugJwxtNoSsoEntry = false;
+
   bool get running => _server != null;
   Uri get baseUri => Uri.parse('http://127.0.0.1:$_port');
   String get baseUrl => baseUri.toString();
@@ -198,14 +205,14 @@ class MockCampusServer {
             return _jwxtLoginFail(res, '验证码错误');
           }
           if ((form['yhm'] ?? '') != studentId) return _jwxtLoginFail(res, '用户名或密码错误');
-          if (_rsaDecrypt(form['mm'] ?? '') != password) {
+          if (debugJwxtPasswordLoginRejected || _rsaDecrypt(form['mm'] ?? '') != password) {
             return _jwxtLoginFail(res, '用户名或密码错误');
           }
           s.jwxt = true;
           s.jwxtCaptcha = null;
           return _redirect(res, '/jwglxt/xtgl/index_initMenu.html');
         }
-        return _html(res, _jwxtLoginPage);
+        return _html(res, _loginPageHtml);
 
       case '/jwglxt/xtgl/login_getPublicKey.html':
         return _json(res, {'modulus': _rsaModulusB64, 'exponent': _rsaExponentB64});
@@ -220,6 +227,19 @@ class MockCampusServer {
       case '/jwglxt/xtgl/index_initMenu.html':
         if (!s.jwxt) return _redirect(res, '/jwglxt/xtgl/login_slogin.html');
         return _html(res, '<html><body><div id="mock">index_initMenu</div></body></html>');
+
+      // 统一认证入口：未带票据 → 302 去 authserver；带 ticket 回来 → 建立教务会话
+      case '/jwglxt/xtgl/login_ssologin.html':
+        if (debugJwxtNoSsoEntry) {
+          return _text(res, 404, 'mock: 未开启统一身份认证', 'text/plain; charset=utf-8');
+        }
+        if ((req.uri.queryParameters['ticket'] ?? '').isNotEmpty && s.cas) {
+          s.jwxt = true;
+          return _redirect(res, '/jwglxt/xtgl/index_initMenu.html');
+        }
+        final service = '$baseUrl/jwglxt/xtgl/login_ssologin.html';
+        return _redirect(
+            res, '$baseUrl/authserver/login?service=${Uri.encodeComponent(service)}');
 
       case '/jwglxt/cjcx/cjcx_cxXsgrcj.html':
         if (!s.jwxt) return _jwxtExpired(res);
@@ -298,7 +318,23 @@ class MockCampusServer {
   <img id="kaptchaImg" src="/jwglxt/kaptcha"/>
   <input type="submit" value="登录"/>
 </form>
+<a id="authLogin" href="/jwglxt/xtgl/login_ssologin.html">统一身份认证登录</a>
 </body></html>''';
+
+  /// 未开启统一身份认证时，登录页上去掉那个按钮（客户端应回落到「账号密码登录失败」）。
+  static const String _jwxtLoginPageNoSso = '''
+<html><body>
+<form id="loginForm" method="post" action="/jwglxt/xtgl/login_slogin.html">
+  <input type="hidden" name="csrftoken" value="mock-csrf-token"/>
+  <input type="text" name="yhm"/>
+  <input type="password" name="mm"/>
+  <input type="text" name="yzm"/>
+  <img id="kaptchaImg" src="/jwglxt/kaptcha"/>
+  <input type="submit" value="登录"/>
+</form>
+</body></html>''';
+
+  String get _loginPageHtml => debugJwxtNoSsoEntry ? _jwxtLoginPageNoSso : _jwxtLoginPage;
 
   void _tips(HttpResponse res, String msg) =>
       _html(res, '<html><body><div id="tips">$msg</div></body></html>');
@@ -312,7 +348,7 @@ class MockCampusServer {
 
   /// 会话过期时业务接口的应答：真实正方有些版本不打回 302，而是直接给一张登录页 HTML
   /// （客户端若把它当成 JSON 解析就会失败，还容易误报成「这周没课」）。
-  void _jwxtExpired(HttpResponse res) => _html(res, _jwxtLoginPage);
+  void _jwxtExpired(HttpResponse res) => _html(res, _loginPageHtml);
 
   /// 测试用：服务端偷偷把教务会话删掉（模拟正方会话超时），客户端并不知情。
   void debugForgetJwxtSession() {
@@ -458,6 +494,71 @@ $casErrorSkeleton
                 'lblist': [
                   {'lbmc': '志愿服务', 'hdlist': [_activityItems['m002']]},
                 ],
+              },
+            ],
+          },
+        });
+
+      // 我的报名：all=0 只回本人已报名（bm=1）；all=1 是全部活动。
+      case '/zftal-xgxt-web/hdgl/list.zf':
+        if (!s.xg) return _redirect(res, _casLoginUrl(path));
+        final signedOnly = (form['all'] ?? '1') == '0';
+        final items = [
+          {
+            'id': 'm001', 'hdmc': 'AI 赋能学习效率提升讲座',
+            'dldm': '01', 'dlmc': '思想成长', 'lbdm': '0101', 'lbmc': '讲座报告',
+            'hdkssj': '2026-10-10 14:00:00', 'hdjssj': '2026-10-10 16:00:00',
+            'hddd': '线下', 'hdbmzt': '5', 'bm': signedOnly ? 1 : 0,
+          },
+          {
+            'id': 'm002', 'hdmc': '秋季校园马拉松志愿者',
+            'dldm': '02', 'dlmc': '劳育', 'lbdm': '0201', 'lbmc': '志愿公益',
+            'hdkssj': '2026-10-18 07:00:00', 'hdjssj': '2026-10-18 13:00:00',
+            'hddd': '线下', 'hdbmzt': '6', 'bm': signedOnly ? 1 : 0,
+          },
+          if (!signedOnly)
+            {
+              'id': 'm003', 'hdmc': '实验室开放日参观',
+              'dldm': '03', 'dlmc': '美育', 'lbdm': '0301', 'lbmc': '校园文化活动',
+              'hdkssj': '2026-09-20 13:30:00', 'hdjssj': '2026-09-20 17:00:00',
+              'hddd': '线下', 'hdbmzt': '6', 'bm': 0,
+            },
+        ];
+        return _json(res, {
+          'code': 0,
+          'msg': '操作成功',
+          'data': {'items': items, 'totalCount': items.length, 'pageNo': 0, 'pageSize': 15},
+        });
+
+      // 第二课堂加分明细：每条 = 一次活动参与记录 + 学分。
+      case '/zftal-xgxt-web/bizFlow/result/group/list.zf':
+        if (!s.xg) return _redirect(res, _casLoginUrl(path));
+        return _json(res, {
+          'code': 0,
+          'msg': '操作成功',
+          'data': {
+            'bizName': '学生活动申请',
+            'formCode': 'hdsq',
+            'formName': '学生活动申请',
+            'totalCount': 2,
+            'rows': [
+              {
+                'INSTANCE_ID': 'inst-1',
+                'hdmc': 'AI 赋能学习效率提升讲座',
+                'dldm': '德育', 'lbdm': '讲座报告',
+                'hdxf': '0.20', 'jcxsxf': '0.2', 'zzxsxf': '0.2',
+                'flowstatusmc': '通过', 'FLOWSTATUS': 'finish',
+                'hdkssj': '2026-10-10 14:00:00', 'hdjssj': '2026-10-10 16:00:00',
+                'CREATE_TIME': '2026-10-11 09:00:00',
+              },
+              {
+                'INSTANCE_ID': 'inst-2',
+                'hdmc': '秋季校园马拉松志愿者',
+                'dldm': '劳育', 'lbdm': '志愿公益',
+                'hdxf': '0.50', 'jcxsxf': '0.5', 'zzxsxf': '0.5',
+                'flowstatusmc': '通过', 'FLOWSTATUS': 'finish',
+                'hdkssj': '2026-10-18 07:00:00', 'hdjssj': '2026-10-18 13:00:00',
+                'CREATE_TIME': '2026-10-19 10:00:00',
               },
             ],
           },

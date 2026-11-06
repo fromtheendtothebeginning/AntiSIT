@@ -69,7 +69,11 @@ class CampusDirect {
 
   JwxtClient get _jwxtClient {
     _syncClients();
-    return _jwxt ??= JwxtClient(AppState.I.school.jwxtBase, aesKey: AppState.I.school.dektAesKey);
+    return _jwxt ??= JwxtClient(
+      AppState.I.school.jwxtBase,
+      aesKey: AppState.I.school.dektAesKey,
+      authBase: AppState.I.school.authBase,
+    );
   }
 
   XgClient get _xgClient {
@@ -135,6 +139,10 @@ class CampusDirect {
   /// 免得拿同一个错误密码连弹三次验证码。
   static bool _isCaptchaError(String msg) => msg.contains('验证码');
 
+  /// 账号 / 密码被学校拒绝（不是验证码错）——教务账号密码登录走不通时改试统一身份认证。
+  static bool _isCredentialError(String msg) =>
+      msg.contains('密码') || msg.contains('账号') || msg.contains('用户名') || msg.contains('用户不存在');
+
   /// 学工 CAS 登录（持久化 Cookie 仍有效时免验证码）。
   Future<void> _ensureXg() {
     final inflight = _xgLogin;
@@ -191,10 +199,17 @@ class CampusDirect {
     final client = _jwxtClient;
     if (await client.checkSession()) return;
     String? lastError;
-    for (var attempt = 0; attempt < 3; attempt++) {
+    var casTried = false;
+    var attempt = 0;
+    while (attempt < 3) {
+      attempt++;
       final image = await client.prepareLogin(_cred.studentId, _cred.password);
-      if (image.isEmpty) throw ApiError('教务验证码获取失败，请稍后重试');
-      final text = await _askCaptcha(image, '教务系统验证码', () async {
+      if (image.isEmpty) {
+        if (client.loggedIn) return; // CAS 自动放行，业务会话已建立
+        throw ApiError('教务验证码获取失败，请稍后重试');
+      }
+      final hint = client.usingCasLogin ? '统一身份认证验证码' : '教务系统验证码';
+      final text = await _askCaptcha(image, hint, () async {
         final img = await client.prepareLogin(_cred.studentId, _cred.password);
         if (img.isEmpty) throw ApiError('验证码获取失败，请重试');
         return img;
@@ -205,7 +220,16 @@ class CampusDirect {
         return;
       } on ApiError catch (e) {
         lastError = e.message;
-        if (!_isCaptchaError(lastError)) rethrow;
+        if (_isCaptchaError(lastError)) continue; // 换一张重输
+        // 正方账号密码被拒：这个账号在正方侧可能没有可用密码（如新生），
+        // 浏览器里也是点「统一身份认证」登入——改走 CAS，密码不变。
+        if (!casTried && _isCredentialError(lastError) && await client.enableCasLogin()) {
+          casTried = true;
+          attempt--; // 切换登录方式不算一次验证码尝试
+          lastError = null;
+          continue;
+        }
+        rethrow;
       }
     }
     throw ApiError('教务系统登录失败：${lastError ?? '请稍后重试'}');
@@ -284,6 +308,18 @@ class CampusDirect {
   Future<Map<String, dynamic>> activities() => _withRelogin(() async {
         await _ensureXg();
         return {'ok': true, 'data': await _xg!.activitiesPayload()};
+      }, _ensureXg);
+
+  /// 已报名的第二课堂活动（我的报名）。
+  Future<Map<String, dynamic>> signedActivities() => _withRelogin(() async {
+        await _ensureXg();
+        return {'ok': true, 'activities': await _xg!.signedActivities()};
+      }, _ensureXg);
+
+  /// 第二课堂加分明细（每次活动参与记录 + 学分）。
+  Future<Map<String, dynamic>> creditRecords() => _withRelogin(() async {
+        await _ensureXg();
+        return {'ok': true, 'records': await _xg!.creditRecords()};
       }, _ensureXg);
 
   Future<Map<String, dynamic>> activityDetail(String aid) => _withRelogin(() async {

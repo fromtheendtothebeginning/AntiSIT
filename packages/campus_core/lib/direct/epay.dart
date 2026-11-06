@@ -14,6 +14,22 @@ import 'sm4.dart';
   return (building: building, room: room, buildid: building + 1, roomid: room);
 }
 
+/// 表单回填用：「24号楼1016」→ 楼号「24」、寝室号「1016」。
+/// 解析不了时整串放进寝室号，让用户自己改，不丢输入。
+({String building, String room}) splitDorm(String dormStr) {
+  final s = dormStr.trim();
+  final m = RegExp(r'(\d+)\s*号?\s*楼?\s*[-]?\s*(\d+)').firstMatch(s);
+  if (m == null) return (building: '', room: s);
+  return (building: m.group(1)!, room: m.group(2)!);
+}
+
+/// 楼号 + 寝室号 → 存储/接口用的「24号楼1016」；任一为空视为未填写。
+String composeDorm(String building, String room) {
+  final b = building.trim(), r = room.trim();
+  if (b.isEmpty || r.isEmpty) return '';
+  return '$b号楼$r';
+}
+
 /// 校付宝（epeortal / openservice）客户端：校园码、电费查询/充值、校园卡余额。
 /// 公网可达：不需要校园网/VPN，也不需要验证码；支付密码用 SM4 加密提交。
 /// 移植自 index 后端 campus/electricity.py 与 campus/ecard.py。

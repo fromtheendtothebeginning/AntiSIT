@@ -54,11 +54,13 @@ class ScorePlugin extends FeaturePlugin {
   }
 
   /// 「我的 → 学籍信息」也读这份缓存，所以取到后一并写进 AppState。
+  /// 同时落盘到工具页缓存：进入「二课分数」二级页时先显示这份数据，不用先转圈。
   @override
   Future<void> prefetch() async {
     final r = await ApiClient.I.score();
     ToolCache.score = ToolCache.scoreOf(r['data']);
     AppState.I.studentInfo = ToolCache.score?.student;
+    await ToolPageCache.write('score', {'data': r['data']});
   }
 }
 

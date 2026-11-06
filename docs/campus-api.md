@@ -269,6 +269,8 @@
         "campus": "奉贤",
         "backfill": false,
         "quota": "30 人",
+        "enrolled": 30,
+        "status_text": "",
         "signup": { "qq": ["123456789"], "phone": [], "tips": ["扫码"], "contact_lines": ["…"] },
         "hdms": "活动说明全文（≤2000 字）"
       }
@@ -283,6 +285,8 @@
 | campus | 名称+说明里含「奉贤」「徐汇」字样判定：两含=`奉贤+徐汇`，单含取其一，均无=`未标注` |
 | backfill | 活动开始时间早于报名开始时间=true（事后补录型活动） |
 | quota | 从说明文本正则提取「人数/名额/限/招收/招募/录取/报名人数 N 人」→ `"N 人"`；说明含「人数不限/名额不限」→ null；找不到 → null |
+| enrolled | 报名人数：上游 `bdrs`（旧版抓包里该字段存在但多为空），兼容 `bmrs`/`ybmrs`/`bmsl` → int；全部缺失 → null |
+| status_text | 上游报名状态原文（`bmztmc`/`bmzt`/`hdztmc`/`ztmc` 中第一个含中文的值，如「名额已满」「条件不符」）→ string；没有 → 空串 |
 | signup | 报名线索：`qq`（群号模式正则提取的 5-12 位数字，剔除与手机号重复者）、`phone`（`1[3-9]` 开头 11 位）、`tips`（说明中出现的固定关键词：扫码/二维码/扫码进群/报名成功/请勿申请/无需报名）、`contact_lines`（含 QQ群/群号/加群/扫码/钉钉/微信群/联系人/联系电话/咨询电话/报名方式/报名链接/报名请/申请加入/入群 等关键词、且不含「群体/社群/人群/群众/成群/超群」误判词的原始行，最多 3 行）——各键仅在非空时出现 |
 | hdms | 活动说明全文，截断 2000 字符 |
 
@@ -295,6 +299,65 @@
 ```json
 { "ok": true, "data": { "id": "1a2b3c", "hdms": "活动说明全文（不截断）", "quota": "30 人", "signup": { "qq": ["…"] } } }
 ```
+
+### 3.5.1 我的报名（已报名的第二课堂活动）
+
+`GET /api/campus-open/activities/signed`（Bearer，隧道类，学工）
+
+上游：`POST /zftal-xgxt-web/hdgl/list.zf`，表单 `all=0`（`all=1` 是全部活动），逐页取 `data.items`。
+
+```json
+{
+  "ok": true,
+  "activities": [
+    {
+      "id": "00d4a05fbd8bedec53a7400c484a0748",
+      "name": "2026 秋季运动会运动员方阵加分",
+      "dlmc": "德育", "lbmc": "志愿公益",
+      "start": "2026-11-03 00:00:00", "end": "2026-11-03 23:59:59",
+      "place": "线下",
+      "status_text": "已报名",
+      "signed": true
+    }
+  ]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| status_text | 上游 `hdbmzt` 状态码 → 文案：1 流程设置中 / 2 报名已截止 / 3 报名未开始 / 4 报名已满 / 5 已报名 / 6 无需报名；未知为空串 |
+| signed | 上游 `bm == 1`（本人已报名/已参与） |
+| place | 上游 `hddd`（线上/线下） |
+
+### 3.5.2 第二课堂加分明细
+
+`GET /api/campus-open/score/credits`（Bearer，隧道类，学工）
+
+上游：`POST /zftal-xgxt-web/bizFlow/result/group/list.zf`，表单 `groupCode=xshd`，逐页取 `data.rows`。
+
+```json
+{
+  "ok": true,
+  "records": [
+    {
+      "id": "3a5d4e7389c23cb273bc42cd8ff0b86a",
+      "name": "【智能技术学部】9.18科技创新协会宣讲会",
+      "dldm": "德育", "lbdm": "科研创新",
+      "credit": "0.10",
+      "status": "通过",
+      "start": "2025-09-18 00:00:00", "end": "2025-09-18 23:59:59",
+      "date": "2025-09-19 22:03:07"
+    }
+  ]
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| credit | 上游 `hdxf`（活动学分），缺失时退 `jcxsxf` |
+| status | 上游 `flowstatusmc` / `FLOWSTATUS`（如「通过」） |
+| date | 上游 `CREATE_TIME`（记录创建时间） |
+| id | 上游 `INSTANCE_ID` / `ID` / `hdid` |
 
 ### 3.6 课表单周查询
 

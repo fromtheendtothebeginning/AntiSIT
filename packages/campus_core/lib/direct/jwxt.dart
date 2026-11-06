@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../api_error.dart';
 import 'academic.dart';
+import 'cas.dart';
 import 'crypto.dart';
 import 'http_session.dart';
 
@@ -21,16 +22,26 @@ String readableCourseCode(List<Object?> candidates) {
 
 /// 正方教务客户端：登录（RSA 加密密码 + 图形验证码）、成绩、周课表、考试安排。
 /// 移植自 index 后端 campus/dekt.py 的教务部分；仅能在校园网 / 校内 VPN 下访问。
+///
+/// 登录有两条路：正方自己的账号密码表单；以及登录页上的「统一身份认证」入口（CAS）。
+/// 新生等账号可能在正方侧没有可用密码（浏览器里也只能点统一认证登入），
+/// 账号密码被拒时由 [enableCasLogin] 切到 SSO，密码仍是同一个统一身份认证密码。
 class JwxtClient {
-  JwxtClient(String base, {this.aesKey = ''}) : base = base.replaceAll(RegExp(r'/+$'), '') {
+  JwxtClient(String base, {this.aesKey = '', String authBase = ''})
+      : base = base.replaceAll(RegExp(r'/+$'), ''),
+        authBase = authBase.replaceAll(RegExp(r'/+$'), '') {
     _http = HttpSession(
-      trustHosts: [Uri.parse(this.base).host],
+      trustHosts: [
+        Uri.parse(this.base).host,
+        if (this.authBase.isNotEmpty) Uri.parse(this.authBase).host,
+      ],
       persistKey: 'direct_cookies_jwxt',
     );
   }
 
   final String base;
   final String aesKey; // isEncrypt 响应解密密钥，留空表示不加密
+  final String authBase; // 统一身份认证（含 /authserver），用于 CAS 登录
 
   late final HttpSession _http;
   bool loggedIn = false;
@@ -38,6 +49,12 @@ class JwxtClient {
   String? _studentId;
   String? _csrftoken;
   String? _encPassword;
+  String? _plainPassword; // CAS 登录提交时用（正方登录用 _encPassword）
+  CasLogin? _cas;
+  String? _ssoEntry;
+
+  /// 当前登录是否已切到统一身份认证（账号密码被拒之后）。
+  bool get usingCasLogin => _cas != null;
 
   static int _ms() => DateTime.now().millisecondsSinceEpoch;
   String get _jwglxt => '$base/jwglxt';
@@ -200,9 +217,95 @@ class JwxtClient {
         '${end < text.length ? '…' : ''}';
   }
 
+  /// 账号密码登录被学校拒绝后，改用登录页上的「统一身份认证」入口（CAS）。
+  /// 新生账号常见：正方侧没有可用密码，浏览器里也是点统一认证按钮登入。
+  /// 返回 false 表示登录页没有可用入口（学校未开 SSO / 登录页改版 / 不可达）。
+  Future<bool> enableCasLogin() async {
+    if (_cas != null) return true;
+    // 失败的正方登录会话没有复用价值，留着反而可能把 CAS 回跳的 ticket 绑到旧会话上。
+    _http.clearCookies();
+    String html;
+    try {
+      html = (await _http.get('$_jwglxt/xtgl/login_slogin.html')).text;
+    } catch (_) {
+      return false;
+    }
+    final pageUrl = '$_jwglxt/xtgl/login_slogin.html';
+    final candidates = <String>[
+      for (final u in ssoEntries(html)) Uri.parse(pageUrl).resolve(u).toString(),
+      // 正方新版的统一认证入口路径：登录页按钮是 JS 跳转、解析不到时兜底
+      '$_jwglxt/xtgl/login_ssologin.html',
+      '$_jwglxt/xtgl/login_sloginCAS.html',
+    ];
+    final seen = <String>{};
+    for (final url in candidates) {
+      if (!seen.add(url)) continue;
+      final cas = CasLogin(http: _http, authBase: authBase);
+      try {
+        if (await cas.open(url)) {
+          _cas = cas;
+          _ssoEntry = url;
+          _encPassword = null;
+          return true;
+        }
+      } catch (_) {
+        // 这个入口不通，试下一个
+      }
+    }
+    return false;
+  }
+
+  /// 登录页里的统一认证入口（原始 href/action，可能相对路径）。抽成静态方法便于单测。
+  @visibleForTesting
+  static List<String> ssoEntries(String html) {
+    final out = <String>[];
+    void add(String raw) {
+      final v = raw.trim();
+      if (v.isEmpty || v.startsWith('#') || v.startsWith('javascript:')) return;
+      if (v.contains('login_getPublicKey') || v.contains('/kaptcha')) return;
+      final casLike = RegExp(
+              r'(login_ssologin|login_sloginCAS|casLogin|ssoLogin|authserver|/cas/|authType=cas|loginType=cas)',
+              caseSensitive: false)
+          .hasMatch(v);
+      if (casLike) out.add(v);
+    }
+
+    for (final m in RegExp(r'''(?:href|action|src|url)\s*[=:]\s*["']([^"']+)["']''',
+            caseSensitive: false)
+        .allMatches(html)) {
+      add(m.group(1)!);
+    }
+    // 入口写在脚本里（location.href = '...' / window.open(...)）时没有 href 属性
+    for (final m in RegExp(r'''["']((?:https?:)?//[^"']+|/[^"']+)["']''').allMatches(html)) {
+      add(m.group(1)!);
+    }
+    // 按钮文字是「统一身份认证」但 href 本身不含关键词的情况
+    for (final m in RegExp(
+            r'''<a\b[^>]*href=["']([^"']+)["'][^>]*>[^<]*(?:统一身份认证|统一认证|CAS|SSO)[^<]*</a>''',
+            caseSensitive: false,
+            dotAll: true)
+        .allMatches(html)) {
+      add(m.group(1)!);
+    }
+    return out;
+  }
+
   /// 准备登录：抓 csrftoken + 公钥加密密码 + 验证码图片；返回验证码图片字节。
   Future<Uint8List> prepareLogin(String studentId, String password) async {
     _studentId = studentId;
+    final cas = _cas;
+    if (cas != null) {
+      _plainPassword = password;
+      // 每次尝试都重新打开入口：失败一次后 execution 令牌已作废，复用会一直报验证码错。
+      if (!await cas.open(_ssoEntry!)) {
+        if (await checkSession()) {
+          loggedIn = true;
+          return Uint8List(0);
+        }
+        throw ApiError('统一身份认证入口已失效，请稍后重试');
+      }
+      return cas.captcha();
+    }
     final html = (await _http.get('$_jwglxt/xtgl/login_slogin.html')).text;
     _csrftoken = RegExp(r'name="csrftoken"[^>]*value="([^"]*)"').firstMatch(html)?.group(1) ?? '';
     final kd = (await _http.get('$_jwglxt/xtgl/login_getPublicKey.html?time=${_ms()}')).json;
@@ -216,6 +319,21 @@ class JwxtClient {
 
   /// 用验证码完成登录；验证码或账号密码错误抛 ApiError。
   Future<void> completeLogin(String captcha) async {
+    final cas = _cas;
+    if (cas != null) {
+      final pwd = _plainPassword;
+      if (pwd == null) throw ApiError('教务登录会话已过期，请重新登录');
+      final resp = await cas.submit(_studentId ?? '', pwd, captcha);
+      _plainPassword = null;
+      if (await checkSession()) {
+        loggedIn = true;
+        return;
+      }
+      final tip = CasLogin.errorTip(resp.text);
+      throw ApiError(tip.isNotEmpty
+          ? tip
+          : '统一身份认证登录未通过（HTTP ${resp.status}），请稍后重试');
+    }
     final enc = _encPassword;
     if (enc == null) throw ApiError('教务登录会话已过期，请重新登录');
     final resp = await _http.postForm(

@@ -323,7 +323,7 @@ class _LoginPageState extends State<LoginPage> {
       ),
       const SizedBox(height: 14),
       GlassField(
-        label: '统一身份认证密码（= 校园网 / VPN 密码）',
+        label: '统一身份认证密码',
         controller: _campusPwd,
         obscureText: _hideCampusPwd,
         prefixIcon: const Icon(Icons.lock_outline),
