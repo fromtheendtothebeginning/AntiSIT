@@ -364,15 +364,11 @@ class ApiClient {
       : _call('POST', '/api/campus-open/timetable/exams',
           body: {'xnm': xnm, 'xqm': xqm}, tunnel: true);
 
-  /// 学业情况（学生学业情况查询，N105515）。
-  /// 目前只有直连模式实现：服务器模式的开放接口还没有这个端点，直接给明确提示，
-  /// 而不是打一个必然 404 的请求。
-  Future<Map<String, dynamic>> academicStatus() async {
-    if (!_useDirect) {
-      throw ApiError('学业情况查询目前只支持直连模式：请到「连接设置 → 直连模式」填写校园凭据');
-    }
-    return CampusDirect.I.academicStatus();
-  }
+  /// 学业情况（学生学业情况查询，N105515）：整体统计 + 培养方案类别学分要求
+  /// 与类别课程明细（含通识类等非课程节点）。
+  Future<Map<String, dynamic>> academicStatus() => _useDirect
+      ? CampusDirect.I.academicStatus()
+      : _call('GET', '/api/campus-open/academic', tunnel: true);
 
   Future<Map<String, dynamic>> ecard() =>
       _useDirect ? CampusDirect.I.ecard() : _call('GET', '/api/campus-open/ecard');

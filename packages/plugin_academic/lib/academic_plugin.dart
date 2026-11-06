@@ -7,7 +7,7 @@ import 'academic_page.dart';
 /// 学业情况：学生学业情况查询（正方 N105515）——平均学分绩点、计划内外课程
 /// 通过数、培养方案各类别学分要求，以及每个类别下的课程明细。
 ///
-/// 只有直连模式能取：服务器模式的开放接口暂时还没有这一项，打开页面会给明确提示。
+/// 直连 / 服务器两种模式都支持（服务器模式走开放接口 `/api/campus-open/academic`）。
 class AcademicPlugin extends FeaturePlugin {
   const AcademicPlugin();
 
@@ -18,7 +18,7 @@ class AcademicPlugin extends FeaturePlugin {
   @override
   String get name => '学业情况';
   @override
-  String get description => '学分要求、已修情况与类别课程明细（直连）';
+  String get description => '学分要求、已修情况与类别课程明细';
   @override
   List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 

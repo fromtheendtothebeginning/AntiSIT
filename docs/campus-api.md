@@ -109,7 +109,7 @@
 
 | 类别 | 接口 | 依赖 |
 |---|---|---|
-| 隧道类（VPN） | `score` / `grades` / `activities` / `activities/{aid}` / `timetable/week` / `timetable/exams` | 校园内网，可能返回 202 |
+| 隧道类（VPN） | `score` / `score/credits` / `grades` / `academic` / `activities` / `activities/signed` / `activities/{aid}` / `timetable/week` / `timetable/exams` | 校园内网，可能返回 202 |
 | 直连类（校付宝公网） | `ecard` / `electricity/query` / `electricity/history` / `electricity/recharge` | 不占 VPN，隧道断开也能用，**绝不返回 202** |
 | 本地状态 | `status` / `disconnect` | 不触上游 |
 
@@ -248,6 +248,52 @@
 - 字段含义：课程名 kcmc / 成绩 cj（可能是数字串也可能是等级制如「优」）/ 学分 xf / 绩点 jd / 学分绩 xfjd / 课程类别 kclbmc / 课程性质 kcxzmc / 考核方式 khfsmc / 校区 xqmmc / 学年 xnmmc / 是否外语课 sfxwkc。
 - **绩点算法**（服务端重算，客户端直接展示即可，复刻服务端时须一致）：数值成绩 `jd = round(cj/10 − 5, 4)`（满绩 5.0）；等级制成绩用系统给的 jd（缺失按 0）；`xfjd = round(jd × xf, 4)`；`gpa = round(Σxfjd / Σxf, 4)`（Σxf=0 时为 0）。
 - `terms` 按 `(xnmmc, xqm)` 排序；仅在全空参数时返回。
+
+### 3.3.1 学业情况
+
+`GET /api/campus-open/academic`（Bearer，隧道类，教务）
+
+上游：正方「学生学业情况查询」（`GNMKDM=N105515`）的首页 HTML + 各培养方案节点的明细接口
+（教学计划课程 `xsxyqk_cxJxzxjhxfyqKcxx.html` / 非课程信息 `xsxyqk_cxJxzxjhxfyqFKcxx.html`，
+均 POST `xfyqjd_id`）。
+
+```json
+{
+  "ok": true,
+  "data": {
+    "sid": "25110001",
+    "statistics": {
+      "gpa": 3.52,
+      "planed": { "total": 60, "passed": 52, "failed": 3, "missed": 4, "in": 1 },
+      "unplaned": { "passed": 3, "failed": 1 }
+    },
+    "categories": [
+      {
+        "name": "专业核心课", "id": "9002", "parent": "9001", "level": 1,
+        "required": 33.0, "earned": 28.0, "missed": 5.0,
+        "passed": true, "jdkcsx": "1",
+        "courses": [
+          { "name": "高等数学", "code": "B1234567", "credit": "4.0",
+            "score": "92", "point": "4.2", "status": "4", "statusText": "已修",
+            "nature": "必修", "category": "公共基础课",
+            "year": "2025", "termCode": "第一学期", "term": "大一上" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| statistics.gpa | 平均学分绩点；页面上取不到时为 null |
+| statistics.planed / unplaned | 计划内（总/通过/未通过/未修/在读）与计划外（通过/未通过）课程数；缺失字段为 null |
+| categories[].id / parent | 培养方案节点 id 与父节点 id（根节点 parent 为空） |
+| categories[].required / earned / missed | 要求学分 / 已获学分 / 未获学分；页面未给时为 null |
+| categories[].jdkcsx | 上游节点属性：`"1"` = 教学计划课程；其它 = 非课程信息（通识类、实践环节） |
+| categories[].courses | 该节点课程明细；节点取数失败时为空数组，并在 `coursesError` 给原因 |
+| courses[].statusText | 修读状态码 → 文案：1 在修 / 2 未过 / 3 未修 / 4、21 已修 / 5~10 替代或认定类 |
+| courses[].term | 建议修读学期（按学号前两位推算，如「大二上」）；算不出为空串 |
 
 ### 3.4 第二课堂活动列表
 
@@ -567,6 +613,7 @@ curl -s -X POST $BASE/api/campus-open/disconnect -H "Authorization: Bearer $TOKE
 # ── 隧道类（202 时等 5 秒重试）──
 curl -s $BASE/api/campus-open/score   -H "Authorization: Bearer $TOKEN"
 curl -s "$BASE/api/campus-open/grades?xnm=2025&xqm=3" -H "Authorization: Bearer $TOKEN"
+curl -s $BASE/api/campus-open/academic -H "Authorization: Bearer $TOKEN"
 curl -s $BASE/api/campus-open/activities -H "Authorization: Bearer $TOKEN"
 curl -s $BASE/api/campus-open/activities/1a2b3c -H "Authorization: Bearer $TOKEN"
 curl -s $BASE/api/campus-open/timetable/week  -H "Authorization: Bearer $TOKEN" \
