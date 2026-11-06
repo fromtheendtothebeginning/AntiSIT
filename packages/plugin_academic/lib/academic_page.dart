@@ -89,14 +89,48 @@ class _AcademicPageState extends State<AcademicPage> {
     final byId = <String, Map<String, dynamic>>{
       for (final c in categories) _strOf(c['id']): c,
     };
-    List<Map<String, dynamic>> childrenOf(String parent) => [
-          for (final c in categories)
-            if (_strOf(c['parent']) == parent) c,
-        ];
+    final parentIds = <String>{
+      for (final c in categories)
+        if (_strOf(c['parent']).isNotEmpty) _strOf(c['parent']),
+    };
+    bool isLeaf(Map<String, dynamic> c) => !parentIds.contains(_strOf(c['id']));
     final roots = [
       for (final c in categories)
         if (_strOf(c['parent']).isEmpty || !byId.containsKey(_strOf(c['parent']))) c,
     ];
+    // 归属到某个根节点：沿 parent 链往上走，看能不能走到 root。
+    bool belongsTo(Map<String, dynamic> c, Map<String, dynamic> root) {
+      final rootId = _strOf(root['id']);
+      var cur = _strOf(c['id']);
+      final guard = <String>{};
+      while (guard.add(cur)) {
+        if (cur == rootId) return true;
+        final p = _strOf(byId[cur]?['parent']);
+        if (p.isEmpty || !byId.containsKey(p)) return false;
+        cur = p;
+      }
+      return false;
+    }
+
+    // 面包屑：从根往下的路径（不含根自己，由分区标题表达）。
+    List<String> crumbsOf(Map<String, dynamic> c) {
+      final chain = <String>[];
+      var parent = _strOf(c['parent']);
+      final guard = <String>{};
+      while (parent.isNotEmpty && byId.containsKey(parent) && guard.add(parent)) {
+        chain.insert(0, _strOf(byId[parent]!['name']));
+        parent = _strOf(byId[parent]!['parent']);
+      }
+      return chain.length > 1 ? chain.sublist(1) : const [];
+    }
+
+    final leavesOf = <String, List<Map<String, dynamic>>>{
+      for (final r in roots)
+        _strOf(r['id']): [
+          for (final c in categories)
+            if (isLeaf(c) && belongsTo(c, r)) c,
+        ],
+    };
     final gpa = asNum(stats?['gpa']);
     final sid = _strOf(data?['sid']);
     final hasContent = _hasContent(data);
@@ -144,7 +178,13 @@ class _AcademicPageState extends State<AcademicPage> {
                     ],
                   ),
                 ),
-                for (final cat in roots) _categoryNode(cat, childrenOf(_strOf(cat['id'])), 0),
+                // 方案一：不再逐层嵌套缩进——根节点做分区标题，下面是拍平的叶子类别卡片，
+                // 层级交给卡片里的面包屑文字表达，课程一律全宽独立卡片。
+                for (final root in roots) ...[
+                  _sectionHeader(root, leavesOf[_strOf(root['id'])]!.length),
+                  for (final leaf in leavesOf[_strOf(root['id'])]!)
+                    _leafCategoryCard(leaf, crumbsOf(leaf)),
+                ],
               ],
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
@@ -278,94 +318,129 @@ class _AcademicPageState extends State<AcademicPage> {
         ],
       );
 
-  // ── 课程类别（可递归的手风琴）：标题行给学分要求，展开是子类别与课程明细 ──
-  Widget _categoryNode(
-    Map<String, dynamic> cat,
-    List<Map<String, dynamic>> children,
-    int level,
-  ) {
-    final name = _strOf(cat['name']);
-    final required = asNum(cat['required']);
-    final earned = asNum(cat['earned']);
-    final missed = asNum(cat['missed']);
-    final courses = _listOf(cat['courses']);
-    final coursesError = _strOf(cat['coursesError']);
-    final isLeaf = children.isEmpty;
-    final credits = [
-      if (required != null) '要求 ${_fmtNum(required)}',
-      if (earned != null) '获得 ${_fmtNum(earned)}',
-      if (missed != null) '未获得 ${_fmtNum(missed)}',
-    ];
-    // 只有叶子节点能拉到课程明细（父节点的明细接口在真实教务里本来就只有空数组）。
-    final childrenWidgets = [
-      for (final child in children)
-        _categoryNode(child, _childrenOfCategory(_strOf(child['id'])), level + 1),
-    ];
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: SemColors.stripe,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: SemColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        // 只有一个叶子类别时默认展开：省一次点击，多类别时保持收起的可扫读性。
-        initiallyExpanded: isLeaf && courses.length == 1,
-        tilePadding: EdgeInsets.only(left: 14.0 + level * 12, right: 14),
-        childrenPadding: EdgeInsets.only(left: 14.0 + level * 12, right: 14, bottom: 10),
-        iconColor: SemColors.textMuted,
-        collapsedIconColor: SemColors.textMuted,
-        shape: const Border(),
-        collapsedShape: const Border(),
-        title: Text(
-          name.isEmpty ? '未命名类别' : name,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: SemColors.textPrimary,
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              for (final t in credits) _chip(t),
-              if (!isLeaf) _chip('${children.length} 个子类'),
-              // 明细拉取失败时课程数未知，不显示；正常拉到就显示（含 0 门）。
-              if (isLeaf && coursesError.isEmpty) _chip('${courses.length} 门'),
-            ],
-          ),
-        ),
+  // ── 分区标题：根节点（主修 / 其他课程…）+ 学分要求 + 该分区的叶子类别数 ──
+  Widget _sectionHeader(Map<String, dynamic> root, int leafCount) {
+    final name = _strOf(root['name']);
+    final required = asNum(root['required']);
+    final earned = asNum(root['earned']);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 14, 4, 8),
+      child: Row(
         children: [
-          ...childrenWidgets,
-          if (isLeaf) ...[
-            if (coursesError.isNotEmpty)
-              _hintRow('课程明细加载失败（$coursesError）')
-            else if (courses.isEmpty)
-              _hintRow('暂无课程明细')
-            else
-              for (var i = 0; i < courses.length; i++)
-                _courseRow(courses[i], i == courses.length - 1),
+          Container(
+            width: 3,
+            height: 14,
+            decoration: BoxDecoration(
+              color: SemColors.accent,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              name.isEmpty ? '未命名' : name,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: SemColors.textPrimary,
+              ),
+            ),
+          ),
+          if (required != null) _chip('要求 ${_fmtNum(required)}'),
+          if (earned != null) ...[
+            const SizedBox(width: 6),
+            _chip('已得 ${_fmtNum(earned)}'),
           ],
+          const SizedBox(width: 8),
+          Text('$leafCount 类', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
         ],
       ),
     );
   }
 
-  /// 从完整类别表里找某个 id 的子类别（递归渲染时需要跨层级找子节点）。
-  List<Map<String, dynamic>> _childrenOfCategory(String id) => [
-        for (final c in _allCategories)
-          if (_strOf(c['parent']) == id) c,
-      ];
+  // ── 叶子类别卡片：面包屑说明归属，展开是课程（每门课独立卡片，全宽不缩进）──
+  Widget _leafCategoryCard(Map<String, dynamic> cat, List<String> crumbs) {
+    final name = _strOf(cat['name']);
+    final required = asNum(cat['required']);
+    final earned = asNum(cat['earned']);
+    final courses = _listOf(cat['courses']);
+    final coursesError = _strOf(cat['coursesError']);
+    // 学分合并成一个「已获/要求」标签（形如 5/32）；缺一侧时只显示有的那侧。
+    final creditLabel = (earned != null && required != null)
+        ? '${_fmtNum(earned)}/${_fmtNum(required)}'
+        : (earned != null
+            ? '已获 ${_fmtNum(earned)}'
+            : (required != null ? '要求 ${_fmtNum(required)}' : null));
+    // 总课程数放到标题行右侧（明细拉取失败时数量未知，不显示）。
+    final countLabel = coursesError.isEmpty ? '${courses.length} 门' : '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: SemColors.stripe,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SemColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        shape: const Border(),
+        collapsedShape: const Border(),
+        iconColor: SemColors.textMuted,
+        collapsedIconColor: SemColors.textMuted,
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                name.isEmpty ? '未命名类别' : name,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: SemColors.textPrimary,
+                ),
+              ),
+            ),
+            if (countLabel.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(
+                  countLabel,
+                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted),
+                ),
+              ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (crumbs.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    crumbs.join(' › '),
+                    style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+                  ),
+                ),
+              if (creditLabel != null) _chip(creditLabel),
+            ],
+          ),
+        ),
+        children: [
+          if (coursesError.isNotEmpty)
+            _hintRow('课程明细加载失败（$coursesError）')
+          else if (courses.isEmpty)
+            _hintRow('暂无课程明细')
+          else
+            for (final course in courses) _courseCard(course),
+        ],
+      ),
+    );
+  }
 
-  /// 完整类别表（递归渲染时需要跨层级找子节点）。
-  List<Map<String, dynamic>> get _allCategories => _listOf(_data?['categories']);
-
-  /// 课程行：课程名 + 标签（性质 / 建议学期 / 修读状态 / 课程号），右侧成绩与学分绩点。
-  Widget _courseRow(Map<String, dynamic> c, bool last) {
+  // ── 单门课程 = 独立卡片（全宽，不随层级缩进）──
+  Widget _courseCard(Map<String, dynamic> c) {
     final name = _strOf(c['name']);
     final code = _strOf(c['code']);
     final credit = asNum(c['credit']);
@@ -375,10 +450,12 @@ class _AcademicPageState extends State<AcademicPage> {
     final nature = _strOf(c['nature']);
     final term = _strOf(c['term']);
     final statusText = _strOf(c['statusText']);
-    final tags = [
-      if (nature.isNotEmpty) nature,
-      if (term.isNotEmpty) term,
-      if (statusText.isNotEmpty) statusText,
+    // 标签配色：必修紫、选修淡蓝、未修红、在修黄、已修绿、建议修读学期橙；
+    // 课程号保持中性灰（不参与配色），未识别的取值也回退中性灰。
+    final tagWidgets = <Widget>[
+      if (nature.isNotEmpty) _tagOrChip(nature, _natureColor(nature)),
+      if (term.isNotEmpty) _tagOrChip(term, Colors.orange),
+      if (statusText.isNotEmpty) _tagOrChip(statusText, _statusColor(statusText)),
     ];
     final meta = [
       if (credit != null) '学分 ${_fmtNum(credit)}',
@@ -389,11 +466,15 @@ class _AcademicPageState extends State<AcademicPage> {
         ? SemColors.textPrimary
         : (scoreNum < 60 ? SemColors.danger : SemColors.success);
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        border: last ? null : Border(bottom: BorderSide(color: SemColors.border)),
+        color: SemColors.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: SemColors.border),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
@@ -403,14 +484,14 @@ class _AcademicPageState extends State<AcademicPage> {
                   name.isEmpty ? '未命名课程' : name,
                   style: TextStyle(fontSize: 13, color: SemColors.textPrimary),
                 ),
-                if (code.isNotEmpty || tags.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                if (code.isNotEmpty || tagWidgets.isNotEmpty) ...[
+                  const SizedBox(height: 5),
                   Wrap(
                     spacing: 6,
                     runSpacing: 4,
                     children: [
                       if (code.isNotEmpty) _chip(code),
-                      for (final t in tags) _chip(t),
+                      ...tagWidgets,
                     ],
                   ),
                 ],
@@ -440,7 +521,6 @@ class _AcademicPageState extends State<AcademicPage> {
       ),
     );
   }
-
   Widget _hintRow(String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Text(
@@ -449,6 +529,40 @@ class _AcademicPageState extends State<AcademicPage> {
           style: TextStyle(fontSize: 12.5, color: SemColors.textMuted),
         ),
       );
+
+  /// 彩色标签：浅色底 + 同色系文字；深色主题下自动提亮文字，保证可读。
+  Widget _tagChip(String text, MaterialColor color) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final fg = dark ? color.shade200 : color.shade800;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: dark ? 0.22 : 0.14),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: color.withValues(alpha: dark ? 0.35 : 0.28)),
+      ),
+      child: Text(text, style: TextStyle(fontSize: 10, color: fg)),
+    );
+  }
+
+  /// 有配色就用彩色标签，未识别的取值保持原来的中性灰（如课程号）。
+  Widget _tagOrChip(String text, MaterialColor? color) =>
+      color == null ? _chip(text) : _tagChip(text, color);
+
+  /// 课程性质：必修紫、选修淡蓝；其它性质（实践/限选…）保持中性。
+  MaterialColor? _natureColor(String nature) => switch (nature) {
+        '必修' => Colors.purple,
+        '选修' => Colors.lightBlue,
+        _ => null,
+      };
+
+  /// 修读状态：未修红、在修黄、已修绿；替代/认定等状态保持中性。
+  MaterialColor? _statusColor(String status) => switch (status) {
+        '未修' => Colors.red,
+        '在修' => Colors.amber,
+        '已修' => Colors.green,
+        _ => null,
+      };
 
   Widget _chip(String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

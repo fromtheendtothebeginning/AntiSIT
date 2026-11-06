@@ -70,8 +70,14 @@ class MockCampusServer {
   /// 测试用：让节点课程明细接口返回这段非 JSON 内容（模拟接口改版被改回 HTML）。
   String? debugAcademicCoursesBody;
 
+  /// 测试用：替换「非课程信息」节点明细（jdkcsx != 1，key = xfyqjd_id）。
+  Map<String, List<Map<String, Object?>>>? debugAcademicNonCourses;
+
   /// 测试用：最近一次节点课程明细请求的表单（验证首页隐藏域是否原样回传）。
   Map<String, String>? debugLastAcademicForm;
+
+  /// 测试用：学业情况明细请求的流水（`文件名:xfyqjd_id`），验证按 jdkcsx 选对了接口。
+  final List<String> debugAcademicRequestLog = <String>[];
 
   /// 测试用：最近一次收到的报名提交体（验证预填回传 / 自述字段透传 / 附件字段剔除）。
   Map<String, String>? debugLastSignupForm;
@@ -293,6 +299,7 @@ class MockCampusServer {
       case '/jwglxt/xsxy/xsxyqk_cxJxzxjhxfyqKcxx.html':
         if (!s.jwxt) return _jwxtExpired(res);
         debugLastAcademicForm = Map<String, String>.from(form);
+        debugAcademicRequestLog.add('plan:${form['xfyqjd_id'] ?? ''}');
         final rawBody = debugAcademicCoursesBody;
         if (rawBody != null) {
           return _text(res, 200, rawBody, 'text/html; charset=utf-8');
@@ -304,6 +311,17 @@ class MockCampusServer {
             ? override[id]!
             : _academicCourses[id] ?? const [];
         return _json(res, data);
+
+      // 非课程信息节点（页面 loadKc() 里 jdkcsx != '1' 的分支）：
+      // 通识类 / 实践环节等的明细在这里，接口与教学计划分开。
+      case '/jwglxt/xsxy/xsxyqk_cxJxzxjhxfyqFKcxx.html':
+        if (!s.jwxt) return _jwxtExpired(res);
+        final nonCourseId = form['xfyqjd_id'] ?? '';
+        debugAcademicRequestLog.add('noncourse:$nonCourseId');
+        return _json(
+          res,
+          (debugAcademicNonCourses ?? _academicNonCourses)[nonCourseId] ?? const [],
+        );
     }
     _text(res, 404, 'mock: 未实现的教务路径 $path', 'text/plain; charset=utf-8');
   }
@@ -946,7 +964,11 @@ $casErrorSkeleton
   /// 学号等隐藏域（明细 POST 要回传）、`div#alertBox` 整体统计、以及**写在 JS 模板
   /// 字符串里**的节点树：`<p class='title1' id='p<id>' yxxf='已获学分'
   /// yqzdxf='要求学分' sftg='0|1'>" + "类别名&nbsp;" + $.i18n.get('yqxf')/* 要求学分 */
-  /// + ":33.0&nbsp;" ...`，父子关系在模板里的 `fxfyqjd_id='父id'`。
+  /// + ":33.0&nbsp;" ...`，父子关系在模板里的 `fxfyqjd_id='父id'`，
+  /// 明细接口选择靠 `jdkcsx`（'1' = 教学计划；其它 = 非课程信息）。
+  ///
+  /// 这棵树刻意做到 5 层（主修 → 公共基础课 → 数理课程 → 高等数学 → 工科），
+  /// 用来回归「深层嵌套把课程卡片挤扁」的布局问题；通识课下的叶子走非课程信息接口。
   static const String _academicIndexPage = '''
 <html><body>
 <h5>学生学业情况查询</h5>
@@ -965,18 +987,54 @@ $casErrorSkeleton
   计划外 通过 3 门 未通过 1 门
 </div>
 <script>
-\$("<ul id='ul9001'><li id='li9001' class='' fxfyqjd_id='' >" +
-  "<div class='title' xfyqjd_id='9001' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p9001' yxxf='83.0' yqzdxf='160.0' sftg='0'>" +
-  "主修&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":160.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":83.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":77.0&nbsp;" +
-  "<span id='showKc9001'></span></p></div></li></ul>").appendTo("body");
-\$("<ul id='ul9002'><li id='li9002' class='' fxfyqjd_id='9001' >" +
-  "<div class='title' xfyqjd_id='9002' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p9002' yxxf='28.0' yqzdxf='33.0' sftg='0'>" +
-  "专业核心课&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":33.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":28.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":5.0&nbsp;" +
-  "<span id='showKc9002'></span></p></div></li></ul>").appendTo("body");
-\$("<ul id='ul9003'><li id='li9003' class='' fxfyqjd_id='9001' >" +
-  "<div class='title' xfyqjd_id='9003' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p9003' yxxf='28.0' yqzdxf='125.0' sftg='0'>" +
-  "专业选修课&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":125.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":28.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":97.0&nbsp;" +
-  "<span id='showKc9003'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1000'><li id='li1000' class='' fxfyqjd_id='' >" +
+  "<div class='title' xfyqjd_id='1000' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1000' yxxf='52.5' yqzdxf='170' sftg='0'>" +
+  "主修&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":170.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":52.5&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":117.5&nbsp;" +
+  "<span id='showKc1000'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1100'><li id='li1100' class='' fxfyqjd_id='1000' >" +
+  "<div class='title' xfyqjd_id='1100' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1100' yxxf='4.0' yqzdxf='8' sftg='0'>" +
+  "通识课&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":8.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":4.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":4.0&nbsp;" +
+  "<span id='showKc1100'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1110'><li id='li1110' class='' fxfyqjd_id='1100' >" +
+  "<div class='title' xfyqjd_id='1110' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1110' yxxf='0.0' yqzdxf='0' sftg='1'>" +
+  "人文精神与明德修养&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":0.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":0.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":0.0&nbsp;" +
+  "<span id='showKc1110'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1111'><li id='li1111' class='' fxfyqjd_id='1100' >" +
+  "<div class='title' xfyqjd_id='1111' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1111' yxxf='0.0' yqzdxf='2' sftg='0'>" +
+  "科学精神与技术创新&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":2.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":0.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":2.0&nbsp;" +
+  "<span id='showKc1111'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1112'><li id='li1112' class='' fxfyqjd_id='1100' >" +
+  "<div class='title' xfyqjd_id='1112' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1112' yxxf='2.0' yqzdxf='2' sftg='1'>" +
+  "企业文化与职业素养&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":2.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":2.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":0.0&nbsp;" +
+  "<span id='showKc1112'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1113'><li id='li1113' class='' fxfyqjd_id='1100' >" +
+  "<div class='title' xfyqjd_id='1113' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1113' yxxf='2.0' yqzdxf='2' sftg='1'>" +
+  "公共艺术类课程&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":2.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":2.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":0.0&nbsp;" +
+  "<span id='showKc1113'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1200'><li id='li1200' class='' fxfyqjd_id='1000' >" +
+  "<div class='title' xfyqjd_id='1200' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1200' yxxf='33.5' yqzdxf='54' sftg='0'>" +
+  "公共基础课&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":54.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":33.5&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":20.5&nbsp;" +
+  "<span id='showKc1200'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1210'><li id='li1210' class='' fxfyqjd_id='1200' >" +
+  "<div class='title' xfyqjd_id='1210' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1210' yxxf='13.5' yqzdxf='17.5' sftg='0'>" +
+  "数理课程&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":17.5&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":13.5&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":4.0&nbsp;" +
+  "<span id='showKc1210'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1211'><li id='li1211' class='' fxfyqjd_id='1210' >" +
+  "<div class='title' xfyqjd_id='1211' jdkcsx='4' leaf='' sfmjd='1' ><p class='title1' id='p1211' yxxf='10.0' yqzdxf='10' sftg='1'>" +
+  "高等数学&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":10.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":10.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":0.0&nbsp;" +
+  "<span id='showKc1211'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1212'><li id='li1212' class='' fxfyqjd_id='1211' >" +
+  "<div class='title' xfyqjd_id='1212' jdkcsx='1' leaf='' sfmjd='1' ><p class='title1' id='p1212' yxxf='10.0' yqzdxf='10' sftg='1'>" +
+  "工科&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":10.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":10.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":0.0&nbsp;" +
+  "<span id='showKc1212'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul1220'><li id='li1220' class='' fxfyqjd_id='1200' >" +
+  "<div class='title' xfyqjd_id='1220' jdkcsx='1' leaf='' sfmjd='1' ><p class='title1' id='p1220' yxxf='11.0' yqzdxf='18' sftg='0'>" +
+  "思政课程&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":18.0&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":11.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":7.0&nbsp;" +
+  "<span id='showKc1220'></span></p></div></li></ul>").appendTo("body");
+\$("<ul id='ul2000'><li id='li2000' class='' fxfyqjd_id='' >" +
+  "<div class='title' xfyqjd_id='2000' jdkcsx='1' leaf='' sfmjd='1' ><p class='title1' id='p2000' yxxf='2.0' yqzdxf='' sftg='1'>" +
+  "其他课程&nbsp;" + \$.i18n.get('yqxf')/* 要求学分 */ + ":&nbsp;" + \$.i18n.get('hdxf')/* 获得学分 */ + ":2.0&nbsp;&nbsp;" + \$.i18n.get('whdxf')/* 未获得学分 */ + ":&nbsp;" +
+  "<span id='showKc2000'></span></p></div></li></ul>").appendTo("body");
 </script>
 </body></html>
 ''';
@@ -1001,18 +1059,43 @@ $casErrorSkeleton
 ''';
 
   /// 学业情况节点课程明细（真实接口是大写字段，按 xfyqjd_id 分组）。
+  /// 只放「教学计划课程」节点（jdkcsx='1'）；非课程节点见 [_academicNonCourses]。
   static const Map<String, List<Map<String, Object?>>> _academicCourses = {
-    '9001': [
-      {'KCH': 'MA1102', 'KCMC': '高等数学(下)', 'XF': '4.0', 'KCXZMC': '必修',
-        'KCLBMC': '专业核心课', 'XDZT': '1', 'MAXCJ': '92', 'JD': '4.2',
+    // 深层叶子：主修 → 公共基础课 → 数理课程 → 高等数学 → 工科（5 层）
+    '1212': [
+      {'KCH': 'MA1201', 'KCMC': '高等数学（工）2', 'XF': '4.0', 'KCXZMC': '必修',
+        'KCLBMC': '数理课程', 'XDZT': '4', 'MAXCJ': '92', 'JD': '4.2',
         'JYXDXNM': '2026', 'JYXDXQMC': '第一学期'},
-      {'KCH': 'CS2101', 'KCMC': '数据结构', 'XF': '3.5', 'KCXZMC': '必修',
-        'KCLBMC': '专业核心课', 'XDZT': '1', 'MAXCJ': '88', 'JD': '3.3',
+      {'KCH': 'MA1305', 'KCMC': '线性代数', 'XF': '2.0', 'KCXZMC': '必修',
+        'KCLBMC': '数理课程', 'XDZT': '4', 'MAXCJ': '85', 'JD': '3.5',
         'JYXDXNM': '2026', 'JYXDXQMC': '第一学期'},
-      {'KCH': 'EN1102', 'KCMC': '大学英语(二)', 'XF': '3.0', 'KCXZMC': '必修',
-        'KCLBMC': '通识必修', 'XDZT': '1', 'MAXCJ': '76', 'JD': '2.6',
-        'JYXDXNM': '2025', 'JYXDXQMC': '第二学期'},
+      // 在修（XDZT=1）：用于回归「在修」黄色标签
+      {'KCH': 'MA1306', 'KCMC': '概率论与数理统计', 'XF': '3.0', 'KCXZMC': '必修',
+        'KCLBMC': '数理课程', 'XDZT': '1', 'MAXCJ': '', 'JD': '',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第二学期'},
     ],
+    '1220': [
+      {'KCH': 'B1280001', 'KCMC': '形势与政策（1）', 'XF': '0.5', 'KCXZMC': '必修',
+        'KCLBMC': '公共基础课', 'XDZT': '4', 'MAXCJ': '97', 'JD': '4.7',
+        'JYXDXNM': '2025', 'JYXDXQMC': '第一学期'},
+      {'KCH': 'B1280003', 'KCMC': '中国近现代史纲要', 'XF': '3.0', 'KCXZMC': '必修',
+        'KCLBMC': '公共基础课', 'XDZT': '4', 'MAXCJ': '89', 'JD': '3.9',
+        'JYXDXNM': '2025', 'JYXDXQMC': '第一学期'},
+      // 未修（XDZT=3）：用于回归「未修」红色标签
+      {'KCH': 'B1280005', 'KCMC': '思想道德与法治', 'XF': '3.0', 'KCXZMC': '必修',
+        'KCLBMC': '公共基础课', 'XDZT': '3', 'MAXCJ': '', 'JD': '',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第二学期'},
+    ],
+    // 根节点直接挂课程（其他课程）
+    '2000': [
+      {'KCH': 'AI2201', 'KCMC': '人工智能导论', 'XF': '2.0', 'KCXZMC': '选修',
+        'KCLBMC': '其他课程', 'XDZT': '4', 'MAXCJ': '88', 'JD': '3.3',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第二学期'},
+      {'KCH': 'CS2301', 'KCMC': 'Python 编程实训', 'XF': '1.0', 'KCXZMC': '实践',
+        'KCLBMC': '其他课程', 'XDZT': '4', 'MAXCJ': '95', 'JD': '4.5',
+        'JYXDXNM': '2026', 'JYXDXQMC': '第二学期'},
+    ],
+    // 老版静态页面回归用例用（debugAcademicStaticPage 里的 showKc9002）
     '9002': [
       {'KCH': 'MA1102', 'KCMC': '高等数学(下)', 'XF': '4.0', 'KCXZMC': '必修',
         'KCLBMC': '专业核心课', 'XDZT': '1', 'MAXCJ': '92', 'JD': '4.2',
@@ -1021,11 +1104,23 @@ $casErrorSkeleton
         'KCLBMC': '专业核心课', 'XDZT': '1', 'MAXCJ': '88', 'JD': '3.3',
         'JYXDXNM': '2026', 'JYXDXQMC': '第一学期'},
     ],
-    '9003': [
-      {'KCH': 'AI2201', 'KCMC': '人工智能导论', 'XF': '2.0', 'KCXZMC': '选修',
-        'KCLBMC': '专业选修课', 'XDZT': '2', 'MAXCJ': '', 'JD': '',
-        'JYXDXNM': '2026', 'JYXDXQMC': '第二学期'},
+  };
+
+  /// 「非课程信息」节点明细（jdkcsx != '1'）：通识课下的叶子节点走这个接口，
+  /// 这正是「通识课有学分但 App 显示 0 门」的那个缺口。
+  static const Map<String, List<Map<String, Object?>>> _academicNonCourses = {
+    '1112': [
+      {'KCH': 'GE1101', 'KCMC': '企业文化与职业素养（慕课）', 'XF': '2.0',
+        'KCXZMC': '选修', 'KCLBMC': '通识课', 'XDZT': '4', 'MAXCJ': '85',
+        'JD': '3.5', 'JYXDXNM': '2025', 'JYXDXQMC': '第一学期'},
     ],
+    '1113': [
+      {'KCH': 'GE1102', 'KCMC': '艺术鉴赏', 'XF': '2.0', 'KCXZMC': '选修',
+        'KCLBMC': '通识课', 'XDZT': '4', 'MAXCJ': '90', 'JD': '4.0',
+        'JYXDXNM': '2025', 'JYXDXQMC': '第一学期'},
+    ],
+    '1110': [],
+    '1111': [],
   };
 
   static const List<Map<String, String>> _scoreHeader = [

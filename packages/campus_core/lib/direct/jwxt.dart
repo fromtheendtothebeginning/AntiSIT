@@ -675,22 +675,25 @@ class JwxtClient {
     await Future.wait(leaves.map((cat) async {
       final id = '${cat['id']}'.trim();
       try {
-        final resp = await _http.postForm(
-          '$_jwglxt$academicCoursesPath',
-          {...params, 'fromXh_id': '', 'xfyqjd_id': id},
-          headers: _jwxtHeaders,
-          redirect: false,
-        );
-        if (_deadSession(resp)) _sessionLost();
-        final j = _parse(resp);
-        if (j == null) {
-          // 接口改版/被学校改回 HTML 时，别静默当成「该类没有课」：
-          // 明确标记失败，UI 可以提示，也方便用户反馈截图。
-          cat['courses'] = const [];
-          cat['coursesError'] = 'HTTP ${resp.status}';
-          return;
+        // 真实页面按节点属性 jdkcsx 选接口：'1' 走教学计划课程，其它走「非课程信息」
+        // （通识类、实践环节等）。属性缺失时保持历史行为，先教学计划、空了再兜底一次。
+        final isPlanCourse = '${cat['jdkcsx'] ?? ''}'.trim() == '1';
+        final firstPath = isPlanCourse ? academicCoursesPath : academicNonCoursePath;
+        final ok = await _fetchCourses(cat, {
+          ...params,
+          'fromXh_id': '',
+          'xfyqjd_id': id,
+        }, sid: sid, path: firstPath);
+        final empty = ((cat['courses'] as List?) ?? const []).isEmpty;
+        if (ok && empty) {
+          await _fetchCourses(cat, {
+            ...params,
+            'fromXh_id': '',
+            'xfyqjd_id': id,
+          },
+              sid: sid,
+              path: isPlanCourse ? academicNonCoursePath : academicCoursesPath);
         }
-        cat['courses'] = parseAcademicCourses(j, sid: sid);
       } on ApiError catch (e) {
         if (e.message.contains('失效')) rethrow; // 会话失效要走自动重登
         cat['courses'] = const [];
@@ -701,5 +704,32 @@ class JwxtClient {
       c.putIfAbsent('courses', () => const []);
     }
     return parsed;
+  }
+
+  /// 拉一个节点的课程明细；[path] 为教学计划接口或「非课程信息」接口。
+  /// 返回 false 表示响应不是 JSON（接口改版），已把原因写进 `coursesError`。
+  Future<bool> _fetchCourses(
+    Map<String, dynamic> cat,
+    Map<String, String> body, {
+    required String sid,
+    String path = academicCoursesPath,
+  }) async {
+    final resp = await _http.postForm(
+      '$_jwglxt$path',
+      body,
+      headers: _jwxtHeaders,
+      redirect: false,
+    );
+    if (_deadSession(resp)) _sessionLost();
+    final j = _parse(resp);
+    if (j == null) {
+      cat['courses'] = const [];
+      cat['coursesError'] = 'HTTP ${resp.status}';
+      return false;
+    }
+    final courses = parseAcademicCourses(j, sid: sid);
+    cat['courses'] = courses;
+    if (courses.isNotEmpty) cat.remove('coursesError');
+    return true;
   }
 }

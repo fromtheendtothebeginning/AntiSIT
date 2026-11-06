@@ -28,6 +28,10 @@ const String academicIndexPath =
 /// 学业情况节点课程明细（同样相对 `jwxtBase`）：POST 表单 `xfyqjd_id`，返回 JSON 数组。
 const String academicCoursesPath = '/xsxy/xsxyqk_cxJxzxjhxfyqKcxx.html?gnmkdm=N105515';
 
+/// 「非课程信息」节点的明细接口（页面 JS 里 `jdkcsx != '1'` 的节点，如通识类/实践环节）。
+/// 同样 POST `xfyqjd_id`，返回的字段与课程接口大体一致（KCMC/XF/MAXCJ/JD/…）。
+const String academicNonCoursePath = '/xsxy/xsxyqk_cxJxzxjhxfyqFKcxx.html?gnmkdm=N105515';
+
 /// 解析学业情况首页 HTML。
 ///
 /// 返回：
@@ -333,7 +337,7 @@ List<Map<String, dynamic>> _parseTemplateNodes(String html) {
     if (name.contains('学分')) continue;
     final required = _numOf(m.group(3));
     final earned = _numOf(m.group(2));
-    final parent = _parentOf(html, m.start);
+    final parent = _attrBefore(html, m.start, 'fxfyqjd_id');
     out.add({
       'name': name,
       'id': id,
@@ -344,22 +348,27 @@ List<Map<String, dynamic>> _parseTemplateNodes(String html) {
           : null,
       'passed': (m.group(4) ?? '').trim() == '1',
       'parent': parent,
+      // 页面按该属性选明细接口：'1' = 教学计划课程；其它 = 非课程信息（见 loadKc()）。
+      'jdkcsx': _attrBefore(html, m.start, 'jdkcsx'),
     });
   }
   _assignLevels(out);
   return out;
 }
 
-/// 模板里本节点的父节点 id：在 `<p ...>` 之前最近的 `fxfyqjd_id='...'`。
-String _parentOf(String html, int pStart) {
+/// 模板里 `<p ...>` 之前最近的某个属性值（父节点 `fxfyqjd_id`、`jdkcsx` 都挂在
+/// 前面的 `<li>` / `<div class='title'>` 上）。
+String _attrBefore(String html, int pStart, String attr) {
   final from = (pStart - 2000).clamp(0, html.length);
   final prefix = html.substring(from, pStart);
-  final m = RegExp(r"""fxfyqjd_id\s*=\s*['"]([^'"]*)['"]""").allMatches(prefix);
-  var parent = '';
+  final m = RegExp(
+    '${RegExp.escape(attr)}\\s*=\\s*[\'"]([^\'"]*)[\'"]',
+  ).allMatches(prefix);
+  var value = '';
   for (final e in m) {
-    parent = e.group(1)!.trim();
+    value = e.group(1)!.trim();
   }
-  return parent;
+  return value;
 }
 
 /// 按 parent 链算层级（0 = 根）；父节点不在集合里的也算根，防脏数据成环。
@@ -431,6 +440,8 @@ Map<String, dynamic>? _categoryOf(String ctx, String id) {
     'required': required,
     'earned': earned,
     'missed': missed,
+    // 静态方言拿不到 jdkcsx：按教学计划接口处理（历史行为），空结果时再由调用方兜底。
+    'jdkcsx': '',
   };
 }
 
