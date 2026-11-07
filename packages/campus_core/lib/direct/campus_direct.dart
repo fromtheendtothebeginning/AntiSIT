@@ -222,13 +222,21 @@ class CampusDirect {
       } on ApiError catch (e) {
         lastError = e.message;
         if (_isCaptchaError(lastError)) continue; // 换一张重输
-        // 正方账号密码被拒：这个账号在正方侧可能没有可用密码（如新生），
-        // 浏览器里也是点「统一身份认证」登入——改走 CAS，密码不变。
+        // 正方账号密码被拒：这个账号在正方侧可能没有可用密码（如 2026 级新生，
+        // 教务侧密码与统一身份认证不同），改走统一认证 SSO（jziotlogin），密码不变。
         if (!casTried && _isCredentialError(lastError) && await client.enableCasLogin()) {
           casTried = true;
+          if (client.loggedIn) return; // SSO 直通：持久化的统一认证会话直接建好了业务会话
           attempt--; // 切换登录方式不算一次验证码尝试
           lastError = null;
           continue;
+        }
+        // 被拒且没有可用的 SSO 入口：教务密码与统一身份认证密码不同的情况（新生最常见），
+        // 把路指清楚，别让用户拿统一认证密码反复重试。
+        if (_isCredentialError(lastError)) {
+          throw ApiError('$lastError。教务系统的密码可能与统一身份认证密码不是同一个'
+              '（2026 级新生尤其常见）：请在校园网内到教务登录页点「忘记密码」自助重置，'
+              '或向学校确认自己的教务密码后再试。');
         }
         rethrow;
       }

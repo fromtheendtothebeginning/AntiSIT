@@ -233,6 +233,10 @@ class JwxtClient {
     }
     final pageUrl = '$_jwglxt/xtgl/login_slogin.html';
     final candidates = <String>[
+      // 学校官方的门户→教务单点入口（2026-11 实测）：带上统一认证会话访问它，
+      // 有 CASTGC 时直接放行建会话，没有则回统一认证登录页（ticket 校验回跳）。
+      // 2026 级新生的教务侧没有可用密码，只能走这条路——登录页上并没有入口链接。
+      '$base/sso/jziotlogin',
       for (final u in ssoEntries(html)) Uri.parse(pageUrl).resolve(u).toString(),
       // 正方新版的统一认证入口路径：登录页按钮是 JS 跳转、解析不到时兜底
       '$_jwglxt/xtgl/login_ssologin.html',
@@ -247,6 +251,12 @@ class JwxtClient {
           _cas = cas;
           _ssoEntry = url;
           _encPassword = null;
+          return true;
+        }
+        // 入口直接放行（持久化的统一认证会话还在，一路 302 回了业务页）：
+        // 会话已经建好，不需要 CAS 表单，也算成功。
+        if (await checkSession()) {
+          loggedIn = true;
           return true;
         }
       } catch (_) {
