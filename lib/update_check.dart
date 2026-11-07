@@ -29,6 +29,7 @@ class UpdateInfo {
     required this.notes,
     required this.pageUrl,
     this.apkUrl,
+    this.sha256Url,
   });
 
   /// 版本号（去掉 tag 的 v 前缀，如 1.13.6）。
@@ -42,6 +43,10 @@ class UpdateInfo {
 
   /// 安装包直链（Release 资产里的 .apk）；没挂资产时为 null。
   final String? apkUrl;
+
+  /// 安装包的 sha256 校验文件（Release 资产里的 .apk.sha256）；没挂就跳过校验。
+  /// 应用内下载完成后会先对一遍哈希再交给系统安装器（见 UpdateDownloader）。
+  final String? sha256Url;
 }
 
 /// 'v1.13.5' / ' 1.13.5 ' → '1.13.5'
@@ -78,25 +83,29 @@ int compareVersions(String a, String b) {
   return (nums, parts.length > 1 ? parts.sublist(1).join('-') : '');
 }
 
-/// GitHub Release JSON → [UpdateInfo]；没有 tag_name（出错时的返回体）返回 null。
+/// Release JSON（GitHub / Gitee / 自建镜像同构）→ [UpdateInfo]；
+/// 没有 tag_name（出错时的返回体）返回 null。
 UpdateInfo? parseRelease(Map<String, dynamic> json) {
   final tag = '${json['tag_name'] ?? ''}'.trim();
   if (tag.isEmpty) return null;
-  String? apk;
+  String? apk, sha256;
   for (final a in (json['assets'] as List? ?? const [])) {
     final asset = a as Map;
-    if ('${asset['name'] ?? ''}'.endsWith('.apk')) {
-      final url = '${asset['browser_download_url'] ?? ''}';
-      if (url.isNotEmpty) apk = url;
-      break;
-    }
+    final name = '${asset['name'] ?? ''}';
+    final url = '${asset['browser_download_url'] ?? ''}';
+    if (url.isEmpty) continue;
+    if (name.endsWith('.apk')) apk ??= url;
+    if (name.endsWith('.apk.sha256')) sha256 ??= url;
   }
   final page = '${json['html_url'] ?? ''}';
   return UpdateInfo(
     version: normalizeVersion(tag),
     notes: releaseSummary('${json['body'] ?? ''}'),
-    pageUrl: page.isNotEmpty ? page : 'https://github.com/$updateRepo/releases',
+    // Gitee 的接口不返回 html_url（实测是 null），发布页回落到 Gitee 仓库页——
+    // 点「查看发布页」不该把国内用户带去打不开的 GitHub
+    pageUrl: page.isNotEmpty ? page : 'https://gitee.com/$giteeUpdateRepo/releases',
     apkUrl: apk,
+    sha256Url: sha256,
   );
 }
 

@@ -72,9 +72,30 @@ void main() {
       final info = parseRelease(releaseJson('v1.13.6'))!;
       expect(info.version, '1.13.6');
       expect(info.apkUrl, endsWith('/v1.13.6/x.apk'), reason: '挑 .apk 资产，不是 .sha256');
+      expect(info.sha256Url, 'https://example.com/x.sha256', reason: '应用内下载完要对哈希');
       expect(info.pageUrl, endsWith('/releases/tag/v1.13.6'));
       expect(info.notes, '· 修了某个 bug\n· 加了更新检查');
       expect(info.notes, isNot(contains('安装说明模板')), reason: '模板部分不带给用户看');
+    });
+
+    test('Gitee 返回体没有 html_url（实测为 null）：发布页回落到 Gitee，不带用户去 GitHub', () {
+      final info = parseRelease(const {
+        'tag_name': 'v1.26.0',
+        'assets': [
+          {
+            'name': 'AntiSIT-1.26.0.apk',
+            'browser_download_url': 'https://gitee.com/ender123/AntiSIT/releases/download/v1.26.0/a.apk',
+          },
+          {
+            'name': 'AntiSIT-1.26.0.apk.sha256',
+            'browser_download_url': 'https://gitee.com/ender123/AntiSIT/releases/download/v1.26.0/a.apk.sha256',
+          },
+        ],
+      })!;
+      expect(info.pageUrl, startsWith('https://gitee.com/'), reason: '国内用户打得开');
+      expect(info.pageUrl, isNot(contains('github.com')));
+      expect(info.apkUrl, endsWith('/a.apk'));
+      expect(info.sha256Url, endsWith('/a.apk.sha256'));
     });
 
     test('没挂 APK 资产时只有页面地址', () {

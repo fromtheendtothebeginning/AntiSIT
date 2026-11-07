@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 「扫一扫」（主界面上滑到 -1 层）：mobile_scanner 取景识码用；
+         运行时授权由插件自己引导，缺权时扫一扫页会给出设置入口提示。 -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <!-- 上课提醒（本地定时通知）：
          POST_NOTIFICATIONS  Android 13+ 发通知需授权；
          SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM 精确闹钟——上课提醒是按点触发的日历/闹钟类用途；
@@ -10,6 +13,10 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- 应用内更新：下载完的 APK 直接交给系统安装器覆盖安装。该权限由用户在系统
+         设置里按应用授予（缺了会先跳授权页，见 MainActivity.installApk），
+         只装自己下载的那一个包，不涉及应用商店的分发限制。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
         android:label="AntiSIT"
         android:name="${applicationName}"
@@ -42,6 +49,17 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 应用内更新：下载好的 APK 经 FileProvider 只读共享给系统安装器
+             （UpdateDownloader 存在 cacheDir/update/，见 res/xml/file_paths.xml）。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
         <!-- 本地定时通知（上课提醒）：ScheduledNotificationReceiver 到点弹出，
              ScheduledNotificationBootReceiver 在开机 / 应用更新后恢复排期。 -->
         <receiver

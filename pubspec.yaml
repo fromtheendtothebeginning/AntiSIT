@@ -75,6 +75,10 @@ dependencies:
   http: ^1.6.0
   # 更新检查：记住点过「稍后」的版本，同一个版本不再重复弹
   shared_preferences: ^2.5.5
+  # 应用内更新下载：APK 存到本机缓存目录（见 lib/update_download.dart）
+  path_provider: ^2.1.0
+  # 应用内更新下载：对发布页挂的 .apk.sha256 校验安装包
+  crypto: ^3.0.0
 
   # 契约层：所有服务、组件库、插件接口都在这里（插件包也依赖它）
   campus_core:
@@ -147,6 +151,8 @@ dependencies:
     path: packages/plugin_theme_ink
   plugin_theme_bamboo:
     path: packages/plugin_theme_bamboo
+  mobile_scanner: ^7.5.0
+  image_picker: ^1.2.2
 
 dev_dependencies:
   flutter_test:
@@ -159,7 +165,6 @@ dev_dependencies:
   archive: ^4.0.0
   # 插件市场测试要自己签一份目录、算拓展包哈希（见 test/market_test.dart）
   cryptography: ^2.9.0
-  crypto: ^3.0.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

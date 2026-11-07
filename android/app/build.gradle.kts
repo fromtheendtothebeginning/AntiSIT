@@ -50,6 +50,8 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // 应用内更新：MainActivity 用 FileProvider 把下载好的 APK 只读共享给系统安装器
+    implementation("androidx.core:core:1.13.1")
 }
 
 flutter {
