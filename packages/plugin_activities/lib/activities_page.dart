@@ -80,6 +80,10 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   String _query = '';
   int _filter = 0; // 0全部 1报名中 2即将报名 3已结束
 
+  // 类别筛选：一级（大类）→ 二级（类别）级联；'' = 全部。
+  String _dl = '';
+  String _lb = '';
+
   /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用）。
   bool _fromCache = false;
   bool _refreshFailed = false;
@@ -208,32 +212,63 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
       if (_filter == 1 && st != _ActState.signing) return false;
       if (_filter == 2 && st != _ActState.upcoming) return false;
       if (_filter == 3 && st != _ActState.ended) return false;
-      if (_query.isNotEmpty) {
-        final q = _query.toLowerCase();
-        final hay = '${a['name']} ${a['host']} ${a['dlmc']} ${a['lbmc']}'.toLowerCase();
-        if (!hay.contains(q)) return false;
-      }
+      if (_dl.isNotEmpty && '${a['dlmc'] ?? ''}'.trim() != _dl) return false;
+      if (_lb.isNotEmpty && '${a['lbmc'] ?? ''}'.trim() != _lb) return false;
       return true;
-    }).toList()
-      ..sort((a, b) {
-        final rank = switch (_stateOf(a)) {
-          _ActState.signing => 0,
-          _ActState.upcoming => 1,
-          _ActState.ended => 2,
-        };
-        final rankB = switch (_stateOf(b)) {
-          _ActState.signing => 0,
-          _ActState.upcoming => 1,
-          _ActState.ended => 2,
-        };
-        if (rank != rankB) return rank - rankB;
-        if (rank == 0) {
-          // 报名中按截止时间升序
-          return ('${a['bm_end']}'.compareTo('${b['bm_end']}'));
-        }
-        return '${b['start']}'.compareTo('${a['start']}');
-      });
+    }).toList();
+    // 搜索支持拼音：活动名 / 主办 / 类别都能用全拼或首字母命中
+    list = filterByPinyin(
+        list, (a) => '${a['name']} ${a['host']} ${a['dlmc']} ${a['lbmc']}', _query);
+    list.sort((a, b) {
+      final rank = switch (_stateOf(a)) {
+        _ActState.signing => 0,
+        _ActState.upcoming => 1,
+        _ActState.ended => 2,
+      };
+      final rankB = switch (_stateOf(b)) {
+        _ActState.signing => 0,
+        _ActState.upcoming => 1,
+        _ActState.ended => 2,
+      };
+      if (rank != rankB) return rank - rankB;
+      if (rank == 0) {
+        // 报名中按截止时间升序
+        return ('${a['bm_end']}'.compareTo('${b['bm_end']}'));
+      }
+      return '${b['start']}'.compareTo('${a['start']}');
+    });
     return list;
+  }
+
+  /// 活动里出现过的一级类别（保序去重）。
+  List<String> get _dlOptions {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final a in _list) {
+      final d = '${a['dlmc'] ?? ''}'.trim();
+      if (d.isNotEmpty && seen.add(d)) out.add(d);
+    }
+    return out;
+  }
+
+  /// 二级类别选项：选了一级就只列该大类下的（级联）。
+  List<String> get _lbOptions {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final a in _list) {
+      if (_dl.isNotEmpty && '${a['dlmc'] ?? ''}'.trim() != _dl) continue;
+      final l = '${a['lbmc'] ?? ''}'.trim();
+      if (l.isNotEmpty && seen.add(l)) out.add(l);
+    }
+    return out;
+  }
+
+  void _setDl(String d) {
+    setState(() {
+      _dl = d;
+      // 换一级类别后，已选的二级若不再属于它就清掉
+      if (d.isNotEmpty && _lb.isNotEmpty && !_lbOptions.contains(_lb)) _lb = '';
+    });
   }
 
   int _countOf(int filter) {
@@ -311,7 +346,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
               TextField(
                 onChanged: (v) => setState(() => _query = v.trim()),
                 decoration: const InputDecoration(
-                  hintText: '搜索活动名称 / 主办 / 类别…',
+                  hintText: '搜索活动名称 / 主办 / 类别，支持拼音…',
                   prefixIcon: Icon(Icons.search, size: 20),
                   isDense: true,
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -328,6 +363,18 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                 height: 30,
                 fontSize: 10.5,
               ),
+              const SizedBox(height: 8),
+              TagFilterRow(
+                  title: '一级类别',
+                  labels: _dlOptions,
+                  selected: _dl,
+                  onSelected: _setDl),
+              const SizedBox(height: 4),
+              TagFilterRow(
+                  title: '二级类别',
+                  labels: _lbOptions,
+                  selected: _lb,
+                  onSelected: (v) => setState(() => _lb = v)),
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerLeft,
@@ -335,6 +382,14 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                     style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
               ),
               const SizedBox(height: 6),
+              if (list.isEmpty && _list.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 28),
+                  child: Center(
+                      child: Text('没有符合条件的活动',
+                          style:
+                              TextStyle(fontSize: 13, color: SemColors.textMuted))),
+                ),
               for (final a in list)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),

@@ -26,3 +26,4 @@ dependencies:
   # 上课提醒：后台本地通知（服务属于基础设施，见 class_reminder_service.dart）
   flutter_local_notifications: ^19.5.0
   timezone: ^0.10.0
+  lpinyin: ^2.0.3

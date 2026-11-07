@@ -42,6 +42,11 @@ class _ScorePageState extends State<ScorePage> {
   bool _creditsLoaded = false;
   bool _creditsFetching = false;
 
+  // 加分明细的筛选：搜索（支持拼音）+ 大类 / 类别标签（类别选项随大类级联收窄）。
+  String _creditsQuery = '';
+  String _creditDl = '';
+  String _creditLb = '';
+
   static const _cacheKey = 'score';
   static const _creditsCacheKey = 'score.credits';
 
@@ -271,11 +276,63 @@ class _ScorePageState extends State<ScorePage> {
     );
   }
 
+  /// 空串 / 'null' 归一成空（学校脏数据里代码位可能回 'null' 字符串）。
+  static String _tag(Object? v) {
+    final s = '${v ?? ''}'.trim();
+    return (s.isEmpty || s == 'null') ? '' : s;
+  }
+
+  /// 明细里出现过的大类（保序去重）。
+  List<String> get _creditDlOptions {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final r in _credits) {
+      final d = _tag(r['dldm']);
+      if (d.isNotEmpty && seen.add(d)) out.add(d);
+    }
+    return out;
+  }
+
+  /// 类别选项：选了大类就只列该大类下的（级联）。
+  List<String> get _creditLbOptions {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final r in _credits) {
+      if (_creditDl.isNotEmpty && _tag(r['dldm']) != _creditDl) continue;
+      final l = _tag(r['lbdm']);
+      if (l.isNotEmpty && seen.add(l)) out.add(l);
+    }
+    return out;
+  }
+
+  /// 筛选后的明细：标签过滤 + 搜索（活动名 / 大类 / 类别，支持拼音）。
+  List<Map<String, dynamic>> get _creditsFiltered {
+    final list = _credits.where((r) {
+      if (_creditDl.isNotEmpty && _tag(r['dldm']) != _creditDl) return false;
+      if (_creditLb.isNotEmpty && _tag(r['lbdm']) != _creditLb) return false;
+      return true;
+    }).toList();
+    return filterByPinyin(
+        list, (r) => '${r['name']} ${_tag(r['dldm'])} ${_tag(r['lbdm'])}', _creditsQuery);
+  }
+
+  void _setCreditDl(String d) {
+    setState(() {
+      _creditDl = d;
+      // 换大类后，已选的类别若不再属于它就清掉
+      if (d.isNotEmpty && _creditLb.isNotEmpty && !_creditLbOptions.contains(_creditLb)) {
+        _creditLb = '';
+      }
+    });
+  }
+
   /// 「加分明细」：每次活动参与记录（活动 / 学分 / 审批状态 / 时间）。
   Widget _creditsView() {
     // 学分按「千分位整数」累加：double 直接相加会出现 0.1+0.2=0.30000000000000004
     // 这类二进制浮点尾巴（页面上曾显示 5.930000000000002），最后再换算回学分。
     final sum = sumCreditThousandths(_credits.map((r) => r['credit'])) / 1000;
+    final filtered = _creditsFiltered;
+    final filtering = _creditsQuery.trim().isNotEmpty || _creditDl.isNotEmpty || _creditLb.isNotEmpty;
     return PageStateView(
       loading: _creditsLoading && _credits.isEmpty,
       error: _creditsErr,
@@ -329,8 +386,36 @@ class _ScorePageState extends State<ScorePage> {
                 ),
               ),
               const SizedBox(height: 10),
+              TextField(
+                onChanged: (v) => setState(() => _creditsQuery = v),
+                decoration: const InputDecoration(
+                  hintText: '搜索活动名 / 类别，支持拼音…',
+                  prefixIcon: Icon(Icons.search, size: 20),
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TagFilterRow(
+                  title: '大类',
+                  labels: _creditDlOptions,
+                  selected: _creditDl,
+                  onSelected: _setCreditDl),
+              const SizedBox(height: 4),
+              TagFilterRow(
+                  title: '类别',
+                  labels: _creditLbOptions,
+                  selected: _creditLb,
+                  onSelected: (v) => setState(() => _creditLb = v)),
+              if (filtering) ...[
+                const SizedBox(height: 6),
+                Text(filtered.isEmpty ? '没有符合条件的记录' : '已筛出 ${filtered.length} / ${_credits.length} 条',
+                    style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+              ],
+              const SizedBox(height: 6),
             ],
-            for (final r in _credits) _creditTile(r),
+            if (!filtering || filtered.isNotEmpty)
+              for (final r in filtered) _creditTile(r),
           ],
         ),
       ),

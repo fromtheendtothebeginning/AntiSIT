@@ -34,6 +34,54 @@ class Capsule extends StatelessWidget {
   }
 }
 
+/// 筛选标签行：一行小胶囊，点选切换（再点已选中的取消）；[labels] 为空时不占位。
+/// [selected] 为当前选中值（'' = 未筛选）。列表筛选用，配「大类 → 类别」级联时
+/// 外层负责在换上级后清掉失效的下级。
+class TagFilterRow extends StatelessWidget {
+  const TagFilterRow({
+    super.key,
+    required this.labels,
+    required this.onSelected,
+    this.selected = '',
+    this.title,
+  });
+
+  final List<String> labels;
+  final String selected;
+  final ValueChanged<String> onSelected;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    if (labels.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (title != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(title!,
+                style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+          ),
+        const SizedBox(height: 5),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final l in labels)
+              InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () => onSelected(l == selected ? '' : l),
+                child: Capsule(l,
+                    color: l == selected ? SemColors.accent : SemColors.textMuted),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 /// 液态玻璃卡片（复刻 anticlass .panel）：半透明玻璃面 + 顶部高光渐变 +
 /// 玻璃描边 + 柔和外投影。全站卡片统一入口。
 class AppCard extends StatelessWidget {
