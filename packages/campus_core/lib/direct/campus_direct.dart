@@ -353,6 +353,14 @@ class CampusDirect {
         return {'ok': true, 'data': await _xg!.signupActivity(aid)};
       }, _ensureXg);
 
+  /// 扫码签到 / 签退（写操作：只提交一次；会话失效时学校根本没见到这次提交，
+  /// 重登一次再提交是安全的）。hdId / hdActId 来自签到二维码的路径段。
+  Future<Map<String, dynamic>> activitySignInOrSignOut(Object hdId, Object hdActId) =>
+      _withRelogin(() async {
+        await _ensureXg();
+        return {'ok': true, 'data': await _xg!.signInOrSignOut(hdId, hdActId)};
+      }, _ensureXg);
+
   // ==================== 教务：成绩 / 课表 / 考试 ====================
 
   Future<Map<String, dynamic>> grades({String? xnm, String? xqm}) => _withRelogin(() async {

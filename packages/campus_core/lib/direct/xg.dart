@@ -447,6 +447,33 @@ class XgClient {
     return out;
   }
 
+  // ==================== 活动扫码签到 / 签退 ====================
+
+  /// 扫码签到 / 签退：POST /hdgl/flow/signInOrSignOut.zf {hdId, hdActId}
+  /// （urlencoded）。参数来自活动详情页的签到二维码
+  /// `https://xg.sit.edu.cn/hdgl/hdxq/qd/:hdId/:hdActId/:时间戳`——学校同一个
+  /// 接口按活动与当前状态判定这次算签到还是签退，返回 msg 即学校判定原文。
+  /// 返回 {'msg': 提示}；code != 0 抛 ApiError(学校原文)。
+  /// 写操作：只提交一次、绝不重试（会话失效时学校根本没见到这次提交，重登后
+  /// 重试一次是安全的，见 CampusDirect._withRelogin）。
+  Future<Map<String, dynamic>> signInOrSignOut(Object hdId, Object hdActId) async {
+    if (!loggedIn) throw ApiError('未登录学工系统');
+    final resp = await _http.postForm(
+      '$_api/hdgl/flow/signInOrSignOut.zf',
+      {'hdId': '$hdId', 'hdActId': '$hdActId'},
+      headers: _xgHeaders,
+      redirect: false,
+    );
+    if (resp.status >= 300 && resp.status < 400) _sessionLost();
+    final r = _parse(resp);
+    if (r is! Map) _sessionLost();
+    final msg = (r['msg'] ?? '').toString();
+    if (r['code'] != 0) {
+      throw ApiError(msg.isNotEmpty ? msg : '签到未成功（HTTP ${resp.status}）');
+    }
+    return {'msg': msg};
+  }
+
   // ==================== 活动报名（学工工作流 hdsq，2026-10 上线）====================
 
   static const String _signupUrlPath = '/hdgl/flow/apply/hdsq.zf';

@@ -251,7 +251,18 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('第二课堂活动')),
+        appBar: AppBar(
+          title: const Text('第二课堂活动'),
+          actions: [
+            // 扫一扫：相机属于宿主（经 host.dart 反向注入），没注入就不显示
+            if (hostOpenScanner != null)
+              IconButton(
+                tooltip: '扫一扫',
+                onPressed: () => hostOpenScanner!(context),
+                icon: const Icon(Icons.qr_code_scanner_outlined),
+              ),
+          ],
+        ),
         body: Column(
           children: [
             Padding(

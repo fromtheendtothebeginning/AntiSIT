@@ -347,24 +347,31 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('拓展'),
-        actions: market
-            ? [
-                IconButton(
-                  tooltip: '重新拉市场目录',
-                  onPressed: () => unawaited(MarketSource.I.load(force: true)),
-                  icon: const Icon(Icons.refresh),
-                ),
-              ]
-            : [
-                IconButton(
-                  tooltip: hide ? '显示全部网址' : '隐藏全部网址',
-                  onPressed: items.isEmpty ? null : _toggleHideUrls,
-                  // 开着时用强调色 + 闭眼图标，一眼看得出当前状态
-                  color: hide ? SemColors.accent : null,
-                  icon: Icon(hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                ),
-                IconButton(tooltip: '添加拓展', onPressed: _addMenu, icon: const Icon(Icons.add)),
-              ],
+        actions: [
+          // 扫一扫：相机属于宿主（经 host.dart 反向注入），没注入就不显示
+          if (hostOpenScanner != null)
+            IconButton(
+              tooltip: '扫一扫',
+              onPressed: () => hostOpenScanner!(context),
+              icon: const Icon(Icons.qr_code_scanner_outlined),
+            ),
+          if (market)
+            IconButton(
+              tooltip: '重新拉市场目录',
+              onPressed: () => unawaited(MarketSource.I.load(force: true)),
+              icon: const Icon(Icons.refresh),
+            )
+          else ...[
+            IconButton(
+              tooltip: hide ? '显示全部网址' : '隐藏全部网址',
+              onPressed: items.isEmpty ? null : _toggleHideUrls,
+              // 开着时用强调色 + 闭眼图标，一眼看得出当前状态
+              color: hide ? SemColors.accent : null,
+              icon: Icon(hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+            ),
+            IconButton(tooltip: '添加拓展', onPressed: _addMenu, icon: const Icon(Icons.add)),
+          ],
+        ],
       ),
       body: Column(
         children: [
