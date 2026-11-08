@@ -52,6 +52,23 @@ fi
 
 # 4) 建 Release（已存在就复用）
 [ -f "$APK" ] || { echo "找不到 $APK，先 flutter build apk --release" >&2; exit 1; }
+# 防呆：APK 的 versionCode 必须与 pubspec 的构建号一致——后台构建没跑完就跑本脚本，
+# 会把上一个版本的旧包当成新版本发出去（2026-11-08 v1.27.0 实际发生过）。
+find_aapt() {
+  local sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$LOCALAPPDATA/Android/Sdk}}"
+  ls "$sdk"/build-tools/*/aapt.exe 2>/dev/null | sort | tail -1
+}
+AAPT_BIN=$(find_aapt)
+if [ -n "$AAPT_BIN" ]; then
+  APK_CODE=$("$AAPT_BIN" dump badging "$APK" | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*//p")
+  WANT_CODE=$(sed -n 's/^version: *[0-9.]*+\([0-9]*\)//p' pubspec.yaml)
+  if [ "$APK_CODE" != "$WANT_CODE" ]; then
+    echo "APK versionCode=$APK_CODE 与 pubspec 构建号 $WANT_CODE 不一致：构建未完成或已过期，拒绝发版" >&2
+    exit 1
+  fi
+else
+  echo "警告：找不到 aapt，跳过 APK 版本核对（请确认 APK 是用当前版本新构建的）" >&2
+fi
 cp "$APK" "$OUT"
 (cd "$OUT_DIR" && sha256sum "$OUT_NAME" > "$OUT_NAME.sha256")
 REL_JSON="$TMP_DIR/release.json"
