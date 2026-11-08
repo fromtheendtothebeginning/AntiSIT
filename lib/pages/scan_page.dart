@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:plugin_activities/plugin_activities.dart'
+    show ActivityDetailPage;
 
 import '../widgets/update_dialog.dart' show openExternalUrl;
 
@@ -26,6 +28,23 @@ class ScanPage extends StatefulWidget {
   /// 提交走另一个接口（shsj/qd.zf，单向签到没有签退）。
   static final RegExp dektTrainSignRe =
       RegExp(r'^https://xg\.sit\.edu\.cn/hdgl/pxqd/([\w-]+)/([\w-]+)$');
+
+  /// 二课**活动详情码**（海报 / 详情页二维码，报名用）：
+  /// 门户包装形态 `…/login?redirect=/hdgl/hdxq/:hdId`，或裸 `…/hdgl/hdxq/:hdId`。
+  /// 扫到后直接用 App 自己的活动详情页打开（详情 + 报名都在里面）。
+  static String? dektDetailId(String code) {
+    final u = Uri.tryParse(code.trim());
+    if (u == null || u.host != 'xg.sit.edu.cn') return null;
+    var path = u.path;
+    if (path == '/login') {
+      // 生成端可能整段百分号编码，queryParameters 解一层后按需再解一层
+      final r = u.queryParameters['redirect'];
+      if (r == null) return null;
+      path = r.startsWith('/hdgl/') ? r : Uri.decodeComponent(r);
+    }
+    final m = RegExp(r'^/hdgl/hdxq/([\w-]+)$').firstMatch(path);
+    return m?.group(1);
+  }
 
   /// 测试注入点：替身「相机」组件——widget 测试没有平台通道，真 MobileScanner
   /// 起不来。null = 用真相机。
@@ -73,6 +92,17 @@ class _ScanPageState extends State<ScanPage> {
     super.dispose();
   }
 
+  /// 门户包装形态：`https://xg.sit.edu.cn/login?redirect=/hdgl/…` → 内部完整地址。
+  /// 生成端可能把 redirect 整段百分号编码；不是包装形态返回 null。
+  @visibleForTesting
+  static String? unwrapLoginRedirect(String code) {
+    final u = Uri.tryParse(code.trim());
+    if (u == null || u.host != 'xg.sit.edu.cn' || u.path != '/login') return null;
+    final r = u.queryParameters['redirect'];
+    if (r == null || !r.startsWith('/hdgl/')) return null;
+    return 'https://xg.sit.edu.cn$r';
+  }
+
   /// 一枚码被识出后的统一入口（相机流 / 相册 / 测试注入共用）：
   /// 面板开着就忽略，同一枚码不会把面板叠起来。
   @visibleForTesting
@@ -80,17 +110,25 @@ class _ScanPageState extends State<ScanPage> {
 
   Future<void> _onCode(String code) async {
     if (_pausedValue != null) return;
+    // 门户包装（/login?redirect=…）先拆出内部地址，再按码型匹配
+    final effective = unwrapLoginRedirect(code) ?? code;
     // 二课活动的签到码：走专门的签到面板（学校接口判定本次是签到还是签退）
-    final sign = ScanPage.dektSignRe.firstMatch(code);
+    final sign = ScanPage.dektSignRe.firstMatch(effective);
     if (sign != null) {
       await _signFlow(hdId: sign.group(1)!, hdActId: sign.group(2)!, raw: code);
       return;
     }
     // 二课活动的报名（培训）码：另一个接口，单向签到
-    final train = ScanPage.dektTrainSignRe.firstMatch(code);
+    final train = ScanPage.dektTrainSignRe.firstMatch(effective);
     if (train != null) {
       await _signFlow(hdId: train.group(1)!, hdActId: train.group(2)!,
           raw: code, train: true);
+      return;
+    }
+    // 二课活动的详情码（报名用）：用 App 自己的活动详情页打开
+    final detailId = ScanPage.dektDetailId(effective);
+    if (detailId != null) {
+      await _detailFlow(hdId: detailId, raw: code);
       return;
     }
     setState(() => _pausedValue = code);
@@ -145,6 +183,31 @@ class _ScanPageState extends State<ScanPage> {
     );
     if (!mounted) return;
     setState(() => _pausedValue = null); // 面板关了，回到取景继续扫
+  }
+
+  /// 二课活动详情码（报名用）：关掉面板，用 App 自己的活动详情页打开——
+  /// 活动介绍、时间地点、报名按钮都在详情页里，报名复用既有双模式流程。
+  Future<void> _detailFlow({required String hdId, required String raw}) async {
+    setState(() => _pausedValue = raw);
+    final opened = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (ctx) => _DetailSheet(
+        raw: raw,
+        onOpen: () {
+          Navigator.pop(ctx, true);
+          Navigator.of(context)
+              .push(MaterialPageRoute<void>(
+                  builder: (_) => ActivityDetailPage(id: hdId)))
+              .then((_) {
+            if (mounted) setState(() => _pausedValue = null); // 详情页退出，恢复扫码
+          });
+        },
+      ),
+    );
+    if (!mounted) return;
+    if (opened != true) {
+      setState(() => _pausedValue = null); // 「继续扫码」关的：回到取景
+    }
   }
 
   void _onDetect(BarcodeCapture capture) {
@@ -485,6 +548,64 @@ class _SignSheetState extends State<_SignSheet> {
 }
 
 /// 扫码结果面板：内容可选可复制，网址直接打开，「继续扫码」关面板回取景。
+/// 二课活动详情码面板：这个码指向活动详情页（报名入口在详情页里），
+/// 引导用户进 App 自己的活动详情页，而不是把学校登录页甩给浏览器。
+class _DetailSheet extends StatelessWidget {
+  const _DetailSheet({required this.raw, required this.onOpen});
+
+  final String raw;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('第二课堂 · 活动码',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: onSurface)),
+            const SizedBox(height: 8),
+            Text('扫到的是第二课堂活动的详情码：点下方按钮查看活动介绍并报名，'
+                '报名状态与提交都在 App 内完成。',
+                style: TextStyle(fontSize: 14, height: 1.6, color: onSurface)),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onOpen,
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              icon: const Icon(Icons.event_note_outlined, size: 20),
+              label: const Text('查看活动详情', style: TextStyle(fontSize: 15)),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: raw));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('已复制码内容'),
+                        behavior: SnackBarBehavior.floating));
+                  },
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('复制码内容'),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('继续扫码'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ResultSheet extends StatelessWidget {
   const _ResultSheet({required this.code, required this.onOpen});
 

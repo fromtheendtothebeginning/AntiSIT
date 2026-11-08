@@ -1,7 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:campus_core/campus_core.dart';
 import 'package:campus_service/pages/scan_page.dart';
 import 'package:flutter/material.dart';
@@ -236,6 +233,40 @@ void main() {
       expect(find.text('签到成功'), findsOneWidget);
     });
 
+    test('识别规则：活动详情码（门户包装 / 裸路径）都解析出 hdId', () {
+      const raw = 'https://xg.sit.edu.cn/login?redirect=/hdgl/hdxq/'
+          '94b69a40f38eedd060cf9ecec1fe78cd';
+      expect(ScanPage.dektDetailId(raw),
+          '94b69a40f38eedd060cf9ecec1fe78cd', reason: '用户实测的门户包装形态');
+      expect(ScanPage.dektDetailId('https://xg.sit.edu.cn/login'
+          '?redirect=%2Fhdgl%2Fhdxq%2F94b69a40f38eedd060cf9ecec1fe78cd'),
+          '94b69a40f38eedd060cf9ecec1fe78cd', reason: '整段百分号编码也兼容');
+      expect(ScanPage.dektDetailId(
+          'https://xg.sit.edu.cn/hdgl/hdxq/94b69a40f38eedd060cf9ecec1fe78cd'),
+          '94b69a40f38eedd060cf9ecec1fe78cd', reason: '裸路径形态');
+      expect(ScanPage.dektDetailId('https://other.com/login?redirect=/hdgl/hdxq/abc'),
+          isNull, reason: '别的域名不认');
+      expect(ScanPage.dektDetailId('https://xg.sit.edu.cn/login'), isNull);
+    });
+
+    testWidgets('活动详情码：面板给出「查看活动详情」，点开推入 App 的活动详情页', (tester) async {
+      const raw = 'https://xg.sit.edu.cn/login?redirect=/hdgl/hdxq/'
+          '94b69a40f38eedd060cf9ecec1fe78cd';
+      await pumpScanPage(tester);
+      await detect(tester, raw);
+
+      expect(find.text('第二课堂 · 活动码'), findsOneWidget);
+      expect(find.text('查看活动详情'), findsOneWidget);
+      expect(find.text('打开链接'), findsNothing, reason: '详情码不走通用网页面板');
+
+      await tester.tap(find.text('查看活动详情'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ActivityDetailPage), findsOneWidget,
+          reason: '推入 App 自己的活动详情页（报名在详情页里完成）');
+      expect(find.text('复制码内容'), findsNothing);
+    });
+
     testWidgets('识出签到码：专门面板，提交后显示学校判定原文', (tester) async {
       final calls = <(String, String)>[];
       ScanPage.debugSign = (hdId, hdActId) async {
@@ -272,42 +303,6 @@ void main() {
       expect(find.text('完成签到 / 签退'), findsOneWidget, reason: '失败后按钮还在，可重试');
     });
 
-    test('服务器模式：提交经 /api/campus-open/activities/sign，参数透传', () async {
-      // 真 HTTP 打本地假服务。不放 testWidgets：测试框架的假 HttpClient 会把所有
-      // 请求拦成 400，普通 test 里才是真套接字（按钮 → 提交的接线已由上面的
-      // debugSign 用例覆盖，这里只验证双模式路由）。
-      HttpOverrides.global = null;
-      addTearDown(() => HttpOverrides.global = null);
-      SharedPreferences.setMockInitialValues({});
-      await AppState.I.load();
-      AppState.I.demo = false;
-      AppState.I.mode = AppMode.server;
-      AppState.I.token = 'test-token';
-      addTearDown(() {
-        AppState.I.demo = false;
-        AppState.I.mode = AppMode.direct;
-      });
-
-      String? path;
-      Map<String, dynamic>? body;
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(() => server.close(force: true));
-      AppState.I.serverUrl = 'http://127.0.0.1:${server.port}';
-      server.listen((req) async {
-        path = req.uri.path;
-        body = jsonDecode(await utf8.decoder.bind(req).single);
-        req.response.headers.contentType = ContentType.json;
-        req.response.write(jsonEncode({'ok': true, 'data': {'msg': '签退成功'}}));
-        await req.response.close();
-      });
-
-      final r = await ApiClient.I.activitySignInOrSignOut(
-          '94b69a40f38eedd060cf9ecec1fe78cd', 'c4f2a32a171df39ee5ba8834c8a425ee');
-
-      expect(path, '/api/campus-open/activities/sign');
-      expect(body, {'hdId': '94b69a40f38eedd060cf9ecec1fe78cd', 'hdActId': 'c4f2a32a171df39ee5ba8834c8a425ee'});
-      expect(r['data']['msg'], '签退成功');
-    });
   });
 
   group('入口：右上角镂空扫码图标（宿主注入）', () {

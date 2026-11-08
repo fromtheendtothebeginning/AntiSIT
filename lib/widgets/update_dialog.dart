@@ -89,6 +89,19 @@ List<Widget> _downloadArea(BuildContext ctx, UpdateInfo info) {
           Text('校验安装包…', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
         ]),
       ];
+    case 'ready':
+      // 安装包就绪：主按钮是「安装」，这里常驻一条浏览器下载的直接出路
+      //（设备装不了 / 不想装时不用去找发布页）。
+      return [
+        if (info.apkUrl != null)
+          const SizedBox(height: 12),
+        if (info.apkUrl != null)
+          GestureDetector(
+            onTap: () => openExternalUrl(ctx, info.apkUrl!),
+            child: Text('无法安装？用浏览器下载',
+                style: TextStyle(fontSize: 12, color: SemColors.accent)),
+          ),
+      ];
     default:
       return [
         if (d.error != null) ...[
