@@ -39,15 +39,26 @@ void main() {
       }
       return null;
     });
+    // url_launcher 通道没人应答时 launchUrl 的 Future 永不完成——挂个必抛的 mock，
+    // 让 openExternalUrl 稳定走「复制链接」兜底分支。
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/url_launcher'), (call) async {
+      throw PlatformException(code: 'test-no-browser');
+    });
   });
 
   tearDown(() {
     ScanPage.debugCamera = null;
     ScanPage.debugPickImage = null;
     ScanPage.debugAnalyzeImage = null;
+    ScanPage.debugSign = null;
     hostOpenScanner = null;
+    PluginRegistry.I = PluginRegistry();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('plugins.flutter.io/url_launcher'), null);
   });
 
   Future<void> pumpScanPage(WidgetTester tester) async {
@@ -84,6 +95,37 @@ void main() {
       await pumpScanPage(tester);
       await detect(tester, 'https://example.com/join');
       expect(find.text('打开链接'), findsOneWidget);
+    });
+
+    testWidgets('打开链接：用本机 WebView 内核整页打开', (tester) async {
+      final opened = <String>[];
+      PluginRegistry.I = PluginRegistry(
+        features: const [WebViewPlugin()],
+        themes: const [GlassTheme()],
+        capabilities: {
+          PluginIds.webview: _FakeWebViewCapability((url) => opened.add(url!)),
+        },
+      );
+      await pumpScanPage(tester);
+      await detect(tester, 'https://example.com/open');
+
+      await tester.tap(find.text('打开链接'));
+      await tester.pumpAndSettle();
+
+      expect(opened, ['https://example.com/open'], reason: '网址交给内置内核打开');
+      expect(find.text('扫码结果'), findsNothing, reason: '面板先关掉再打开网页');
+    });
+
+    testWidgets('WebView 内核不可用：退回系统浏览器（复制链接兜底）', (tester) async {
+      await pumpScanPage(tester);
+      await detect(tester, 'https://example.com/fallback');
+
+      await tester.tap(find.text('打开链接'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('已复制下载链接'), findsOneWidget,
+          reason: 'launchUrl 在测试环境必失败 → 走复制兜底，证明没走内核');
+      expect(clipboard, 'https://example.com/fallback');
     });
 
     testWidgets('面板开着时同一枚码不会反复弹', (tester) async {
@@ -297,4 +339,23 @@ void main() {
       expect(find.byIcon(Icons.qr_code_scanner_outlined), findsNothing);
     });
   });
+}
+
+/// WebView 内核替身：只记录 openPage 收到的网址，不真的建 WebView。
+class _FakeWebViewCapability extends WebViewCapability {
+  _FakeWebViewCapability(this.onOpen);
+
+  final void Function(String? url) onOpen;
+
+  @override
+  bool get available => true;
+
+  @override
+  Widget view({String? url, String? html}) => const SizedBox.shrink();
+
+  @override
+  Future<void> openPage(BuildContext context,
+      {String? url, String? html, String title = '', WebBridge? bridge}) async {
+    onOpen(url);
+  }
 }

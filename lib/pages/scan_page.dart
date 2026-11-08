@@ -88,12 +88,23 @@ class _ScanPageState extends State<ScanPage> {
         code: code,
         onOpen: () {
           Navigator.pop(ctx);
-          openExternalUrl(context, code);
+          _openScannedLink(context, code);
         },
       ),
     );
     if (!mounted) return;
     setState(() => _pausedValue = null); // 面板关了（继续扫 / 下滑），回到取景
+  }
+
+  /// 扫出的网址在本机 WebView 内核里整页打开（应用内浏览器）；
+  /// 内核不可用（WebView 插件被停用 / 剔除 / 未注入）时退回系统浏览器。
+  Future<void> _openScannedLink(BuildContext context, String url) async {
+    final webview = PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
+    if (webview != null && webview.available) {
+      await webview.openPage(context, url: url, title: Uri.tryParse(url)?.host ?? '');
+      return;
+    }
+    await openExternalUrl(context, url);
   }
 
   /// 二课签到流程：弹签到面板，提交经直连学工系统（学校返回判定原文）。
