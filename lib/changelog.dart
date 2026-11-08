@@ -19,6 +19,10 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.28.1', date: '2026-11-08', notes: [
+    '扫一扫新增「活动详情码」适配：扫海报上的报名码直接打开活动详情页报名',
+    '更新弹窗在安装包就绪后常驻「用浏览器下载」，装不上也有直接出路',
+  ]),
   ChangelogEntry(version: '1.28.0', date: '2026-11-08', notes: [
     '扫一扫新增支持「报名（培训）二维码」：一键完成签到',
     '扫一扫界面改版：底部大按钮 + 手电筒补光，识别只认二维码并自动变焦',
