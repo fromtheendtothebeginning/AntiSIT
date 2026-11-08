@@ -147,6 +147,8 @@ class UpdateDownloader extends ChangeNotifier {
       true => null,
       'settings' => '请在系统设置里允许「安装未知应用」，回来再点一次「安装」',
       'missing' => '安装包不见了，请重新下载',
+      String s when s.startsWith('error:') =>
+        '没能拉起安装器（${s.substring(6).trim()}）。可改用浏览器下载',
       _ => '没能拉起安装器，可改用浏览器下载',
     };
     notifyListeners();

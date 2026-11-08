@@ -59,29 +59,46 @@ class MainActivity : FlutterActivity() {
 
     /** 把 APK 经 FileProvider 只读共享给系统安装器（路径来自 UpdateDownloader）。
      *  返回 true = 已拉起；"settings" = Android 8+ 还没授予「安装未知应用」，已跳到
-     *  授权页（授权回来 Dart 侧再点一次「安装」）；"missing" / "error" = 文件不在 /
-     *  拉起失败，Dart 侧提示退回浏览器下载。 */
+     *  授权页（授权回来 Dart 侧再点一次「安装」）；"missing" / "error: 原因" =
+     *  文件不在 / 拉起失败（带上真实原因，便于定位各 ROM 的差异）。 */
     private fun installApk(path: String): Any {
         val file = File(path)
-        if (!file.exists()) return "missing"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !packageManager.canRequestPackageInstalls()
-        ) {
-            open(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, packageUri())
-            return "settings"
-        }
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        return try {
-            startActivity(
-                Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            )
-            true
+        if (!file.exists() || file.length() == 0L) return "missing"
+        // 个别 ROM 查询授权状态本身也会抛：别让它吞掉后面的安装尝试
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                !packageManager.canRequestPackageInstalls()
+            ) {
+                open(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, packageUri())
+                return "settings"
+            }
         } catch (_: Exception) {
-            "error"
         }
+        val uri = try {
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        } catch (e: Exception) {
+            return "error: FileProvider(${e.message})"
+        }
+        // 两种拉起方式各试一次：部分 ROM 只认其中一种
+        var last: Exception? = null
+        for (intent in listOf(
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                setData(uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+        )) {
+            try {
+                startActivity(intent)
+                return true
+            } catch (e: Exception) {
+                last = e
+            }
+        }
+        return "error: ${last?.message ?: "未知原因"}"
     }
 
     /** 跳设置页；部分 ROM 没有对应页面，返回 false 让 Dart 侧走兜底。 */

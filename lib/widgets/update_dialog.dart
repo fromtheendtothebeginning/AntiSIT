@@ -103,7 +103,18 @@ List<Widget> _downloadArea(BuildContext ctx, UpdateInfo info) {
         ],
         if (d.installNote != null) ...[
           const SizedBox(height: 8),
-          Text(d.installNote!, style: TextStyle(fontSize: 12, color: SemColors.accent)),
+          // 提示本身可点：拉不起安装器时一键改用浏览器下载（失败重试走「重试」按钮）
+          if (info.apkUrl != null)
+            GestureDetector(
+              onTap: () => openExternalUrl(ctx, info.apkUrl!),
+              child: Text(d.installNote!,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: SemColors.accent,
+                      decoration: TextDecoration.underline)),
+            )
+          else
+            Text(d.installNote!, style: TextStyle(fontSize: 12, color: SemColors.accent)),
         ],
       ];
   }

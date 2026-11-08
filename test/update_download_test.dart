@@ -203,6 +203,14 @@ void main() {
       expect(UpdateDownloader.I.installNote, isNull);
       expect(calls.length, 2);
     });
+
+    test('拉起失败的错误细节透传到提示里（native 返回 error: 原因）', () async {
+      UpdateDownloader.I.readyPath = '/tmp/AntiSIT-1.27.0.apk'; // 就绪态，只测 install 的提示分支
+      UpdateDownloader.debugInstall = (path) async => 'error: FileProvider(路径不在白名单)';
+      await UpdateDownloader.I.install();
+      expect(UpdateDownloader.I.installNote,
+          contains('FileProvider(路径不在白名单)'), reason: '真实原因直接可见，别再笼统一句');
+    });
   });
 
   group('弹窗（真组件）', () {
