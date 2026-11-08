@@ -267,6 +267,19 @@ void main() {
       expect(find.text('复制码内容'), findsNothing);
     });
 
+    testWidgets('hdId 能对上演示活动时：详情页带完整元信息（名称 / 报名按钮）', (tester) async {
+      AppState.I.demo = true; // 元信息按 hdId 从演示活动列表里捞
+      addTearDown(() => AppState.I.demo = false);
+      await pumpScanPage(tester);
+      await detect(tester, 'https://xg.sit.edu.cn/login?redirect=/hdgl/hdxq/a001');
+      await tester.tap(find.text('查看活动详情'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('AI 赋能学习效率提升讲座'), findsOneWidget,
+          reason: '元信息按 hdId 从活动列表捞到并带进详情页，页面不开天窗');
+      expect(find.textContaining('报名'), findsWidgets);
+    });
+
     testWidgets('识出签到码：专门面板，提交后显示学校判定原文', (tester) async {
       final calls = <(String, String)>[];
       ScanPage.debugSign = (hdId, hdActId) async {

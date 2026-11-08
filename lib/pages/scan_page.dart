@@ -187,20 +187,22 @@ class _ScanPageState extends State<ScanPage> {
 
   /// 二课活动详情码（报名用）：关掉面板，用 App 自己的活动详情页打开——
   /// 活动介绍、时间地点、报名按钮都在详情页里，报名复用既有双模式流程。
+  /// 详情接口只回说明，名称 / 时间 / 名额等元信息在活动列表里：面板开着就先按
+  /// hdId 捞出来，进详情页时带上，别让页面开天窗。
   Future<void> _detailFlow({required String hdId, required String raw}) async {
     setState(() => _pausedValue = raw);
+    final metaFuture = _fetchActivityMeta(hdId);
     final opened = await showModalBottomSheet<bool>(
       context: context,
       builder: (ctx) => _DetailSheet(
         raw: raw,
-        onOpen: () {
+        onOpen: () async {
           Navigator.pop(ctx, true);
-          Navigator.of(context)
-              .push(MaterialPageRoute<void>(
-                  builder: (_) => ActivityDetailPage(id: hdId)))
-              .then((_) {
-            if (mounted) setState(() => _pausedValue = null); // 详情页退出，恢复扫码
-          });
+          final meta = await metaFuture;
+          if (!mounted) return;
+          await Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => ActivityDetailPage(id: hdId, activity: meta)));
+          if (mounted) setState(() => _pausedValue = null); // 详情页退出，恢复扫码
         },
       ),
     );
@@ -208,6 +210,21 @@ class _ScanPageState extends State<ScanPage> {
     if (opened != true) {
       setState(() => _pausedValue = null); // 「继续扫码」关的：回到取景
     }
+  }
+
+  /// 按 hdId 从活动列表里捞元信息（双模式：直连走学工列表，服务器走隧道）；
+  /// 拉不到 / 列表里没有这条活动时返回 null（详情页靠说明兜底，照样能报名）。
+  Future<Map<String, dynamic>?> _fetchActivityMeta(String hdId) async {
+    try {
+      final r = await ApiClient.I.activities();
+      final items = ((r['data']?['activities'] ?? r['activities']) as List?)
+              ?.cast<Map<String, dynamic>>() ??
+          const [];
+      for (final a in items) {
+        if ('${a['id']}' == hdId) return a;
+      }
+    } catch (_) {} // 列表拉不到：详情页靠说明兜底
+    return null;
   }
 
   void _onDetect(BarcodeCapture capture) {
