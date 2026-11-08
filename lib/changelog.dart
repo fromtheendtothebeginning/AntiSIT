@@ -19,6 +19,11 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.28.6', date: '2026-11-08', notes: [
+    '摄像头与扫一扫拆成两个独立插件：可在「插件管理」里分别查看启停，扫码入口随插件启停显示',
+    '扫一扫与 WebView 内核改为插件级关联：内核被停用时，扫出的网址自动改走系统浏览器',
+    '扫码打开的活动详情页补齐名称 / 时间等元信息，页面不再开天窗',
+  ]),
   ChangelogEntry(version: '1.28.5', date: '2026-11-08', notes: [
     '应用内安装改走系统 PackageInstaller 会话：不依赖 intent 拉起，ColorOS 等 ROM 拦截差异最小',
   ]),
