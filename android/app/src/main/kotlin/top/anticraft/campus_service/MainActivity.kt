@@ -1,5 +1,6 @@
 package top.anticraft.campus_service
 
+import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -57,7 +58,9 @@ class MainActivity : FlutterActivity() {
 
     private fun packageUri(): Uri = Uri.fromParts("package", packageName, null)
 
-    /** 把 APK 经 FileProvider 只读共享给系统安装器（路径来自 UpdateDownloader）。
+    /** 把下载好的 APK 交给系统安装。按兼容性依次尝试：
+     *  ① PackageInstaller 会话（API 21+，系统安装服务直装，不走 intent 解析，
+     *     各 ROM 拦截差异最小）；② ACTION_INSTALL_PACKAGE；③ ACTION_VIEW。
      *  返回 true = 已拉起；"settings" = Android 8+ 还没授予「安装未知应用」，已跳到
      *  授权页（授权回来 Dart 侧再点一次「安装」）；"missing" / "error: 原因" =
      *  文件不在 / 拉起失败（带上真实原因，便于定位各 ROM 的差异）。 */
@@ -74,14 +77,40 @@ class MainActivity : FlutterActivity() {
             }
         } catch (_: Exception) {
         }
+        var last: Exception? = null
+
+        // ① PackageInstaller 会话：APK 流式写进系统安装会话，commit 后由系统
+        //    弹安装确认。不经过 intent 解析，ColorOS / MIUI 上的拦截差异最小。
+        try {
+            val installer = packageManager.packageInstaller
+            val session = installer.openSession(installer.createSession(
+                android.content.pm.PackageInstaller.SessionParams(
+                    android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL)))
+            try {
+                session.openWrite("AntiSIT", 0, file.length()).use { out ->
+                    file.inputStream().use { it.copyTo(out) }
+                    session.fsync(out)
+                }
+                // Android 12+ 的 commit 必须带可变的 PendingIntent（系统往里写安装结果）
+                val intent = Intent(this, MainActivity::class.java)
+                val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                else PendingIntent.FLAG_UPDATE_CURRENT
+                session.commit(PendingIntent.getActivity(this, 0, intent, flags).intentSender)
+                return true
+            } finally {
+                session.close()
+            }
+        } catch (e: Exception) {
+            last = e
+        }
+
+        // ② / ③ intent 兜底：经 FileProvider 只读共享给系统安装器。
         val uri = try {
             FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         } catch (e: Exception) {
             return "error: FileProvider(${e.message})"
         }
-        // 交给系统的包安装器（ACTION_INSTALL_PACKAGE 语义最明确）；个别 ROM 只认
-        // ACTION_VIEW，失败时再兜底一次。
-        var last: Exception? = null
         for (intent in listOf(
             Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                 setData(uri)
