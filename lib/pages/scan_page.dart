@@ -54,7 +54,13 @@ class _ScanPageState extends State<ScanPage> {
   /// 相册图识别中（按钮转圈、防重入）。
   bool _picking = false;
 
-  MobileScannerController get _cam => _controller ??= MobileScannerController();
+  /// 手电筒开关状态（仅用于按钮显示；实际状态以控制器为准）。
+  bool _torchOn = false;
+
+  MobileScannerController get _cam => _controller ??= MobileScannerController(
+        formats: [BarcodeFormat.qrCode], // 只扫二维码：误识别更少、解码更快
+        autoZoom: true, // 二维码离得远时自动变焦，远距离扫码也能对上
+      );
 
   @override
   void dispose() {
@@ -104,7 +110,7 @@ class _ScanPageState extends State<ScanPage> {
           final fake = ScanPage.debugSign;
           final r = fake != null
               ? await fake(hdId, hdActId)
-              : await CampusDirect.I.activitySignInOrSignOut(hdId, hdActId);
+              : await ApiClient.I.activitySignInOrSignOut(hdId, hdActId);
           return ((r['data'] as Map?)?['msg'] ?? '').toString();
         },
       ),
@@ -180,7 +186,7 @@ class _ScanPageState extends State<ScanPage> {
                   errorBuilder: (context, error) => _cameraError(error),
                 ),
           ),
-          // 取景框 + 提示 + 相册入口
+          // 取景框 + 提示
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -189,20 +195,6 @@ class _ScanPageState extends State<ScanPage> {
                 const SizedBox(height: 16),
                 const Text('对准二维码，自动识别',
                     style: TextStyle(color: Colors.white70, fontSize: 13)),
-                const SizedBox(height: 24),
-                // 系统相册里挑一张图识别（截图 / 别人转发的二维码都行）
-                TextButton.icon(
-                  onPressed: _picking ? null : _pickAndAnalyze,
-                  icon: _picking
-                      ? const SizedBox(
-                          width: 14, height: 14,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white70))
-                      : const Icon(Icons.photo_library_outlined,
-                          size: 18, color: Colors.white70),
-                  label: Text(_picking ? '识别中…' : '从相册识别',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                ),
               ],
             ),
           ),
@@ -212,13 +204,47 @@ class _ScanPageState extends State<ScanPage> {
             right: 12,
             child: IconButton(
               onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close, color: Colors.white, size: 26),
+              icon: const Icon(Icons.close, color: Colors.white, size: 28),
               tooltip: '收起扫一扫',
+            ),
+          ),
+          // 底部操作条：手电筒 + 相册识别，实心大按钮一眼能找到
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: MediaQuery.paddingOf(context).bottom + 24,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _BigActionButton(
+                  icon: _torchOn ? Icons.flashlight_on_rounded : Icons.flashlight_off_rounded,
+                  label: _torchOn ? '关灯' : '手电筒',
+                  onPressed: _toggleTorch,
+                ),
+                const SizedBox(width: 28),
+                _BigActionButton(
+                  icon: _picking
+                      ? null
+                      : Icons.photo_library_rounded,
+                  busy: _picking,
+                  label: _picking ? '识别中…' : '相册识别',
+                  filled: true,
+                  onPressed: _picking ? null : _pickAndAnalyze,
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// 手电筒：暗光会场（签到现场常见）直接影响识别率。
+  Future<void> _toggleTorch() async {
+    try {
+      await _cam.toggleTorch();
+      if (mounted) setState(() => _torchOn = !_torchOn);
+    } catch (_) {}
   }
 
   /// 相机起不来（权限被拒最常见）：给条人话和出路。
@@ -263,6 +289,55 @@ class _ScanWindow extends StatelessWidget {
           border: Border.all(color: Colors.white70, width: 2),
         ),
       );
+}
+
+/// 扫码页底部的大按钮：实心（主操作）/ 描边（次操作）两态，深色取景上一眼能找到。
+class _BigActionButton extends StatelessWidget {
+  const _BigActionButton({
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.filled = false,
+    this.busy = false,
+  });
+
+  final IconData? icon;
+  final String label;
+  final VoidCallback? onPressed;
+  final bool filled;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = filled ? Colors.white : Colors.black.withValues(alpha: 0.55);
+    final fg = filled ? Colors.black87 : Colors.white;
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white38),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (busy)
+              const SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black54))
+            else if (icon != null)
+              Icon(icon, size: 22, color: fg),
+            const SizedBox(width: 8),
+            Text(label,
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: fg)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 二课签到面板：学校同一个接口按活动状态判定签到还是签退，
@@ -335,17 +410,17 @@ class _SignSheetState extends State<_SignSheet> {
             ),
             if (_ok == null) ...[
               const SizedBox(height: 12),
-              Row(children: [
-                FilledButton.icon(
-                  onPressed: _busy ? null : _go,
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 14, height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.how_to_reg_outlined, size: 18),
-                  label: Text(_busy ? '提交中…' : '完成签到 / 签退'),
-                ),
-              ]),
+              FilledButton.icon(
+                onPressed: _busy ? null : _go,
+                style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                icon: _busy
+                    ? const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.how_to_reg_outlined, size: 20),
+                label: Text(_busy ? '提交中…' : '完成签到 / 签退',
+                    style: const TextStyle(fontSize: 15)),
+              ),
             ],
             const SizedBox(height: 8),
             Row(

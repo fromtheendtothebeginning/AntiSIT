@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:campus_core/campus_core.dart';
 import 'package:campus_service/pages/scan_page.dart';
@@ -105,7 +107,7 @@ void main() {
         return ['photo-qr'];
       };
 
-      await tester.tap(find.text('从相册识别'));
+      await tester.tap(find.text('相册识别'));
       await tester.pumpAndSettle();
 
       expect(find.text('扫码结果'), findsOneWidget);
@@ -117,23 +119,23 @@ void main() {
       ScanPage.debugPickImage = () async => '/tmp/none.png';
       ScanPage.debugAnalyzeImage = (path) async => [];
 
-      await tester.tap(find.text('从相册识别'));
+      await tester.tap(find.text('相册识别'));
       await tester.pumpAndSettle();
 
       expect(find.text('这张图片里没识别出二维码'), findsOneWidget);
       expect(find.text('扫码结果'), findsNothing);
-      expect(find.text('从相册识别'), findsOneWidget, reason: '还在取景页，可以再挑一张');
+      expect(find.text('相册识别'), findsOneWidget, reason: '还在取景页，可以再挑一张');
     });
 
     testWidgets('用户取消选图：什么都不发生', (tester) async {
       await pumpScanPage(tester);
       ScanPage.debugPickImage = () async => null;
 
-      await tester.tap(find.text('从相册识别'));
+      await tester.tap(find.text('相册识别'));
       await tester.pumpAndSettle();
 
       expect(find.text('扫码结果'), findsNothing);
-      expect(find.text('从相册识别'), findsOneWidget);
+      expect(find.text('相册识别'), findsOneWidget);
     });
   });
 
@@ -186,6 +188,43 @@ void main() {
 
       expect(find.text('您未报名该活动，无法进行该活动签到签退操作！'), findsOneWidget);
       expect(find.text('完成签到 / 签退'), findsOneWidget, reason: '失败后按钮还在，可重试');
+    });
+
+    test('服务器模式：提交经 /api/campus-open/activities/sign，参数透传', () async {
+      // 真 HTTP 打本地假服务。不放 testWidgets：测试框架的假 HttpClient 会把所有
+      // 请求拦成 400，普通 test 里才是真套接字（按钮 → 提交的接线已由上面的
+      // debugSign 用例覆盖，这里只验证双模式路由）。
+      HttpOverrides.global = null;
+      addTearDown(() => HttpOverrides.global = null);
+      SharedPreferences.setMockInitialValues({});
+      await AppState.I.load();
+      AppState.I.demo = false;
+      AppState.I.mode = AppMode.server;
+      AppState.I.token = 'test-token';
+      addTearDown(() {
+        AppState.I.demo = false;
+        AppState.I.mode = AppMode.direct;
+      });
+
+      String? path;
+      Map<String, dynamic>? body;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      AppState.I.serverUrl = 'http://127.0.0.1:${server.port}';
+      server.listen((req) async {
+        path = req.uri.path;
+        body = jsonDecode(await utf8.decoder.bind(req).single);
+        req.response.headers.contentType = ContentType.json;
+        req.response.write(jsonEncode({'ok': true, 'data': {'msg': '签退成功'}}));
+        await req.response.close();
+      });
+
+      final r = await ApiClient.I.activitySignInOrSignOut(
+          '94b69a40f38eedd060cf9ecec1fe78cd', 'c4f2a32a171df39ee5ba8834c8a425ee');
+
+      expect(path, '/api/campus-open/activities/sign');
+      expect(body, {'hdId': '94b69a40f38eedd060cf9ecec1fe78cd', 'hdActId': 'c4f2a32a171df39ee5ba8834c8a425ee'});
+      expect(r['data']['msg'], '签退成功');
     });
   });
 

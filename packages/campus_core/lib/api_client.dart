@@ -354,6 +354,14 @@ class ApiClient {
       : _call('POST', '/api/campus-open/activities/$aid/signup',
           body: const {}, tunnel: true);
 
+  /// 扫码签到 / 签退（学校 signInOrSignOut.zf 按场次判定方向，返回判定原文）。
+  /// 写操作：两种模式都只提交一次、绝不重试。
+  Future<Map<String, dynamic>> activitySignInOrSignOut(String hdId, String hdActId) =>
+      _useDirect
+          ? CampusDirect.I.activitySignInOrSignOut(hdId, hdActId)
+          : _call('POST', '/api/campus-open/activities/sign',
+              body: {'hdId': hdId, 'hdActId': hdActId}, tunnel: true);
+
   Future<Map<String, dynamic>> timetableWeek(String xnm, String xqm, int zs) =>
       _useDirect
           ? CampusDirect.I.timetableWeek(xnm, xqm, zs)

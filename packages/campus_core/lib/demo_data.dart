@@ -37,6 +37,8 @@ class DemoData {
         return {'ok': true, 'data': {'student_id': '25110001', 'activities': _demoActivities()}};
       case '/api/campus-open/activities/signed':
         return {'ok': true, 'activities': _demoSignedActivities()};
+      case '/api/campus-open/activities/sign':
+        return {'ok': true, 'data': {'msg': '签到成功（演示）'}};
       case '/api/campus-open/score/credits':
         return {'ok': true, 'records': _demoCredits()};
       case '/api/campus-open/timetable/week':
