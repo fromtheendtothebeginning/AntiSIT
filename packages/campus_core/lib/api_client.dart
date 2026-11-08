@@ -362,6 +362,14 @@ class ApiClient {
           : _call('POST', '/api/campus-open/activities/sign',
               body: {'hdId': hdId, 'hdActId': hdActId}, tunnel: true);
 
+  /// 报名（培训）二维码的扫码签到（学校 shsj/qd.zf，返回判定原文）。
+  /// 写操作：两种模式都只提交一次、绝不重试。
+  Future<Map<String, dynamic>> activityTrainingSignIn(String hdId, String pxId) =>
+      _useDirect
+          ? CampusDirect.I.activityTrainingSignIn(hdId, pxId)
+          : _call('POST', '/api/campus-open/activities/train-sign',
+              body: {'hdId': hdId, 'pxId': pxId}, tunnel: true);
+
   Future<Map<String, dynamic>> timetableWeek(String xnm, String xqm, int zs) =>
       _useDirect
           ? CampusDirect.I.timetableWeek(xnm, xqm, zs)

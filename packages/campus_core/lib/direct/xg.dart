@@ -474,6 +474,34 @@ class XgClient {
     return {'msg': msg};
   }
 
+  // ==================== 报名 / 培训扫码签到 ====================
+
+  /// 报名（培训）二维码的扫码签到：POST /hdgl/shsj/qd.zf {hdid, pxid, qdsj}。
+  /// 参数来自报名管理页的报名二维码 `…/hdgl/pxqd/:hdId/:pxId`（无时间戳段），
+  /// 与签到 / 签退的 signInOrSignOut 是**不同接口**。返回 {'msg': 学校提示}；
+  /// code != 0 抛 ApiError(学校原文)。写操作：只提交一次、绝不重试。
+  Future<Map<String, dynamic>> trainingSignIn(Object hdId, Object pxId) async {
+    if (!loggedIn) throw ApiError('未登录学工系统');
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final qdsj = '${now.year}-${two(now.month)}-${two(now.day)} '
+        '${two(now.hour)}:${two(now.minute)}:${two(now.second)}';
+    final resp = await _http.postForm(
+      '$_api/hdgl/shsj/qd.zf',
+      {'hdid': '$hdId', 'pxid': '$pxId', 'qdsj': qdsj},
+      headers: _xgHeaders,
+      redirect: false,
+    );
+    if (resp.status >= 300 && resp.status < 400) _sessionLost();
+    final r = _parse(resp);
+    if (r is! Map) _sessionLost();
+    final msg = (r['msg'] ?? '').toString();
+    if (r['code'] != 0) {
+      throw ApiError(msg.isNotEmpty ? msg : '签到未成功（HTTP ${resp.status}）');
+    }
+    return {'msg': msg};
+  }
+
   // ==================== 活动报名（学工工作流 hdsq，2026-10 上线）====================
 
   static const String _signupUrlPath = '/hdgl/flow/apply/hdsq.zf';

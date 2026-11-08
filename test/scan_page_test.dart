@@ -196,6 +196,46 @@ void main() {
           'https://xg.sit.edu.cn/hdgl/hdxq/qd/a/b'), isFalse, reason: '缺时间戳段');
     });
 
+    test('识别规则：报名（培训）码 pxqd 两段也算', () {
+      expect(
+          ScanPage.dektTrainSignRe.hasMatch(
+              'https://xg.sit.edu.cn/hdgl/pxqd/ee49d370b72dceef4c7b5a6d3580ebfc/a50571f3af113b02945b5309fe815f93'),
+          isTrue);
+      expect(
+          ScanPage.dektTrainSignRe.hasMatch(
+              'https://xg.sit.edu.cn/hdgl/hdxq/qd/a/b/1793874178304'),
+          isFalse,
+          reason: '签到码走 signInOrSignOut，不混用');
+      expect(
+          ScanPage.dektTrainSignRe.hasMatch(
+              'https://xg.sit.edu.cn/hdgl/pxqd/a/b/1793874178304'),
+          isFalse,
+          reason: '报名码没有时间戳段，多出来的不是报名码');
+    });
+
+    testWidgets('报名（培训）码：走报名签到面板，提交走另一个接口', (tester) async {
+      const trainQr = 'https://xg.sit.edu.cn/hdgl/pxqd/'
+          'ee49d370b72dceef4c7b5a6d3580ebfc/a50571f3af113b02945b5309fe815f93';
+      final calls = <(String, String)>[];
+      ScanPage.debugSign = (hdId, pxId) async {
+        calls.add((hdId, pxId));
+        return {'ok': true, 'data': {'msg': '签到成功'}};
+      };
+      await pumpScanPage(tester);
+      await detect(tester, trainQr);
+
+      expect(find.text('第二课堂 · 报名签到'), findsOneWidget, reason: '报名码走单向签到面板');
+      expect(find.text('完成签到'), findsOneWidget, reason: '没有签退语义');
+
+      await tester.tap(find.text('完成签到'));
+      await tester.pumpAndSettle();
+
+      expect(calls, const [
+        ('ee49d370b72dceef4c7b5a6d3580ebfc', 'a50571f3af113b02945b5309fe815f93'),
+      ]);
+      expect(find.text('签到成功'), findsOneWidget);
+    });
+
     testWidgets('识出签到码：专门面板，提交后显示学校判定原文', (tester) async {
       final calls = <(String, String)>[];
       ScanPage.debugSign = (hdId, hdActId) async {

@@ -22,6 +22,11 @@ class ScanPage extends StatefulWidget {
   static final RegExp dektSignRe =
       RegExp(r'^https://xg\.sit\.edu\.cn/hdgl/hdxq/(?:qd|qt)/([\w-]+)/([\w-]+)/(?:\d{13})$');
 
+  /// 二课**报名（培训）二维码**：`…/hdgl/pxqd/:hdId/:pxId`——无时间戳、只有两段，
+  /// 提交走另一个接口（shsj/qd.zf，单向签到没有签退）。
+  static final RegExp dektTrainSignRe =
+      RegExp(r'^https://xg\.sit\.edu\.cn/hdgl/pxqd/([\w-]+)/([\w-]+)$');
+
   /// 测试注入点：替身「相机」组件——widget 测试没有平台通道，真 MobileScanner
   /// 起不来。null = 用真相机。
   @visibleForTesting
@@ -81,6 +86,13 @@ class _ScanPageState extends State<ScanPage> {
       await _signFlow(hdId: sign.group(1)!, hdActId: sign.group(2)!, raw: code);
       return;
     }
+    // 二课活动的报名（培训）码：另一个接口，单向签到
+    final train = ScanPage.dektTrainSignRe.firstMatch(code);
+    if (train != null) {
+      await _signFlow(hdId: train.group(1)!, hdActId: train.group(2)!,
+          raw: code, train: true);
+      return;
+    }
     setState(() => _pausedValue = code);
     await showModalBottomSheet<void>(
       context: context,
@@ -107,9 +119,11 @@ class _ScanPageState extends State<ScanPage> {
     await openExternalUrl(context, url);
   }
 
-  /// 二课签到流程：弹签到面板，提交经直连学工系统（学校返回判定原文）。
+  /// 二课签到流程：弹签到面板，提交经学工系统（学校返回判定原文）。
+  /// [train] = 报名（培训）码：另一个接口、单向签到。
   Future<void> _signFlow(
-      {required String hdId, required String hdActId, required String raw}) async {
+      {required String hdId, required String hdActId, required String raw,
+      bool train = false}) async {
     setState(() => _pausedValue = raw);
     await showModalBottomSheet<void>(
       context: context,
@@ -117,11 +131,14 @@ class _ScanPageState extends State<ScanPage> {
         hdId: hdId,
         hdActId: hdActId,
         raw: raw,
+        train: train,
         submit: () async {
           final fake = ScanPage.debugSign;
           final r = fake != null
               ? await fake(hdId, hdActId)
-              : await ApiClient.I.activitySignInOrSignOut(hdId, hdActId);
+              : train
+                  ? await ApiClient.I.activityTrainingSignIn(hdId, hdActId)
+                  : await ApiClient.I.activitySignInOrSignOut(hdId, hdActId);
           return ((r['data'] as Map?)?['msg'] ?? '').toString();
         },
       ),
@@ -351,7 +368,7 @@ class _BigActionButton extends StatelessWidget {
   }
 }
 
-/// 二课签到面板：学校同一个接口按活动状态判定签到还是签退，
+/// 二课签到面板：签到 / 签退码由学校按场次判定方向，报名码单向签到；
 /// 按钮点下去把学校的判定原文（成功原因 / 失败原因）摆给用户看。
 class _SignSheet extends StatefulWidget {
   const _SignSheet({
@@ -359,6 +376,7 @@ class _SignSheet extends StatefulWidget {
     required this.hdActId,
     required this.raw,
     required this.submit,
+    this.train = false,
   });
 
   final String hdId;
@@ -366,6 +384,9 @@ class _SignSheet extends StatefulWidget {
 
   /// 原始二维码内容（复制 / 出问题时用户自己能核对）。
   final String raw;
+
+  /// 报名（培训）码：另一个接口、单向签到，没有「签退」语义。
+  final bool train;
 
   /// 提交签到，成功返回学校提示原文；失败抛 ApiError（学校原文）。
   final Future<String> Function() submit;
@@ -407,14 +428,17 @@ class _SignSheetState extends State<_SignSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('第二课堂 · 扫码签到',
+            Text(widget.train ? '第二课堂 · 报名签到' : '第二课堂 · 扫码签到',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: onSurface)),
             const SizedBox(height: 8),
             Text(
               _ok != null
                   ? '$_ok'
-                  : (_err ?? '扫到的是第二课堂活动的签到码，点下方按钮提交，'
-                      '由学校判定本次算签到还是签退。'),
+                  : (_err ??
+                      (widget.train
+                          ? '扫到的是第二课堂活动的报名（培训）签到码，点下方按钮完成签到。'
+                          : '扫到的是第二课堂活动的签到码，点下方按钮提交，'
+                              '由学校判定本次算签到还是签退。')),
               style: TextStyle(
                   fontSize: 14, height: 1.6,
                   color: _err != null ? SemColors.danger : onSurface),
@@ -429,7 +453,7 @@ class _SignSheetState extends State<_SignSheet> {
                         width: 14, height: 14,
                         child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.how_to_reg_outlined, size: 20),
-                label: Text(_busy ? '提交中…' : '完成签到 / 签退',
+                label: Text(_busy ? '提交中…' : (widget.train ? '完成签到' : '完成签到 / 签退'),
                     style: const TextStyle(fontSize: 15)),
               ),
             ],
