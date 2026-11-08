@@ -19,6 +19,9 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.28.4', date: '2026-11-08', notes: [
+    '相册识别兼容一张图多个二维码：去重后弹选择面板，点选哪个走哪条流程',
+  ]),
   ChangelogEntry(version: '1.28.3', date: '2026-11-08', notes: [
     '扫活动详情码打开的详情页补齐名称 / 时间 / 名额等元信息，页面不再开天窗',
   ]),
