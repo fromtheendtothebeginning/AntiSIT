@@ -257,8 +257,22 @@ class _ScanPageState extends State<ScanPage> {
             behavior: SnackBarBehavior.floating));
         return;
       }
+      // 一张图里可能有好几个码（比如海报上签到 / 签退并排）：去重后
+      // 多于一个就弹选择面板让用户挑，挑完走与单码一致的识别链。
+      final unique = codes.toSet().toList();
+      if (unique.length > 1) {
+        // 识别到此为止（选择不算识别）：按钮停转，不然测试的 settle 也会被它挂住
+        if (mounted) setState(() => _picking = false);
+        final picked = await showModalBottomSheet<String>(
+          context: context,
+          builder: (ctx) => _CodePickerSheet(codes: unique),
+        );
+        if (!mounted || picked == null) return;
+        unawaited(_onCode(picked));
+        return;
+      }
       // 面板自己管生命周期：等它关掉的话按钮会一直停在「识别中」转圈
-      unawaited(_onCode(codes.first));
+      unawaited(_onCode(unique.single));
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -441,6 +455,51 @@ class _BigActionButton extends StatelessWidget {
             const SizedBox(width: 8),
             Text(label,
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: fg)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 多码选择面板：一张图片识出多个二维码时让用户挑一个，
+/// 挑完走与单码一致的识别链（签到 / 详情 / 通用结果按码型自动分流）。
+class _CodePickerSheet extends StatelessWidget {
+  const _CodePickerSheet({required this.codes});
+
+  final List<String> codes;
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('识别到 ${codes.length} 个二维码，点选要用的一个',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: onSurface)),
+            const SizedBox(height: 4),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final c in codes)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.qr_code_2_rounded, size: 20),
+                      title: Text(c,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13.5, color: onSurface)),
+                      onTap: () => Navigator.pop(context, c),
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

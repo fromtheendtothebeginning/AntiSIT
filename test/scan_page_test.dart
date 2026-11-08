@@ -176,6 +176,47 @@ void main() {
       expect(find.text('扫码结果'), findsNothing);
       expect(find.text('相册识别'), findsOneWidget);
     });
+
+    testWidgets('一张图识出多个码：弹选择面板，点选哪个就用哪个', (tester) async {
+      await pumpScanPage(tester);
+      ScanPage.debugPickImage = () async => '/tmp/multi.png';
+      ScanPage.debugAnalyzeImage = (path) async => ['code-b', 'code-a', 'code-b'];
+
+      await tester.tap(find.text('相册识别'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('识别到 2 个二维码，点选要用的一个'), findsOneWidget,
+          reason: '重复码去重后 2 个，弹选择面板');
+      expect(find.text('code-a'), findsOneWidget);
+      expect(find.text('code-b'), findsOneWidget);
+
+      await tester.tap(find.text('code-a'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('扫码结果'), findsOneWidget);
+      expect(find.text('code-a'), findsOneWidget, reason: '选中的码走通用结果面板');
+      expect(find.text('code-b'), findsNothing);
+    });
+
+    testWidgets('多码里混着签到码：点选后走签到面板', (tester) async {
+      const signQr = 'https://xg.sit.edu.cn/hdgl/hdxq/qd/'
+          '94b69a40f38eedd060cf9ecec1fe78cd/'
+          'c4f2a32a171df39ee5ba8834c8a425ee/1793874178304';
+      await pumpScanPage(tester);
+      ScanPage.debugPickImage = () async => '/tmp/multi2.png';
+      ScanPage.debugAnalyzeImage = (path) async => [signQr, 'https://example.com/other'];
+      ScanPage.debugSign = (hdId, hdActId) async =>
+          {'ok': true, 'data': {'msg': '签到成功'}};
+
+      await tester.tap(find.text('相册识别'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.textContaining(signQr.substring(0, 40)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('第二课堂 · 扫码签到'), findsOneWidget, reason: '选中的签到码走签到面板');
+      expect(find.text('打开链接'), findsNothing);
+    });
   });
 
   group('二课签到码（第二课堂活动的签到 / 签退）', () {
