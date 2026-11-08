@@ -55,6 +55,20 @@ jobs:
           sed -i 's|services.gradle.org/distributions|anticraft.top/dist/gradle|' android/gradle/wrapper/gradle-wrapper.properties
           grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
 
+      - name: 诊断：发行包下载探针
+        run: |
+          {
+            echo "### 磁盘 / 内存"
+            df -h / | tail -2
+            free -m | head -2
+            echo "### 发行包下载探针（各 1MB 区间测速）"
+            for src in "https://github.com/gradle/gradle-distributions/releases/download/v8.14.0/gradle-8.14-bin.zip" "https://services.gradle.org/distributions/gradle-8.14-bin.zip" "https://anticraft.top/dist/gradle/gradle-8.14-bin.zip"; do
+              echo "- $src"
+              curl -sL -o /dev/null -w '  http=%{http_code} speed=%{speed_download}B/s got=%{size_download}B
+' --max-time 45 -r 0-1048576 "$src" || echo "  curl 失败"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 构建 APK
         # runner 的网络偶尔抽风：依赖下载超时 / 连接被重置，flutter 只会给一句
         # "Gradle threw an error while downloading artifacts from the network"。
