@@ -341,10 +341,22 @@ class CampusDirect {
         await _ensureXg();
         final data = await _xg!.fetchActivityDetail(aid);
         final hdms = (data['hdms'] ?? '').toString();
+        String s(String k) => (data[k] ?? '').toString().trim();
+        // 元信息（名称 / 起止 / 报名窗口 / 地点 / 主办方 / 校区）：学校详情接口其实
+        // 都返回了，之前只透传说明——扫码直接进详情页时没有列表项，就会开天窗。
+        // 空值不带，免得把列表项里的值盖掉（与后端同一条纪律）。
         return {
           'ok': true,
           'data': {
             'id': aid,
+            if (s('hdmc').isNotEmpty) 'name': s('hdmc'),
+            if (s('hdkssj').isNotEmpty) 'start': s('hdkssj'),
+            if (s('hdjssj').isNotEmpty) 'end': s('hdjssj'),
+            if (s('hdbmkssj').isNotEmpty) 'bm_start': s('hdbmkssj'),
+            if (s('hdbmjssj').isNotEmpty) 'bm_end': s('hdbmjssj'),
+            if (s('hddd').isNotEmpty) 'place': s('hddd'),
+            if (s('zbfmc').isNotEmpty) 'host': s('zbfmc'),
+            if (s('xqmc').isNotEmpty) 'campus': s('xqmc'),
             'hdms': hdms,
             // 学校详情接口的 bm = 本人是否已报名（实测 int 1 / str '1' 两态），归一成字符串比较
             'signed': '${data['bm']}' == '1',
