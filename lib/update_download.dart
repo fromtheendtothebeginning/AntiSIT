@@ -149,7 +149,11 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     Object? r = 'error';
     try {
       r = await (debugInstall?.call(path) ?? _channel.invokeMethod('installApk', path));
-    } catch (_) {} // 通道没人应答（无平台实现 / 测试环境）按拉起失败处理
+    } catch (e) {
+      // 通道异常也带上原因：MissingPluginException（没实现）/ PlatformException
+      // （ROM 拒绝）各有不同修法，笼统一句没法定位
+      r = 'error: $e';
+    }
     _awaitingSettings = r == 'settings';
     installNote = switch (r) {
       true => null,
