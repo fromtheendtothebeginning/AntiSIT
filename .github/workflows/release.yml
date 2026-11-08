@@ -46,28 +46,38 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Gradle 发行包走自建镜像
-        # services.gradle.org 会 302 到 github 的发行包 CDN——该 CDN 间歇 504
-        # （2026-11-08 v1.28.3 连续 6 次构建全挂在下载 Gradle 本体）。
-        # wrapper 的 distributionUrl 支持任意地址：CI 上改指 anticraft 自建镜像，
-        # 仓库里的官方地址保持不动（本地构建不受影响）。
+      - name: 预装 Gradle 发行包（多源下载，绕开发行包 CDN 故障）
+        # services.gradle.org 的发行包会 302 到 github 的发行包 CDN，该 CDN 2026-11-08
+        # 间歇 504，Gradle 自带的下载毫无重试，连续 6 次构建全挂在它上面。
+        # 这里用 curl 按源链轮询下载（github → 腾讯镜像 → 自建镜像），按 Gradle 的
+        # 哈希规则（发行 URL 的 MD5 → base36）解压进 wrapper 的 dists 目录并打 .ok
+        # 标记——构建时 wrapper 看到标记就不再下载。
         run: |
-          sed -i 's|services.gradle.org/distributions|anticraft.top/dist/gradle|' android/gradle/wrapper/gradle-wrapper.properties
-          grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
-
-      - name: 诊断：发行包下载探针
-        run: |
-          {
-            echo "### 磁盘 / 内存"
-            df -h / | tail -2
-            free -m | head -2
-            echo "### 发行包下载探针（各 1MB 区间测速）"
-            for src in "https://github.com/gradle/gradle-distributions/releases/download/v8.14.0/gradle-8.14-bin.zip" "https://services.gradle.org/distributions/gradle-8.14-bin.zip" "https://anticraft.top/dist/gradle/gradle-8.14-bin.zip"; do
-              echo "- $src"
-              curl -sL -o /dev/null -w '  http=%{http_code} speed=%{speed_download}B/s got=%{size_download}B
-' --max-time 45 -r 0-1048576 "$src" || echo "  curl 失败"
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -e
+          DIST_URL="https://services.gradle.org/distributions/gradle-8.14-bin.zip"
+          HASH=$(python3 -c "
+          import hashlib
+          v = int.from_bytes(hashlib.md5('$DIST_URL'.encode()).digest(), 'big')
+          chars = '0123456789abcdefghijklmnopqrstuvwxyz'
+          out = ''
+          while v:
+              v, r = divmod(v, 36)
+              out = chars[r] + out
+          print(out)")
+          DEST="$HOME/.gradle/wrapper/dists/gradle-8.14-bin/$HASH"
+          mkdir -p "$DEST"
+          TMPZIP="$HOME/gradle-8.14-bin.zip"
+          for src in "https://github.com/gradle/gradle-distributions/releases/download/v8.14.0/gradle-8.14-bin.zip" "https://mirrors.cloud.tencent.com/gradle/gradle-8.14-bin.zip" "https://anticraft.top/dist/gradle/gradle-8.14-bin.zip"; do
+            echo "尝试发行包源: $src"
+            if curl -fL --retry 3 --retry-all-errors --max-time 900 -o "$TMPZIP" "$src" && [ "$(stat -c%s "$TMPZIP")" -gt 100000000 ]; then
+              break
+            fi
+            echo "  该源失败，换下一个"
+          done
+          [ "$(stat -c%s "$TMPZIP")" -gt 100000000 ] || { echo "所有源都拉不到 Gradle 发行包" >&2; exit 1; }
+          unzip -oq "$TMPZIP" -d "$DEST"
+          touch "$DEST/gradle-8.14-bin.zip.ok"
+          echo "已预装: $DEST/gradle-8.14"
 
       - name: 构建 APK
         # runner 的网络偶尔抽风：依赖下载超时 / 连接被重置，flutter 只会给一句
