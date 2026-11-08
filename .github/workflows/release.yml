@@ -46,6 +46,15 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      - name: Gradle 发行包走自建镜像
+        # services.gradle.org 会 302 到 github 的发行包 CDN——该 CDN 间歇 504
+        # （2026-11-08 v1.28.3 连续 6 次构建全挂在下载 Gradle 本体）。
+        # wrapper 的 distributionUrl 支持任意地址：CI 上改指 anticraft 自建镜像，
+        # 仓库里的官方地址保持不动（本地构建不受影响）。
+        run: |
+          sed -i 's|services.gradle.org/distributions|anticraft.top/dist/gradle|' android/gradle/wrapper/gradle-wrapper.properties
+          grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
+
       - name: 构建 APK
         # runner 的网络偶尔抽风：依赖下载超时 / 连接被重置，flutter 只会给一句
         # "Gradle threw an error while downloading artifacts from the network"。
