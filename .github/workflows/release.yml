@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   apk:
-    runs-on: ubuntu-latest
+    # 钉在 24.04：ubuntu-latest 已滚动到 26，新镜像上 Gradle 发行包
+    # （gradle-8.14-all.zip，从 github.com 拉 ~230MB）下载会失败，2026-11-08 v1.28.3 实测。
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
