@@ -79,15 +79,16 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             return "error: FileProvider(${e.message})"
         }
-        // 两种拉起方式各试一次：部分 ROM 只认其中一种
+        // 交给系统的包安装器（ACTION_INSTALL_PACKAGE 语义最明确）；个别 ROM 只认
+        // ACTION_VIEW，失败时再兜底一次。
         var last: Exception? = null
         for (intent in listOf(
-            Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            },
             Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                 setData(uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             },
         )) {

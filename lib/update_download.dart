@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show WidgetsBinding, WidgetsBindingObserver, AppLifecycleState;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
@@ -15,8 +16,11 @@ import 'update_check.dart';
 /// 状态机：idle → downloading → verifying → ready（自动拉起安装器）；任何一步失败
 /// 进 error，弹窗里可以重试，也可以退回「浏览器打开下载链接」。安卓侧的授权与安装
 /// 见 `MainActivity.installApk`——缺「安装未知应用」授权时会先跳系统设置页。
-class UpdateDownloader extends ChangeNotifier {
-  UpdateDownloader._();
+class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
+  UpdateDownloader._() {
+    // 从「安装未知应用」授权页回来时自动续装（见 didChangeAppLifecycleState）
+    WidgetsBinding.instance.addObserver(this);
+  }
   static final UpdateDownloader I = UpdateDownloader._();
 
   static const _channel = MethodChannel('antisit/system');
@@ -40,6 +44,9 @@ class UpdateDownloader extends ChangeNotifier {
 
   /// 拉起安装器的结果说明（null = 已正常拉起）。
   String? installNote;
+
+  /// 跳去授权「安装未知应用」了：授权回来（app resumed）自动续装，不用再点一次。
+  bool _awaitingSettings = false;
 
   bool get busy => status == 'downloading' || status == 'verifying';
 
@@ -134,8 +141,8 @@ class UpdateDownloader extends ChangeNotifier {
     }
   }
 
-  /// 拉起系统安装器。下载校验通过后会自动调一次；用户去授权「安装未知应用」
-  /// 回来后，弹窗上的「安装」按钮再调一次。
+  /// 拉起系统安装器。下载校验通过后会自动调一次；缺「安装未知应用」授权时
+  /// native 会跳授权页，授权回来由 [didChangeAppLifecycleState] 自动续装。
   Future<void> install() async {
     final path = readyPath;
     if (path == null) return;
@@ -143,15 +150,25 @@ class UpdateDownloader extends ChangeNotifier {
     try {
       r = await (debugInstall?.call(path) ?? _channel.invokeMethod('installApk', path));
     } catch (_) {} // 通道没人应答（无平台实现 / 测试环境）按拉起失败处理
+    _awaitingSettings = r == 'settings';
     installNote = switch (r) {
       true => null,
-      'settings' => '请在系统设置里允许「安装未知应用」，回来再点一次「安装」',
+      'settings' => '已跳转授权页：请允许「安装未知应用」，回来自动继续安装',
       'missing' => '安装包不见了，请重新下载',
       String s when s.startsWith('error:') =>
         '没能拉起安装器（${s.substring(6).trim()}）。可改用浏览器下载',
       _ => '没能拉起安装器，可改用浏览器下载',
     };
     notifyListeners();
+  }
+
+  /// 从「安装未知应用」授权页回到 App：自动把上一次的安装续上（readyPath 还在）。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _awaitingSettings && readyPath != null) {
+      _awaitingSettings = false;
+      install();
+    }
   }
 
   /// 中止本次下载（弹窗点「稍后」、或重开下载前的清理）：关连接与写文件的 sink
@@ -187,6 +204,7 @@ class UpdateDownloader extends ChangeNotifier {
   void reset() {
     cancel();
     status = 'idle';
+    _awaitingSettings = false;
     notifyEveryBytes = 256 * 1024;
     debugStream = null;
     debugText = null;

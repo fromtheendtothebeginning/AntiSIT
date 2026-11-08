@@ -211,6 +211,35 @@ void main() {
       expect(UpdateDownloader.I.installNote,
           contains('FileProvider(路径不在白名单)'), reason: '真实原因直接可见，别再笼统一句');
     });
+
+    test('去授权回来（app resumed）自动续装，不用再点一次', () async {
+      Object result = 'settings';
+      final calls = <String>[];
+      UpdateDownloader.I.readyPath = '/tmp/AntiSIT-1.27.0.apk';
+      UpdateDownloader.debugInstall = (path) async {
+        calls.add(path);
+        return result;
+      };
+
+      await UpdateDownloader.I.install();
+      expect(UpdateDownloader.I.installNote, contains('自动继续安装'));
+      expect(calls.length, 1);
+
+      // 模拟从授权页回到 App（授权已成功）：lifecycle resumed → 观察者自动续装
+      result = true;
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      for (var i = 0; i < 50 && calls.length < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      // 第二次 install 的 notifyListeners 在 calls.add 之后：等 note 真正清掉
+      for (var i = 0; i < 100 && UpdateDownloader.I.installNote != null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(calls.length, 2, reason: '授权回来自动重试，不用用户再点');
+      expect(UpdateDownloader.I.installNote, isNull);
+    });
   });
 
   group('弹窗（真组件）', () {
