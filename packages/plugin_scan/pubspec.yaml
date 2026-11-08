@@ -1,0 +1,18 @@
+name: plugin_scan
+description: "AntiSIT 插件包：扫一扫（相机取景 / 相册识码 / 二课码型分流）"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.2
+
+# 与宿主同属一个 pub workspace：根目录一次 `flutter pub get` 解析全部包
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  campus_core:
+    path: ../campus_core
+  # WebView 内核被停用时，扫出的网址改用系统浏览器打开
+  url_launcher: ^6.3.2

@@ -35,6 +35,10 @@ workspace:
   - packages/campus_core
   - packages/plugin_timetable
   - packages/plugin_webview
+  # 摄像头（相机取景 / 补光灯 / 相册识码）：无界面能力插件，扫码硬依赖它
+  - packages/plugin_camera
+  # 扫一扫：入口在二课活动 / 拓展页，软关联 WebView 内核与二课活动
+  - packages/plugin_scan
   - packages/plugin_ecard
   - packages/plugin_tools
   - packages/plugin_ai
@@ -111,6 +115,12 @@ dependencies:
   # 拓展（网页形态小功能的前端，底栏「拓展」页）：默认关闭，硬依赖 WebView 内核
   plugin_ext:
     path: packages/plugin_ext
+  # 摄像头（无界面）：相机取景 / 补光灯 / 相册识码，扫码等功能按能力取用
+  plugin_camera:
+    path: packages/plugin_camera
+  # 扫一扫（无界面）：入口在二课活动 / 拓展页右上角
+  plugin_scan:
+    path: packages/plugin_scan
   plugin_ecard:
     path: packages/plugin_ecard
   plugin_tools:
@@ -151,7 +161,8 @@ dependencies:
     path: packages/plugin_theme_ink
   plugin_theme_bamboo:
     path: packages/plugin_theme_bamboo
-  mobile_scanner: ^7.5.0
+  # 相册取图仍被课表设置页用（ImagePicker），保留；扫码用的 mobile_scanner 已随
+  # 摄像头插件走（见 packages/plugin_camera）
   image_picker: ^1.2.2
 
 dev_dependencies:

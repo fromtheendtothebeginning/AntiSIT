@@ -185,6 +185,9 @@ abstract final class PluginIds {
   static const risk = 'risk';
   static const tools = 'tools';
   static const webview = 'webview';
+  static const camera = 'camera';
+  static const scan = 'scan';
+  static const activities = 'activities';
   static const themeGlass = 'theme.glass';
 }
 

@@ -3,19 +3,17 @@ import 'dart:async';
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:plugin_activities/plugin_activities.dart'
-    show ActivityDetailPage;
-
-import '../widgets/update_dialog.dart' show openExternalUrl;
+import 'package:url_launcher/url_launcher.dart';
 
 /// 「扫一扫」页（整页推入，入口在第二课堂活动 / 拓展页右上角）。
 ///
-/// 摄像头实时取景 + 取景框；识出二维码后弹结果面板：内容可复制，网址可直接打开，
+/// 相机取景来自**摄像头插件**（`plugin_camera`，按 [CameraCapability] 取用），
+/// 本页只做二维码分流：识出二维码后弹结果面板，内容可复制、网址可直接打开，
 /// 关掉面板自动回到取景继续扫。也可以从**相册挑一张图片**识别。
 /// 识出**第二课堂活动的签到码**时不走通用面板：给出「完成签到 / 签退」按钮，
 /// 由学校接口判定这次算签到还是签退（见 [ScanPage.debugSign] 的正式实现）。
+///
+/// 扫出的网址用 WebView 内核打开；内核没装 / 被停用时退回系统浏览器。
 class ScanPage extends StatefulWidget {
   const ScanPage({super.key});
 
@@ -69,8 +67,8 @@ class ScanPage extends StatefulWidget {
 }
 
 class _ScanPageState extends State<ScanPage> {
-  /// 相机控制器：惰性创建——测试替身（debugCamera）模式下不碰平台通道。
-  MobileScannerController? _controller;
+  /// 相机会话：摄像头插件没装 / 被停用、或平台不支持时为 null（页面给提示）。
+  CameraSession? _session;
 
   /// 面板开着时识到的码：期间不再识别（防同一枚码反复弹面板）。
   String? _pausedValue;
@@ -78,17 +76,26 @@ class _ScanPageState extends State<ScanPage> {
   /// 相册图识别中（按钮转圈、防重入）。
   bool _picking = false;
 
-  /// 手电筒开关状态（仅用于按钮显示；实际状态以控制器为准）。
+  /// 手电筒开关状态（仅用于按钮显示；实际状态以相机会话为准）。
   bool _torchOn = false;
 
-  MobileScannerController get _cam => _controller ??= MobileScannerController(
-        formats: [BarcodeFormat.qrCode], // 只扫二维码：误识别更少、解码更快
-        autoZoom: true, // 二维码离得远时自动变焦，远距离扫码也能对上
+  @override
+  void initState() {
+    super.initState();
+    if (ScanPage.debugCamera != null) return; // 测试替身：不碰平台通道
+    final camera = PluginRegistry.I.capability<CameraCapability>(PluginIds.camera);
+    if (camera != null && camera.available) {
+      _session = camera.openSession(
+        onDetected: _onCode,
+        errorBuilder: _cameraError,
       );
+    }
+  }
 
   @override
   void dispose() {
-    _controller?.dispose();
+    final session = _session;
+    if (session != null) unawaited(session.dispose());
     super.dispose();
   }
 
@@ -125,10 +132,13 @@ class _ScanPageState extends State<ScanPage> {
           raw: code, train: true);
       return;
     }
-    // 二课活动的详情码（报名用）：用 App 自己的活动详情页打开
+    // 二课活动的详情码（报名用）：用 App 自己的活动详情页打开。
+    // 活动插件没装 / 被停用时退化成普通网址（下面的通用面板），别让面板打不开。
     final detailId = ScanPage.dektDetailId(effective);
-    if (detailId != null) {
-      await _detailFlow(hdId: detailId, raw: code);
+    final activities =
+        PluginRegistry.I.capability<ActivitiesCapability>(PluginIds.activities);
+    if (detailId != null && activities != null) {
+      await _detailFlow(hdId: detailId, raw: code, activities: activities);
       return;
     }
     setState(() => _pausedValue = code);
@@ -147,14 +157,14 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   /// 扫出的网址在本机 WebView 内核里整页打开（应用内浏览器）；
-  /// 内核不可用（WebView 插件被停用 / 剔除 / 未注入）时退回系统浏览器。
+  /// 内核不可用（WebView 插件被停用 / 剔除）时退回系统浏览器。
   Future<void> _openScannedLink(BuildContext context, String url) async {
     final webview = PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
     if (webview != null && webview.available) {
       await webview.openPage(context, url: url, title: Uri.tryParse(url)?.host ?? '');
       return;
     }
-    await openExternalUrl(context, url);
+    await _openExternalUrl(context, url);
   }
 
   /// 二课签到流程：弹签到面板，提交经学工系统（学校返回判定原文）。
@@ -189,7 +199,12 @@ class _ScanPageState extends State<ScanPage> {
   /// 活动介绍、时间地点、报名按钮都在详情页里，报名复用既有双模式流程。
   /// 详情接口只回说明，名称 / 时间 / 名额等元信息在活动列表里：面板开着就先按
   /// hdId 捞出来，进详情页时带上，别让页面开天窗。
-  Future<void> _detailFlow({required String hdId, required String raw}) async {
+  /// 详情页由活动插件提供（[ActivitiesCapability]），本插件不 import 它。
+  Future<void> _detailFlow({
+    required String hdId,
+    required String raw,
+    required ActivitiesCapability activities,
+  }) async {
     setState(() => _pausedValue = raw);
     final metaFuture = _fetchActivityMeta(hdId);
     final opened = await showModalBottomSheet<bool>(
@@ -200,8 +215,7 @@ class _ScanPageState extends State<ScanPage> {
           Navigator.pop(ctx, true);
           final meta = await metaFuture;
           if (!mounted) return;
-          await Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => ActivityDetailPage(id: hdId, activity: meta)));
+          await activities.openDetail(context, id: hdId, activity: meta);
           if (mounted) setState(() => _pausedValue = null); // 详情页退出，恢复扫码
         },
       ),
@@ -227,17 +241,6 @@ class _ScanPageState extends State<ScanPage> {
     return null;
   }
 
-  void _onDetect(BarcodeCapture capture) {
-    final code = capture.barcodes
-        .map((b) => b.rawValue)
-        .whereType<String>()
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty)
-        .firstOrNull;
-    if (code == null) return;
-    _onCode(code);
-  }
-
   /// 相册挑一张图片 → 条码识别。没挑（用户取消）静默返回；识别不出给一句提示。
   Future<void> _pickAndAnalyze() async {
     if (_picking) return;
@@ -246,10 +249,12 @@ class _ScanPageState extends State<ScanPage> {
       final fakePick = ScanPage.debugPickImage;
       final path = fakePick != null
           ? await fakePick()
-          : (await ImagePicker().pickImage(source: ImageSource.gallery))?.path;
+          : await _session?.pickImage();
       if (path == null || !mounted) return;
-      final codes = await (ScanPage.debugAnalyzeImage?.call(path) ??
-          _analyzeImage(path));
+      final fakeAnalyze = ScanPage.debugAnalyzeImage;
+      final codes = fakeAnalyze != null
+          ? await fakeAnalyze(path)
+          : (await _session?.scanImage(path)) ?? const <String>[];
       if (!mounted) return;
       if (codes.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -284,29 +289,20 @@ class _ScanPageState extends State<ScanPage> {
     }
   }
 
-  Future<List<String>> _analyzeImage(String path) async {
-    final capture = await _cam.analyzeImage(path);
-    return [
-      for (final b in capture?.barcodes ?? const <Barcode>[])
-        if ((b.rawValue ?? '').trim().isNotEmpty) b.rawValue!.trim(),
-    ];
-  }
-
   @override
   Widget build(BuildContext context) {
+    // 摄像头插件不可用时页面只留一句提示，底部按钮也不再给（按了也没反应）
+    final cameraReady = ScanPage.debugCamera != null || _session != null;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // 相机取景（测试环境用替身）
+          // 相机取景来自摄像头插件（测试环境用替身）
           Positioned.fill(
             child: ScanPage.debugCamera?.call(context) ??
-                MobileScanner(
-                  controller: _cam,
-                  onDetect: _onDetect,
-                  errorBuilder: (context, error) => _cameraError(error),
-                ),
+                _session?.build(context) ??
+                _cameraUnavailable(context),
           ),
           // 取景框 + 提示
           Center(
@@ -331,31 +327,35 @@ class _ScanPageState extends State<ScanPage> {
             ),
           ),
           // 底部操作条：手电筒 + 相册识别，实心大按钮一眼能找到
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: MediaQuery.paddingOf(context).bottom + 24,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _BigActionButton(
-                  icon: _torchOn ? Icons.flashlight_on_rounded : Icons.flashlight_off_rounded,
-                  label: _torchOn ? '关灯' : '手电筒',
-                  onPressed: _toggleTorch,
-                ),
-                const SizedBox(width: 28),
-                _BigActionButton(
-                  icon: _picking
-                      ? null
-                      : Icons.photo_library_rounded,
-                  busy: _picking,
-                  label: _picking ? '识别中…' : '相册识别',
-                  filled: true,
-                  onPressed: _picking ? null : _pickAndAnalyze,
-                ),
-              ],
+          if (cameraReady)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: MediaQuery.paddingOf(context).bottom + 24,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 手电筒是真相机会话才有的能力（测试替身没有）
+                  if (_session != null) ...[
+                    _BigActionButton(
+                      icon: _torchOn
+                          ? Icons.flashlight_on_rounded
+                          : Icons.flashlight_off_rounded,
+                      label: _torchOn ? '关灯' : '手电筒',
+                      onPressed: _toggleTorch,
+                    ),
+                    const SizedBox(width: 28),
+                  ],
+                  _BigActionButton(
+                    icon: _picking ? null : Icons.photo_library_rounded,
+                    busy: _picking,
+                    label: _picking ? '识别中…' : '相册识别',
+                    filled: true,
+                    onPressed: _picking ? null : _pickAndAnalyze,
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -363,16 +363,17 @@ class _ScanPageState extends State<ScanPage> {
 
   /// 手电筒：暗光会场（签到现场常见）直接影响识别率。
   Future<void> _toggleTorch() async {
+    final session = _session;
+    if (session == null) return;
     try {
-      await _cam.toggleTorch();
-      if (mounted) setState(() => _torchOn = !_torchOn);
+      final on = await session.toggleTorch();
+      if (mounted) setState(() => _torchOn = on);
     } catch (_) {}
   }
 
   /// 相机起不来（权限被拒最常见）：给条人话和出路。
-  Widget _cameraError(Object error) {
-    final denied = error is MobileScannerException &&
-        error.errorCode == MobileScannerErrorCode.permissionDenied;
+  Widget _cameraError(CameraFailure failure) {
+    final denied = failure.permissionDenied;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -395,6 +396,44 @@ class _ScanPageState extends State<ScanPage> {
         ),
       ),
     );
+  }
+
+  /// 摄像头插件不可用（没装 / 被停用 / 平台不支持）：别让相机区域开天窗。
+  Widget _cameraUnavailable(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.no_photography_outlined, color: Colors.white54, size: 40),
+              const SizedBox(height: 12),
+              const Text(
+                '摄像头不可用：请在「我的 → 插件管理」里启用「摄像头」插件',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.6),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('返回'),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+/// 打开外部链接；失败（没有浏览器 / 平台不支持）则复制链接并提示。
+/// WebView 内核被停用时扫出的网址走这里（与更新弹窗同一套兜底）。
+Future<void> _openExternalUrl(BuildContext context, String url) async {
+  try {
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  } catch (_) {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('已复制链接，可粘贴到浏览器打开'),
+        behavior: SnackBarBehavior.floating));
   }
 }
 

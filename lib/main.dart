@@ -7,7 +7,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:campus_core/campus_core.dart';
 import 'pages/home_page.dart';
 import 'pages/plugin_manager_page.dart';
-import 'pages/scan_page.dart';
 import 'plugins/bootstrap.dart';
 
 /// 中文：日期/时间选择器、长按菜单等 Material 内置文案默认是英文，必须挂这些 delegates。
@@ -388,11 +387,6 @@ void main() {
   hostShellBuilder = () => const HomePage();
   // 「插件管理」页也在本包：风险提醒拦下付款码 / 充值时，引导按钮要跳到它
   hostPluginManagerBuilder = () => const PluginManagerPage();
-  // 「扫一扫」页也在本包：第二课堂活动 / 拓展页右上角的扫码入口反向注入
-  hostOpenScanner = (context) async {
-    await Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const ScanPage()));
-  };
   // 直连模式的学校系统验证码输入弹窗（服务器模式用不到）
   installDirectCaptchaPrompt();
   runApp(const CampusApp());

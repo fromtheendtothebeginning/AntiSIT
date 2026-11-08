@@ -9,8 +9,3 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 /// 「插件管理」页的构建器（同样是宿主注入）：风险提醒拦下付款码 / 充值时，
 /// 引导按钮要跳过去让用户关掉它，而那个页面在宿主包里——插件包只认识 campus_core。
 Widget Function() hostPluginManagerBuilder = () => const SizedBox.shrink();
-
-/// 「扫一扫」页的打开方式（宿主注入）：第二课堂活动 / 拓展页右上角的扫码入口
-/// 调它整页推入摄像头扫码，结果在页内处理（复制 / 打开链接）。
-/// 相机属于宿主的原生能力，core 不掺和；宿主没注入（纯 core 的单测环境）时入口不显示。
-Future<void> Function(BuildContext context)? hostOpenScanner;

@@ -285,15 +285,17 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
+    return Scaffold(
         appBar: AppBar(
           title: const Text('第二课堂活动'),
           actions: [
-            // 扫一扫：相机属于宿主（经 host.dart 反向注入），没注入就不显示
-            if (hostOpenScanner != null)
+            // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
+            if (scan != null)
               IconButton(
                 tooltip: '扫一扫',
-                onPressed: () => hostOpenScanner!(context),
+                onPressed: () => scan.open(context),
                 icon: const Icon(Icons.qr_code_scanner_outlined),
               ),
           ],
@@ -322,6 +324,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
           ],
         ),
       );
+  }
 
   Widget _marketView() {
     final list = _filtered;

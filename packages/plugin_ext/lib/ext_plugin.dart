@@ -28,9 +28,9 @@ class ExtPlugin extends FeaturePlugin {
   List<String> get dependencies => const [PluginIds.webview];
 
   /// AI 是软依赖：ai.chat 接口只在 AI 插件可用时工作，没装 / 停用 / 没配置就
-  /// 报错回网页（「有则增强、删了拉倒」）。
+  /// 报错回网页（「有则增强、删了拉倒」）。扫一扫同理：插件在就显示右上角入口。
   @override
-  List<String> get optionalDependencies => const [PluginIds.ai];
+  List<String> get optionalDependencies => const [PluginIds.ai, PluginIds.scan];
 
   @override
   bool get defaultEnabled => true;

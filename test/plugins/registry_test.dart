@@ -105,6 +105,15 @@ void main() {
       expect(ids, contains('reminder'));
     });
 
+    test('摄像头与扫一扫各自成插件，能力都已就位', () {
+      final registry = buildAppRegistry();
+      expect(registry.isEnabled(PluginIds.camera), isTrue);
+      expect(registry.isEnabled(PluginIds.scan), isTrue);
+      expect(registry.capability<CameraCapability>(PluginIds.camera), isNotNull);
+      expect(registry.capability<ScanCapability>(PluginIds.scan), isNotNull);
+      expect(registry.capability<ActivitiesCapability>(PluginIds.activities), isNotNull);
+    });
+
     test('默认主题在主题清单里', () {
       final registry = buildAppRegistry();
       expect(registry.themes.any((t) => t.id == registry.defaultThemeId), isTrue);

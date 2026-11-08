@@ -335,6 +335,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   @override
   Widget build(BuildContext context) {
     _navHost = NavSwipeScope.of(context);
+    final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
     final items = _store.items;
     final hide = _store.hideUrls;
     final market = _tab == 1;
@@ -348,11 +349,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
       appBar: AppBar(
         title: const Text('拓展'),
         actions: [
-          // 扫一扫：相机属于宿主（经 host.dart 反向注入），没注入就不显示
-          if (hostOpenScanner != null)
+          // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
+          if (scan != null)
             IconButton(
               tooltip: '扫一扫',
-              onPressed: () => hostOpenScanner!(context),
+              onPressed: () => scan.open(context),
               icon: const Icon(Icons.qr_code_scanner_outlined),
             ),
           if (market)

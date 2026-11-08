@@ -15,10 +15,12 @@ AntiXiaoYing/                     宿主（App）：壳、设置页、插件管�
   tool/gen_plugins.dart           清单 + 依赖关系表生成器（含依赖校验）
   packages/
     campus_core/                  契约层：服务 + 组件库 + 插件接口 + 注册表
-                                    + 能力接口（ai_capability / reminder_capability）
+                                    + 能力接口（ai / reminder / webview / camera /
+                                    scan / activities 等）
     plugin_timetable/  plugin_ecard/  plugin_tools/  plugin_grades/
     plugin_exams/      plugin_score/  plugin_activities/  plugin_electricity/
     plugin_ai/         plugin_reminder/  plugin_feedback/
+    plugin_camera/     plugin_scan/     ← 摄像头能力与扫一扫分开两个包
     plugin_ai_deepseek/  plugin_ai_opencode_go/  plugin_ai_kimi/  plugin_ai_glm/
     plugin_ai_qwen/      plugin_ai_gpt/          plugin_ai_gemini/
     plugin_ai_mimo/      plugin_ai_minimax/      ← AI 提供商：一家一个包（含自家 logo）
@@ -70,7 +72,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | （宿主） | `profile` | `network` | — | — | ✗ 核心 | 底栏页 |
 | `plugin_feedback` | `feedback` | — | — | — | ✓ | 设置条目 |
 | `plugin_electricity` | `electricity` | `network`、`tools` | `risk` | `risk` | ✓ | 工具卡片 + 卡面预取 |
-| `plugin_activities` | `activities` | `network`、`tools` | — | — | ✓ | 工具卡片 |
+| `plugin_activities` | `activities` | `network`、`tools` | `scan` | `scan` | ✓ | 工具卡片 |
 | `plugin_score` | `score` | `network`、`tools` | — | — | ✓ | 工具卡片 + 卡面预取 |
 | `plugin_exams` | `exams` | `network`、`tools` | — | — | ✓ | 工具卡片 |
 | `plugin_grades` | `grades` | `network`、`tools` | — | — | ✓ | 工具卡片 |
@@ -78,7 +80,9 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_course_select` | `course_select` | `network`、`tools` | — | — | ✓ | 工具卡片 |
 | `plugin_timetable` | `timetable` | `network` | `ai`、`reminder` | `ai`、`reminder` | ✓ | 底栏页 + 设置条目 |
 | `plugin_webview` | `webview` | — | — | — | ✓ | 无界面 |
-| `plugin_ext` | `ext` | `webview` | `ai` | `ai`、`webview` | ✓ | 底栏页 |
+| `plugin_ext` | `ext` | `webview` | `ai`、`scan` | `ai`、`scan`、`webview` | ✓ | 底栏页 |
+| `plugin_camera` | `camera` | — | — | — | ✓ | 无界面 |
+| `plugin_scan` | `scan` | `camera` | `webview`、`activities` | `activities`、`camera`、`webview` | ✓ | 无界面 |
 | `plugin_ecard` | `ecard` | `network` | `risk` | `risk` | ✓ | 底栏页 |
 | `plugin_tools` | `tools` | — | — | — | ✓ | 底栏页 |
 | `plugin_ai` | `ai` | `network` | — | — | ✓ | 设置条目 + 启动初始化 |
@@ -111,6 +115,12 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 - `score` 的工具卡片顺带缓存学籍给「我的」页；`tools` 的底栏页在没有工具启用时自动隐藏。
 - `reminder` 的「上课提醒」开关带一行自检摘要，详情与引导在二级页 `ReminderGuidePage`
   （通知权限 / 精确闹钟 / 省电策略，一键跳系统设置），启动时还负责排期。
+- **摄像头与扫一扫是两个包**：`plugin_camera` 只管硬件能力（实时取景 / 补光灯 /
+  相册取图 / 图片识码），`plugin_scan` 只管扫码页与码型分流，二者通过
+  `CameraCapability` 解耦（`mobile_scanner` / `image_picker` 只出现在相机包里）。
+  扫一扫**硬依赖**摄像头（停用摄像头会连带停用扫一扫）；对 WebView 内核与二课活动
+  是**软依赖**：内核被停用时扫出的网址退回系统浏览器，活动插件不在时活动详情码
+  退化成普通网址——扫码本身都还能用。
 
 `network` 与 `profile` 是**核心插件**，留在宿主里不可停用：前者是登录与数据来源（所有取数
 插件的硬依赖），后者承载登录入口与「插件管理」——停掉它就没有恢复其它插件的入口了。
@@ -187,9 +197,10 @@ const PluginBundle pluginBundle = PluginBundle(providers: [DeepSeekProvider()]);
   ```
 
   提供方没装（包被删 / 被 EXCLUDE）或被用户停用时返回 null，调用方据此降级——
-  和依赖图上那条软依赖虚线边是一回事。今天用到能力的只有 `plugin_timetable`
-  （AI：校历识别；上课提醒：AppBar 铃铛），core 自己（验证码弹窗、课表存储重排期）
-  也走同一套。
+  和依赖图上那条软依赖虚线边是一回事。今天用到能力的有 `plugin_timetable`
+  （AI：校历识别；上课提醒：AppBar 铃铛）、`plugin_scan`（摄像头取景 / 图片识码，
+  WebView 内核，二课活动详情页）、`plugin_activities` 与 `plugin_ext`（右上角
+  扫一扫入口），core 自己（验证码弹窗、课表存储重排期）也走同一套。
 
 * **校验**：`tool/gen_plugins.dart` 会扫每个插件源码里的
   `capability<...>(PluginIds.y)`，与它声明的 `dependencies` / `optionalDependencies`

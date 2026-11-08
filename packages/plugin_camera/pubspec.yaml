@@ -1,0 +1,20 @@
+name: plugin_camera
+description: "AntiSIT 插件包：相机能力（实时取景 / 补光灯 / 相册识码）"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.9.2
+
+# 与宿主同属一个 pub workspace：根目录一次 `flutter pub get` 解析全部包
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  campus_core:
+    path: ../campus_core
+  # 实时取景与图片识码
+  mobile_scanner: ^7.5.0
+  # 从相册挑图
+  image_picker: ^1.2.2

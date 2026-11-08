@@ -21,6 +21,8 @@ import 'package:plugin_course_select/plugin_course_select.dart' as plugin_course
 import 'package:plugin_timetable/plugin_timetable.dart' as plugin_timetable;
 import 'package:plugin_webview/plugin_webview.dart' as plugin_webview;
 import 'package:plugin_ext/plugin_ext.dart' as plugin_ext;
+import 'package:plugin_camera/plugin_camera.dart' as plugin_camera;
+import 'package:plugin_scan/plugin_scan.dart' as plugin_scan;
 import 'package:plugin_ecard/plugin_ecard.dart' as plugin_ecard;
 import 'package:plugin_tools/plugin_tools.dart' as plugin_tools;
 import 'package:plugin_ai/plugin_ai.dart' as plugin_ai;
@@ -53,6 +55,8 @@ List<PluginBundle> get pluginBundles => [
       if (!const bool.fromEnvironment('EXCLUDE_TIMETABLE')) plugin_timetable.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_WEBVIEW')) plugin_webview.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_EXT')) plugin_ext.pluginBundle,
+      if (!const bool.fromEnvironment('EXCLUDE_CAMERA')) plugin_camera.pluginBundle,
+      if (!const bool.fromEnvironment('EXCLUDE_SCAN')) plugin_scan.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_ECARD')) plugin_ecard.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_TOOLS')) plugin_tools.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_AI')) plugin_ai.pluginBundle,

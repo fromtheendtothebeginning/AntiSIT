@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:campus_core/campus_core.dart';
-import 'package:campus_service/pages/scan_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_activities/plugin_activities.dart';
 import 'package:plugin_ext/plugin_ext.dart';
+import 'package:plugin_scan/plugin_scan.dart';
 import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_webview/plugin_webview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,8 +13,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 「扫一扫」页与两处入口的验收：
 /// * 扫码页：识码弹结果面板（复制 / 网址才给打开链接 / 继续扫回取景）；
 /// * 相册识别：识出弹面板、没识出给一句提示、用户取消不吭声；
-/// * 入口：第二课堂活动 / 拓展页右上角的镂空扫码图标，由宿主经
-///   `hostOpenScanner` 反向注入——没注入（纯 core 环境）就不显示。
+/// * 入口：第二课堂活动 / 拓展页右上角的镂空扫码图标，按扫一扫插件的
+///   [ScanCapability] 取用——插件停用（能力查不到）就不显示。
 /// 相机用注入的替身（widget 测试没有平台通道），识码与入口接线才是主角。
 void main() {
   String? clipboard;
@@ -24,6 +24,16 @@ void main() {
     AppState.I.demo = false;
     ScanPage.debugCamera = (context) => const ColoredBox(
         color: Colors.green, child: Center(child: Text('假相机')));
+    // 扫码页的详情码要用活动插件的能力；入口测试要扫一扫插件的能力。
+    // 相机走 debugCamera 替身，不注册真摄像头能力（不碰平台通道）。
+    PluginRegistry.I = PluginRegistry(
+      features: const [ActivitiesPlugin(), ScanPlugin()],
+      themes: const [GlassTheme()],
+      capabilities: const {
+        PluginIds.activities: ActivitiesCapabilityImpl(),
+        PluginIds.scan: _StubScanCapability(),
+      },
+    );
     // widget 测试里平台通道没人应答会永远等下去，给剪贴板挂个 mock
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -50,7 +60,6 @@ void main() {
     ScanPage.debugPickImage = null;
     ScanPage.debugAnalyzeImage = null;
     ScanPage.debugSign = null;
-    hostOpenScanner = null;
     PluginRegistry.I = PluginRegistry();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
@@ -120,7 +129,7 @@ void main() {
       await tester.tap(find.text('打开链接'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('已复制下载链接'), findsOneWidget,
+      expect(find.textContaining('已复制链接'), findsOneWidget,
           reason: 'launchUrl 在测试环境必失败 → 走复制兜底，证明没走内核');
       expect(clipboard, 'https://example.com/fallback');
     });
@@ -359,25 +368,20 @@ void main() {
 
   });
 
-  group('入口：右上角镂空扫码图标（宿主注入）', () {
-    /// 宿主注入的替身：推一页带标志文本的页面，证明「点了真的进扫码页」，
-    /// 不把真 ScanPage（相机平台通道）拖进 widget 测试。
-    Future<void> Function(BuildContext) fakeHost() => (context) async {
-          await Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const Scaffold(
-                  body: Center(child: Text('扫码页替身')))));
-        };
-
-    Future<void> pumpExt(WidgetTester tester) async {
+  group('入口：右上角镂空扫码图标（扫一扫能力）', () {
+    Future<void> pumpExt(WidgetTester tester, {bool withScan = true}) async {
       ExtensionStore.I = ExtensionStore();
       ExtensionStore.builtins = const [];
       MarketSource.I = MarketSource();
       // 市场目录不真发网络请求（失败即可，别让 loading 的不定动画卡住 settle）
       MarketSource.fetcher = (Uri url) => throw Exception('offline');
       PluginRegistry.I = PluginRegistry(
-        features: const [WebViewPlugin(), ExtPlugin()],
+        features: const [WebViewPlugin(), ExtPlugin(), ScanPlugin()],
         themes: const [GlassTheme()],
-        capabilities: const {PluginIds.webview: WebViewCapabilityImpl()},
+        capabilities: {
+          PluginIds.webview: const WebViewCapabilityImpl(),
+          if (withScan) PluginIds.scan: const _StubScanCapability(),
+        },
       );
       tester.view.physicalSize = const Size(1080, 2200);
       tester.view.devicePixelRatio = 2;
@@ -387,7 +391,6 @@ void main() {
     }
 
     testWidgets('拓展页右上角有扫一扫，点了进扫码页', (tester) async {
-      hostOpenScanner = fakeHost();
       await pumpExt(tester);
 
       expect(find.byIcon(Icons.qr_code_scanner_outlined), findsOneWidget);
@@ -397,8 +400,8 @@ void main() {
       expect(find.text('扫码页替身'), findsOneWidget, reason: '扫码页推入了');
     });
 
-    testWidgets('宿主没注入扫码：拓展页不给入口（其余按钮照旧）', (tester) async {
-      await pumpExt(tester);
+    testWidgets('扫一扫插件不可用：拓展页不给入口（其余按钮照旧）', (tester) async {
+      await pumpExt(tester, withScan: false);
 
       expect(find.byIcon(Icons.qr_code_scanner_outlined), findsNothing);
       expect(find.byIcon(Icons.add), findsOneWidget, reason: '添加拓展按钮还在');
@@ -407,7 +410,6 @@ void main() {
     testWidgets('第二课堂活动页右上角有扫一扫', (tester) async {
       AppState.I.demo = true;
       addTearDown(() => AppState.I.demo = false);
-      hostOpenScanner = fakeHost();
 
       await tester.pumpWidget(const MaterialApp(home: ActivitiesPage()));
       await tester.pumpAndSettle();
@@ -418,9 +420,14 @@ void main() {
       expect(find.text('扫码页替身'), findsOneWidget, reason: '扫码页推入了');
     });
 
-    testWidgets('宿主没注入扫码：活动页不给入口', (tester) async {
+    testWidgets('扫一扫插件不可用：活动页不给入口', (tester) async {
       AppState.I.demo = true;
       addTearDown(() => AppState.I.demo = false);
+      PluginRegistry.I = PluginRegistry(
+        features: const [ActivitiesPlugin(), ScanPlugin()],
+        themes: const [GlassTheme()],
+        capabilities: const {PluginIds.activities: ActivitiesCapabilityImpl()},
+      );
 
       await tester.pumpWidget(const MaterialApp(home: ActivitiesPage()));
       await tester.pumpAndSettle();
@@ -428,6 +435,19 @@ void main() {
       expect(find.byIcon(Icons.qr_code_scanner_outlined), findsNothing);
     });
   });
+}
+
+/// 扫一扫替身：推一页带标志文本的页面，证明入口真的打开了扫码功能，
+/// 不把真 ScanPage（相机平台通道）拖进入口测试。
+class _StubScanCapability extends ScanCapability {
+  const _StubScanCapability();
+
+  @override
+  Future<void> open(BuildContext context) => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(
+                body: Center(child: Text('扫码页替身')))),
+      );
 }
 
 /// WebView 内核替身：只记录 openPage 收到的网址，不真的建 WebView。
