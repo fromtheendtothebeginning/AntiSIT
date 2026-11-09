@@ -19,6 +19,10 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.29.2', date: '2026-11-09', notes: [
+    '拓展页新增自定义排序：标题栏「排序」里按住手柄拖动，宫格立刻跟着变',
+    '排序结果存在本机，重启 App 不变；「恢复默认」回原始顺序，新加的拓展排在最后',
+  ]),
   ChangelogEntry(version: '1.29.1', date: '2026-11-09', notes: [
     '修复应用内「安装」必定失败：传给系统安装器的参数格式不对，安装器其实从来没被拉起',
     '安装失败时的报错只留关键一行，不再甩一整段堆栈',
