@@ -247,7 +247,7 @@ object FluidCloud {
         runCatching {
             builder.addAction(
                 Notification.Action.Builder(
-                    Icon.createWithResource(ctx, R.drawable.ic_shortcut_timetable),
+                    Icon.createWithResource(ctx, R.drawable.ic_action_timetable),
                     "课表",
                     contentPi,
                 ).build()
@@ -274,6 +274,10 @@ object FluidCloud {
                     )
                     .setStyledByProgress(true)
                     .setProgress(elapsedMin)
+                    // 默认游标是系统画的小三角，换成 1×1 透明图去掉它
+                    .setProgressTrackerIcon(
+                        Icon.createWithResource(ctx, R.drawable.ic_progress_tracker)
+                    )
                 builder.setStyle(style)
                 runCatching {
                     Notification.Builder::class.java
