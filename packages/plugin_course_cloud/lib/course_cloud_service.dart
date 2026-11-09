@@ -105,8 +105,9 @@ class CourseCloudService with WidgetsBindingObserver {
     if (cloud == null) return false;
     final info = await cloud.info();
     if (!info.notificationsEnabled) {
+      // 权限弹窗是异步的：授完权 info 可能还没刷新，仍然尝试发一次，
+      // 成功了就成功，失败了调用方会给提示。
       await cloud.requestPermission();
-      if (!(await cloud.info()).notificationsEnabled) return false;
     }
     final now = DateTime.now();
     return cloud.show(FluidCloudWindow(

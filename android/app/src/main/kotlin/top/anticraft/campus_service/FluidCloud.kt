@@ -26,6 +26,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.max
 
 /**
  * 流体云 / 原子通知 / 焦点通知的**无 SDK** 接入。
@@ -52,7 +53,7 @@ object FluidCloud {
     private const val prefsName = "fluid_cloud"
     private const val keyWindows = "windows"
     private const val keyActiveEnd = "active_end"
-    private const val channelId = "antisit.course.live2"
+    private const val channelId = "antisit.course.live"
     private const val notificationId = 8801
 
     const val actionStart = "top.anticraft.campus_service.FLUID_START"
@@ -114,7 +115,7 @@ object FluidCloud {
         if (Build.VERSION.SDK_INT < 26) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(channelId) != null) return
-        val ch = NotificationChannel(channelId, "课程流体云", NotificationManager.IMPORTANCE_DEFAULT).apply {
+        val ch = NotificationChannel(channelId, "课程流体云", NotificationManager.IMPORTANCE_LOW).apply {
             description = "上课时常驻的流体云 / 原子通知 / 焦点通知"
             setSound(null, null)
             enableVibration(false)
@@ -198,6 +199,8 @@ object FluidCloud {
         val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val contentPi = PendingIntent.getActivity(ctx, 8804, content, piFlags)
         val now = System.currentTimeMillis()
+        val span = max(1L, w.endAt - w.startAt)
+        val elapsed = (now - w.startAt).coerceIn(0L, span)
         val status = if (now < w.startAt) {
             val mins = ((w.startAt - now) / 60_000L + 1).coerceAtLeast(1L)
             "$mins 分钟后上课"
@@ -244,11 +247,40 @@ object FluidCloud {
         runCatching {
             builder.addAction(
                 Notification.Action.Builder(
-                    Icon.createWithResource(ctx, R.drawable.ic_action_timetable),
+                    Icon.createWithResource(ctx, R.drawable.ic_shortcut_timetable),
                     "课表",
                     contentPi,
                 ).build()
             )
+        }
+        // 16 以下的系统没有 ProgressStyle：用普通进度条 + 倒计时
+        if (Build.VERSION.SDK_INT < 36) {
+            runCatching {
+                builder.setProgress(100, ((elapsed.toFloat() / span) * 100).toInt().coerceIn(0, 100), false)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 36) {
+            // 部分 ROM（MagicOS）只有在通知带 ProgressStyle 时才把它当「实时活动」展示；
+            // 去掉进度条会导致预览根本不出现，所以这里保留（不额外加 Point，避免圆点）。
+            runCatching {
+                val elapsedMin = (elapsed / 60_000L).toInt().coerceAtLeast(1)
+                val remainMin = ((span - elapsed) / 60_000L).toInt().coerceAtLeast(1)
+                val style = Notification.ProgressStyle()
+                    .setProgressSegments(
+                        listOf(
+                            Notification.ProgressStyle.Segment(elapsedMin),
+                            Notification.ProgressStyle.Segment(remainMin),
+                        )
+                    )
+                    .setStyledByProgress(true)
+                    .setProgress(elapsedMin)
+                builder.setStyle(style)
+                runCatching {
+                    Notification.Builder::class.java
+                        .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
+                        .invoke(builder, true)
+                }
+            }
         }
         return try {
             nm.notify(notificationId, builder.build())
