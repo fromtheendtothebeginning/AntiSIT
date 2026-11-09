@@ -19,6 +19,10 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.32.12', date: '2026-11-09', notes: [
+    '修复流体云预览不出现：恢复 ProgressStyle（部分 ROM 只有带它才当实时活动展示），通知渠道/图标回到已验证组合',
+    '预览时若刚授予通知权限也会立即尝试发送，并提示发送结果',
+  ]),
   ChangelogEntry(version: '1.32.11', date: '2026-11-09', notes: [
     '修复流体云预览点了没反应：通知小图标改回位图（矢量小图标在部分 ROM 会被系统拒收）',
     '流体云通知渠道改为默认重要度，锁屏 / 通知栏更容易看到；预览失败会直接提示原因',
