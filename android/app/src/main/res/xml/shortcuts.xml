@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_ecard"
+        android:shortcutId="ecard"
+        android:shortcutLongLabel="@string/shortcut_ecard_long"
+        android:shortcutShortLabel="@string/shortcut_ecard_short">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetClass="top.anticraft.campus_service.MainActivity"
+            android:targetPackage="top.anticraft.campus_service">
+            <extra
+                android:name="antisit.route"
+                android:value="ecard" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_timetable"
+        android:shortcutId="timetable"
+        android:shortcutLongLabel="@string/shortcut_timetable_long"
+        android:shortcutShortLabel="@string/shortcut_timetable_short">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetClass="top.anticraft.campus_service.MainActivity"
+            android:targetPackage="top.anticraft.campus_service">
+            <extra
+                android:name="antisit.route"
+                android:value="timetable" />
+        </intent>
+    </shortcut>
+</shortcuts>

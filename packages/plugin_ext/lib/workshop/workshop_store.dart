@@ -136,7 +136,7 @@ class WorkshopStore {
 
   Future<String> draftDir(String id) async {
     if (!CordisManifest.idPattern.hasMatch(id)) {
-      throw const FormatException('草稿 id 不合法');
+      throw const FormatException('拓展 id 不合法');
     }
     return '${await rootDir()}/$id';
   }
@@ -180,10 +180,10 @@ class WorkshopStore {
     final draftId =
         id ?? 'sit.agent-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
     if (!CordisManifest.idPattern.hasMatch(draftId)) {
-      throw const FormatException('草稿 id 只能用小写字母 / 数字 / . _ -，3–64 位');
+      throw const FormatException('拓展 id 只能用小写字母 / 数字 / . _ -，3–64 位');
     }
     final dir = Directory(await draftDir(draftId));
-    if (dir.existsSync()) throw const FormatException('同 id 的草稿已经存在');
+    if (dir.existsSync()) throw const FormatException('同 id 的拓展已经存在');
     dir.createSync(recursive: true);
     final manifest = CordisManifest(
       id: draftId,
@@ -197,6 +197,33 @@ class WorkshopStore {
     File(p.join(dir.path, 'main.js')).writeAsStringSync(_templateMain(name));
     File(p.join(dir.path, 'style.css')).writeAsStringSync(_templateCss);
     return WorkshopDraft(id: draftId, dir: dir.path, manifest: manifest);
+  }
+
+  /// 重命名拓展：只改 ext.json 的 name（id / 目录 / 代码都不动）。
+  /// 已安装的那份也要同步改的话由桥接层顺手处理（见 `workshop.renameDraft`）。
+  Future<WorkshopDraft> renameDraft(String draftId, String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty) throw const FormatException('拓展名不能为空');
+    if (clean.length > CordisManifest.nameMaxLength) {
+      throw FormatException('拓展名最多 ${CordisManifest.nameMaxLength} 个字');
+    }
+    final dir = await draftDir(draftId);
+    final draft = await _load(dir);
+    if (draft == null) throw const FormatException('拓展不存在或 ext.json 已损坏');
+    final m = draft.manifest;
+    final next = CordisManifest(
+      id: m.id,
+      name: clean,
+      desc: m.desc,
+      version: m.version,
+      main: m.main,
+      style: m.style,
+      permissions: m.permissions,
+      minAppVersion: m.minAppVersion,
+    );
+    File(p.join(dir, 'ext.json')).writeAsStringSync(
+        '${const JsonEncoder.withIndent('  ').convert(next.toJson())}\n');
+    return WorkshopDraft(id: draft.id, dir: draft.dir, manifest: next);
   }
 
   /// 旧版单会话文件（`session.json`）：保留可读，列表里显示为默认对话。
@@ -334,6 +361,36 @@ class WorkshopStore {
         conversationId.trim().isEmpty ? defaultConversationId : conversationId.trim();
     final file = await _conversationFileFor(draftId, id);
     if (file.existsSync()) file.deleteSync();
+  }
+
+  /// 重命名对话：只改会话文件的 title；文件还不存在时也建一份最小的，
+  /// 保证列表里立刻能看到新名字。
+  Future<WorkshopConversation> renameConversation(
+      String draftId, String conversationId, String title) async {
+    final id =
+        conversationId.trim().isEmpty ? defaultConversationId : conversationId.trim();
+    final clean = title.trim();
+    if (clean.isEmpty) throw const FormatException('对话名不能为空');
+    final safe = clean.length > 48 ? clean.substring(0, 48) : clean;
+    final raw = await loadConversation(draftId, id);
+    var data = <String, dynamic>{};
+    if (raw != null && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) data = decoded;
+      } catch (_) {
+        // 坏日志不挡改名：保留可解析的字段做不到，就按最小会话重建
+      }
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    data['title'] = safe;
+    data['updatedAt'] = now;
+    data['version'] ??= 1;
+    data['seq'] ??= 0;
+    data['turnSeq'] ??= 0;
+    data['events'] ??= <Object?>[];
+    await saveConversation(draftId, id, jsonEncode(data));
+    return WorkshopConversation(id: id, title: safe, updatedAt: now);
   }
 
   /// 兼容旧接口：不指定对话时读写默认会话。
@@ -594,9 +651,9 @@ class WorkshopStore {
 
   File _file(String dir, String rawPath) {
     final rel = _safeRelative(rawPath);
-    if (rel == null) throw const FormatException('路径必须是草稿目录内的相对路径');
+    if (rel == null) throw const FormatException('路径必须是拓展目录内的相对路径');
     if (rel.split('/').any((part) => part.startsWith('.'))) {
-      throw const FormatException('不能访问草稿里的隐藏文件');
+      throw const FormatException('不能访问拓展里的隐藏文件');
     }
     final ext = p.extension(rel).toLowerCase();
     if (!allowedExtensions.contains(ext)) {
@@ -675,7 +732,7 @@ class WorkshopStore {
   /// 把草稿装进正式拓展清单。
   Future<ExtensionItem> install(String draftId) async {
     final draft = await load(draftId);
-    if (draft == null) throw const FormatException('草稿不存在或 ext.json 已损坏');
+    if (draft == null) throw const FormatException('拓展不存在或 ext.json 已损坏');
     final problems = await validate(draftId);
     if (problems.isNotEmpty) throw FormatException(problems.join('\n'));
     final store = ExtensionStore.I;

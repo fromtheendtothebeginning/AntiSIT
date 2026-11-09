@@ -33,6 +33,10 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // 流体云 / 原子通知 / 焦点通知：课程常驻通知与闹钟排期（无厂商 SDK，走系统通知）
+        FluidCloudBridge(this).register(flutterEngine.dartExecutor.binaryMessenger)
+        // 桌面卡片：同步今日课程 / 校园卡余额，点卡片回到对应页面
+        HomeWidgetBridge(this).register(flutterEngine.dartExecutor.binaryMessenger)
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .also { ch ->
                 ch.setMethodCallHandler { call, result ->
@@ -75,12 +79,15 @@ class MainActivity : FlutterActivity() {
         // 安装状态 PendingIntent 把 MainActivity 直接拉起来时（进程可能刚重建），
         // 也要把状态处理掉；否则确认页永远出不来。
         handleInstallStatus(intent)
+        // 长按图标快捷方式 / 桌面卡片点进来：记下入口动作，Flutter 起来后切页
+        HomeWidget.routeOf(intent)?.let { HomeWidget.setLaunch(this, it) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleInstallStatus(intent)
+        HomeWidget.routeOf(intent)?.let { HomeWidget.setLaunch(this, it) }
     }
 
     private fun packageUri(): Uri = Uri.fromParts("package", packageName, null)

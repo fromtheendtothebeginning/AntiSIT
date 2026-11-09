@@ -188,6 +188,19 @@ abstract final class PluginIds {
   static const camera = 'camera';
   static const scan = 'scan';
   static const activities = 'activities';
+
+  /// 流体云（ColorOS 流体云 / OriginOS 原子通知 / 澎湃OS 焦点通知）：
+  /// 走系统通知 API 的常驻进度通知，不需要厂商 SDK。
+  static const fluidCloud = 'fluid_cloud';
+
+  /// 流体云课程通知：在上面的能力和课程表之上做「不通知 / 弹窗 / 流体云」三选一。
+  static const courseCloud = 'course_cloud';
+
+  /// 桌面卡片（App Widget）+ 长按图标的快捷方式：只做数据转发，不占底栏。
+  static const homeWidget = 'home_widget';
+
+  /// 校园码：底栏页 + 桌面卡片（余额）。
+  static const ecard = 'ecard';
   static const themeGlass = 'theme.glass';
 }
 

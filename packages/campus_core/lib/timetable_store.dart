@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
 import 'json_num.dart';
 import 'app_state.dart';
+import 'plugins/course_cloud_capability.dart';
+import 'plugins/home_widget_capability.dart';
 import 'plugins/plugin.dart';
 import 'plugins/registry.dart';
 import 'plugins/reminder_capability.dart';
@@ -21,14 +23,67 @@ class TimetableStore {
 
   static const _spKey = 'campus_timetable';
 
-  /// 与网站一致的 11 节上课 / 下课时刻（索引 = 节次序号，0 起）。
-  /// 课表页拿它画节次轴，导出日历拿它算每次课的时刻——必须是同一份表。
-  static const List<String> slotStarts = [
-    '08:20', '09:10', '10:10', '11:00', '13:00', '13:50', '14:55', '15:45', '18:00', '18:50', '19:40',
+  /// 自定义上课时间的存储键（与课表数据分开：云端同步不认这个字段，
+  /// 换设备不覆盖用户在**这台机器**上调的作息）。
+  static const _slotTimesKey = 'campus_slot_times';
+
+  /// 默认的 11 节上课 / 下课时刻（索引 = 节次序号，0 起），与网站一致。
+  /// 用户可以在「课程表设置 → 上课时间」里改成自己学校的作息（见 [setSlotTimes]）。
+  static const List<String> defaultSlotStarts = [
+    '08:20', '09:10', '10:15', '11:00', '13:00', '13:50', '14:55', '15:45', '18:00', '18:50', '19:40',
   ];
-  static const List<String> slotEnds = [
+  static const List<String> defaultSlotEnds = [
     '09:05', '09:55', '10:55', '11:45', '13:45', '14:35', '15:40', '16:30', '18:45', '19:35', '20:25',
   ];
+
+  /// 当前生效的 11 节时刻：没改过就是 [defaultSlotStarts] / [defaultSlotEnds]。
+  /// 课表页拿它画节次轴，导出日历拿它算每次课的时刻——必须是同一份表。
+  static List<String> slotStarts = defaultSlotStarts;
+  static List<String> slotEnds = defaultSlotEnds;
+
+  /// 用户改过作息没有（设置页据此显示「自定义 / 默认」）。
+  static bool get slotTimesCustomized =>
+      !listEquals(slotStarts, defaultSlotStarts) || !listEquals(slotEnds, defaultSlotEnds);
+
+  /// 保存自定义的 11 节上课 / 下课时刻（`HH:mm`）；不传 = 恢复默认。
+  /// 课表页与导出日历下次读取就是新表，上课提醒也按新课表重排。
+  static Future<void> setSlotTimes({List<String>? starts, List<String>? ends}) async {
+    final sp = await SharedPreferences.getInstance();
+    if (starts == null || ends == null) {
+      slotStarts = defaultSlotStarts;
+      slotEnds = defaultSlotEnds;
+      await sp.remove(_slotTimesKey);
+    } else {
+      slotStarts = List.unmodifiable(starts);
+      slotEnds = List.unmodifiable(ends);
+      await sp.setString(_slotTimesKey, jsonEncode({'starts': starts, 'ends': ends}));
+    }
+    _rescheduleReminder();
+  }
+
+  /// 读自定义时刻：缺省 / 坏数据 / 长度不是 11 节，一律回默认（不让脏数据把课表带崩）。
+  static void _loadSlotTimes(SharedPreferences sp) {
+    final raw = sp.getString(_slotTimesKey);
+    if (raw == null) {
+      slotStarts = defaultSlotStarts;
+      slotEnds = defaultSlotEnds;
+      return;
+    }
+    try {
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      final starts = [for (final v in (m['starts'] as List)) '$v'];
+      final ends = [for (final v in (m['ends'] as List)) '$v'];
+      if (starts.length == defaultSlotStarts.length && ends.length == defaultSlotEnds.length) {
+        slotStarts = List.unmodifiable(starts);
+        slotEnds = List.unmodifiable(ends);
+        return;
+      }
+    } catch (e) {
+      debugPrint('[课表] 自定义上课时间读取失败，用默认：$e');
+    }
+    slotStarts = defaultSlotStarts;
+    slotEnds = defaultSlotEnds;
+  }
 
   /// 学期 key：`学年-学期码`（正方：3=第一学期 / 12=第二学期 / 16=短学期）
   Map<String, SemesterTt> semesters = {};
@@ -60,6 +115,7 @@ class TimetableStore {
 
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
+    _loadSlotTimes(sp);
     final raw = sp.getString(_spKey);
     if (raw != null) {
       _adoptJson(jsonDecode(raw));
@@ -131,9 +187,86 @@ class TimetableStore {
 
   /// 重排上课提醒：提醒能力由「上课提醒」插件提供——core 只按 id 取能力，
   /// 不 import 那个包；没装 / 被停用时取不到，就当没有提醒这回事（课表照常用）。
+  /// 顺手让「流体云课程通知」按新课表重排（它自己会判断当前是不是流体云模式）。
   static void _rescheduleReminder() {
     final reminder = PluginRegistry.I.capability<ReminderCapability>(PluginIds.reminder);
     if (reminder != null) unawaited(reminder.reschedule());
+    final courseCloud = PluginRegistry.I.capability<CourseCloudCapability>(PluginIds.courseCloud);
+    if (courseCloud != null) unawaited(courseCloud.sync());
+    final widget = PluginRegistry.I.capability<HomeWidgetCapability>(PluginIds.homeWidget);
+    if (widget != null) unawaited(_syncHomeWidget(widget));
+  }
+
+  /// 今天的课同步给桌面卡片（启动、课表保存各来一次，幂等）。
+  static Future<void> _syncHomeWidget(HomeWidgetCapability widget) async {
+    try {
+      final now = DateTime.now();
+      final courses = todayCourses(now: now);
+      final nowHHmm = '${now.hour.toString().padLeft(2, '0')}:'
+          '${now.minute.toString().padLeft(2, '0')}';
+      final upcoming = [for (final c in courses) if (c.end.compareTo(nowHHmm) > 0) c];
+      await widget.syncTimetable(
+        day: iso(now),
+        date: '${now.month}月${now.day}日 周${'一二三四五六日'[now.weekday - 1]}',
+        courses: courses,
+        next: upcoming.isEmpty ? null : upcoming.first,
+      );
+    } catch (e) {
+      debugPrint('[课表] 同步桌面卡片失败：$e');
+    }
+  }
+
+  /// 今天的课（桌面课表卡片用）：调休换算后的实际星期几、单双周、节次起止
+  /// 都按当前作息（[slotStarts] / [slotEnds]）算；同一天多学期重复的课去重。
+  static List<HomeWidgetCourse> todayCourses({DateTime? now}) {
+    final t = now ?? DateTime.now();
+    final dayIndex = t.weekday - 1;
+    final starts = slotStarts;
+    final ends = slotEnds;
+    if (starts.isEmpty || ends.isEmpty) return const [];
+    final todayIso = iso(DateTime(t.year, t.month, t.day));
+    final out = <HomeWidgetCourse>[];
+    for (final tt in instance.semesters.values) {
+      final week = _weekOf(tt.startDate, tt.weekCount, t);
+      if (week == null) continue;
+      var eff = dayIndex;
+      for (final a in tt.adjustments) {
+        if (a.date != todayIso) continue;
+        eff = a.type == 'off' ? -1 : a.day;
+      }
+      if (eff < 0) continue;
+      final courses = deriveImported(tt).followedBy(tt.courses);
+      for (final c in courses) {
+        if (c.name.trim().isEmpty || c.day != eff) continue;
+        if (week < c.weekStart || week > c.weekEnd) continue;
+        if (c.weekType == 'odd' && week.isEven) continue;
+        if (c.weekType == 'even' && week.isOdd) continue;
+        final s = c.slotStart.clamp(0, starts.length - 1);
+        final e = c.slotEnd.clamp(s, ends.length - 1);
+        out.add(HomeWidgetCourse(
+          name: c.name.trim(),
+          place: c.place.trim(),
+          start: starts[s],
+          end: ends[e],
+        ));
+      }
+    }
+    final seen = <String>{};
+    return [
+      for (final c in out)
+        if (seen.add('${c.name}|${c.start}|${c.place}')) c,
+    ]..sort((a, b) => a.start.compareTo(b.start));
+  }
+
+  /// [now] 所在周（[startDate] 为第 1 周周一）；不在学期内返回 null。
+  static int? _weekOf(String startDate, int weekCount, DateTime now) {
+    final start = DateTime.tryParse(startDate);
+    if (start == null || start.year <= 1970 || weekCount <= 0) return null;
+    final s0 = DateTime(start.year, start.month, start.day);
+    final n0 = DateTime(now.year, now.month, now.day);
+    final week = n0.difference(s0).inDays ~/ 7 + 1;
+    if (week < 1 || week > weekCount) return null;
+    return week;
   }
 
   /// 本地写入 + 登录状态下回推云端（网站同款 PUT /api/timetable {data}）。

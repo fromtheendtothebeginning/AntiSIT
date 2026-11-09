@@ -114,13 +114,13 @@ class ClassReminderService extends ChangeNotifier {
     };
   }
 
-  static int classStartMinutes(TtCourse c) => _slotStartMinutes[c.slotStart.clamp(0, 10)];
-
-  /// 与课表页一致的 11 节上课时刻（分钟）。
-  static const List<int> _slotStartMinutes = [
-    8 * 60 + 20, 9 * 60 + 10, 10 * 60 + 10, 11 * 60, 13 * 60,
-    13 * 60 + 50, 14 * 60 + 55, 15 * 60 + 45, 18 * 60, 18 * 60 + 50, 19 * 60 + 40,
-  ];
+  /// 该课的上课时刻（分钟）——直接读课表当前生效的作息：
+  /// 用户在「课程表设置 → 上课时间」里改过，提醒就跟着变，不再另存一份写死的表。
+  static int classStartMinutes(TtCourse c) {
+    final starts = TimetableStore.slotStarts;
+    if (starts.isEmpty) return 0;
+    return hhmm(starts[c.slotStart.clamp(0, starts.length - 1)]);
+  }
 
   /// 生成 [from, from+horizonDays) 内所有未到期的提醒，按时间升序，最多 [maxScheduled] 条。
   /// [store] 里每个学期都算（同一节课被多学期收录时按「名称+时刻」去重）。
@@ -271,7 +271,11 @@ class ClassReminderService extends ChangeNotifier {
     await init();
     if (!_ready) return;
     try {
-      final reminders = plan(TimetableStore.instance, DateTime.now());
+      final planned = plan(TimetableStore.instance, DateTime.now());
+      // 「不通知 / 流体云通知」模式下课程提醒由别人接管（或整体关闭）：
+      // 这里只留日程与考试，避免和流体云重复弹。模式存在 AppState 里，
+      // 本包不依赖那个插件包，直接比字符串（取值见「流体云课程通知」插件）。
+      final reminders = forMode(planned, AppState.I.courseNotifyMode);
       final action = actionFor(
         enabled: _enabled,
         pluginEnabled: PluginRegistry.I.isEnabled(reminderPluginId),
@@ -314,6 +318,12 @@ class ClassReminderService extends ChangeNotifier {
       debugPrint('[上课提醒] 排期失败：$e');
     }
   }
+
+  /// 按课程通知方式过滤要排的提醒：只有「弹窗通知」模式才排课程；
+  /// 「不通知 / 流体云通知」只留日程与考试，课程那一路交给对应模式处理。
+  @visibleForTesting
+  static List<ClassReminder> forMode(List<ClassReminder> all, String mode) =>
+      mode == 'popup' ? all : [for (final r in all) if (r.course == null) r];
 
   /// 这次 [reschedule] 该做什么——纯函数，rule 越直白越好测。
   @visibleForTesting

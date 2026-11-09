@@ -22,6 +22,9 @@ void main() {
     AppState.I.dimCompleted = true;
     TimetableStore.instance.semesters = {};
     TimetableStore.instance.active = '';
+    // 自定义作息是静态状态：每个用例从默认表开始
+    TimetableStore.slotStarts = TimetableStore.defaultSlotStarts;
+    TimetableStore.slotEnds = TimetableStore.defaultSlotEnds;
     PluginRegistry.I = registry();
   });
 
@@ -48,13 +51,41 @@ void main() {
   }
 
   group('「课程表设置」二级页', () {
-    testWidgets('四行都在：学期 / 调休 / 上课提醒 / 上完的课淡化显示', (tester) async {
+    testWidgets('五行都在：学期 / 调休 / 上课时间 / 上课提醒 / 上完的课淡化显示', (tester) async {
       await pump(tester, const TimetableSettingsPage(semesterKey: '2026-3'));
       expect(find.text('课程表设置'), findsOneWidget, reason: '页面标题');
       expect(find.text('学期设置'), findsOneWidget);
       expect(find.text('调休设置'), findsOneWidget);
+      expect(find.text('上课时间'), findsOneWidget);
       expect(find.text('上课提醒'), findsOneWidget, reason: '提醒插件的条目投在这一页');
       expect(find.text('上完的课淡化显示'), findsOneWidget);
+    });
+
+    testWidgets('上课时间：默认作息可编辑，弹层里能恢复默认', (tester) async {
+      await pump(tester, const TimetableSettingsPage(semesterKey: '2026-3'));
+      expect(find.textContaining('默认作息'), findsOneWidget);
+
+      await tester.tap(find.text('上课时间'));
+      await tester.pumpAndSettle();
+      expect(find.text('第1节'), findsOneWidget);
+      expect(find.text('10:15'), findsOneWidget, reason: '默认早三 10:15 上课');
+      expect(find.text('保存'), findsOneWidget);
+
+      // 换成自定义表 → 页面标「自定义」；弹层「恢复默认」清回去
+      final starts = List<String>.from(TimetableStore.slotStarts)..[0] = '08:30';
+      final ends = List<String>.from(TimetableStore.slotEnds)..[0] = '09:15';
+      await TimetableStore.setSlotTimes(starts: starts, ends: ends);
+      await tester.tapAt(const Offset(20, 20)); // 关掉弹层
+      await tester.pumpAndSettle();
+      await pump(tester, const TimetableSettingsPage(semesterKey: '2026-3'));
+      expect(find.textContaining('自定义作息'), findsOneWidget);
+
+      await tester.tap(find.text('上课时间'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('恢复默认'));
+      await tester.pumpAndSettle();
+      expect(TimetableStore.slotTimesCustomized, isFalse);
+      expect(TimetableStore.slotStarts[2], '10:15');
     });
 
     testWidgets('从「我的」进来（不带学期）：改的是课表最近显示过的那个学期', (tester) async {

@@ -1,0 +1,11 @@
+<resources>
+    <color name="widget_bg">#FFFFFF</color>
+    <color name="widget_bg_alt">#F3F5FD</color>
+    <color name="widget_border">#E4E5EA</color>
+    <color name="widget_hero">#F2F5FF</color>
+    <color name="widget_hero_border">#DEE5FF</color>
+    <color name="widget_pill">#E5EBFF</color>
+    <color name="widget_text">#1B1B1F</color>
+    <color name="widget_muted">#6B6B70</color>
+    <color name="widget_accent">#4F6EF7</color>
+</resources>

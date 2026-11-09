@@ -13,6 +13,7 @@ library;
 
 export 'api_client.dart';
 export 'api_error.dart';
+export 'app_launch.dart';
 export 'app_state.dart';
 export 'demo_data.dart';
 export 'direct/activities_util.dart';
@@ -42,6 +43,9 @@ export 'plugins/activities_capability.dart';
 export 'plugins/ai_capability.dart';
 export 'plugins/camera_capability.dart';
 export 'plugins/capability.dart';
+export 'plugins/course_cloud_capability.dart';
+export 'plugins/fluid_cloud_capability.dart';
+export 'plugins/home_widget_capability.dart';
 export 'plugins/plugin.dart';
 export 'plugins/json_theme.dart';
 export 'plugins/registry.dart';

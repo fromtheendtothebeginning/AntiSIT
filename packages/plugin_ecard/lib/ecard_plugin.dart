@@ -20,9 +20,10 @@ class EcardPlugin extends FeaturePlugin {
   List<String> get dependencies => const [PluginIds.network];
 
   /// 软依赖（不联动启停）：风险提醒开着时本插件的付款码被拦下（见 [RiskNoticeCapability]），
-  /// 关掉它立即恢复；没装风险提醒则等同没有这道闸。
+  /// 关掉它立即恢复；没装风险提醒则等同没有这道闸。桌面卡片同理：装了就把余额同步过去。
   @override
-  List<String> get optionalDependencies => const [PluginIds.risk];
+  List<String> get optionalDependencies =>
+      const [PluginIds.risk, PluginIds.homeWidget];
 
   @override
   List<PluginNavItem> navItems(registry, tab) => [

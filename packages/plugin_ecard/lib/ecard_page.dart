@@ -119,6 +119,12 @@ class _EcardPageState extends State<EcardPage> {
         asInt(_data?['refresh']),
         interval: AppState.I.ecardRefreshSeconds,
       );
+      // 桌面「校园卡余额」卡片跟着更新：只放余额，动态码不进桌面
+      final widget = PluginRegistry.I.capability<HomeWidgetCapability>(PluginIds.homeWidget);
+      final balance = asDouble(_data?['card_balance']);
+      if (widget != null && balance != null) {
+        unawaited(widget.syncEcard(balance: balance.toStringAsFixed(2)));
+      }
     } catch (e) {
       _err = e is ApiError ? e.message : e.toString();
       _countdown = AppState.I.ecardRefreshSeconds;

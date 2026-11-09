@@ -7,6 +7,9 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     TimetableStore.instance.semesters = {};
+    // 自定义作息是静态状态：每个用例从默认表开始，免得互相串
+    TimetableStore.slotStarts = TimetableStore.defaultSlotStarts;
+    TimetableStore.slotEnds = TimetableStore.defaultSlotEnds;
   });
 
   group('locateToday / 学期推算', () {
@@ -153,6 +156,40 @@ void main() {
       TimetableStore.removeImportedOccurrence(tt, tt.jwxtWeeks['1']!.first, all: false, week: 1);
       expect(tt.jwxtWeeks.containsKey('1'), isFalse);
       expect(tt.jwxtWeeks['2'], isNotEmpty);
+    });
+  });
+
+  group('上课时间（自定义作息）', () {
+    test('默认第三节 10:15、共 11 节；改完落盘，恢复默认回默认表', () async {
+      expect(TimetableStore.slotStarts.length, 11);
+      expect(TimetableStore.slotStarts[2], '10:15', reason: '默认早三 10:15 上课');
+      expect(TimetableStore.slotTimesCustomized, isFalse);
+
+      final starts = List<String>.from(TimetableStore.slotStarts)..[0] = '08:30';
+      final ends = List<String>.from(TimetableStore.slotEnds)..[0] = '09:15';
+      await TimetableStore.setSlotTimes(starts: starts, ends: ends);
+      expect(TimetableStore.slotStarts.first, '08:30');
+      expect(TimetableStore.slotTimesCustomized, isTrue);
+
+      // 模拟重启：内存回默认，load 再从本机把自定义表读回来
+      TimetableStore.slotStarts = TimetableStore.defaultSlotStarts;
+      TimetableStore.slotEnds = TimetableStore.defaultSlotEnds;
+      await TimetableStore.instance.load();
+      expect(TimetableStore.slotStarts.first, '08:30', reason: '自定义作息存在本机');
+      expect(TimetableStore.slotEnds.first, '09:15');
+
+      await TimetableStore.setSlotTimes();
+      expect(TimetableStore.slotStarts, TimetableStore.defaultSlotStarts);
+      expect(TimetableStore.slotTimesCustomized, isFalse);
+    });
+
+    test('坏数据 / 长度不对：读回默认表，不把课表带崩', () async {
+      SharedPreferences.setMockInitialValues({
+        'campus_slot_times': '{"starts":["08:00"],"ends":[]}',
+      });
+      await TimetableStore.instance.load();
+      expect(TimetableStore.slotStarts, TimetableStore.defaultSlotStarts);
+      expect(TimetableStore.slotEnds, TimetableStore.defaultSlotEnds);
     });
   });
 }

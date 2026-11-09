@@ -83,7 +83,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_ext` | `ext` | `webview` | `ai`、`scan` | `ai`、`scan`、`webview` | ✓ | 底栏页 |
 | `plugin_camera` | `camera` | — | — | — | ✓ | 无界面 |
 | `plugin_scan` | `scan` | `camera` | `webview`、`activities` | `activities`、`camera`、`webview` | ✓ | 无界面 |
-| `plugin_ecard` | `ecard` | `network` | `risk` | `risk` | ✓ | 底栏页 |
+| `plugin_ecard` | `ecard` | `network` | `risk`、`home_widget` | `home_widget`、`risk` | ✓ | 底栏页 |
 | `plugin_tools` | `tools` | — | — | — | ✓ | 底栏页 |
 | `plugin_ai` | `ai` | `network` | — | — | ✓ | 设置条目 + 启动初始化 |
 | `plugin_ai` | `custom` | — | — | — | ✓ | AI 提供商（一家一个包） |
@@ -101,6 +101,9 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_ai_minimax` | `minimax` | — | — | — | ✓ | AI 提供商（一家一个包） |
 | `plugin_ai_minimax` | `minimaxtokenplan` | — | — | — | ✓ | AI 提供商（一家一个包） |
 | `plugin_reminder` | `reminder` | `timetable` | — | — | ✓ | 设置条目 + 启动初始化 |
+| `plugin_fluid_cloud` | `fluid_cloud` | — | — | — | ✓ | 无界面 |
+| `plugin_course_cloud` | `course_cloud` | `timetable`、`fluid_cloud` | `reminder` | `fluid_cloud`、`reminder` | ✓ | 设置条目 + 启动初始化 |
+| `plugin_home_widget` | `home_widget` | — | — | — | ✓ | 无界面 + 启动初始化 |
 | `plugin_theme_glass` | `theme.glass` | — | — | — | 主题只选不关 | 主题色板 + 场景光斑 |
 | `plugin_theme_ink` | `theme.ink` | — | — | — | 主题只选不关 | 主题色板 |
 | `plugin_theme_bamboo` | `theme.bamboo` | — | — | — | 主题只选不关 | 主题色板 |

@@ -995,6 +995,10 @@ void main() {
     setUp(() {
       dir = Directory.systemTemp.createTempSync('ext_workshop_bridge_');
       workshop = WorkshopStore(documentsDirectory: () async => dir.path);
+      // 装拓展会往「文档目录」里复制：测试里没有 path_provider，必须换成临时目录
+      final savedDocs = ExtensionStore.documentsDirectory;
+      ExtensionStore.documentsDirectory = () async => dir.path;
+      addTearDown(() => ExtensionStore.documentsDirectory = savedDocs);
     });
     tearDown(() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
@@ -1176,19 +1180,19 @@ void main() {
       expect((after['conversations'] as List).any((c) => (c as Map)['id'] == cid), isFalse);
     });
 
-    testWidgets('删除未安装的草稿：确认后整个目录消失；已安装的拒绝', (tester) async {
-      final draft = await workshop.create(name: '待删草稿');
+    testWidgets('删除未安装的拓展：确认后整个目录消失；已安装的拒绝', (tester) async {
+      final draft = await workshop.create(name: '待删拓展');
       final ws = await bridge(tester, ExtBridge.workshopExtId);
 
       final pending = ws.call('workshop.deleteDraft', {'draftId': draft.id});
       await tester.pumpAndSettle();
-      expect(find.textContaining('删除草稿'), findsOneWidget);
+      expect(find.textContaining('删除拓展'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, '确认执行'));
       await tester.pumpAndSettle();
       expect((await pending as Map)['ok'], isTrue);
       expect(Directory(draft.dir).existsSync(), isFalse);
 
-      final installed = await workshop.create(name: '已安装草稿');
+      final installed = await workshop.create(name: '已安装拓展');
       await ExtensionStore.I.add(ExtensionItem(
           id: installed.id, name: '已安装', url: 'https://example.com/x'));
       await expectLater(
@@ -1197,6 +1201,36 @@ void main() {
             .having((e) => e.message, 'message', contains('已安装'))),
       );
       expect(Directory(installed.dir).existsSync(), isTrue);
+    });
+
+    testWidgets('重命名拓展与对话：落盘、列表更新，已安装的卡片同步改名', (tester) async {
+      final draft = await workshop.create(name: '旧名字');
+      // 先装一份：重命名草稿时，已安装卡片也要跟着改
+      final item = await workshop.install(draft.id);
+      await ExtensionStore.I.add(item);
+
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+      final renamed = await ws.call('workshop.renameDraft', {
+        'draftId': draft.id,
+        'name': '新名字',
+      }) as Map;
+      expect(renamed['name'], '新名字');
+      expect(renamed['installed'], isTrue);
+      expect(ExtensionStore.I.items.firstWhere((e) => e.id == draft.id).name, '新名字',
+          reason: '已安装的卡片一起改名');
+      expect(File('${draft.dir}/ext.json').readAsStringSync(), contains('新名字'));
+
+      final conv = await workshop.createConversation(draft.id, title: '新对话');
+      final pending = await ws.call('workshop.session.rename', {
+        'draftId': draft.id,
+        'conversationId': conv.id,
+        'title': '改过的对话名',
+      }) as Map;
+      expect(pending['title'], '改过的对话名');
+      final list = await workshop.listConversations(draft.id);
+      expect(list.firstWhere((c) => c.id == conv.id).title, '改过的对话名');
+      final raw = await workshop.loadConversation(draft.id, conv.id);
+      expect(raw, contains('改过的对话名'), reason: '标题写进会话文件');
     });
 
     testWidgets('技能库：安装要确认，能列表 / 读取 / 删除', (tester) async {
@@ -1311,6 +1345,10 @@ void main() {
       expect(page.html, contains('workshop.list'), reason: '宿主服务已注入');
       expect(page.html, contains('workshop.session.create'),
           reason: '多对话接口已注入');
+      expect(page.html, contains('workshop.session.rename'),
+          reason: '重命名对话接口已注入');
+      expect(page.html, contains('workshop.renameDraft'),
+          reason: '重命名拓展接口已注入');
       expect(page.html, contains('ai.chatToolsStream'), reason: '流式 AI 接口已注入');
       expect(page.html, contains("script-src 'unsafe-inline' blob:"));
       expect(page.html, isNot(contains('你是 AntiSIT「拓展工坊」里的编码 Agent')),

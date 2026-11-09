@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -31,12 +33,35 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
   final ValueNotifier<double> _pos = ValueNotifier<double>(0);
   double _dragFrom = 0;
 
+  /// 桌面入口动作的订阅（见 [AppLaunch]）。
+  StreamSubscription<String>? _launchSub;
+
   @override
   void initState() {
     super.initState();
     // 插件启停会改变底栏格数，当前下标可能越界
     PluginRegistry.I.addListener(_clampTab);
     _checkUpdateOnStart();
+    // 桌面卡片 / 长按图标的快捷方式：切到对应底栏页
+    _launchSub = AppLaunch.I.actions.listen(_openLaunch);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final pending = AppLaunch.I.takePending();
+      if (pending != null) _openLaunch(pending);
+    });
+  }
+
+  /// 入口动作 → 底栏页：`ecard` 校园码 / `timetable` 课程表。
+  void _openLaunch(String action) {
+    if (!mounted) return;
+    final pluginId = switch (action) {
+      'ecard' => PluginIds.ecard,
+      'timetable' => PluginIds.timetable,
+      _ => null,
+    };
+    if (pluginId == null) return;
+    final pages = PluginRegistry.I.navPages(tab);
+    final index = pages.indexWhere((e) => e.$1.id == pluginId);
+    if (index >= 0) tab.value = index;
   }
 
   /// 启动后静默查一次新版本：有就弹一次引导更新（点过「稍后」的版本不再弹，
@@ -58,6 +83,7 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
 
   @override
   void dispose() {
+    _launchSub?.cancel();
     PluginRegistry.I.removeListener(_clampTab);
     _dragPos.dispose();
     _pos.dispose();

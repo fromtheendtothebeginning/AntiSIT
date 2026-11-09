@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- 课程流体云：Android 16 的 promoted ongoing（live update）。普通权限，声明即可；
+         系统按厂商映射成流体云 / 原子通知 / 焦点通知，不需要厂商 SDK。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
     <!-- 应用内更新：下载完的 APK 直接交给系统安装器覆盖安装。该权限由用户在系统
          设置里按应用授予（缺了会先跳授权页，见 MainActivity.installApk），
          只装自己下载的那一个包，不涉及应用商店的分发限制。 -->
@@ -39,6 +42,10 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- 长按图标：校园码 / 课表 快捷方式（菜单由系统桌面绘制） -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -74,6 +81,44 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
+        </receiver>
+        <!-- 课程流体云：闹钟到点亮 / 收通知；开机后恢复排期。 -->
+        <receiver
+            android:exported="false"
+            android:name=".FluidCloudReceiver" />
+        <receiver
+            android:exported="false"
+            android:name=".FluidCloudBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+        <!-- 桌面卡片：今日课程 / 校园卡余额（标准 App Widget，ColorOS / OriginOS /
+             澎湃OS 等桌面都能添加；数据由 App 同步，点卡片回到对应页面） -->
+        <receiver
+            android:exported="false"
+            android:label="@string/widget_timetable_name"
+            android:name=".TimetableWidgetProvider">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/timetable_widget_info" />
+        </receiver>
+        <receiver
+            android:exported="false"
+            android:label="@string/widget_ecard_name"
+            android:name=".EcardWidgetProvider">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/ecard_widget_info" />
         </receiver>
     </application>
     <!-- Required to query activities that can process text, see:

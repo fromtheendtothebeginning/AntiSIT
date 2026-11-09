@@ -183,6 +183,9 @@ class CordisRuntime {
           });
         }
         validate(draftId) { return call('workshop.validate', { draftId: draftId }); }
+        renameDraft(draftId, name) {
+          return call('workshop.renameDraft', { draftId: draftId, name: name });
+        }
         install(draftId) { return call('workshop.install', { draftId: draftId }); }
         preview(draftId) { return call('workshop.preview', { draftId: draftId }); }
         listConversations(draftId) {
@@ -190,6 +193,11 @@ class CordisRuntime {
         }
         createConversation(draftId, title) {
           return call('workshop.session.create', { draftId: draftId, title: title });
+        }
+        renameConversation(draftId, conversationId, title) {
+          return call('workshop.session.rename', {
+            draftId: draftId, conversationId: conversationId, title: title
+          });
         }
         deleteConversation(draftId, conversationId) {
           return call('workshop.session.delete', {

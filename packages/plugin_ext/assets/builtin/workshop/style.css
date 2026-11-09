@@ -539,6 +539,69 @@ button {
 .ws-menu button.danger { color: var(--danger); }
 .ws-menu button:disabled { opacity: 0.4; }
 
+/* ---------- 输入弹层（重命名） ---------- */
+
+.ws-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.36);
+}
+
+.prompt-card {
+  width: 100%;
+  max-width: 360px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 18px 50px color-mix(in srgb, #000 25%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prompt-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.prompt-card input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14.5px;
+  padding: 9px 10px;
+  outline: none;
+}
+
+.prompt-card input:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.prompt-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.prompt-ok {
+  min-height: 0;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  padding: 7px 14px;
+}
+
 /* ---------- 底部面板（切换 / 技能） ---------- */
 
 .ws-sheet {

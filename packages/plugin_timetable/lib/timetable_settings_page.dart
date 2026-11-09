@@ -83,6 +83,17 @@ class _TimetableSettingsPageState extends State<TimetableSettingsPage> {
                       onSaved: () => setState(() {})),
                 ),
                 ListTile(
+                  leading: const Icon(Icons.schedule_outlined),
+                  title: const Text('上课时间'),
+                  subtitle: Text(
+                    '${TimetableStore.slotTimesCustomized ? '自定义' : '默认'}作息 · '
+                    '第 1 节 ${TimetableStore.slotStarts.first} 起',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showSlotTimesSheet(context, onSaved: () => setState(() {})),
+                ),
+                ListTile(
                   leading: const Icon(Icons.wallpaper_outlined),
                   title: const Text('课表背景'),
                   subtitle: Text(
@@ -104,6 +115,154 @@ class _TimetableSettingsPageState extends State<TimetableSettingsPage> {
     );
   }
 }
+
+/// 上课时间：11 节的上下课时刻都能改（默认见 [TimetableStore.defaultSlotStarts]）。
+/// 保存后课表轴、导出日历与上课提醒都用新表；「恢复默认」回到默认作息。
+Future<void> showSlotTimesSheet(BuildContext context, {VoidCallback? onSaved}) async {
+  final starts = List<String>.from(TimetableStore.slotStarts);
+  final ends = List<String>.from(TimetableStore.slotEnds);
+  var error = '';
+
+  int minutesOf(String hhmm) {
+    final p = hhmm.split(':');
+    return (int.tryParse(p[0]) ?? 0) * 60 + (int.tryParse(p.length > 1 ? p[1] : '0') ?? 0);
+  }
+
+  TimeOfDay parse(String hhmm) {
+    final p = hhmm.split(':');
+    return TimeOfDay(
+        hour: int.tryParse(p[0]) ?? 0,
+        minute: int.tryParse(p.length > 1 ? p[1] : '0') ?? 0);
+  }
+
+  String fmt(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  Future<void> pickTime(StateSetter setS, int index, {required bool start}) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: parse(start ? starts[index] : ends[index]),
+      helpText: '第 ${index + 1} 节${start ? '上课' : '下课'}时间',
+    );
+    if (picked == null) return;
+    setS(() {
+      if (start) {
+        starts[index] = fmt(picked);
+      } else {
+        ends[index] = fmt(picked);
+      }
+      error = '';
+    });
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+        // 11 节 + 标题 + 按钮在矮屏 / 大字体下可能超过一屏：整体可滚动，保存键才点得到
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.86),
+          child: SingleChildScrollView(
+            child: StatefulBuilder(
+          builder: (ctx, setS) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('上课时间',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+              Text('点时间就能改；课表轴、导出日历与上课提醒都用这份作息。',
+                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+              const SizedBox(height: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 360),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: starts.length,
+                  itemBuilder: (ctx, i) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                            width: 52,
+                            child: Text('第${i + 1}节',
+                                style: const TextStyle(fontSize: 13))),
+                        _timeChip(starts[i], () => pickTime(setS, i, start: true)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Text('–',
+                              style:
+                                  TextStyle(fontSize: 13, color: SemColors.textMuted)),
+                        ),
+                        _timeChip(ends[i], () => pickTime(setS, i, start: false)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (error.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(error,
+                      style: TextStyle(fontSize: 12, color: SemColors.danger)),
+                ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () async {
+                      await TimetableStore.setSlotTimes();
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      onSaved?.call();
+                    },
+                    child: const Text('恢复默认'),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () async {
+                      for (var i = 0; i < starts.length; i++) {
+                        if (minutesOf(ends[i]) <= minutesOf(starts[i])) {
+                          setS(() => error = '第 ${i + 1} 节的下课时间要晚于上课时间');
+                          return;
+                        }
+                      }
+                      await TimetableStore.setSlotTimes(starts: starts, ends: ends);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      onSaved?.call();
+                    },
+                    child: const Text('保存'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// 一枚可点的时间胶囊（上课时间面板用）。
+Widget _timeChip(String text, VoidCallback onTap) => InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: SemColors.inputFill,
+          border: Border.all(color: SemColors.border),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(text, style: const TextStyle(fontSize: 13.5)),
+      ),
+    );
 
 /// 课表背景设置（选图 / 淡显程度 / 恢复默认）。课表设置二级页专用，
 /// 保存后背景立即在课表页生效（[TtBackground] 变更通知带动重建）。

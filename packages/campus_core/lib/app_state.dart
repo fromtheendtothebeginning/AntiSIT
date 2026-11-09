@@ -146,6 +146,11 @@ class AppState extends ChangeNotifier {
   /// 课表：是否把「已上完」的课淡化（关掉则与未上完的课一样显示正常彩色）。
   bool dimCompleted = true;
 
+  /// 课程通知方式：`none` 不通知 / `popup` 弹窗通知（系统通知）/ `cloud` 流体云通知
+  /// （课前亮起常驻倒计时，下课前收起）。由「流体云课程通知」插件在课程表设置里改；
+  /// 上课提醒据此跳过课程通知，二者不会重复弹。
+  String courseNotifyMode = 'popup';
+
   /// 界面是否实时跟着滑块切换：开（默认）= 拖动时下方界面跟着滑块连续滑动、
   /// 并在拖过一半时就换（主界面底栏切页 / 连接设置都算）；
   /// 关 = 松手落位后才切换（旧行为，省一点重绘）。开关在「我的 → 设置 → 外观」里。
@@ -190,6 +195,8 @@ class AppState extends ChangeNotifier {
       _ => ThemeMode.system,
     };
     dimCompleted = sp.getBool('dim_completed') ?? true;
+    final cn = sp.getString('course_notify_mode');
+    courseNotifyMode = cn == 'none' || cn == 'cloud' ? cn! : 'popup';
     followSlider = sp.getBool('follow_slider') ?? true;
     predictiveBack = sp.getBool('predictive_back') ?? true;
     autoRefreshTools = sp.getBool('tool_auto_refresh') ?? true;
@@ -243,6 +250,7 @@ class AppState extends ChangeNotifier {
     await sp.setString('theme_mode',
         switch (themeMode) { ThemeMode.light => 'light', ThemeMode.dark => 'dark', _ => 'system' });
     await sp.setBool('dim_completed', dimCompleted);
+    await sp.setString('course_notify_mode', courseNotifyMode);
     await sp.setBool('follow_slider', followSlider);
     await sp.setBool('predictive_back', predictiveBack);
     await sp.setBool('tool_auto_refresh', autoRefreshTools);
@@ -364,6 +372,14 @@ class AppState extends ChangeNotifier {
   /// 课表：是否淡化「已上完」的课（关掉则显示正常彩色）。
   Future<void> setDimCompleted(bool v) async {
     dimCompleted = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 课程通知方式（`none` / `popup` / `cloud`，见 [courseNotifyMode]）。
+  Future<void> setCourseNotifyMode(String v) async {
+    if (courseNotifyMode == v) return;
+    courseNotifyMode = v;
     await _persist();
     notifyListeners();
   }

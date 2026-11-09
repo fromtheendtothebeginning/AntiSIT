@@ -1,0 +1,11 @@
+<resources>
+    <string name="widget_timetable_desc">今日课程：今天的课与下一节</string>
+    <string name="widget_ecard_desc">校园卡余额：点一下打开动态码</string>
+    <string name="widget_timetable_name">今日课程</string>
+    <string name="widget_ecard_name">校园卡余额</string>
+
+    <string name="shortcut_ecard_short">校园码</string>
+    <string name="shortcut_ecard_long">打开校园码（动态付款码）</string>
+    <string name="shortcut_timetable_short">课表</string>
+    <string name="shortcut_timetable_long">打开课程表</string>
+</resources>

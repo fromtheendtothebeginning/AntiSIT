@@ -28,7 +28,7 @@ const WELCOME = `
   <div class="welcome">
     <div class="welcome-mark">◈</div>
     <div class="welcome-title">和 Agent 一起写一个 Cordis 拓展</div>
-    <div class="welcome-note">描述你想要的小工具。Agent 会先看草稿、读文件、再改；写文件和安装前默认会弹确认。运行中也可以继续插话，下一步会看到。想先讨论方案就开「计划」，信任当前任务就开「完全访问」。</div>
+    <div class="welcome-note">描述你想要的小工具。Agent 会先看拓展、读文件、再改；写文件和安装前默认会弹确认。运行中也可以继续插话，下一步会看到。想先讨论方案就开「计划」，信任当前任务就开「完全访问」。</div>
     <div class="welcome-says">
       <button data-say="做一个记录喝水次数的小工具，数据要留在本机">做一个喝水记录小工具</button>
       <button data-say="做一个倒计时，可以设定目标日期">做一个倒计时</button>
@@ -557,7 +557,7 @@ const TOOL_DEFS = [
       await refreshFiles();
       return S.files.length
         ? S.files.map((f) => f.path + '  ' + f.size + ' B').join('\n')
-        : '（空草稿）';
+        : '（空拓展）';
     },
   },
   {
@@ -1235,7 +1235,7 @@ function findLast(type) {
   return null;
 }
 
-// ==================== 草稿 / 文件 ====================
+// ==================== 拓展 / 文件 ====================
 
 async function refreshDraftList() {
   const result = await ctx.workshop.list();
@@ -1335,7 +1335,7 @@ async function deleteCurrentConversation() {
 async function deleteCurrentDraft() {
   if (!S.draft || S.running) return;
   if (S.draft.installed) {
-    ctx.ui.toast('这个草稿已经安装：先到「拓展」页卸载，再删草稿');
+    ctx.ui.toast('这个拓展已经安装：先到「拓展」页卸载，再删拓展');
     return;
   }
   // 先 flush 再删目录：反过来写会话文件会把刚删掉的目录又建回来
@@ -1346,7 +1346,7 @@ async function deleteCurrentDraft() {
   S.conversationId = null;
   S.draft = null;
   await refreshDrafts();
-  ctx.ui.toast('草稿已删除');
+  ctx.ui.toast('拓展已删除');
 }
 
 async function selectDraft(draft) {
@@ -1560,7 +1560,7 @@ export default {
       <div class="ws">
         <header class="ws-head">
           <div class="ws-bar">
-            <button id="btnSwitch" class="ws-icon" title="切换草稿 / 对话">←</button>
+            <button id="btnSwitch" class="ws-icon" title="切换拓展 / 对话">←</button>
             <button id="btnTitle" class="ws-heading">
               <span class="ws-title" id="convTitle">新对话</span>
               <span class="ws-sub" id="draftMeta"></span>
@@ -1595,17 +1595,29 @@ export default {
         </footer>
         <div class="ws-menu hidden" id="moreMenu">
           <button data-act="skills">技能</button>
-          <button data-act="preview">预览草稿</button>
-          <button data-act="install">安装草稿</button>
+          <button data-act="preview">预览拓展</button>
+          <button data-act="install">安装拓展</button>
           <button data-act="newConv">新建对话</button>
-          <button data-act="newDraft">新建草稿</button>
+          <button data-act="newDraft">新建拓展</button>
+          <button data-act="renameConv">重命名当前对话</button>
+          <button data-act="renameDraft">重命名当前拓展</button>
           <button data-act="deleteConv" class="danger">删除当前对话</button>
-          <button data-act="deleteDraft" class="danger">删除当前草稿</button>
+          <button data-act="deleteDraft" class="danger">删除当前拓展</button>
+        </div>
+        <div class="ws-prompt hidden" id="prompt">
+          <div class="prompt-card">
+            <div class="prompt-title" id="promptTitle"></div>
+            <input id="promptInput" maxlength="48" autocomplete="off">
+            <div class="prompt-actions">
+              <button id="promptCancel" class="ws-link">取消</button>
+              <button id="promptOk" class="prompt-ok">确定</button>
+            </div>
+          </div>
         </div>
         <div class="ws-backdrop hidden" id="backdrop"></div>
         <div class="ws-sheet hidden" id="switchSheet">
           <div class="sheet-handle"></div>
-          <div class="sheet-label">草稿</div>
+          <div class="sheet-label">拓展</div>
           <div id="draftList"></div>
           <div class="sheet-label">对话</div>
           <div id="convList"></div>
@@ -1670,7 +1682,7 @@ export default {
       $('#convTitle').textContent = (conv && conv.title) || '新对话';
       $('#draftMeta').textContent = draft
         ? draft.name + ' · v' + draft.version + (draft.installed ? ' · 已安装' : '')
-        : '还没有草稿';
+        : '还没有拓展';
 
       $('#btnPlan').classList.toggle('active', !!S.planMode);
       $('#btnPlan').disabled = S.running;
@@ -1707,7 +1719,7 @@ export default {
       if (!skillsDrawer.classList.contains('hidden')) renderSkills();
     }
 
-    /** 「切换」面板：草稿列表 + 当前草稿的对话列表（点一下切过去）。 */
+    /** 「切换」面板：拓展列表 + 当前拓展的对话列表（点一下切过去）。 */
     function renderSwitch() {
       const draftBox = $('#draftList');
       draftBox.innerHTML = '';
@@ -2062,6 +2074,75 @@ export default {
       input.style.height = 'auto';
       input.style.height = Math.min(input.scrollHeight, 132) + 'px';
     });
+
+    // ---- 重命名：页面内的输入弹层（WebView 里没法用原生输入框）----
+    let promptResolve = null;
+    function askText(title, initial, maxLength) {
+      $('#promptTitle').textContent = title;
+      const field = $('#promptInput');
+      field.maxLength = maxLength || 48;
+      field.value = initial || '';
+      $('#prompt').classList.remove('hidden');
+      setTimeout(() => {
+        field.focus();
+        field.select();
+      }, 0);
+      return new Promise((resolve) => {
+        promptResolve = resolve;
+      });
+    }
+    function closePrompt(value) {
+      $('#prompt').classList.add('hidden');
+      const resolve = promptResolve;
+      promptResolve = null;
+      if (resolve) resolve(value);
+    }
+    $('#promptCancel').addEventListener('click', () => closePrompt(null));
+    $('#promptOk').addEventListener('click', () => closePrompt($('#promptInput').value.trim()));
+    $('#promptInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        closePrompt($('#promptInput').value.trim());
+      } else if (e.key === 'Escape') {
+        closePrompt(null);
+      }
+    });
+    $('#prompt').addEventListener('click', (e) => {
+      if (e.target === $('#prompt')) closePrompt(null);
+    });
+
+    async function renameCurrentDraft() {
+      if (!S.draft || S.running) return;
+      const name = await askText('重命名拓展', S.draft.name, 20);
+      if (!name || name === S.draft.name) return;
+      try {
+        const updated = await ctx.workshop.renameDraft(S.draft.id, name);
+        S.draft = updated;
+        await refreshDraftList();
+        notify();
+        ctx.ui.toast('拓展已重命名');
+      } catch (e) {
+        ctx.ui.toast('重命名失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
+    async function renameCurrentConversation() {
+      if (!S.draft || !S.conversationId || S.running) return;
+      const current = (S.conversations || []).find((c) => c.id === S.conversationId);
+      const title = await askText('重命名对话', (current && current.title) || '新对话', 48);
+      if (!title || (current && title === current.title)) return;
+      try {
+        const renamed = await ctx.workshop.renameConversation(
+            S.draft.id, S.conversationId, title);
+        if (S.session) S.session.title = renamed.title;
+        await refreshConversations();
+        notify();
+        ctx.ui.toast('对话已重命名');
+      } catch (e) {
+        ctx.ui.toast('重命名失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
     // ---- 切换面板 / 页签 / 更多菜单 ----
     const openSwitch = () => {
       if (S.running) {
@@ -2088,10 +2169,12 @@ export default {
       if (!open) return;
       moreMenu.querySelectorAll('button').forEach((b) => {
         const act = b.getAttribute('data-act');
-        const needsDraft = act === 'install' || act === 'preview'
-          || act === 'newConv' || act === 'deleteConv' || act === 'deleteDraft';
+        const needsDraft = act === 'install' || act === 'preview' || act === 'newConv'
+          || act === 'deleteConv' || act === 'deleteDraft'
+          || act === 'renameConv' || act === 'renameDraft';
         b.disabled = S.running
           || (needsDraft && !S.draft)
+          || (act === 'renameConv' && !S.conversationId)
           || (act === 'deleteDraft' && S.draft && !!S.draft.installed);
       });
     });
@@ -2127,7 +2210,11 @@ export default {
           await refreshDraftList();
           S.drafts = [created].concat(S.drafts.filter((d) => d.id !== created.id));
           await selectDraft(created);
-          ctx.ui.toast('已新建草稿');
+          ctx.ui.toast('已新建拓展');
+        } else if (act === 'renameConv') {
+          await renameCurrentConversation();
+        } else if (act === 'renameDraft') {
+          await renameCurrentDraft();
         } else if (act === 'deleteConv') {
           await deleteCurrentConversation();
         } else if (act === 'deleteDraft') {
@@ -2168,9 +2255,7 @@ export default {
       try {
         await ctx.storage.set('plan_mode', S.planMode);
       } catch (_) {}
-      ctx.ui.toast(S.planMode
-        ? '计划模式已开启：只读分析，不会改文件'
-        : '计划模式已关闭');
+      // 不弹 toast：它挂在页面底部会盖住输入框；胶囊与底栏小字已经能看出状态
       notify();
     });
     $('#btnFull').addEventListener('click', async () => {
@@ -2179,14 +2264,12 @@ export default {
         if (S.fullAccess) {
           await ctx.workshop.setFullAccess(false);
           S.fullAccess = false;
-          ctx.ui.toast('完全访问已关闭');
           notify();
           return;
         }
         const result = await ctx.workshop.setFullAccess(true);
         if (result && result.ok && result.enabled === true) {
           S.fullAccess = true;
-          ctx.ui.toast('完全访问已开启：写入与安装不再逐次确认');
           notify();
         }
       } catch (e) {

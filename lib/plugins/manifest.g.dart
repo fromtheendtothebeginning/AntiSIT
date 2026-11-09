@@ -38,6 +38,9 @@ import 'package:plugin_ai_gemini/plugin_ai_gemini.dart' as plugin_ai_gemini;
 import 'package:plugin_ai_mimo/plugin_ai_mimo.dart' as plugin_ai_mimo;
 import 'package:plugin_ai_minimax/plugin_ai_minimax.dart' as plugin_ai_minimax;
 import 'package:plugin_reminder/plugin_reminder.dart' as plugin_reminder;
+import 'package:plugin_fluid_cloud/plugin_fluid_cloud.dart' as plugin_fluid_cloud;
+import 'package:plugin_course_cloud/plugin_course_cloud.dart' as plugin_course_cloud;
+import 'package:plugin_home_widget/plugin_home_widget.dart' as plugin_home_widget;
 import 'package:plugin_theme_glass/plugin_theme_glass.dart' as plugin_theme_glass;
 import 'package:plugin_theme_ink/plugin_theme_ink.dart' as plugin_theme_ink;
 import 'package:plugin_theme_bamboo/plugin_theme_bamboo.dart' as plugin_theme_bamboo;
@@ -72,6 +75,9 @@ List<PluginBundle> get pluginBundles => [
       if (!const bool.fromEnvironment('EXCLUDE_AI_MIMO')) plugin_ai_mimo.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_AI_MINIMAX')) plugin_ai_minimax.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_REMINDER')) plugin_reminder.pluginBundle,
+      if (!const bool.fromEnvironment('EXCLUDE_FLUID_CLOUD')) plugin_fluid_cloud.pluginBundle,
+      if (!const bool.fromEnvironment('EXCLUDE_COURSE_CLOUD')) plugin_course_cloud.pluginBundle,
+      if (!const bool.fromEnvironment('EXCLUDE_HOME_WIDGET')) plugin_home_widget.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_THEME_GLASS')) plugin_theme_glass.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_THEME_INK')) plugin_theme_ink.pluginBundle,
       if (!const bool.fromEnvironment('EXCLUDE_THEME_BAMBOO')) plugin_theme_bamboo.pluginBundle,

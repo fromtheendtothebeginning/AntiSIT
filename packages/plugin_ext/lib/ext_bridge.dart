@@ -360,23 +360,32 @@ class ExtBridge extends WebBridge {
         final draft = await workshop.create(name: name.isEmpty ? '未命名拓展' : name);
         return {...draft.toJson(), 'installed': false};
 
+      case 'workshop.renameDraft': {
+        final draft = await workshop.renameDraft(
+            _argString(a, 'draftId'), '${a['name'] ?? ''}');
+        // 已安装的那份顺手同步改名（没装 / id 对不上时 setCard 返回 false，什么也不做）
+        await store.setCard(draft.id, name: draft.manifest.name);
+        final installed = ExtensionStore.I.items.any((e) => e.id == draft.id);
+        return {...draft.toJson(), 'installed': installed};
+      }
+
       case 'workshop.deleteDraft':
         final id = _argString(a, 'draftId');
         if (ExtensionStore.I.isBuiltin(id)) {
-          throw ArgumentError('内置拓展的草稿不能删除');
+          throw ArgumentError('内置拓展不能删除');
         }
         if (ExtensionStore.I.items.any((e) => e.id == id)) {
-          throw ArgumentError('「$id」已安装：先到「拓展」页卸载，再删除草稿');
+          throw ArgumentError('「$id」已安装：先到「拓展」页卸载，再删除拓展');
         }
         final draft = await workshop.load(id);
-        if (draft == null) throw ArgumentError('草稿不存在或 ext.json 已损坏');
+        if (draft == null) throw ArgumentError('拓展不存在或 ext.json 已损坏');
         // 删草稿只可能来自用户点按钮，不属于 Agent 的「完全访问」范围，始终确认
         final ok = await _confirm(
-          title: '删除草稿「${draft.manifest.name}」',
-          detail: '整个草稿目录（含文件与全部对话记录）会被删除，不可恢复。',
+          title: '删除拓展「${draft.manifest.name}」',
+          detail: '整个拓展目录（含文件与全部对话记录）会被删除，不可恢复。',
           danger: true,
         );
-        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除草稿'};
+        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除拓展'};
         await workshop.deleteDraft(id);
         return {'ok': true};
 
@@ -412,7 +421,7 @@ class ExtBridge extends WebBridge {
         await workshop.ensureDeletable(id, path, expectedVersion);
         final ok = await _approve(
           title: '删除 $path',
-          detail: '这个文件会从草稿里删掉。',
+          detail: '这个文件会从拓展里删掉。',
           danger: true,
         );
         if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除'};
@@ -429,13 +438,21 @@ class ExtBridge extends WebBridge {
             title: '${a['title'] ?? '新对话'}');
         return created.toJson();
 
+      case 'workshop.session.rename': {
+        final renamed = await workshop.renameConversation(
+            _argString(a, 'draftId'),
+            _argString(a, 'conversationId'),
+            '${a['title'] ?? ''}');
+        return renamed.toJson();
+      }
+
       case 'workshop.session.delete':
         final draftId = _argString(a, 'draftId');
         final conversationId = _argString(a, 'conversationId');
         // 删对话同样只从界面触发，始终确认
         final ok = await _confirm(
           title: '删除这段对话',
-          detail: '只会删掉这段对话的记录，草稿文件和其它对话不受影响。',
+          detail: '只会删掉这段对话的记录，拓展文件和其它对话不受影响。',
           danger: true,
         );
         if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除对话'};
@@ -494,7 +511,7 @@ class ExtBridge extends WebBridge {
         final confirm = a['userInitiated'] == true ? _confirm : _approve;
         final ok = await confirm(
           title: '删除技能',
-          detail: '删除后 Agent 不再能读取这条技能，草稿与拓展不受影响。',
+          detail: '删除后 Agent 不再能读取这条技能，拓展不受影响。',
           danger: true,
         );
         if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除技能'};
@@ -522,7 +539,7 @@ class ExtBridge extends WebBridge {
 
       case 'workshop.install':
         final draft = await workshop.load(_argString(a, 'draftId'));
-        if (draft == null) throw ArgumentError('草稿不存在或 ext.json 已损坏');
+        if (draft == null) throw ArgumentError('拓展不存在或 ext.json 已损坏');
         if (ExtensionStore.I.isBuiltin(draft.id)) {
           throw ArgumentError('这是内置拓展的 id，换一个 id 再安装');
         }
@@ -530,7 +547,7 @@ class ExtBridge extends WebBridge {
         if (problems.isNotEmpty) throw FormatException(problems.join('\n'));
         final ok = await _approve(
           title: '安装「${draft.manifest.name}」',
-          detail: '会把草稿复制成正式拓展并加入「拓展」列表。\n'
+          detail: '会把当前拓展复制并加入「拓展」列表。\n'
               'id：${draft.id}\nversion：${draft.manifest.version}\n'
               'permissions：${draft.manifest.permissions.isEmpty ? '无' : draft.manifest.permissions.join(', ')}',
           danger: true,
@@ -541,7 +558,7 @@ class ExtBridge extends WebBridge {
 
       case 'workshop.preview':
         final draft = await workshop.load(_argString(a, 'draftId'));
-        if (draft == null) throw ArgumentError('草稿不存在或 ext.json 已损坏');
+        if (draft == null) throw ArgumentError('拓展不存在或 ext.json 已损坏');
         final kernel =
             PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
         if (kernel == null || !kernel.available) {
@@ -648,9 +665,12 @@ class ExtBridge extends WebBridge {
     if (!context.mounted) return;
     final text = args is Map ? '${args['text'] ?? ''}' : '$args';
     if (text.trim().isEmpty) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(text, style: const TextStyle(fontSize: 13)),
-        behavior: SnackBarBehavior.floating));
+    // 先收掉上一条：连点几下不会把一串提示排队堆在底部，盖住网页自己的输入区
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+          content: Text(text, style: const TextStyle(fontSize: 13)),
+          behavior: SnackBarBehavior.floating));
   }
 
   static String _key(Object? args) {
