@@ -19,6 +19,10 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.32.11', date: '2026-11-09', notes: [
+    '修复流体云预览点了没反应：通知小图标改回位图（矢量小图标在部分 ROM 会被系统拒收）',
+    '流体云通知渠道改为默认重要度，锁屏 / 通知栏更容易看到；预览失败会直接提示原因',
+  ]),
   ChangelogEntry(version: '1.32.10', date: '2026-11-09', notes: [
     '长按图标的「校园码 / 课表」快捷方式图标重做：浅色圆角底 + 主色镂空图形，和 App 内图标一致',
     '流体云通知的小图标与「课表」动作图标改成纯白图形，不再被系统渲染成白块',
