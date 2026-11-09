@@ -93,6 +93,11 @@ List<Widget> _downloadArea(BuildContext ctx, UpdateInfo info) {
       // 安装包就绪：主按钮是「安装」，这里常驻一条浏览器下载的直接出路
       //（设备装不了 / 不想装时不用去找发布页）。
       return [
+        if (d.installNote != null) ...[
+          const SizedBox(height: 8),
+          Text(d.installNote!,
+              style: TextStyle(fontSize: 12, color: SemColors.accent)),
+        ],
         if (info.apkUrl != null)
           const SizedBox(height: 12),
         if (info.apkUrl != null)
@@ -168,10 +173,14 @@ Widget _mainAction(BuildContext ctx, UpdateInfo info) {
             label: const Text('安装'),
           );
         case 'error':
+          // 安装失败但安装包还在：只重试安装，不必重新下载
+          final retryInstall = d.readyPath != null;
           return FilledButton.icon(
-            onPressed: () => d.start(info),
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('重试'),
+            onPressed: () => retryInstall ? d.install() : d.start(info),
+            icon: Icon(
+                retryInstall ? Icons.install_mobile_rounded : Icons.refresh_rounded,
+                size: 18),
+            label: Text(retryInstall ? '重试安装' : '重试'),
           );
         default:
           return FilledButton.icon(

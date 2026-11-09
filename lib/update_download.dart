@@ -20,6 +20,8 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   UpdateDownloader._() {
     // 从「安装未知应用」授权页回来时自动续装（见 didChangeAppLifecycleState）
     WidgetsBinding.instance.addObserver(this);
+    // 安装会话的最终状态由 native 异步回传（pending / success / failed）
+    _channel.setMethodCallHandler(_onNativeCall);
   }
   static final UpdateDownloader I = UpdateDownloader._();
 
@@ -47,6 +49,10 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
 
   /// 跳去授权「安装未知应用」了：授权回来（app resumed）自动续装，不用再点一次。
   bool _awaitingSettings = false;
+
+  /// 本次 install 是否已收到 native 的异步安装状态。
+  /// 通道返回值与状态事件有先后竞争：收到了就别再用 `true` 把提示清空。
+  bool _nativeStatusSeen = false;
 
   bool get busy => status == 'downloading' || status == 'verifying';
 
@@ -146,6 +152,13 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> install() async {
     final path = readyPath;
     if (path == null) return;
+    // 失败后点「重试安装」：回到就绪态再发起，别让界面一直停在 error 上
+    if (status != 'ready') {
+      status = 'ready';
+      error = null;
+    }
+    _nativeStatusSeen = false;
+    notifyListeners();
     Object? r = 'error';
     try {
       r = await (debugInstall?.call(path) ?? _channel.invokeMethod('installApk', path));
@@ -156,7 +169,8 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     }
     _awaitingSettings = r == 'settings';
     installNote = switch (r) {
-      true => null,
+      // 状态事件可能比通道返回值先到：保留它写好的提示（pending / 失败原因）
+      true => _nativeStatusSeen ? installNote : null,
       'settings' => '已跳转授权页：请允许「安装未知应用」，回来自动继续安装',
       'missing' => '安装包不见了，请重新下载',
       String s when s.startsWith('error:') =>
@@ -165,6 +179,50 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     };
     notifyListeners();
   }
+
+  /// native 回传的安装状态（PackageInstaller 的异步结果）。
+  ///
+  /// - pending：系统要求用户确认，MainActivity 已经把确认页拉起来了
+  /// - success：系统报告安装成功（覆盖安装时进程通常会被替换，未必能看到）
+  /// - failed：拦截 / 冲突 / 包损坏等；安装包还在，重试只需再点「重试安装」
+  Future<Object?> _onNativeCall(MethodCall call) async {
+    if (call.method != 'installResult') return null;
+    final args = call.arguments is Map ? call.arguments as Map : const {};
+    final state = '${args['status'] ?? ''}';
+    final code = args['code'] is int ? args['code'] as int : null;
+    final message = '${args['message'] ?? ''}'.trim();
+    // 用户已经重新下载 / 取消了：上一轮安装的迟到结果别来改当前状态
+    if (status != 'ready') return null;
+    _nativeStatusSeen = true;
+    switch (state) {
+      case 'pending':
+        installNote = '已调起系统安装确认，请按提示完成安装';
+        break;
+      case 'success':
+        installNote = '安装完成，打开新版本即可';
+        break;
+      case 'failed':
+        // 只改文案与主按钮，readyPath 留着：重试安装不用重新下载
+        status = 'error';
+        error = _installFailure(code, message);
+        installNote = null;
+        break;
+    }
+    notifyListeners();
+    return null;
+  }
+
+  /// PackageInstaller 失败码 → 人话（常量见 android.content.pm.PackageInstaller）。
+  String _installFailure(int? code, String raw) => switch (code) {
+        2 => '系统拦截了安装（手机管家 / 纯净模式或安全策略阻止），请在系统设置里放行后重试',
+        3 => '安装被取消',
+        4 => '安装包无效或已损坏，请重新下载',
+        5 => '安装冲突：已安装版本的签名不同或版本更高，需先卸载旧版',
+        6 => '存储空间不足',
+        7 => '安装包与当前系统不兼容',
+        8 => '安装超时，请重试',
+        _ => raw.isEmpty ? '安装失败，可改用浏览器下载' : '安装失败：$raw',
+      };
 
   /// 从「安装未知应用」授权页回到 App：自动把上一次的安装续上（readyPath 还在）。
   @override
@@ -198,6 +256,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     error = null;
     readyPath = null;
     installNote = null;
+    _nativeStatusSeen = false;
     if (status != 'idle') {
       status = 'idle';
       notifyListeners();
@@ -209,6 +268,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     cancel();
     status = 'idle';
     _awaitingSettings = false;
+    _nativeStatusSeen = false;
     notifyEveryBytes = 256 * 1024;
     debugStream = null;
     debugText = null;

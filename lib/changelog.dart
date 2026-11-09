@@ -19,6 +19,10 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.28.7', date: '2026-11-09', notes: [
+    '修复部分机型（ColorOS 等）点击「安装」没反应：补上系统安装确认页的拉起',
+    '安装失败不再静默：显示系统返回的真实原因（被拦截 / 签名冲突 / 安装包损坏等），可直接「重试安装」',
+  ]),
   ChangelogEntry(version: '1.28.6', date: '2026-11-08', notes: [
     '摄像头与扫一扫拆成两个独立插件：可在「插件管理」里分别查看启停，扫码入口随插件启停显示',
     '扫一扫与 WebView 内核改为插件级关联：内核被停用时，扫出的网址自动改走系统浏览器',

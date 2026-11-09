@@ -7,6 +7,7 @@ import 'package:campus_service/update_download.dart';
 import 'package:campus_service/widgets/update_dialog.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
@@ -34,6 +35,14 @@ void main() {
         apkUrl: 'https://gitee.com/x/AntiSIT-1.26.0.apk',
         sha256Url: withSha ? 'https://gitee.com/x/AntiSIT-1.26.0.apk.sha256' : null,
       );
+
+  /// 模拟 MainActivity 通过同一个 MethodChannel 异步回传安装状态。
+  Future<void> emitInstallResult(Map<String, Object?> args) async {
+    final data = const StandardMethodCodec()
+        .encodeMethodCall(MethodCall('installResult', args));
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage('antisit/system', data, (_) {});
+  }
 
   setUp(() {
     UpdateDownloader.I.reset();
@@ -242,6 +251,44 @@ void main() {
     });
   });
 
+  group('安装结果回传（native → Dart）', () {
+    test('系统要求确认：提示已调起确认页，状态仍是 ready', () async {
+      UpdateDownloader.I.readyPath = '/tmp/AntiSIT-1.28.7.apk';
+      UpdateDownloader.I.status = 'ready';
+
+      await emitInstallResult({'status': 'pending', 'code': -1});
+
+      expect(UpdateDownloader.I.installNote, contains('安装确认'));
+      expect(UpdateDownloader.I.status, 'ready');
+    });
+
+    test('安装失败：转 error 并保留安装包，重试不用重新下载', () async {
+      UpdateDownloader.I.readyPath = '/tmp/AntiSIT-1.28.7.apk';
+      UpdateDownloader.I.status = 'ready';
+
+      await emitInstallResult({
+        'status': 'failed',
+        'code': 2, // STATUS_FAILURE_BLOCKED
+        'message': 'INSTALL_FAILED_USER_RESTRICTED',
+      });
+
+      expect(UpdateDownloader.I.status, 'error');
+      expect(UpdateDownloader.I.error, contains('拦截'));
+      expect(UpdateDownloader.I.readyPath, '/tmp/AntiSIT-1.28.7.apk',
+          reason: '安装包还在，点「重试安装」即可');
+    });
+
+    test('安装包损坏：失败码映射成人话', () async {
+      UpdateDownloader.I.readyPath = '/tmp/AntiSIT-1.28.7.apk';
+      UpdateDownloader.I.status = 'ready';
+
+      await emitInstallResult(
+          {'status': 'failed', 'code': 4, 'message': 'INSTALL_FAILED_INVALID_APK'});
+
+      expect(UpdateDownloader.I.error, contains('损坏'));
+    });
+  });
+
   group('弹窗（真组件）', () {
     Future<void> pumpDialog(WidgetTester tester) async {
       UpdateDownloader.I.reset();
@@ -290,6 +337,28 @@ void main() {
       expect(UpdateDownloader.I.status, 'ready');
       expect(find.text('安装'), findsOneWidget, reason: '下载校验都完成，按钮变「安装」');
       expect(find.text('去下载'), findsNothing);
+    });
+
+    testWidgets('安装状态回传：确认提示可见，被拦截后按钮变「重试安装」', (tester) async {
+      await pumpDialog(tester);
+      UpdateDownloader.debugStream = (_) async => okResponse();
+      UpdateDownloader.debugText = (_) async => sha256Of(payload);
+      UpdateDownloader.debugInstall = (_) async => true;
+      await driveDownload(tester);
+
+      await emitInstallResult({'status': 'pending', 'code': -1});
+      await tester.pump();
+      expect(find.text('已调起系统安装确认，请按提示完成安装'), findsOneWidget);
+
+      await emitInstallResult({
+        'status': 'failed',
+        'code': 2, // STATUS_FAILURE_BLOCKED
+        'message': 'INSTALL_FAILED_USER_RESTRICTED',
+      });
+      await tester.pump();
+      expect(find.textContaining('系统拦截了安装'), findsOneWidget);
+      expect(find.text('重试安装'), findsOneWidget);
+      expect(find.text('安装'), findsNothing, reason: '失败后主按钮是重试安装');
     });
 
     testWidgets('下载失败：显示原因、可重试、留了浏览器兜底入口', (tester) async {
