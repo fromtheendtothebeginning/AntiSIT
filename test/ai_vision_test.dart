@@ -244,5 +244,84 @@ void main() {
       expect(bodies.last['thinking'], {'type': 'disabled'});
       expect(bodies.last['tools'], isNotEmpty);
     });
+
+    test('流式：推理 / 正文 / 工具参数碎片分别累积，最终回复完整', () async {
+      await configured();
+      final bodies = <Map<String, dynamic>>[];
+      final chunks = [
+        {
+          'choices': [
+            {'delta': {'reasoning_content': '先想'}}
+          ]
+        },
+        {
+          'choices': [
+            {'delta': {'content': '你'}}
+          ]
+        },
+        {
+          'choices': [
+            {'delta': {'content': '好'}}
+          ]
+        },
+        {
+          'choices': [
+            {
+              'delta': {
+                'tool_calls': [
+                  {
+                    'index': 0,
+                    'id': 'call_s',
+                    'function': {'name': 'read_file', 'arguments': '{"path"'},
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          'choices': [
+            {
+              'delta': {
+                'tool_calls': [
+                  {
+                    'index': 0,
+                    'function': {'arguments': ':"main.js"}'},
+                  }
+                ]
+              },
+              'finish_reason': 'tool_calls',
+            }
+          ]
+        },
+      ];
+      final sse = '${chunks.map((c) => 'data: ${jsonEncode(c)}\n\n').join()}data: [DONE]\n\n';
+      AiVision.clientOverride = MockClient.streaming((req, bodyStream) async {
+        bodies.add(jsonDecode(await bodyStream.bytesToString()) as Map<String, dynamic>);
+        return http.StreamedResponse(
+          Stream.fromIterable([utf8.encode(sse)]),
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      });
+
+      final text = <String>[];
+      final reasoning = <String>[];
+      final out = await AiVision.I.chatWithToolsStream(
+        [AiChatMessage.user('x')],
+        tools: const [spec],
+        onText: text.add,
+        onReasoning: reasoning.add,
+      );
+
+      expect(bodies.single['stream'], isTrue);
+      expect(reasoning.join(), '先想');
+      expect(text.join(), '你好');
+      expect(out.text, '你好');
+      expect(out.reasoning, '先想');
+      expect(out.toolCalls.single.name, 'read_file');
+      expect(out.toolCalls.single.argumentsJson, '{"path":"main.js"}');
+      expect(out.finishReason, 'tool_calls');
+    });
   });
 }

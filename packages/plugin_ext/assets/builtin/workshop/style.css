@@ -7,6 +7,8 @@
   --muted: color-mix(in srgb, var(--fg) 55%, transparent);
   --soft: color-mix(in srgb, var(--accent) 12%, transparent);
   --danger: #d33a3a;
+  --danger-soft: color-mix(in srgb, var(--danger) 11%, transparent);
+  --field: color-mix(in srgb, var(--bg) 55%, var(--card));
 }
 
 * { box-sizing: border-box; }
@@ -17,7 +19,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: -apple-system, "Noto Sans SC", "PingFang SC", "Segoe UI", system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -28,31 +30,64 @@ html, body {
   min-height: 0;
 }
 
+/* ---------- 顶部：跟 App 一样的卡片化工具条 ---------- */
+
 .ws-head {
-  padding: 14px 14px 8px;
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
-}
-
-.ws-title {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(14px);
 }
 
-.ws-title h1 {
-  margin: 0;
-  font-size: 18px;
-  letter-spacing: 0.2px;
+.ws-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.meta-row { gap: 8px; }
+
+.ws-field {
+  flex: 1 1 150px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--field);
+}
+
+.ws-field span {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ws-field select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
 }
 
 .ws-sub {
-  margin-top: 2px;
-  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
   color: var(--muted);
-  max-width: 52vw;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -60,63 +95,103 @@ html, body {
 
 .ws-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  margin-left: auto;
 }
 
 button {
   font: inherit;
   font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 9px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 11px;
   border: 1px solid var(--border);
-  background: transparent;
+  background: var(--card);
   color: var(--fg);
   cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.12s ease;
 }
 
-button:active { transform: scale(0.98); }
-button:disabled, select:disabled { opacity: 0.55; }
+button:active { transform: scale(0.97); }
+button:disabled { opacity: 0.5; }
 
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
-.ws-draftrow {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
+.icon-btn {
+  flex: 0 0 auto;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--muted);
 }
 
-.ws-draftrow select {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  font-size: 12px;
-  padding: 7px 8px;
-  border-radius: 9px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--fg);
+.icon-btn.danger { color: var(--danger); }
+
+.chip {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--card);
 }
+
+.chip.active {
+  background: var(--soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.chip.danger.active {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: var(--danger);
+}
+
+.ws-warn {
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.hidden { display: none !important; }
+
+/* ---------- 聊天区 ---------- */
 
 .ws-chat {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 14px 12px 18px;
+  padding: 14px 14px 20px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-height: 0;
+  scroll-behavior: smooth;
 }
 
 .bubble {
   max-width: 88%;
-  padding: 9px 12px;
-  border-radius: 13px;
+  padding: 10px 13px;
+  border-radius: 16px;
   font-size: 13.5px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -126,7 +201,8 @@ button.primary {
 .bubble.user {
   align-self: flex-end;
   background: var(--soft);
-  border-bottom-right-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-bottom-right-radius: 6px;
 }
 
 .bubble.pending { opacity: 0.55; }
@@ -135,22 +211,63 @@ button.primary {
   align-self: flex-start;
   background: var(--card);
   border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: 6px;
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 5%, transparent);
 }
 
 .bubble.error {
   align-self: stretch;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  background: var(--danger-soft);
   color: var(--danger);
   font-size: 12.5px;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
+.bubble-text { white-space: pre-wrap; word-break: break-word; }
+.bubble-text.muted, .muted { color: var(--muted); }
+
+/* 思考过程：默认折叠，点开看全文 */
+.thinking {
+  margin: -2px 0 9px;
+  border: 1px dashed color-mix(in srgb, var(--border) 82%, var(--fg));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  overflow: hidden;
+}
+
+.thinking summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.thinking summary::-webkit-details-marker { display: none; }
+.thinking summary::before { content: "▸"; font-size: 10px; }
+.thinking[open] summary::before { content: "▾"; }
+
+.thinking-body {
+  padding: 0 10px 10px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow: auto;
+}
+
+/* 工具调用：折叠卡片，运行中自动展开，结束后可手动展开 */
 .tool-card {
   align-self: stretch;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 96%, transparent);
   overflow: hidden;
 }
 
@@ -159,7 +276,7 @@ button.primary {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 10px;
+  padding: 9px 11px;
   cursor: pointer;
   font-size: 12px;
 }
@@ -191,9 +308,9 @@ button.primary {
 
 .tool-card pre {
   margin: 0;
-  padding: 8px 10px;
+  padding: 8px 11px;
   border-top: 1px solid var(--border);
-  font: 11px/1.5 ui-monospace, Consolas, monospace;
+  font: 11px/1.55 ui-monospace, Consolas, monospace;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 240px;
@@ -202,6 +319,8 @@ button.primary {
 }
 
 .tool-card pre.result { color: var(--fg); }
+
+/* ---------- 状态 / 输入 ---------- */
 
 .ws-status {
   flex: 0 0 auto;
@@ -230,32 +349,39 @@ button.primary {
   display: flex;
   gap: 8px;
   align-items: flex-end;
-  padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 94%, transparent);
 }
 
 .ws-foot textarea {
   flex: 1;
-  min-height: 38px;
+  min-height: 40px;
   max-height: 120px;
   resize: none;
   font: inherit;
-  font-size: 13px;
-  line-height: 1.4;
-  padding: 9px 11px;
-  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-radius: 14px;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--field);
   color: var(--fg);
+  outline: none;
 }
 
-.ws-foot button { height: 38px; padding: 0 14px; }
-.ws-foot button.hidden,
-.ws-status.hidden,
-.ws-drawer.hidden,
-.ws-backdrop.hidden,
-.ws-viewer.hidden { display: none; }
+.ws-foot textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.ws-foot button {
+  height: 40px;
+  min-height: 40px;
+  border-radius: 14px;
+  padding: 0 16px;
+}
+
+/* ---------- 欢迎页 ---------- */
 
 .welcome {
   margin: auto 0;
@@ -272,30 +398,34 @@ button.primary {
   display: block;
   width: 100%;
   margin: 7px 0;
-  padding: 10px;
+  padding: 10px 12px;
   text-align: left;
   background: var(--card);
 }
+
+/* ---------- 抽屉 / 文件 / 技能 ---------- */
 
 .ws-drawer {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 62vh;
+  max-height: 66vh;
   background: var(--card);
   border-top: 1px solid var(--border);
-  border-radius: 16px 16px 0 0;
+  border-radius: 20px 20px 0 0;
   padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
   z-index: 30;
   overflow: auto;
+  box-shadow: 0 -8px 30px color-mix(in srgb, #000 10%, transparent);
 }
 
 .drawer-head, .viewer-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 8px;
   font-size: 13px;
 }
 
@@ -309,10 +439,49 @@ button.primary {
   padding: 10px 2px;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12px;
+  background: transparent;
 }
 
 .file em { color: var(--muted); font-style: normal; }
-.empty { padding: 20px; text-align: center; color: var(--muted); font-size: 12px; }
+.empty { padding: 22px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+
+.skill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.skill-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.skill-main strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.skill-main span {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 .ws-backdrop {
   position: fixed;
@@ -326,14 +495,19 @@ button.primary {
   inset: 8vh 4vw;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 18px;
   z-index: 40;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 18px 50px color-mix(in srgb, #000 25%, transparent);
 }
 
-.viewer-head { padding: 10px 12px; margin: 0; border-bottom: 1px solid var(--border); }
+.viewer-head {
+  padding: 10px 12px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
 
 .ws-viewer pre {
   margin: 0;

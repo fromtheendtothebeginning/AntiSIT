@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -33,7 +34,7 @@ class WebViewPage extends StatefulWidget {
 }
 
 /// 网页里的接口垫片由 [kWebViewBridgeShim] 提供；内核只在加载前后负责注入与回填。
-class _WebViewPageState extends State<WebViewPage> {
+class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink {
   late final WebViewController _controller;
   double _progress = 0; // 0 = 没在加载
   String? _error;
@@ -60,8 +61,24 @@ class _WebViewPageState extends State<WebViewPage> {
       ));
     if (widget.bridge != null) {
       _controller.addJavaScriptChannel('antiSITBridge', onMessageReceived: _onBridgeCall);
+      widget.bridge!.attachEventSink(this);
     }
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.bridge?.attachEventSink(null);
+    super.dispose();
+  }
+
+  /// [WebBridgeEventSink]：App → 网页的下行事件（流式输出等）。
+  @override
+  void emit(String event, Object? data) {
+    unawaited(_controller
+        .runJavaScript(
+            'window.__antiSITEvent && window.__antiSITEvent(${jsonEncode(event)}, ${jsonEncode(data)})')
+        .catchError((_) {}));
   }
 
   /// 导航守卫：内联页里的外链不在这儿加载，交给系统浏览器。

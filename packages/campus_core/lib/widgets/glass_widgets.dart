@@ -85,12 +85,23 @@ class TagFilterRow extends StatelessWidget {
 /// 液态玻璃卡片（复刻 anticlass .panel）：半透明玻璃面 + 顶部高光渐变 +
 /// 玻璃描边 + 柔和外投影。全站卡片统一入口。
 class AppCard extends StatelessWidget {
-  const AppCard({super.key, required this.child, this.padding, this.onTap, this.radius});
+  const AppCard({
+    super.key,
+    required this.child,
+    this.padding,
+    this.onTap,
+    this.radius,
+    this.bottomGap = 16,
+  });
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final VoidCallback? onTap;
   final double? radius;
+
+  /// 卡片底部的留白（列表里当卡片间距用）。网格里由 grid 的 spacing 负责，
+  /// 传 0 才能让卡片高度精确等于网格单元。
+  final double bottomGap;
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +110,7 @@ class AppCard extends StatelessWidget {
     // 顶边白色高光渐变（CSS: linear-gradient 白 10% → 透明 50%），合成进同一渐变
     final top = Color.alphaBlend(Colors.white.withValues(alpha: 0.10), base);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.only(bottom: bottomGap),
       child: DecoratedBox(
         // 阴影画在 Material/Ink 之外：InkFeature 会被 Material 画布裁剪，
         // 半透明玻璃面下透出方形阴影角

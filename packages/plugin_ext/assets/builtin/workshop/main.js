@@ -28,7 +28,7 @@ const WELCOME = `
   <div class="welcome">
     <div class="spark">✨</div>
     <h2>和 Agent 一起写一个 Cordis 拓展</h2>
-    <p>描述你想要的小工具。Agent 会先看草稿、读文件、再改；写文件和安装前都会弹确认。运行中也可以继续插话，下一步会看到。</p>
+    <p>描述你想要的小工具。Agent 会先看草稿、读文件、再改；写文件和安装前默认会弹确认。运行中也可以继续插话，下一步会看到。想先讨论方案就开「计划」，信任当前任务就开「完全访问」。</p>
     <button data-say="做一个记录喝水次数的小工具，数据要留在本机">做一个喝水记录小工具</button>
     <button data-say="做一个倒计时，可以设定目标日期">做一个倒计时</button>
     <button data-say="先读一下当前 main.js，告诉我它是做什么的">读一下当前 main.js</button>
@@ -37,9 +37,13 @@ const WELCOME = `
 // ==================== 会话日志 ====================
 
 class AgentSession {
-  constructor(vault, draftId, onChange) {
+  constructor(vault, draftId, conversationId, onChange) {
     this.vault = vault;
     this.draftId = draftId;
+    this.conversationId = conversationId || 'default';
+    this.title = '新对话';
+    this.createdAt = Date.now();
+    this.updatedAt = this.createdAt;
     this.onChange = onChange;
     this.events = [];
     this.seq = 0;
@@ -50,11 +54,11 @@ class AgentSession {
     this.saving = null;
   }
 
-  static async load(vault, draftId, onChange) {
-    const session = new AgentSession(vault, draftId, onChange);
+  static async load(vault, draftId, conversationId, onChange) {
+    const session = new AgentSession(vault, draftId, conversationId, onChange);
     let raw = null;
     try {
-      raw = await vault.loadSession(draftId);
+      raw = await vault.loadSession(draftId, session.conversationId);
     } catch (e) {
       console.warn('[workshop] 会话日志读取失败，按新会话处理', e);
     }
@@ -65,6 +69,9 @@ class AgentSession {
           session.events = data.events.filter((e) => e && typeof e.type === 'string');
           session.seq = Number(data.seq) || 0;
           session.turnSeq = Number(data.turnSeq) || 0;
+          session.title = String(data.title || '') || session.title;
+          session.createdAt = Number(data.createdAt) || session.createdAt;
+          session.updatedAt = Number(data.updatedAt) || session.updatedAt;
         }
       } catch (e) {
         console.warn('[workshop] 会话日志损坏，按新会话处理', e);
@@ -78,6 +85,14 @@ class AgentSession {
   append(type, data) {
     const event = Object.assign({ seq: ++this.seq, type: type }, data || {});
     this.events.push(event);
+    this.updatedAt = Date.now();
+    // 第一条用户消息当作对话标题（列表里显示），太长就截断
+    if (type === 'user/message' && data && data.source === 'user') {
+      const text = String(data.content || '').replace(/\s+/g, ' ').trim();
+      if (text && (!this.title || this.title === '新对话')) {
+        this.title = text.slice(0, 24);
+      }
+    }
     this.observeEvent(event);
     this.prune();
     this.scheduleSave();
@@ -215,7 +230,7 @@ class AgentSession {
       payload = this.serialize();
     }
     try {
-      await this.vault.saveSession(this.draftId, payload);
+      await this.vault.saveSession(this.draftId, this.conversationId, payload);
     } catch (e) {
       this.dirty = true;
       console.warn('[workshop] 会话日志保存失败', e);
@@ -226,6 +241,10 @@ class AgentSession {
     return JSON.stringify({
       version: 1,
       draftId: this.draftId,
+      conversationId: this.conversationId,
+      title: this.title,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
       seq: this.seq,
       turnSeq: this.turnSeq,
       events: this.events,
@@ -269,7 +288,14 @@ class AgentSession {
       if (event.type === 'user/message') {
         if (event.source === 'user') out.push({ role: 'user', text: event.content || '' });
       } else if (event.type === 'assistant/message') {
-        if (event.text && !event.hidden) out.push({ role: 'assistant', text: event.text });
+        if (!event.hidden && (event.text || event.reasoning)) {
+          out.push({
+            role: 'assistant',
+            text: event.text || '',
+            reasoning: event.reasoning || '',
+            key: 'a' + event.seq,
+          });
+        }
       } else if (event.type === 'tool/call') {
         const card = {
           role: 'tool',
@@ -278,6 +304,7 @@ class AgentSession {
           result: '',
           ok: true,
           running: true,
+          key: 't' + (event.callId || event.seq),
         };
         out.push(card);
         calls.set(event.callId, card);
@@ -295,10 +322,11 @@ class AgentSession {
             result: event.content || '',
             ok: !event.isError,
             running: false,
+            key: 't' + (event.callId || event.seq),
           });
         }
       } else if (event.type === 'error' && !event.hidden) {
-        out.push({ role: 'error', text: event.text || '' });
+        out.push({ role: 'error', text: event.text || '', key: 'e' + event.seq });
       }
     }
     return out;
@@ -307,7 +335,7 @@ class AgentSession {
   hasVisibleMessages() {
     return this.events.some((e) =>
       e.type === 'user/message' && e.source === 'user'
-      || e.type === 'assistant/message' && e.text && !e.hidden
+      || e.type === 'assistant/message' && (e.text || e.reasoning) && !e.hidden
       || e.type === 'tool/call'
       || e.type === 'error' && !e.hidden);
   }
@@ -366,11 +394,36 @@ const PROMPT_SECTIONS = [
     ].join('\n'),
   },
   {
+    name: 'plan-mode',
+    order: 150,
+    text: () => S && S.planMode ? [
+      '## Plan mode (ON)',
+      'You are in PLAN MODE. Use only read-only tools to investigate. Do not write, edit, delete, install, preview, or install skills.',
+      'When you have enough context, reply with a concrete plan: ordered steps, files to change, exact changes, and how to validate. Do not claim anything was changed.',
+      'The user can turn plan mode off and ask you to execute the plan.',
+    ].join('\n') : '',
+  },
+  {
+    name: 'skills',
+    order: 350,
+    text: () => {
+      const skills = (S && S.skills) || [];
+      return [
+        '## Skills',
+        skills.length
+          ? 'Installed skills (progressive disclosure). Read one with read_skill when it matches the task:'
+          : 'No skills installed yet.',
+        ...skills.map((s) => '- ' + s.name + ': ' + (s.description || '（无说明）')),
+        'A skill is a reusable instruction document, not executable code. Use install_skill to save one for future tasks; it asks the user (unless full access is on).',
+      ].join('\n');
+    },
+  },
+  {
     name: 'tool-guidance',
     order: 200,
     text: () => [
       '## Tools',
-      ...TOOL_DEFS.map((tool) => '- ' + tool.name + ': ' + tool.prompt),
+      ...availableTools().map((tool) => '- ' + tool.name + ': ' + tool.prompt),
       'Tool failures are real failures. Read the error and correct the call; never claim success.',
     ].join('\n'),
   },
@@ -661,14 +714,101 @@ const TOOL_DEFS = [
       return '已安装「' + ((result && result.name) || S.draft.name) + '」（' + ((result && result.id) || S.draft.id) + '）';
     },
   },
+  {
+    name: 'list_skills',
+    readOnly: true,
+    description: 'List installed reusable skills (name + description).',
+    prompt: 'list the skill library; call it before starting a task that may match a skill.',
+    parameters: { type: 'object', properties: {} },
+    async run() {
+      await refreshSkills();
+      return S.skills.length
+        ? S.skills.map((s) => s.id + '  ' + s.name + ' — ' + (s.description || '（无说明）')).join('\n')
+        : '（还没有安装技能）';
+    },
+  },
+  {
+    name: 'read_skill',
+    readOnly: true,
+    description: 'Read the full instruction document of an installed skill.',
+    prompt: 'read one skill by id or name; apply its instructions to the current task.',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Skill id from list_skills' },
+        name: { type: 'string', description: 'Skill name (alternative to id)' },
+      },
+    },
+    async run(args) {
+      const id = args && args.id ? String(args.id) : '';
+      const name = args && args.name ? String(args.name) : '';
+      const skill = S.skills.find((s) => (id && s.id === id) || (name && s.name === name));
+      if (!skill) throw new Error('没有这条技能，先用 list_skills 看');
+      const result = await ctx.workshop.readSkill(skill.id);
+      return '<skill id="' + skill.id + '">\n'
+        + String((result && result.content) || '') + '\n</skill>';
+    },
+  },
+  {
+    name: 'install_skill',
+    readOnly: false,
+    description: 'Install or update a reusable skill (instruction document) for future tasks.',
+    prompt: 'save a reusable skill with name / description / markdown content; asks the user unless full access is on.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Skill name, at most 40 chars' },
+        description: { type: 'string', description: 'One-line trigger description' },
+        content: { type: 'string', description: 'Full markdown instructions' },
+      },
+      required: ['name', 'content'],
+    },
+    async run(args) {
+      const name = argString(args, 'name');
+      const content = args.content == null ? '' : String(args.content);
+      const description = args.description == null ? '' : String(args.description);
+      S.status = '等待确认安装技能 ' + name + '…';
+      notify();
+      const result = await ctx.workshop.installSkill(name, description, content);
+      if (result && result.denied) throw new Error(result.reason || '用户拒绝安装技能');
+      if (!result || result.ok !== true) throw new Error('技能安装失败');
+      await refreshSkills();
+      return '已安装技能「' + (result.name || name) + '」（' + (result.id || '') + '），以后用 read_skill 读取。';
+    },
+  },
+  {
+    name: 'delete_skill',
+    readOnly: false,
+    description: 'Delete an installed skill by id.',
+    prompt: 'remove a skill the user no longer wants; asks the user.',
+    parameters: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+    },
+    async run(args) {
+      const id = argString(args, 'id');
+      S.status = '等待确认删除技能…';
+      notify();
+      const result = await ctx.workshop.deleteSkill(id);
+      if (result && result.denied) throw new Error(result.reason || '用户拒绝删除技能');
+      await refreshSkills();
+      return '已删除技能 ' + id;
+    },
+  },
 ];
 
 function toolByName(name) {
   return TOOL_DEFS.find((tool) => tool.name === name);
 }
 
+/** 计划模式只暴露只读工具；完全访问不影响可用工具，只影响确认框。 */
+function availableTools() {
+  return S && S.planMode ? TOOL_DEFS.filter((tool) => tool.readOnly) : TOOL_DEFS;
+}
+
 function toolSpecs() {
-  return TOOL_DEFS.map((tool) => ({
+  return availableTools().map((tool) => ({
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
@@ -685,7 +825,14 @@ async function executeOne(call, signal) {
   const tool = toolByName(call.name);
   if (!tool) {
     return {
-      content: 'Error: unknown tool "' + call.name + '". Available: ' + TOOL_DEFS.map((t) => t.name).join(', '),
+      content: 'Error: unknown tool "' + call.name + '". Available: ' + availableTools().map((t) => t.name).join(', '),
+      isError: true,
+    };
+  }
+  // 计划模式是只读的：即使模型从文本协议里硬塞一个写工具也不执行
+  if (S.planMode && !tool.readOnly) {
+    return {
+      content: 'Error: plan mode only allows read-only tools. Turn plan mode off to modify files or install.',
       isError: true,
     };
   }
@@ -785,12 +932,28 @@ async function callModel(turn, step, signal) {
   let lastError;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     if (signal && signal.aborted) throw new Error('aborted');
+    S.stream = {
+      id: 'st' + Date.now().toString(36) + '_' + attempt,
+      text: '',
+      reasoning: '',
+    };
     try {
       S.status = attempt === 1 ? '思考中…' : '模型请求失败，重试中…';
       notify();
-      return await ctx.ai.chatTools({ messages: messages, tools: tools, maxTokens: 4096 });
+      const stream = ctx.ai.chatToolsStream;
+      if (typeof stream !== 'function') {
+        // 老宿主没有流式接口：退回一次性请求，S.stream 保持为空
+        return await ctx.ai.chatTools({ messages: messages, tools: tools, maxTokens: 4096 });
+      }
+      return await stream.call(ctx.ai, {
+        streamId: S.stream.id,
+        messages: messages,
+        tools: tools,
+        maxTokens: 4096,
+      });
     } catch (e) {
       lastError = e;
+      S.stream = null;
       if (signal && signal.aborted) throw e;
       S.session.append('assistant/attempt', {
         turn: turn,
@@ -810,14 +973,15 @@ function abortReason() {
   return { kind: 'aborted', reason: { kind: 'user' } };
 }
 
-function appendAbortedReply(reply, turn, step) {
+function appendAbortedReply(reply, turn, step, reasoning) {
   if (!reply) return;
   const text = String(reply.text || '').trim();
-  if (text) {
+  if (text || reasoning) {
     S.session.append('assistant/message', {
       turn: turn,
       step: step,
       text: text,
+      reasoning: reasoning || '',
       interrupted: true,
     });
   }
@@ -853,6 +1017,7 @@ async function runStep(turn, step) {
     manifest = S.draft || { id: '', name: '', version: '', permissions: [] };
   }
   await refreshFiles();
+  await refreshSkills();
   const system = assembleSystemPrompt(S.textMode);
   const lastSystem = findLast('system/message');
   if (!lastSystem || lastSystem.text !== system) {
@@ -868,11 +1033,16 @@ async function runStep(turn, step) {
   try {
     reply = await callModel(turn, step, S.abort);
   } catch (e) {
+    S.stream = null;
     if (S.abort && S.abort.aborted) return abortReason();
     throw e;
   }
+  const streamed = S.stream || { text: '', reasoning: '' };
+  const reasoning = String((reply && reply.reasoning) || streamed.reasoning || '').trim();
+  const replyText = String((reply && reply.text) || streamed.text || '');
+  S.stream = null;
   if (S.abort && S.abort.aborted) {
-    appendAbortedReply(reply, turn, step);
+    appendAbortedReply(reply, turn, step, reasoning);
     return abortReason();
   }
 
@@ -884,7 +1054,8 @@ async function runStep(turn, step) {
     S.session.append('assistant/message', {
       turn: turn,
       step: step,
-      text: String((reply && reply.text) || ''),
+      text: replyText,
+      reasoning: reasoning,
       toolCalls: calls,
     });
     for (const call of calls) {
@@ -929,6 +1100,7 @@ async function runStep(turn, step) {
         turn: turn,
         step: step,
         text: String((reply && reply.text) || ''),
+        reasoning: reasoning,
         hidden: true,
       });
       S.session.append('tool/call', {
@@ -968,9 +1140,14 @@ async function runStep(turn, step) {
     return reply && reply.finishReason === 'length' ? { kind: 'max-tokens' } : { kind: 'completed' };
   }
 
-  const text = String((reply && reply.text) || '').trim();
+  const text = String(replyText || '').trim();
   if (!text) throw new Error('AI 没有给出内容，请重试');
-  S.session.append('assistant/message', { turn: turn, step: step, text: text });
+  S.session.append('assistant/message', {
+    turn: turn,
+    step: step,
+    text: text,
+    reasoning: reasoning,
+  });
   if (S.inbox.nextStep.length > 0) return null;
   return reply && reply.finishReason === 'length' ? { kind: 'max-tokens' } : { kind: 'completed' };
 }
@@ -1042,7 +1219,10 @@ async function runAgent() {
     S.abort = null;
     S.status = '';
     notify();
-    await S.session.flush();
+    if (S.session) await S.session.flush();
+    try {
+      await refreshConversations();
+    } catch (_) {}
   }
 }
 
@@ -1074,6 +1254,16 @@ async function refreshFiles() {
   S.files = (result && result.files) || [];
 }
 
+async function refreshSkills() {
+  try {
+    const result = await ctx.workshop.listSkills();
+    S.skills = (result && result.skills) || [];
+  } catch (e) {
+    S.skills = [];
+    console.warn('[workshop] 技能库读取失败', e);
+  }
+}
+
 async function readManifest() {
   const base = S.draft;
   try {
@@ -1090,16 +1280,98 @@ async function readManifest() {
   }
 }
 
+async function refreshConversations() {
+  if (!S.draft) {
+    S.conversations = [];
+    return;
+  }
+  const result = await ctx.workshop.listConversations(S.draft.id);
+  S.conversations = (result && result.conversations) || [];
+}
+
+async function selectConversation(id) {
+  if (!S.draft || S.running || !id) return;
+  if (S.session && S.session.conversationId !== id) await S.session.flush();
+  S.conversationId = id;
+  S.inbox.clear();
+  S.pending = [];
+  S.textMode = false;
+  S.stream = null;
+  S.session = await AgentSession.load(ctx.workshop, S.draft.id, id, onSessionChange);
+  try {
+    await ctx.storage.set('conv:' + S.draft.id, id);
+  } catch (_) {}
+  notify();
+}
+
+async function newConversation() {
+  if (!S.draft || S.running) return null;
+  if (S.session) await S.session.flush();
+  const created = await ctx.workshop.createConversation(S.draft.id, '新对话');
+  S.conversations = [created].concat(S.conversations.filter((c) => c.id !== created.id));
+  await selectConversation(created.id);
+  return created;
+}
+
+async function deleteCurrentConversation() {
+  if (!S.draft || S.running || !S.conversationId) return;
+  // 先把待落盘的会话写完，再删文件；否则延迟保存会把刚删的对话又写回来
+  if (S.session) await S.session.flush();
+  const result = await ctx.workshop.deleteConversation(S.draft.id, S.conversationId);
+  if (result && result.denied) return;
+  S.session = null;
+  S.conversationId = null;
+  await refreshConversations();
+  if (!S.conversations.length) {
+    await newConversation();
+  } else {
+    await selectConversation(S.conversations[0].id);
+  }
+  notify();
+}
+
+async function deleteCurrentDraft() {
+  if (!S.draft || S.running) return;
+  if (S.draft.installed) {
+    ctx.ui.toast('这个草稿已经安装：先到「拓展」页卸载，再删草稿');
+    return;
+  }
+  // 先 flush 再删目录：反过来写会话文件会把刚删掉的目录又建回来
+  if (S.session) await S.session.flush();
+  const result = await ctx.workshop.deleteDraft(S.draft.id);
+  if (result && result.denied) return;
+  S.session = null;
+  S.conversationId = null;
+  S.draft = null;
+  await refreshDrafts();
+  ctx.ui.toast('草稿已删除');
+}
+
 async function selectDraft(draft) {
   if (S.session) await S.session.flush();
   S.draft = draft;
   S.inbox.clear();
   S.pending = [];
   S.textMode = false;
+  S.stream = null;
   S.files = [];
-  S.session = await AgentSession.load(ctx.workshop, draft.id, onSessionChange);
+  S.session = null;
+  S.conversationId = null;
   await refreshFiles();
-  notify();
+  await refreshConversations();
+  let cid = null;
+  try {
+    cid = await ctx.storage.get('conv:' + draft.id);
+  } catch (_) {}
+  if (!cid || !S.conversations.some((c) => c.id === cid)) {
+    cid = S.conversations.length ? S.conversations[0].id : null;
+  }
+  if (!cid) {
+    const created = await ctx.workshop.createConversation(draft.id, '新对话');
+    S.conversations = [created];
+    cid = created.id;
+  }
+  await selectConversation(cid);
 }
 
 async function refreshDrafts(prefer) {
@@ -1115,6 +1387,15 @@ async function refreshDrafts(prefer) {
   } else {
     S.draft = next;
     await refreshFiles();
+    await refreshConversations();
+    if (!S.conversationId
+        || !S.conversations.some((c) => c.id === S.conversationId)) {
+      if (S.conversations.length) {
+        await selectConversation(S.conversations[0].id);
+      } else {
+        await newConversation();
+      }
+    }
     notify();
   }
 }
@@ -1143,9 +1424,12 @@ function parseAction(text) {
 // ==================== 页面 ====================
 
 function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s == null ? '' : String(s);
-  return d.innerHTML;
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 export default {
@@ -1158,12 +1442,18 @@ export default {
       drafts: [],
       draft: null,
       files: [],
+      conversations: [],
+      conversationId: null,
       session: null,
       inbox: new Inbox(),
       pending: [],
       running: false,
       abort: null,
       textMode: false,
+      stream: null,
+      planMode: false,
+      fullAccess: false,
+      skills: [],
       status: '',
       alive: true,
     };
@@ -1171,20 +1461,35 @@ export default {
     root.innerHTML = `
       <div class="ws">
         <header class="ws-head">
-          <div class="ws-title">
-            <div>
-              <h1>拓展工坊</h1>
-              <div class="ws-sub" id="draftMeta"></div>
-            </div>
+          <div class="ws-toolbar">
+            <label class="ws-field grow">
+              <span>草稿</span>
+              <select id="draftSelect"></select>
+            </label>
+            <button id="btnNewDraft" class="icon-btn" title="新建草稿">＋</button>
+            <button id="btnDeleteDraft" class="icon-btn danger" title="删除未安装的草稿">删</button>
+          </div>
+          <div class="ws-toolbar">
+            <label class="ws-field grow">
+              <span>对话</span>
+              <select id="convSelect"></select>
+            </label>
+            <button id="btnNewConv" class="icon-btn" title="新建对话">＋</button>
+            <button id="btnDeleteConv" class="icon-btn danger" title="删除当前对话">删</button>
+            <button id="btnPlan" class="chip" title="只读分析并给出执行计划">计划</button>
+            <button id="btnFull" class="chip danger" title="写入 / 安装不再逐次确认">完全访问</button>
+          </div>
+          <div class="ws-toolbar meta-row">
+            <div class="ws-sub" id="draftMeta"></div>
             <div class="ws-actions">
+              <button id="btnSkills" title="已安装的 Agent 技能">技能</button>
               <button id="btnFiles" title="草稿文件">文件</button>
               <button id="btnPreview" title="预览当前草稿">预览</button>
               <button id="btnInstall" class="primary" title="安装当前草稿">安装</button>
             </div>
           </div>
-          <div class="ws-draftrow">
-            <select id="draftSelect"></select>
-            <button id="btnNew">新建</button>
+          <div class="ws-warn hidden" id="fullBanner">
+            完全访问已开启：写入、删除、安装都不再弹确认
           </div>
         </header>
         <main class="ws-chat" id="chat"></main>
@@ -1201,6 +1506,13 @@ export default {
           </div>
           <div id="files"></div>
         </div>
+        <div class="ws-drawer hidden" id="skillsDrawer">
+          <div class="drawer-head">
+            <strong>Agent 技能</strong>
+            <button id="btnCloseSkills">关闭</button>
+          </div>
+          <div id="skills"></div>
+        </div>
         <div class="ws-backdrop hidden" id="backdrop"></div>
         <div class="ws-viewer hidden" id="viewer">
           <div class="viewer-head"><strong id="viewerTitle"></strong><button id="btnCloseViewer">关闭</button></div>
@@ -1213,9 +1525,27 @@ export default {
     const input = $('#input');
     const status = $('#status');
     const drawer = $('#drawer');
+    const skillsDrawer = $('#skillsDrawer');
+    const fullBanner = $('#fullBanner');
     const backdrop = $('#backdrop');
     const viewer = $('#viewer');
     let renderScheduled = false;
+
+    // AI 流式增量：只认当前这一轮的 streamId（重试会换 id）
+    if (window.antiSIT && typeof window.antiSIT.on === 'function') {
+      window.antiSIT.on('ai.stream', (data) => {
+        if (!S.alive || !S.stream || !data) return;
+        if (data.streamId !== S.stream.id) return;
+        const delta = typeof data.delta === 'string' ? data.delta : '';
+        if (!delta) return;
+        if (data.kind === 'reasoning') {
+          S.stream.reasoning += delta;
+        } else {
+          S.stream.text += delta;
+        }
+        scheduleRender();
+      });
+    }
 
     notify = () => {
       if (S.alive) render();
@@ -1233,17 +1563,41 @@ export default {
 
     function render() {
       if (!S.alive) return;
-      $('#draftMeta').textContent = S.draft
-        ? S.draft.name + ' · ' + S.draft.id + ' · v' + S.draft.version
+      const draft = S.draft;
+      $('#draftMeta').textContent = draft
+        ? draft.name + ' · ' + draft.id + ' · v' + draft.version + (draft.installed ? ' · 已安装' : '')
         : '还没有草稿';
-      const select = $('#draftSelect');
-      select.innerHTML = S.drafts
+      const draftSelect = $('#draftSelect');
+      draftSelect.innerHTML = S.drafts
         .map((d) => '<option value="' + esc(d.id) + '">' + esc(d.name) + '</option>')
         .join('');
-      if (S.draft) select.value = S.draft.id;
-      select.disabled = S.running || S.drafts.length <= 1;
-      $('#btnNew').disabled = S.running;
-      $('#btnInstall').disabled = S.running;
+      if (draft) draftSelect.value = draft.id;
+      draftSelect.disabled = S.running || S.drafts.length <= 1;
+      $('#btnNewDraft').disabled = S.running;
+      $('#btnDeleteDraft').disabled = S.running || !draft || !!draft.installed;
+      $('#btnDeleteDraft').title = draft && draft.installed
+        ? '已安装：先到「拓展」页卸载，再删草稿'
+        : '删除未安装的草稿';
+
+      const convSelect = $('#convSelect');
+      convSelect.innerHTML = S.conversations
+        .map((c) => '<option value="' + esc(c.id) + '">' + esc(c.title || '新对话') + '</option>')
+        .join('');
+      if (S.conversationId) convSelect.value = S.conversationId;
+      convSelect.disabled = S.running || S.conversations.length <= 1;
+      $('#btnNewConv').disabled = S.running || !draft;
+      $('#btnDeleteConv').disabled = S.running || !S.conversationId;
+
+      $('#btnPlan').classList.toggle('active', !!S.planMode);
+      $('#btnPlan').disabled = S.running;
+      $('#btnFull').classList.toggle('active', !!S.fullAccess);
+      $('#btnFull').disabled = S.running;
+      fullBanner.classList.toggle('hidden', !S.fullAccess);
+
+      $('#btnInstall').disabled = S.running || !draft;
+      $('#btnPreview').disabled = S.running || !draft;
+      $('#btnFiles').disabled = S.running || !draft;
+      $('#btnSkills').disabled = S.running;
       $('#btnSend').classList.remove('hidden');
       $('#btnSend').disabled = !S.session;
       $('#btnStop').classList.toggle('hidden', !S.running);
@@ -1252,14 +1606,30 @@ export default {
       status.textContent = (S.status || '处理中…') + (queued ? ' · 已排队 ' + queued + ' 条' : '');
       input.placeholder = S.running
         ? '可以继续输入，Agent 下一步会看到…'
-        : '描述要做什么，或让我改哪个文件…';
+        : S.planMode
+          ? '计划模式：只读分析并给出计划，不会改文件…'
+          : '描述要做什么，或让我改哪个文件…';
       renderChat();
       renderFiles();
+      if (!skillsDrawer.classList.contains('hidden')) renderSkills();
     }
 
     function renderChat() {
+      // 重建 DOM 前记住用户手动展开的思考 / 工具卡片，重建后恢复
+      const openKeys = new Set();
+      chat.querySelectorAll('details[open][data-key]').forEach((d) => {
+        // 运行中的工具卡是自动展开的，不算用户选择；结束后回到收起
+        if (d.classList.contains('running')) return;
+        openKeys.add(d.getAttribute('data-key'));
+      });
+      const prevTop = chat.scrollTop;
+      const atBottom =
+        chat.scrollHeight - prevTop - chat.clientHeight < 48 || !chat.dataset.ready;
       chat.innerHTML = '';
-      if ((!S.session || !S.session.hasVisibleMessages()) && !S.pending.length) {
+      const streamText = S.textMode ? '' : ((S.stream && S.stream.text) || '');
+      const streamReasoning = (S.stream && S.stream.reasoning) || '';
+      if ((!S.session || !S.session.hasVisibleMessages())
+          && !S.pending.length && !streamText && !streamReasoning) {
         chat.innerHTML = WELCOME;
         chat.querySelectorAll('[data-say]').forEach((button) => {
           button.addEventListener('click', () => {
@@ -1278,13 +1648,33 @@ export default {
         bubble.textContent = message.text;
         chat.appendChild(bubble);
       }
-      chat.scrollTop = chat.scrollHeight;
+      if (streamText || streamReasoning) {
+        chat.appendChild(messageEl({
+          role: 'assistant',
+          text: streamText,
+          reasoning: streamReasoning,
+          streaming: true,
+          key: 'stream',
+        }));
+      }
+      if (openKeys.size) {
+        chat.querySelectorAll('details[data-key]').forEach((d) => {
+          if (openKeys.has(d.getAttribute('data-key'))) d.open = true;
+        });
+      }
+      chat.dataset.ready = '1';
+      if (atBottom) {
+        chat.scrollTop = chat.scrollHeight;
+      } else {
+        chat.scrollTop = prevTop;
+      }
     }
 
     function messageEl(m) {
       if (m.role === 'tool') {
         const d = document.createElement('details');
         d.className = 'tool-card ' + (m.running ? 'running' : (m.ok ? 'ok' : 'bad'));
+        if (m.key) d.setAttribute('data-key', m.key + ':tool');
         if (m.running) d.open = true;
         const summary = document.createElement('summary');
         summary.innerHTML =
@@ -1305,8 +1695,32 @@ export default {
         return d;
       }
       const div = document.createElement('div');
-      div.className = 'bubble ' + m.role;
-      div.textContent = m.text;
+      div.className = 'bubble ' + m.role + (m.streaming ? ' streaming' : '');
+      if (m.role === 'assistant' && m.reasoning) {
+        const details = document.createElement('details');
+        details.className = 'thinking';
+        if (m.key) details.setAttribute('data-key', m.key + ':think');
+        const summary = document.createElement('summary');
+        summary.textContent = m.streaming ? '思考中…' : '思考过程';
+        details.appendChild(summary);
+        const body = document.createElement('div');
+        body.className = 'thinking-body';
+        body.textContent = m.reasoning;
+        details.appendChild(body);
+        div.appendChild(details);
+      }
+      if (m.text) {
+        const text = document.createElement('div');
+        text.className = 'bubble-text';
+        text.textContent = m.text;
+        div.appendChild(text);
+      }
+      if (m.streaming && !m.text && !m.reasoning) {
+        const wait = document.createElement('div');
+        wait.className = 'bubble-text muted';
+        wait.textContent = '…';
+        div.appendChild(wait);
+      }
       return div;
     }
 
@@ -1327,12 +1741,62 @@ export default {
       }
     }
 
+    function renderSkills() {
+      const box = $('#skills');
+      box.innerHTML = '';
+      if (!S.skills.length) {
+        box.innerHTML = '<div class="empty">还没有安装技能。Agent 可以用 install_skill 安装。</div>';
+        return;
+      }
+      for (const skill of S.skills) {
+        const row = document.createElement('div');
+        row.className = 'skill';
+        const main = document.createElement('button');
+        main.className = 'skill-main';
+        main.innerHTML = '<strong>' + esc(skill.name) + '</strong>'
+          + '<span>' + esc(skill.description || '（无说明）') + '</span>';
+        main.addEventListener('click', () => openSkill(skill));
+        const del = document.createElement('button');
+        del.className = 'icon-btn danger';
+        del.textContent = '删';
+        del.title = '删除技能';
+        del.addEventListener('click', async () => {
+          try {
+            const result = await ctx.workshop.deleteSkill(skill.id, true);
+            if (result && result.denied) return;
+            await refreshSkills();
+            renderSkills();
+            ctx.ui.toast('技能已删除');
+          } catch (e) {
+            ctx.ui.toast('删除失败：' + (e && e.message ? e.message : e));
+          }
+        });
+        row.appendChild(main);
+        row.appendChild(del);
+        box.appendChild(row);
+      }
+    }
+
+    async function openSkill(skill) {
+      try {
+        const result = await ctx.workshop.readSkill(skill.id);
+        showViewer('技能 · ' + skill.name, String((result && result.content) || ''));
+      } catch (e) {
+        ctx.ui.toast('读取技能失败：' + (e && e.message ? e.message : e));
+      }
+    }
+
+    function showViewer(title, content) {
+      $('#viewerTitle').textContent = title;
+      $('#viewerBody').textContent = content;
+      viewer.classList.remove('hidden');
+      backdrop.classList.remove('hidden');
+    }
+
     async function openFile(path) {
       try {
         const read = normalizeRead(await ctx.workshop.read(S.draft.id, path));
-        $('#viewerTitle').textContent = path;
-        $('#viewerBody').textContent = read.content;
-        viewer.classList.remove('hidden');
+        showViewer(path, read.content);
       } catch (e) {
         ctx.ui.toast('打开失败：' + (e && e.message ? e.message : e));
       }
@@ -1340,6 +1804,7 @@ export default {
 
     function closeOverlays() {
       drawer.classList.add('hidden');
+      skillsDrawer.classList.add('hidden');
       backdrop.classList.add('hidden');
       viewer.classList.add('hidden');
     }
@@ -1389,7 +1854,7 @@ export default {
         ctx.ui.toast('切换失败：' + (err && err.message ? err.message : err));
       }
     });
-    $('#btnNew').addEventListener('click', async () => {
+    $('#btnNewDraft').addEventListener('click', async () => {
       if (S.running) return;
       try {
         if (S.session) await S.session.flush();
@@ -1402,15 +1867,94 @@ export default {
         ctx.ui.toast('新建失败：' + (e && e.message ? e.message : e));
       }
     });
+    $('#btnDeleteDraft').addEventListener('click', async () => {
+      if (S.running || !S.draft) return;
+      try {
+        await deleteCurrentDraft();
+      } catch (e) {
+        ctx.ui.toast('删除失败：' + (e && e.message ? e.message : e));
+      }
+    });
+    $('#convSelect').addEventListener('change', async (e) => {
+      if (S.running) {
+        e.target.value = S.conversationId || '';
+        return;
+      }
+      if (!e.target.value || e.target.value === S.conversationId) return;
+      try {
+        await selectConversation(e.target.value);
+      } catch (err) {
+        ctx.ui.toast('切换对话失败：' + (err && err.message ? err.message : err));
+      }
+    });
+    $('#btnNewConv').addEventListener('click', async () => {
+      if (S.running || !S.draft) return;
+      try {
+        await newConversation();
+        ctx.ui.toast('已新建对话');
+      } catch (e) {
+        ctx.ui.toast('新建对话失败：' + (e && e.message ? e.message : e));
+      }
+    });
+    $('#btnDeleteConv').addEventListener('click', async () => {
+      if (S.running) return;
+      try {
+        await deleteCurrentConversation();
+      } catch (e) {
+        ctx.ui.toast('删除对话失败：' + (e && e.message ? e.message : e));
+      }
+    });
+    $('#btnPlan').addEventListener('click', async () => {
+      if (S.running) return;
+      S.planMode = !S.planMode;
+      try {
+        await ctx.storage.set('plan_mode', S.planMode);
+      } catch (_) {}
+      ctx.ui.toast(S.planMode
+        ? '计划模式已开启：只读分析，不会改文件'
+        : '计划模式已关闭');
+      notify();
+    });
+    $('#btnFull').addEventListener('click', async () => {
+      if (S.running) return;
+      try {
+        if (S.fullAccess) {
+          await ctx.workshop.setFullAccess(false);
+          S.fullAccess = false;
+          ctx.ui.toast('完全访问已关闭');
+          notify();
+          return;
+        }
+        const result = await ctx.workshop.setFullAccess(true);
+        if (result && result.ok && result.enabled === true) {
+          S.fullAccess = true;
+          ctx.ui.toast('完全访问已开启：写入与安装不再逐次确认');
+          notify();
+        }
+      } catch (e) {
+        ctx.ui.toast('切换完全访问失败：' + (e && e.message ? e.message : e));
+      }
+    });
     $('#btnFiles').addEventListener('click', async () => {
       try {
         await refreshFiles();
       } catch (_) {}
       drawer.classList.remove('hidden');
+      skillsDrawer.classList.add('hidden');
       backdrop.classList.remove('hidden');
       renderFiles();
     });
+    $('#btnSkills').addEventListener('click', async () => {
+      try {
+        await refreshSkills();
+      } catch (_) {}
+      skillsDrawer.classList.remove('hidden');
+      drawer.classList.add('hidden');
+      backdrop.classList.remove('hidden');
+      renderSkills();
+    });
     $('#btnCloseDrawer').addEventListener('click', closeOverlays);
+    $('#btnCloseSkills').addEventListener('click', closeOverlays);
     $('#btnCloseViewer').addEventListener('click', closeOverlays);
     backdrop.addEventListener('click', closeOverlays);
     $('#btnPreview').addEventListener('click', async () => {
@@ -1441,6 +1985,10 @@ export default {
     }, 'workshop.cleanup');
 
     try {
+      try {
+        S.planMode = (await ctx.storage.get('plan_mode')) === true;
+      } catch (_) {}
+      await refreshSkills();
       await refreshDrafts();
       render();
     } catch (e) {

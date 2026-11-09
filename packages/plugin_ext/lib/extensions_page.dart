@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'package:campus_core/campus_core.dart';
 
@@ -12,7 +13,9 @@ import 'ext_icon.dart';
 import 'ext_open.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
+import 'market/market_installer.dart';
 import 'market/market_source.dart';
+import 'market/market_sources.dart';
 import 'market/market_view.dart';
 
 /// 「拓展」页：网页形态的小功能，用户自己加进来。
@@ -62,10 +65,17 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   /// 没有市场那道安装门，列表提示与打开拦截就是唯一检查点）。
   String _appVersion = '';
 
+  /// 市场目录在 MarketView.initState 里加载时会同步 notify；那时本页可能正在
+  /// build，直接 setState 会炸。统一挪到下一帧，多次通知只排一次。
+  bool _rebuildScheduled = false;
+
   @override
   void initState() {
     super.initState();
     _store.addListener(_onChanged);
+    // 市场目录 / 第三方源加载完后，「可更新」角标要跟着出现
+    MarketSource.I.addListener(_onChanged);
+    ExtSourceStore.I.addListener(_onChanged);
     _tabPos.value = _tab.toDouble();
     if (!_store.loaded) unawaited(_store.load());
     unawaited(_readAppVersion());
@@ -77,12 +87,26 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   }
 
   void _onChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // 市场目录在 MarketView.initState 里加载时会同步 notify；那时本页正在 build，
+    // 直接 setState 会炸。只在 build 阶段挪到下一帧，平时立即重建。
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      if (_rebuildScheduled) return;
+      _rebuildScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _rebuildScheduled = false;
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    setState(() {});
   }
 
   @override
   void dispose() {
     _store.removeListener(_onChanged);
+    MarketSource.I.removeListener(_onChanged);
+    ExtSourceStore.I.removeListener(_onChanged);
     _tabPos.dispose();
     _tabDrag.dispose();
     super.dispose();
@@ -347,39 +371,45 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: const Text('拓展'),
+        toolbarHeight: 64,
+        centerTitle: true,
+        title: const Text('拓展',
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: 1)),
         actions: [
-          // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
-          if (scan != null)
-            IconButton(
-              tooltip: '扫一扫',
-              onPressed: () => scan.open(context),
-              icon: const Icon(Icons.qr_code_scanner_outlined),
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
+                if (scan != null)
+                  _roundAction(Icons.qr_code_scanner_outlined, '扫一扫',
+                      () => scan.open(context)),
+                if (market)
+                  _roundAction(Icons.refresh_rounded, '重新拉市场目录',
+                      () => unawaited(MarketSource.I.load(force: true)))
+                else ...[
+                  _roundAction(
+                    hide ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                    hide ? '显示全部网址' : '隐藏全部网址',
+                    items.isEmpty ? null : _toggleHideUrls,
+                    color: hide ? SemColors.accent : null,
+                  ),
+                  _roundAction(Icons.add, '添加拓展', _addMenu),
+                ],
+              ],
             ),
-          if (market)
-            IconButton(
-              tooltip: '重新拉市场目录',
-              onPressed: () => unawaited(MarketSource.I.load(force: true)),
-              icon: const Icon(Icons.refresh),
-            )
-          else ...[
-            IconButton(
-              tooltip: hide ? '显示全部网址' : '隐藏全部网址',
-              onPressed: items.isEmpty ? null : _toggleHideUrls,
-              // 开着时用强调色 + 闭眼图标，一眼看得出当前状态
-              color: hide ? SemColors.accent : null,
-              icon: Icon(hide ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-            ),
-            IconButton(tooltip: '添加拓展', onPressed: _addMenu, icon: const Icon(Icons.add)),
-          ],
+          ),
         ],
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
             child: GlassTabs(
               labels: const ['我的', '市场'],
+              height: 38,
+              fontSize: 13.5,
               index: _tab,
               position: _tabPos,
               dragPosition: _tabDrag,
@@ -474,89 +504,239 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         ),
       );
 
-  Widget _grid(List<ExtensionItem> items) => GridView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          // 卡片内容高度基本固定（图标行 + 名称 + 两行简介 + 网址）；
-          // 按宽度算的宽高比在窄屏会压扁卡片，把简介 / 网址挤出圆角外
-          mainAxisExtent: 176,
-        ),
-        itemCount: items.length + 1,
-        itemBuilder: (_, i) => i == items.length ? _addCard() : _card(items[i]),
+  Widget _grid(List<ExtensionItem> items) => CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                // 纵向压缩版：图标 36 + 标题 + 单行简介 + 来源/版本
+                mainAxisExtent: 128,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => _card(items[i]),
+                childCount: items.length,
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+            sliver: SliverToBoxAdapter(child: _addCard()),
+          ),
+        ],
       );
 
-  Widget _card(ExtensionItem e) => AppCard(
-        padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-        onTap: () => _open(e),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                ExtIcon(item: e),
-                const Spacer(),
-                if (e.needsNewerApp(_appVersion))
-                  Padding(
-                    padding: const EdgeInsets.only(right: 2),
-                    child: Capsule('需升级 App', color: SemColors.danger),
-                  ),
-                if (e.builtin)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 2),
-                    child: Capsule('内置', color: SemColors.textMuted),
-                  ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: e.builtin ? '详情' : '编辑 / 删除',
-                  onPressed: () => _itemMenu(e),
-                  icon: Icon(Icons.more_horiz, size: 18, color: SemColors.textMuted),
-                ),
-              ],
+  Widget _roundAction(IconData icon, String tooltip, VoidCallback? onPressed,
+          {Color? color}) =>
+      Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: SemColors.card.withValues(alpha: 0.72),
+            border: Border.all(color: SemColors.border),
+            boxShadow: [
+              BoxShadow(
+                  color: SemColors.shadow, blurRadius: 12, offset: const Offset(0, 4)),
+            ],
+          ),
+          child: IconButton(
+            tooltip: tooltip,
+            onPressed: onPressed,
+            icon: Icon(icon, size: 22, color: color ?? SemColors.textSecondary),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 42, height: 42),
+          ),
+        ),
+      );
+
+  /// 市场里这条有没有新版：目录还没拉到时返回 false，拉到后监听会重建。
+  bool _isUpdatable(ExtensionItem e) {
+    if (!e.fromMarket) return false;
+    final installer = MarketInstaller();
+    for (final entry in [...MarketSource.I.entries, ...ExtSourceStore.I.allEntries]) {
+      if (entry.id != e.id || entry.sourceId != e.sourceId) continue;
+      return installer.hasUpdate(entry);
+    }
+    return false;
+  }
+
+  Widget? _badge(ExtensionItem e) {
+    if (e.needsNewerApp(_appVersion)) {
+      return Capsule('需升级 App', color: SemColors.danger);
+    }
+    if (_isUpdatable(e)) return Capsule('可更新', color: SemColors.warning);
+    if (e.builtin) return Capsule('内置', color: SemColors.textMuted);
+    return Capsule('已安装', color: SemColors.success);
+  }
+
+  /// 卡片底部左侧：远程写域名，本地包写来源（版本单独靠右）。
+  String _sourceLabel(ExtensionItem e) {
+    if (!e.bundled) {
+      final host = Uri.tryParse(e.url)?.host ?? '';
+      return host.isEmpty ? e.url : host;
+    }
+    if (e.runtime == ExtensionItem.runtimeLegacy) return '旧版网页拓展（需迁移）';
+    if (!e.fromMarket) return '本地 Cordis';
+    return '插件市场 · Cordis';
+  }
+
+  Widget _moreButton(ExtensionItem e) => Tooltip(
+        message: e.builtin ? '详情' : '编辑 / 删除',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _itemMenu(e),
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: SemColors.card.withValues(alpha: 0.72),
+              border: Border.all(color: SemColors.border),
             ),
-            const SizedBox(height: 8),
-            Text(e.name,
+            child: Icon(Icons.more_horiz, size: 18, color: SemColors.textMuted),
+          ),
+        ),
+      );
+
+  Widget _card(ExtensionItem e) {
+    final badge = _badge(e);
+    final version = e.version.isEmpty ? '' : 'v${e.version}';
+    // 眼睛开关只隐藏网址：本地 / 市场来源与版本不是 URL，照旧显示
+    final showSource = !_store.hideUrls || e.bundled;
+    final showFooter = showSource || version.isNotEmpty;
+    return AppCard(
+      bottomGap: 0,
+      radius: 16,
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      onTap: () => _open(e),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ExtIcon(item: e),
+              const Spacer(),
+              if (badge != null) ...[badge, const SizedBox(width: 4)],
+              _moreButton(e),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(e.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontWeight: FontWeight.w700, fontSize: 15, height: 1.15)),
+          const SizedBox(height: 2),
+          SizedBox(
+            height: 15,
+            child: Text(e.desc,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-            if (e.desc.isNotEmpty) ...[
-              const SizedBox(height: 3),
-              // 简介吃掉剩余高度：系统字体放大时缩成一行，而不是把整列撑出卡片
-              Flexible(
-                child: Text(e.desc,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 11.5, height: 1.4, color: SemColors.textSecondary)),
-              ),
-              const SizedBox(height: 4),
-            ] else
-              const Spacer(),
-            if (!_store.hideUrls)
-              Text(e.urlLine,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-          ],
-        ),
-      );
-
-  Widget _addCard() => AppCard(
-        padding: const EdgeInsets.all(14),
-        onTap: _addMenu,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add_circle_outline, size: 26, color: SemColors.textMuted),
-            const SizedBox(height: 8),
-            Text('添加拓展',
                 style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: SemColors.textSecondary)),
-          ],
+                    fontSize: 11.5, height: 1.25, color: SemColors.textSecondary)),
+          ),
+          const Spacer(),
+          if (showFooter)
+            Row(
+              children: [
+                if (showSource) ...[
+                  if (!e.bundled) ...[
+                    Icon(Icons.public, size: 12, color: SemColors.textMuted),
+                    const SizedBox(width: 4),
+                  ],
+                  Expanded(
+                    child: Text(_sourceLabel(e),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10.5, color: SemColors.textMuted)),
+                  ),
+                ] else
+                  const Spacer(),
+                if (version.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Text(version,
+                      style: TextStyle(fontSize: 10.5, color: SemColors.textMuted)),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _addCard() => SizedBox(
+        height: 56,
+        child: CustomPaint(
+          painter: _DashedBorderPainter(
+              color: SemColors.borderStrong.withValues(alpha: 0.55)),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: _addMenu,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: SemColors.borderStrong),
+                    ),
+                    child: Icon(Icons.add_rounded,
+                        size: 18, color: SemColors.textSecondary),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('添加拓展',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: SemColors.textSecondary)),
+                ],
+              ),
+            ),
+          ),
         ),
       );
+}
+
+/// 虚线圆角边框：给「添加拓展」占位卡用（不引第三方 dashed border 包）。
+class _DashedBorderPainter extends CustomPainter {
+  const _DashedBorderPainter({required this.color});
+
+  final Color color;
+
+  static const double radius = 16;
+  static const double dash = 6;
+  static const double gap = 5;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    final path = Path()
+      ..addRRect(RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(radius)));
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = (distance + dash).clamp(0.0, metric.length).toDouble();
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance = end + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// 添加 / 编辑 / 详情弹窗：输入控制器归它的 State 管——弹窗退场动画期间控件还在

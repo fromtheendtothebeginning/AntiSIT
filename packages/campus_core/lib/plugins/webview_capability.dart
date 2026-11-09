@@ -39,19 +39,28 @@ abstract class WebViewCapability extends PluginCapability {
   });
 }
 
-/// 网页里的接口垫片：把 `antiSIT.call/post` 变成一次消息 + 等 Promise 回填。
+/// 网页里的接口垫片：把 `antiSIT.call/post` 变成一次消息 + 等 Promise 回填，
+/// 并提供 `antiSIT.on(event, fn)` 接收 App 推下来的流式事件。
 ///
 /// * 原始通道叫 `antiSITBridge`（内核 `addJavaScriptChannel` 给的名字，**不能**与
 ///   垫片自己定义的 `antiSIT` 重名），网页只该用 `antiSIT`；
 /// * 每次导航加载完成后都要重注入（换页后旧上下文连同垫片一起没了）；
 /// * 与 App 的调用约定：`{id, method, args}` → App 回 `__antiSITResolve(id, 值)`
-///   或 `__antiSITReject(id, 错误文案)`。
+///   或 `__antiSITReject(id, 错误文案)`；
+/// * 下行事件：App 调 `window.__antiSITEvent(事件名, 数据)`，垫片分发给 `antiSIT.on` 订阅者。
 const String kWebViewBridgeShim = r'''
 (function () {
   if (window.antiSIT) return;
-  var seq = 0, waits = {};
+  var seq = 0, waits = {}, listeners = {};
   window.__antiSITResolve = function (id, v) { var w = waits[id]; if (w) { delete waits[id]; w.ok(v); } };
   window.__antiSITReject = function (id, e) { var w = waits[id]; if (w) { delete waits[id]; w.fail(new Error(e)); } };
+  window.__antiSITEvent = function (name, data) {
+    var list = listeners[name];
+    if (!list) return;
+    for (var i = 0; i < list.length; i++) {
+      try { list[i](data); } catch (e) { console.error('[antiSIT]', name, e); }
+    }
+  };
   window.antiSIT = {
     call: function (method, args) {
       return new Promise(function (ok, fail) {
@@ -63,10 +72,27 @@ const String kWebViewBridgeShim = r'''
       });
     },
     // 不需要返回值时用它（内部吞掉错误，别让没接的 Promise 冒到控制台）
-    post: function (method, args) { this.call(method, args).catch(function () {}); }
+    post: function (method, args) { this.call(method, args).catch(function () {}); },
+    // 订阅 App 推下来的事件（流式输出、进度等）；返回取消订阅函数
+    on: function (name, fn) {
+      var key = String(name);
+      (listeners[key] = listeners[key] || []).push(fn);
+      return function () {
+        var list = listeners[key];
+        if (!list) return;
+        var i = list.indexOf(fn);
+        if (i >= 0) list.splice(i, 1);
+      };
+    }
   };
 })();
 ''';
+
+/// 内核 → 网页的下行通道：给 [WebBridge.attachEventSink] 用。
+/// 目前用于 AI 流式输出（App 把增量推给网页的 `antiSIT.on` 订阅者）。
+abstract interface class WebBridgeEventSink {
+  void emit(String event, Object? data);
+}
 
 /// 网页 ↔ App 的调用通道：内核只负责把网页的调用送进来、把返回值送回网页，
 /// **支持哪些方法完全由调用方决定**（内置实现见 `plugin_ext`，方法表见
@@ -81,6 +107,10 @@ const String kWebViewBridgeShim = r'''
 /// （Promise reject），网页侧自己决定怎么提示。
 abstract class WebBridge {
   const WebBridge();
+
+  /// 内核在页面就绪后挂上下行通道；页面关掉时挂 null。
+  /// 需要推流的实现覆写它并保存 [sink]，用 `sink.emit(事件名, 数据)` 发事件。
+  void attachEventSink(WebBridgeEventSink? sink) {}
 
   /// 处理一次调用。[method] 由网页给出，[args] 是它带上的原样参数
   /// （Map / List / 标量 / null，取决于网页怎么传）。

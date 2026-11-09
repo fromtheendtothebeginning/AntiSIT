@@ -352,6 +352,226 @@ class AiVision {
     return reply;
   }
 
+  /// 流式版 [chatWithTools]：SSE 增量边收边回调，结束时返回完整回复。
+  ///
+  /// 端点忽略 `stream`（回整份 JSON）时把全文当一次增量回调；不支持 tools
+  /// （400 / 422 且错误里提到 tool/function）时去掉 tools 重试，与普通版一致。
+  Future<AiChatReply> chatWithToolsStream(
+    List<AiChatMessage> messages, {
+    List<AiToolSpec> tools = const [],
+    int maxTokens = 2048,
+    Duration timeout = const Duration(seconds: 90),
+    void Function(String delta)? onText,
+    void Function(String delta)? onReasoning,
+  }) async {
+    await load();
+    if (!_config.ready) {
+      throw ApiError('尚未配置 AI：请在「我的 → AI 设置」填写 API Key 与模型');
+    }
+    try {
+      return await _requestMessagesStream(messages,
+          tools: tools,
+          maxTokens: maxTokens,
+          thinkingOff: false,
+          timeout: timeout,
+          usedTools: tools.isNotEmpty,
+          onText: onText,
+          onReasoning: onReasoning);
+    } on ApiError catch (e) {
+      if (!_looksLikeStreamUnsupported(e.message)) rethrow;
+      // 有些兼容端点不认 stream：退回普通请求，全文一次回调。
+      final reply = await chatWithTools(messages,
+          tools: tools, maxTokens: maxTokens, timeout: timeout);
+      if (reply.reasoning.isNotEmpty) onReasoning?.call(reply.reasoning);
+      if (reply.text.isNotEmpty) onText?.call(reply.text);
+      return reply;
+    }
+  }
+
+  static bool _looksLikeStreamUnsupported(String message) {
+    final m = message.toLowerCase();
+    return (m.contains('400') || m.contains('422') || m.contains('invalid')) &&
+        m.contains('stream');
+  }
+
+  Future<AiChatReply> _requestMessagesStream(
+    List<AiChatMessage> messages, {
+    required List<AiToolSpec> tools,
+    required int maxTokens,
+    required bool thinkingOff,
+    required Duration timeout,
+    required bool usedTools,
+    void Function(String delta)? onText,
+    void Function(String delta)? onReasoning,
+  }) async {
+    final body = _messagesPayload(messages, tools, maxTokens, thinkingOff);
+    body['stream'] = true;
+    try {
+      return await _sendStream(body, timeout,
+          usedTools: usedTools, onText: onText, onReasoning: onReasoning);
+    } on ApiError catch (e) {
+      if (tools.isEmpty || !_looksLikeToolsUnsupported(e.message)) rethrow;
+      final fallback = _messagesPayload(messages, const [], maxTokens, thinkingOff);
+      fallback['stream'] = true;
+      return _sendStream(fallback, timeout,
+          usedTools: false, onText: onText, onReasoning: onReasoning);
+    }
+  }
+
+  Future<AiChatReply> _sendStream(
+    Map<String, dynamic> body,
+    Duration timeout, {
+    required bool usedTools,
+    void Function(String delta)? onText,
+    void Function(String delta)? onReasoning,
+  }) async {
+    final c = _config;
+    final url = '${c.baseUrl.replaceAll(RegExp(r'/+$'), '')}/chat/completions';
+    http.StreamedResponse res;
+    try {
+      final req = http.Request('POST', Uri.parse(url))
+        ..headers['Content-Type'] = 'application/json'
+        ..headers['Authorization'] = 'Bearer ${c.effectiveApiKey}'
+        ..headers['Accept'] = 'text/event-stream'
+        ..body = jsonEncode(body);
+      res = await _client.send(req).timeout(timeout);
+    } catch (e) {
+      throw ApiError('调用 AI 失败（${c.provider.label}）：$e');
+    }
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      final bytes = await res.stream.toBytes().timeout(timeout);
+      final detail = utf8.decode(bytes, allowMalformed: true);
+      throw ApiError(
+          'AI 返回 ${res.statusCode}：${detail.length > 200 ? detail.substring(0, 200) : detail}');
+    }
+
+    // 端点忽略了 stream：响应是一整份 JSON，把完整回答当成一次增量。
+    final contentType = (res.headers['content-type'] ?? '').toLowerCase();
+    if (!contentType.contains('event-stream')) {
+      final reply = _parseReply(
+          _decode(await res.stream.toBytes().timeout(timeout)),
+          usedTools: usedTools);
+      if (reply.reasoning.isNotEmpty) onReasoning?.call(reply.reasoning);
+      if (reply.text.isNotEmpty) onText?.call(reply.text);
+      return reply;
+    }
+
+    final text = StringBuffer();
+    final reasoning = StringBuffer();
+    final calls = <int, _StreamToolCall>{};
+    var finishReason = '';
+    try {
+      final lines = res.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(timeout);
+      await for (final line in lines) {
+        final raw = line.trim();
+        if (raw.isEmpty || raw.startsWith(':') || !raw.startsWith('data:')) {
+          continue;
+        }
+        final data = raw.substring(5).trim();
+        if (data == '[DONE]') break;
+        dynamic json;
+        try {
+          json = jsonDecode(data);
+        } catch (_) {
+          continue;
+        }
+        if (json is! Map) continue;
+        final choices = json['choices'];
+        if (choices is! List || choices.isEmpty || choices.first is! Map) {
+          continue;
+        }
+        final choice = choices.first as Map;
+        final delta = choice['delta'] is Map
+            ? choice['delta'] as Map
+            : choice['message'] is Map
+                ? choice['message'] as Map
+                : const {};
+        final piece = _contentText(delta['content']);
+        if (piece.isNotEmpty) {
+          text.write(piece);
+          onText?.call(piece);
+        }
+        final reason =
+            delta['reasoning_content'] ?? delta['reasoning'] ?? delta['thinking'];
+        if (reason is String && reason.isNotEmpty) {
+          reasoning.write(reason);
+          onReasoning?.call(reason);
+        }
+        final rawCalls = delta['tool_calls'];
+        if (rawCalls is List) {
+          for (final rawCall in rawCalls) {
+            if (rawCall is! Map) continue;
+            final index = rawCall['index'] is num
+                ? (rawCall['index'] as num).toInt()
+                : calls.length;
+            final builder = calls.putIfAbsent(index, () => _StreamToolCall());
+            final id = rawCall['id'];
+            if (id is String && id.isNotEmpty) builder.id = id;
+            final fn = rawCall['function'];
+            if (fn is Map) {
+              final name = fn['name'];
+              if (name is String && name.isNotEmpty && builder.name.isEmpty) {
+                builder.name = name;
+              }
+              final args = fn['arguments'];
+              if (args is String && args.isNotEmpty) builder.arguments.write(args);
+            }
+          }
+        }
+        final fr = choice['finish_reason'];
+        if (fr is String && fr.isNotEmpty) finishReason = fr;
+      }
+    } catch (e) {
+      if (e is ApiError) rethrow;
+      throw ApiError('读取 AI 流式输出失败（${c.provider.label}）：$e');
+    }
+
+    final toolCalls = <AiToolCall>[];
+    final keys = calls.keys.toList()..sort();
+    var n = 0;
+    for (final key in keys) {
+      final builder = calls[key]!;
+      if (builder.name.isEmpty) continue;
+      toolCalls.add(AiToolCall(
+        id: builder.id.isEmpty
+            ? 'call_${DateTime.now().microsecondsSinceEpoch}_${n++}'
+            : builder.id,
+        name: builder.name,
+        argumentsJson:
+            builder.arguments.isEmpty ? '{}' : builder.arguments.toString(),
+      ));
+    }
+    final finalText = text.toString().trim();
+    final finalReasoning = reasoning.toString().trim();
+    if (finalText.isEmpty && toolCalls.isEmpty) {
+      throw ApiError(finishReason == 'length'
+          ? 'AI 输出被截断（撞上 token 上限），没有给出结果：请重试或换一个模型'
+          : 'AI 未返回内容');
+    }
+    return AiChatReply(
+      text: finalText,
+      reasoning: finalReasoning,
+      toolCalls: toolCalls,
+      finishReason: finishReason,
+      usedTools: usedTools,
+    );
+  }
+
+  static String _contentText(dynamic content) {
+    if (content is String) return content;
+    if (content is List) {
+      final buf = StringBuffer();
+      for (final part in content) {
+        if (part is Map) buf.write(part['text'] ?? '');
+      }
+      return buf.toString();
+    }
+    return '';
+  }
+
   Future<AiChatReply> _requestMessages(
     List<AiChatMessage> messages, {
     required List<AiToolSpec> tools,
@@ -452,6 +672,7 @@ class AiVision {
     }
     return AiChatReply(
       text: _extractText(j).trim(),
+      reasoning: _extractReasoning(j),
       toolCalls: toolCalls,
       finishReason: _finishReason(j),
       usedTools: usedTools,
@@ -517,15 +738,21 @@ class AiVision {
     if (choices is List && choices.isNotEmpty) {
       final msg = (choices.first as Map)['message'];
       if (msg is Map) {
-        final content = msg['content'];
-        if (content is String) return content;
-        if (content is List) {
-          final buf = StringBuffer();
-          for (final part in content) {
-            if (part is Map) buf.write(part['text'] ?? '');
-          }
-          return buf.toString();
-        }
+        return _contentText(msg['content']);
+      }
+    }
+    return '';
+  }
+
+  /// 取思考型模型的推理过程（各家字段名略有差异）。
+  String _extractReasoning(dynamic j) {
+    if (j is! Map) return '';
+    final choices = j['choices'];
+    if (choices is List && choices.isNotEmpty && choices.first is Map) {
+      final msg = (choices.first as Map)['message'];
+      if (msg is Map) {
+        final r = msg['reasoning_content'] ?? msg['reasoning'] ?? msg['thinking'];
+        return r is String ? r.trim() : '';
       }
     }
     return '';
@@ -550,4 +777,11 @@ class AiVision {
   /// 1×1 透明 PNG：用于「测试连接」探活（不耗流量、不需要真实图片）。
   static final Uint8List _tinyPng = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+}
+
+/// 一条流式 tool call 的累积器（按 index 收 id / name / arguments 碎片）。
+class _StreamToolCall {
+  String id = '';
+  String name = '';
+  final StringBuffer arguments = StringBuffer();
 }

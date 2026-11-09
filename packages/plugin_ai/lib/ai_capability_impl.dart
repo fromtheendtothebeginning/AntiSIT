@@ -50,4 +50,18 @@ class AiCapabilityImpl implements AiCapability {
   }) =>
       AiVision.I.chatWithTools(messages,
           tools: tools, maxTokens: maxTokens ?? 2048);
+
+  @override
+  Future<AiChatReply> chatWithToolsStream(
+    List<AiChatMessage> messages, {
+    List<AiToolSpec> tools = const [],
+    int? maxTokens,
+    void Function(String delta)? onText,
+    void Function(String delta)? onReasoning,
+  }) =>
+      AiVision.I.chatWithToolsStream(messages,
+          tools: tools,
+          maxTokens: maxTokens ?? 2048,
+          onText: onText,
+          onReasoning: onReasoning);
 }

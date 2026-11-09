@@ -77,12 +77,18 @@ class AiToolSpec {
 class AiChatReply {
   const AiChatReply({
     this.text = '',
+    this.reasoning = '',
     this.toolCalls = const [],
     this.finishReason = '',
     this.usedTools = false,
   });
 
   final String text;
+
+  /// 思考型模型返回的推理过程（`reasoning_content` / `reasoning`）。
+  /// 普通模型为空；工坊把它折叠展示，不混进正式回答。
+  final String reasoning;
+
   final List<AiToolCall> toolCalls;
   final String finishReason;
 
@@ -129,5 +135,16 @@ abstract class AiCapability implements PluginCapability {
     List<AiChatMessage> messages, {
     List<AiToolSpec> tools = const [],
     int? maxTokens,
+  });
+
+  /// 流式版 [chatWithTools]：边收边把增量交给 [onText] / [onReasoning]，
+  /// 结束时仍返回完整回复（工具调用在流结束后一次性给出）。
+  /// 提供商不支持流式时实现应退回普通请求，把完整文本作为一次增量回调。
+  Future<AiChatReply> chatWithToolsStream(
+    List<AiChatMessage> messages, {
+    List<AiToolSpec> tools = const [],
+    int? maxTokens,
+    void Function(String delta)? onText,
+    void Function(String delta)? onReasoning,
   });
 }

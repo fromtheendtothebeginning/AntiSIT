@@ -46,6 +46,64 @@ class WorkshopFileContent {
   final String version;
 }
 
+/// 一个草稿下的一段对话（同一插件可以有多段对话）。
+class WorkshopConversation {
+  const WorkshopConversation({
+    required this.id,
+    required this.title,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String title;
+
+  /// 最后更新时间（毫秒时间戳），列表按它倒序。
+  final int updatedAt;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'title': title,
+        'updatedAt': updatedAt,
+      };
+}
+
+/// 已安装的一条 Agent 技能（可复用的指令文档，不是可执行代码）。
+class WorkshopSkill {
+  const WorkshopSkill({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final int updatedAt;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'description': description,
+        'updatedAt': updatedAt,
+      };
+}
+
+/// 技能全文（Agent 用 read_skill 取）。
+class WorkshopSkillContent {
+  const WorkshopSkillContent({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.content,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final String content;
+}
+
 /// 「拓展工坊」的草稿工作区：`<文档目录>/ext-workshop/<id>/`。
 ///
 /// 工坊本身是一个内置 Cordis 拓展；它通过 [ExtBridge] 的 `workshop.*` 接口
@@ -63,6 +121,8 @@ class WorkshopStore {
 
   static const int maxTextBytes = 256 * 1024;
   static const int maxSessionBytes = 2 * 1024 * 1024;
+  static const int maxSkills = 100;
+  static const int maxSkillBytes = 64 * 1024;
   static const Set<String> allowedExtensions = {
     '.js',
     '.json',
@@ -139,13 +199,74 @@ class WorkshopStore {
     return WorkshopDraft(id: draftId, dir: dir.path, manifest: manifest);
   }
 
-  /// 会话日志放在草稿的 `.workshop/` 下；[listFiles] 会跳过隐藏目录，
-  /// 所以它既不会出现在文件树里，也不会被安装进正式拓展。
-  Future<File> _sessionFile(String draftId) async =>
+  /// 旧版单会话文件（`session.json`）：保留可读，列表里显示为默认对话。
+  Future<File> _legacySessionFile(String draftId) async =>
       File(p.join(await draftDir(draftId), '.workshop', 'session.json'));
 
-  Future<String?> loadSession(String draftId) async {
-    final file = await _sessionFile(draftId);
+  static const String defaultConversationId = 'default';
+  static final RegExp conversationIdPattern = RegExp(r'^[a-z0-9][a-z0-9._-]{0,63}$');
+
+  Future<File> _conversationFile(String draftId, String conversationId) async {
+    if (!conversationIdPattern.hasMatch(conversationId)) {
+      throw const FormatException('对话 id 不合法');
+    }
+    return File(p.join(await draftDir(draftId), '.workshop', 'sessions',
+        '$conversationId.json'));
+  }
+
+  Future<File> _conversationFileFor(String draftId, String conversationId) async =>
+      conversationId == defaultConversationId
+          ? _legacySessionFile(draftId)
+          : _conversationFile(draftId, conversationId);
+
+  /// 当前草稿下的全部对话（新的在前）。旧版 `session.json` 作为默认对话保留。
+  Future<List<WorkshopConversation>> listConversations(String draftId) async {
+    final out = <WorkshopConversation>[];
+    final legacy = await _legacySessionFile(draftId);
+    if (legacy.existsSync()) {
+      final meta = _conversationMeta(legacy, defaultConversationId);
+      if (meta != null) out.add(meta);
+    }
+    final dir = Directory(p.join(await draftDir(draftId), '.workshop', 'sessions'));
+    if (dir.existsSync()) {
+      for (final entity in dir.listSync()) {
+        if (entity is! File || !entity.path.endsWith('.json')) continue;
+        final id = p.basenameWithoutExtension(entity.path);
+        if (!conversationIdPattern.hasMatch(id)) continue;
+        final meta = _conversationMeta(entity, id);
+        if (meta != null) out.add(meta);
+      }
+    }
+    out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return out;
+  }
+
+  WorkshopConversation? _conversationMeta(File file, String id) {
+    try {
+      Map? data;
+      if (file.lengthSync() <= maxSessionBytes) {
+        final decoded = jsonDecode(file.readAsStringSync());
+        if (decoded is Map) data = decoded;
+      }
+      final title = '${data?['title'] ?? ''}'.trim();
+      final rawUpdated = data?['updatedAt'];
+      final updated = rawUpdated is num
+          ? rawUpdated.toInt()
+          : file.lastModifiedSync().millisecondsSinceEpoch;
+      return WorkshopConversation(
+          id: id,
+          title: title.isEmpty ? '未命名对话' : title,
+          updatedAt: updated);
+    } catch (e) {
+      debugPrint('[ext-workshop] 对话 $id 读不了，已跳过：$e');
+      return null;
+    }
+  }
+
+  Future<String?> loadConversation(String draftId, String conversationId) async {
+    final id =
+        conversationId.trim().isEmpty ? defaultConversationId : conversationId.trim();
+    final file = await _conversationFileFor(draftId, id);
     if (!file.existsSync()) return null;
     if (file.lengthSync() > maxSessionBytes) {
       throw FormatException(
@@ -154,13 +275,16 @@ class WorkshopStore {
     return file.readAsStringSync();
   }
 
-  Future<void> saveSession(String draftId, String data) async {
+  Future<void> saveConversation(
+      String draftId, String conversationId, String data) async {
+    final id =
+        conversationId.trim().isEmpty ? defaultConversationId : conversationId.trim();
     final bytes = utf8.encode(data);
     if (bytes.length > maxSessionBytes) {
       throw FormatException(
           '会话日志太大（${(bytes.length / 1024).round()} KB，上限 ${maxSessionBytes ~/ 1024} KB）');
     }
-    final file = await _sessionFile(draftId);
+    final file = await _conversationFileFor(draftId, id);
     file.parent.createSync(recursive: true);
     final temp = File('${file.path}.tmp');
     temp.writeAsBytesSync(bytes, flush: true);
@@ -171,6 +295,204 @@ class WorkshopStore {
       file.writeAsBytesSync(bytes, flush: true);
       if (temp.existsSync()) temp.deleteSync();
     }
+  }
+
+  /// 新建一段空对话；标题由前端在第一条用户消息后更新。
+  Future<WorkshopConversation> createConversation(String draftId,
+      {String title = '新对话'}) async {
+    final dir =
+        Directory(p.join(await draftDir(draftId), '.workshop', 'sessions'));
+    dir.createSync(recursive: true);
+    final base = 'c${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    var id = base;
+    var n = 0;
+    while (File(p.join(dir.path, '$id.json')).existsSync()) {
+      n += 1;
+      id = '${base}_$n';
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final safeTitle = title.trim().isEmpty ? '新对话' : title.trim();
+    await saveConversation(
+        draftId,
+        id,
+        jsonEncode({
+          'version': 1,
+          'draftId': draftId,
+          'conversationId': id,
+          'title': safeTitle,
+          'createdAt': now,
+          'updatedAt': now,
+          'seq': 0,
+          'turnSeq': 0,
+          'events': <Object?>[],
+        }));
+    return WorkshopConversation(id: id, title: safeTitle, updatedAt: now);
+  }
+
+  Future<void> deleteConversation(String draftId, String conversationId) async {
+    final id =
+        conversationId.trim().isEmpty ? defaultConversationId : conversationId.trim();
+    final file = await _conversationFileFor(draftId, id);
+    if (file.existsSync()) file.deleteSync();
+  }
+
+  /// 兼容旧接口：不指定对话时读写默认会话。
+  Future<String?> loadSession(String draftId) =>
+      loadConversation(draftId, defaultConversationId);
+
+  Future<void> saveSession(String draftId, String data) =>
+      saveConversation(draftId, defaultConversationId, data);
+
+  /// 删除草稿目录（桥接层会先拦已安装 / 内置的草稿）。
+  Future<void> deleteDraft(String draftId) async {
+    final dir = Directory(await draftDir(draftId));
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  }
+
+  // ==================== Agent 技能库 ====================
+  //
+  // 技能是「可复用的指令文档」，不是可执行代码：Agent 用 install_skill 把一段
+  // 方法论存下来，下次需要时先 list_skills / read_skill 再照着做。全局共享，
+  // 不跟着草稿走；文件落在 `<文档目录>/ext-workshop/.skills/<id>.json`。
+
+  static final RegExp _skillIdPattern = RegExp(r'^s[0-9a-z_]{2,63}$');
+
+  Future<Directory> _skillsDir() async =>
+      Directory(p.join(await rootDir(), '.skills'));
+
+  Future<File> _skillFile(String id) async {
+    if (!_skillIdPattern.hasMatch(id)) {
+      throw const FormatException('技能 id 不合法');
+    }
+    final dir = await _skillsDir();
+    final file = File(p.join(dir.path, '$id.json'));
+    if (!p.isWithin(dir.path, file.path)) {
+      throw const FormatException('技能路径越界');
+    }
+    return file;
+  }
+
+  Map<String, Object?>? _readSkillMap(File file) {
+    try {
+      if (file.lengthSync() > maxSkillBytes) return null;
+      final decoded = jsonDecode(file.readAsStringSync());
+      if (decoded is! Map) return null;
+      final id = '${decoded['id'] ?? ''}'.trim();
+      final name = '${decoded['name'] ?? ''}'.trim();
+      final content = '${decoded['content'] ?? ''}';
+      if (!_skillIdPattern.hasMatch(id) || name.isEmpty || content.trim().isEmpty) {
+        return null;
+      }
+      return {
+        'id': id,
+        'name': name,
+        'description': '${decoded['description'] ?? ''}'.trim(),
+        'content': content,
+        'createdAt': decoded['createdAt'] is num
+            ? (decoded['createdAt'] as num).toInt()
+            : 0,
+        'updatedAt': decoded['updatedAt'] is num
+            ? (decoded['updatedAt'] as num).toInt()
+            : 0,
+      };
+    } catch (e) {
+      debugPrint('[ext-workshop] 技能 ${file.path} 读不了，已跳过：$e');
+      return null;
+    }
+  }
+
+  Future<List<WorkshopSkill>> listSkills() async {
+    final dir = await _skillsDir();
+    if (!dir.existsSync()) return const [];
+    final out = <WorkshopSkill>[];
+    for (final entity in dir.listSync()) {
+      if (entity is! File || !entity.path.endsWith('.json')) continue;
+      final data = _readSkillMap(entity);
+      if (data == null) continue;
+      out.add(WorkshopSkill(
+        id: '${data['id']}',
+        name: '${data['name']}',
+        description: '${data['description']}',
+        updatedAt: data['updatedAt'] is int ? data['updatedAt'] as int : 0,
+      ));
+    }
+    out.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return out;
+  }
+
+  Future<WorkshopSkillContent> readSkill(String id) async {
+    final file = await _skillFile(id);
+    final data = _readSkillMap(file);
+    if (data == null) throw const FormatException('技能不存在或已损坏');
+    return WorkshopSkillContent(
+      id: '${data['id']}',
+      name: '${data['name']}',
+      description: '${data['description']}',
+      content: '${data['content']}',
+    );
+  }
+
+  /// 安装 / 更新一条技能（同名视为更新，id 不变）。
+  Future<WorkshopSkill> installSkill({
+    required String name,
+    String description = '',
+    required String content,
+  }) async {
+    final cleanName = name.trim();
+    final cleanDesc = description.trim();
+    final cleanContent = content.trim();
+    if (cleanName.isEmpty) throw const FormatException('技能名称不能为空');
+    if (cleanName.length > 40) throw const FormatException('技能名称最多 40 个字');
+    if (cleanDesc.length > 160) throw const FormatException('技能说明最多 160 个字');
+    if (cleanContent.isEmpty) throw const FormatException('技能内容不能为空');
+    if (utf8.encode(cleanContent).length > maxSkillBytes) {
+      throw FormatException('技能内容太大（上限 ${maxSkillBytes ~/ 1024} KB）');
+    }
+
+    final existing = await listSkills();
+    final sameName = existing.where(
+        (s) => s.name.toLowerCase() == cleanName.toLowerCase());
+    if (sameName.isEmpty && existing.length >= maxSkills) {
+      throw FormatException('技能库已满（最多 $maxSkills 条），先删掉不用的再装');
+    }
+    final dir = await _skillsDir();
+    dir.createSync(recursive: true);
+    var id = sameName.isEmpty
+        ? 's${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}'
+        : sameName.first.id;
+    var n = 0;
+    while (sameName.isEmpty && File(p.join(dir.path, '$id.json')).existsSync()) {
+      n += 1;
+      id = 's${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}_$n';
+    }
+    var createdAt = DateTime.now().millisecondsSinceEpoch;
+    final oldFile = File(p.join(dir.path, '$id.json'));
+    final old = oldFile.existsSync() ? _readSkillMap(oldFile) : null;
+    if (old != null && old['createdAt'] is int && (old['createdAt'] as int) > 0) {
+      createdAt = old['createdAt'] as int;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final payload = jsonEncode({
+      'id': id,
+      'name': cleanName,
+      'description': cleanDesc,
+      'content': cleanContent,
+      'createdAt': createdAt,
+      'updatedAt': now,
+    });
+    await _skillFile(id); // 先校验 id
+    final bytes = utf8.encode(payload);
+    if (bytes.length > maxSkillBytes) {
+      throw FormatException('技能内容太大（上限 ${maxSkillBytes ~/ 1024} KB）');
+    }
+    oldFile.writeAsBytesSync(bytes, flush: true);
+    return WorkshopSkill(
+        id: id, name: cleanName, description: cleanDesc, updatedAt: now);
+  }
+
+  Future<void> deleteSkill(String id) async {
+    final file = await _skillFile(id);
+    if (file.existsSync()) file.deleteSync();
   }
 
   Future<List<WorkshopFile>> listFiles(String draftId) async {

@@ -884,6 +884,31 @@ void main() {
       });
     });
 
+    testWidgets('ai.chatToolsStream：增量事件推给网页，最终带 reasoning', (tester) async {
+      ai.chatToolsReply =
+          const AiChatReply(text: '流式回答', reasoning: '先想一下', usedTools: true);
+      final b = await bridge(tester);
+      final sink = _RecordingSink();
+      b.attachEventSink(sink);
+
+      final out = await b.call('ai.chatToolsStream', {
+        'streamId': 's1',
+        'messages': [
+          {'role': 'user', 'content': '写个拓展'},
+        ],
+      }) as Map;
+
+      expect(ai.chatToolsStreamCalls, 1);
+      expect(out['text'], '流式回答');
+      expect(out['reasoning'], '先想一下');
+      expect(sink.events.map((e) => e.$1).toSet(), {'ai.stream'});
+      final kinds = [
+        for (final e in sink.events) (e.$2 as Map)['kind'],
+      ];
+      expect(kinds, ['reasoning', 'text']);
+      expect((sink.events.first.$2 as Map)['streamId'], 's1');
+    });
+
     testWidgets('ai.chatTools：空 messages 报错；市场拓展同样要声明 ai 权限', (tester) async {
       final b = await bridge(tester);
       await expectLater(b.call('ai.chatTools', {'messages': []}), throwsArgumentError);
@@ -1064,6 +1089,114 @@ void main() {
           isNot(contains('.workshop/session.json')),
           reason: '会话日志不该出现在文件树 / 安装内容里');
     });
+
+    testWidgets('一个草稿多段对话：新建 / 列表 / 读写 / 删除', (tester) async {
+      final draft = await workshop.create(name: '多对话');
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+
+      final created = await ws.call('workshop.session.create',
+          {'draftId': draft.id, 'title': '第一段'}) as Map;
+      final cid = created['id'] as String;
+      expect(cid, isNotEmpty);
+
+      const payload = '{"title":"第一段","events":[]}';
+      await ws.call('workshop.session.set',
+          {'draftId': draft.id, 'conversationId': cid, 'data': payload});
+      final list = await ws.call('workshop.session.list', {'draftId': draft.id}) as Map;
+      final conversations = (list['conversations'] as List).cast<Map>();
+      expect(conversations.any((c) => c['id'] == cid && c['title'] == '第一段'), isTrue);
+      expect(
+          await ws.call('workshop.session.get',
+              {'draftId': draft.id, 'conversationId': cid}),
+          payload);
+
+      final pending = ws.call('workshop.session.delete',
+          {'draftId': draft.id, 'conversationId': cid});
+      await tester.pumpAndSettle();
+      expect(find.text('删除这段对话'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '确认执行'));
+      await tester.pumpAndSettle();
+      expect((await pending as Map)['ok'], isTrue);
+      final after = await ws.call('workshop.session.list', {'draftId': draft.id}) as Map;
+      expect((after['conversations'] as List).any((c) => (c as Map)['id'] == cid), isFalse);
+    });
+
+    testWidgets('删除未安装的草稿：确认后整个目录消失；已安装的拒绝', (tester) async {
+      final draft = await workshop.create(name: '待删草稿');
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+
+      final pending = ws.call('workshop.deleteDraft', {'draftId': draft.id});
+      await tester.pumpAndSettle();
+      expect(find.textContaining('删除草稿'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '确认执行'));
+      await tester.pumpAndSettle();
+      expect((await pending as Map)['ok'], isTrue);
+      expect(Directory(draft.dir).existsSync(), isFalse);
+
+      final installed = await workshop.create(name: '已安装草稿');
+      await ExtensionStore.I.add(ExtensionItem(
+          id: installed.id, name: '已安装', url: 'https://example.com/x'));
+      await expectLater(
+        ws.call('workshop.deleteDraft', {'draftId': installed.id}),
+        throwsA(isA<ArgumentError>()
+            .having((e) => e.message, 'message', contains('已安装'))),
+      );
+      expect(Directory(installed.dir).existsSync(), isTrue);
+    });
+
+    testWidgets('技能库：安装要确认，能列表 / 读取 / 删除', (tester) async {
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+
+      final pending = ws.call('workshop.skills.install', {
+        'name': '代码审查',
+        'description': '改完 JS 后逐项检查',
+        'content': '# 代码审查\n1. 检查 localStorage\n2. 检查工具调用配对',
+      });
+      await tester.pumpAndSettle();
+      expect(find.textContaining('安装技能'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '写入'));
+      await tester.pumpAndSettle();
+      final installed = await pending as Map;
+      expect(installed['ok'], isTrue);
+      final id = installed['id'] as String;
+
+      final list = await ws.call('workshop.skills.list', null) as Map;
+      expect((list['skills'] as List).single['name'], '代码审查');
+      final read = await ws.call('workshop.skills.read', {'id': id}) as Map;
+      expect(read['content'], contains('localStorage'));
+
+      final deleting = ws.call('workshop.skills.delete', {'id': id});
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '确认执行'));
+      await tester.pumpAndSettle();
+      expect((await deleting as Map)['ok'], isTrue);
+      final after = await ws.call('workshop.skills.list', null) as Map;
+      expect(after['skills'], isEmpty);
+    });
+
+    testWidgets('完全访问：开启要确认，之后写入不再弹确认', (tester) async {
+      final draft = await workshop.create(name: '完全访问');
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+      final before = await workshop.readFileVersioned(draft.id, 'main.js');
+
+      final enabling = ws.call('workshop.setFullAccess', {'enabled': true});
+      await tester.pumpAndSettle();
+      expect(find.text('开启完全访问模式'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '确认执行'));
+      await tester.pumpAndSettle();
+      expect((await enabling as Map)['enabled'], isTrue);
+
+      const code = 'export default { apply() {} }';
+      final written = await ws.call('workshop.write', {
+        'draftId': draft.id,
+        'path': 'main.js',
+        'content': code,
+        'expectedVersion': before.version,
+      }) as Map;
+      expect(written['ok'], isTrue);
+      expect(await workshop.readFile(draft.id, 'main.js'), code);
+      expect(find.text('写入 main.js'), findsNothing, reason: '完全访问下不再弹确认');
+    });
   });
 
   group('限定 App 版本（minAppVersion）', () {
@@ -1121,6 +1254,9 @@ void main() {
       final page = await CordisBundleLoader.load(item, appVersion: '1.25.0');
       expect(page.html, contains('正在启动「拓展工坊」'));
       expect(page.html, contains('workshop.list'), reason: '宿主服务已注入');
+      expect(page.html, contains('workshop.session.create'),
+          reason: '多对话接口已注入');
+      expect(page.html, contains('ai.chatToolsStream'), reason: '流式 AI 接口已注入');
       expect(page.html, contains("script-src 'unsafe-inline' blob:"));
       expect(page.html, isNot(contains('你是 AntiSIT「拓展工坊」里的编码 Agent')),
           reason: 'main.js 走 base64，不应直接出现在 HTML 里');
@@ -1208,6 +1344,7 @@ class _FakeAiCapability implements AiCapability {
   int? lastMaxTokens;
 
   int chatToolsCalls = 0;
+  int chatToolsStreamCalls = 0;
   List<AiChatMessage>? lastMessages;
   List<AiToolSpec>? lastTools;
   int? lastChatToolsMaxTokens;
@@ -1254,6 +1391,25 @@ class _FakeAiCapability implements AiCapability {
     lastChatToolsMaxTokens = maxTokens;
     return chatToolsReply;
   }
+
+  @override
+  Future<AiChatReply> chatWithToolsStream(
+    List<AiChatMessage> messages, {
+    List<AiToolSpec> tools = const [],
+    int? maxTokens,
+    void Function(String delta)? onText,
+    void Function(String delta)? onReasoning,
+  }) async {
+    chatToolsStreamCalls++;
+    lastMessages = messages;
+    lastTools = tools;
+    lastChatToolsMaxTokens = maxTokens;
+    if (chatToolsReply.reasoning.isNotEmpty) {
+      onReasoning?.call(chatToolsReply.reasoning);
+    }
+    if (chatToolsReply.text.isNotEmpty) onText?.call(chatToolsReply.text);
+    return chatToolsReply;
+  }
 }
 
 /// 记录 NavSwipeHost 每次调用的假宿主（桥的单测用）。
@@ -1270,4 +1426,12 @@ class _RecordingSwipeHost implements NavSwipeHost {
 
   @override
   void navDragCancel() => cancels++;
+}
+
+/// 记录桥推给网页的下行事件（流式 AI 增量）。
+class _RecordingSink implements WebBridgeEventSink {
+  final events = <(String, Object?)>[];
+
+  @override
+  void emit(String event, Object? data) => events.add((event, data));
 }

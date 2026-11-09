@@ -152,6 +152,7 @@ class CordisRuntime {
           });
         }
         chatTools(payload) { return call('ai.chatTools', payload); }
+        chatToolsStream(payload) { return call('ai.chatToolsStream', payload); }
       }
       class App extends Service {
         constructor(c) {
@@ -167,6 +168,7 @@ class CordisRuntime {
         constructor(c) { super(c, 'workshop'); }
         list() { return call('workshop.list'); }
         create(name) { return call('workshop.create', { name: name }); }
+        deleteDraft(draftId) { return call('workshop.deleteDraft', { draftId: draftId }); }
         files(draftId) { return call('workshop.files', { draftId: draftId }); }
         read(draftId, path) { return call('workshop.read', { draftId: draftId, path: path }); }
         write(draftId, path, content, expectedVersion) {
@@ -183,9 +185,39 @@ class CordisRuntime {
         validate(draftId) { return call('workshop.validate', { draftId: draftId }); }
         install(draftId) { return call('workshop.install', { draftId: draftId }); }
         preview(draftId) { return call('workshop.preview', { draftId: draftId }); }
-        loadSession(draftId) { return call('workshop.session.get', { draftId: draftId }); }
-        saveSession(draftId, data) {
-          return call('workshop.session.set', { draftId: draftId, data: data });
+        listConversations(draftId) {
+          return call('workshop.session.list', { draftId: draftId });
+        }
+        createConversation(draftId, title) {
+          return call('workshop.session.create', { draftId: draftId, title: title });
+        }
+        deleteConversation(draftId, conversationId) {
+          return call('workshop.session.delete', {
+            draftId: draftId, conversationId: conversationId
+          });
+        }
+        loadSession(draftId, conversationId) {
+          return call('workshop.session.get', {
+            draftId: draftId, conversationId: conversationId
+          });
+        }
+        saveSession(draftId, conversationId, data) {
+          return call('workshop.session.set', {
+            draftId: draftId, conversationId: conversationId, data: data
+          });
+        }
+        listSkills() { return call('workshop.skills.list'); }
+        readSkill(id) { return call('workshop.skills.read', { id: id }); }
+        installSkill(name, description, content) {
+          return call('workshop.skills.install', {
+            name: name, description: description, content: content
+          });
+        }
+        deleteSkill(id, userInitiated) {
+          return call('workshop.skills.delete', { id: id, userInitiated: !!userInitiated });
+        }
+        setFullAccess(enabled) {
+          return call('workshop.setFullAccess', { enabled: enabled });
         }
       }
       await ctx.plugin(Ui);

@@ -103,11 +103,24 @@ export default {
 | `ctx.card` | `setName(text)` / `setDesc(text)` / `setIcon(text)` | 改拓展列表卡片上的显示值 |
 | `ctx.ai` | `chat(prompt, {system, maxTokens})` | 走用户在「AI 设置」里配置的模型；Key 不出 App |
 | | `chatTools({messages, tools, maxTokens})` | 多轮 + OpenAI 兼容 function calling（拓展工坊用） |
+| | `chatToolsStream({streamId, messages, tools, maxTokens})` | 流式版；增量通过 `antiSIT.on('ai.stream')` 推下来，返回值仍是完整回复 |
 | `ctx.app` | `id` / `name` / `version` / `permissions` / `close()` | 当前拓展信息 |
-| `ctx.workshop` | `list` / `create` / `files` / `read` / `write` / `remove` / `validate` / `install` / `preview` / `loadSession` / `saveSession` | **只给内置「拓展工坊」**，其他拓展调用会被拒。`read` 返回 `{content, version}`；`write` / `remove` 要带 `expectedVersion`（读后写） |
+| `ctx.workshop` | `list` / `create` / `deleteDraft` / `files` / `read` / `write` / `remove` / `validate` / `install` / `preview` | **只给内置「拓展工坊」**，其他拓展调用会被拒。`read` 返回 `{content, version}`；`write` / `remove` 要带 `expectedVersion`（读后写） |
+| | `listConversations` / `createConversation` / `deleteConversation` / `loadSession` / `saveSession` | 一个草稿多段对话；`saveSession` 带 `conversationId` |
+| | `listSkills` / `readSkill` / `installSkill` / `deleteSkill` | Agent 技能库（可复用指令文档，全局共享） |
+| | `setFullAccess(enabled)` | 完全访问：写入 / 删除 / 安装不再逐次弹原生确认 |
 
 底层仍然有 `window.antiSIT.call(method, args)` 原始通道；上面的服务只是它的
 Cordis 包装。`theme` / `toast` / `close` / `card` 是基础接口，不声明权限也放行。
+流式事件用 `antiSIT.on(事件名, 回调)` 订阅（返回取消订阅函数），例如：
+
+```js
+antiSIT.on('ai.stream', (e) => {
+  if (e.streamId !== myStreamId) return;
+  if (e.kind === 'reasoning') showThinking(e.delta);
+  else showText(e.delta);
+});
+```
 
 ## 权限
 
@@ -145,14 +158,34 @@ Cordis 包装。`theme` / `toast` / `close` / `card` 是基础接口，不声明
 ### 一次运行
 
 1. `send` 把你说的话放进 inbox；空闲时开一个新 turn，运行中则排到下一步（steering）。
-2. 每个 step 先拼 system prompt 和 runtime context（草稿 id / 权限 / 文件树），
-   再按日志派生消息，带工具 schema 请求模型。
-3. 模型返回的 assistant message 和每个 `tool/call` / `tool/result` 都写进日志；
-   连续的只读工具（`list_files` / `read_file` / `validate_extension`）可以并发，
-   写入 / 删除 / 安装 / 预览形成独占屏障。
+2. 每个 step 先拼 system prompt 和 runtime context（草稿 id / 权限 / 文件树 / 技能清单），
+   再按日志派生消息，带工具 schema 请求模型。模型输出走**流式**：正文和推理过程
+   边收边显示，思考过程默认折叠，点开可看全文。
+3. 模型返回的 assistant message（含 reasoning）和每个 `tool/call` / `tool/result`
+   都写进日志；连续的只读工具（`list_files` / `read_file` / `validate_extension`）可以并发，
+   写入 / 删除 / 安装 / 预览形成独占屏障。工具卡片运行中自动展开，结束后收起，
+   随时可以点开回看参数与结果。
 4. 模型不再调工具就结束 turn；期间插的话会在下一步被 claim，不会丢。
-5. 日志落在 `<草稿>/.workshop/session.json`，重新打开草稿会恢复聊天；上次崩溃留下的
-   未闭合 turn、没有结果的 tool call 会自动补一条错误结果，保持请求历史合法。
+5. 对话日志落在 `<草稿>/.workshop/sessions/<对话 id>.json`（旧版 `session.json` 仍可读，
+   显示为默认对话）。**一个草稿可以有多段对话**，顶部切换 / 新建 / 删除；重新打开会
+   恢复上次那段。上次崩溃留下的未闭合 turn、没有结果的 tool call 会自动补一条错误
+   结果，保持请求历史合法。
+
+### 模式
+
+* **计划模式**：只读分析，不写文件、不安装。Agent 只拿到只读工具，最后给出一份
+  可执行计划；关掉后可以直接让它按计划执行。
+* **完全访问**：写入 / 删除 / 安装 / 安装技能不再逐次弹原生确认（开启时仍会确认一次）。
+* 两者**互不冲突**：可以同时开启。计划模式下仍然没有写操作；完全访问只影响确认框，
+  不影响计划模式的只读工具集。
+
+### 草稿与技能
+
+* 顶部「删」可以删除**未安装**的草稿（已安装的会提示先去「拓展」页卸载）；删除会连同
+  该草稿的全部对话记录一起清掉，删前弹原生确认。
+* **技能**（skill）是可复用的指令文档，不是可执行代码：Agent 用 `install_skill` 把
+  一段方法论存进全局技能库，之后用 `list_skills` / `read_skill` 按需读取；工坊顶部
+  「技能」抽屉可以查看和删除已安装技能。
 
 ### 工具
 
@@ -166,6 +199,9 @@ Cordis 包装。`theme` / `toast` / `close` / `card` 是基础接口，不声明
 | `validate_extension` | 自检清单、入口、`localStorage`、未声明 `network` 却 `fetch` 等 |
 | `preview_extension` | 用当前草稿打开 App 内预览 |
 | `install_extension` | 复制到正式拓展目录；只有你明确要求时才调用 |
+| `list_skills` / `read_skill` | 列出 / 读取技能库；read 支持按 id 或名称 |
+| `install_skill` | 安装或更新一条技能（同名覆盖）；弹原生确认，完全访问时跳过 |
+| `delete_skill` | 删除一条技能 |
 
 写入、删除、安装都会弹**原生确认**。读后写由 Dart 层按内容 sha256 校验：没读过、
 或读完之后文件被别处改过，都会拒绝写入，Agent 必须重新读。草稿位置与文件限制不变：
@@ -181,11 +217,11 @@ Cordis 包装。`theme` / `toast` / `close` / `card` 是基础接口，不声明
 ### 与 DSH 的差异
 
 这套实现借用了 DSH 的 session / turn / step / inbox / tool registry / runtime context
-结构，但没有搬 DSH 的完整运行时：没有流式输出、subagent、skills、compaction 和
-provider 中间件；单轮最多 40 step，日志超过约 400 条事件会按完整 turn 丢弃最旧的一段。
-「停止」会在当前模型请求返回后生效（WebView ↔ App 的 AI 通道没有取消令牌），
-不是 DSH 那种立刻 abort 网络请求。移动端 WebView 里这些取舍是为了可控的包体和
-可解释的行为。
+结构，并补上了流式输出、思考折叠、多对话、技能库与计划 / 完全访问模式；仍然没有搬
+subagent、compaction 和 provider 中间件。单轮最多 40 step，日志超过约 400 条事件会按
+完整 turn 丢弃最旧的一段。「停止」会在当前模型请求返回后生效（WebView ↔ App 的 AI
+通道没有取消令牌），不是 DSH 那种立刻 abort 网络请求。移动端 WebView 里这些取舍是为了
+可控的包体和可解释的行为。
 
 ## 旧拓展迁移
 

@@ -57,6 +57,17 @@ class ExtBridge extends WebBridge {
 
   bool get _isWorkshop => extId == workshopExtId;
 
+  /// 内核 → 网页的下行通道（流式 AI 增量用）；页面关掉后为 null。
+  WebBridgeEventSink? _events;
+
+  /// 完全访问模式：跳过写入 / 删除 / 安装的原生确认（只由工坊自己的开关打开）。
+  bool _fullAccess = false;
+
+  @override
+  void attachEventSink(WebBridgeEventSink? sink) {
+    _events = sink;
+  }
+
   @override
   Future<Object?> call(String method, Object? args) async {
     _checkPermission(method);
@@ -94,6 +105,8 @@ class ExtBridge extends WebBridge {
         return _aiChat(args);
       case 'ai.chatTools':
         return _aiChatTools(args);
+      case 'ai.chatToolsStream':
+        return _aiChatToolsStream(args);
       default:
         throw ArgumentError('未知接口：$method');
     }
@@ -183,7 +196,74 @@ class ExtBridge extends WebBridge {
   }
 
   Future<Object?> _aiChatTools(Object? args) async {
-    if (args is! Map) throw ArgumentError('ai.chatTools 要带 {messages}');
+    final parsed = _parseAiRequest(args, methodName: 'ai.chatTools');
+    final ai = _requireAi();
+    final reply = await ai.chatWithTools(parsed.messages,
+        tools: parsed.tools, maxTokens: parsed.maxTokens);
+    return _aiReplyJson(reply);
+  }
+
+  /// 流式多轮对话：增量通过 [WebBridgeEventSink] 推给网页的 `antiSIT.on('ai.stream')`，
+  /// 返回值仍是完整回复（工具调用在流结束后给出）。`streamId` 由网页生成，
+  /// 事件里带上它，网页可以只认自己那一轮。
+  Future<Object?> _aiChatToolsStream(Object? args) async {
+    final a = args is Map ? args : const {};
+    final streamId = '${a['streamId'] ?? ''}'.trim();
+    if (streamId.isEmpty) throw ArgumentError('ai.chatToolsStream 要带 {streamId}');
+    final parsed = _parseAiRequest(args, methodName: 'ai.chatToolsStream');
+    final ai = _requireAi();
+    // 模型是 token 级增量，直接每个 chunk 都 runJavaScript 会把 WebView 打满：
+    // 攒 ~60ms 再推一次，最后在 finally 里把余量冲干净。
+    final text = StringBuffer();
+    final reasoning = StringBuffer();
+    Timer? timer;
+    void flush() {
+      if (_events == null) {
+        text.clear();
+        reasoning.clear();
+        return;
+      }
+      if (reasoning.isNotEmpty) {
+        _events!.emit('ai.stream',
+            {'streamId': streamId, 'kind': 'reasoning', 'delta': reasoning.toString()});
+        reasoning.clear();
+      }
+      if (text.isNotEmpty) {
+        _events!.emit('ai.stream',
+            {'streamId': streamId, 'kind': 'text', 'delta': text.toString()});
+        text.clear();
+      }
+    }
+
+    void schedule() {
+      timer ??= Timer(const Duration(milliseconds: 60), () {
+        timer = null;
+        flush();
+      });
+    }
+
+    try {
+      final reply = await ai.chatWithToolsStream(parsed.messages,
+          tools: parsed.tools,
+          maxTokens: parsed.maxTokens,
+          onText: (delta) {
+            text.write(delta);
+            schedule();
+          },
+          onReasoning: (delta) {
+            reasoning.write(delta);
+            schedule();
+          });
+      return _aiReplyJson(reply);
+    } finally {
+      timer?.cancel();
+      flush();
+    }
+  }
+
+  static ({List<AiChatMessage> messages, List<AiToolSpec> tools, int maxTokens})
+      _parseAiRequest(Object? args, {required String methodName}) {
+    if (args is! Map) throw ArgumentError('$methodName 要带 {messages}');
     final rawMessages = args['messages'];
     if (rawMessages is! List || rawMessages.isEmpty) {
       throw ArgumentError('messages 不能为空');
@@ -238,21 +318,27 @@ class ExtBridge extends WebBridge {
     }
     final rawMax = args['maxTokens'];
     final maxTokens = rawMax is num ? rawMax.toInt().clamp(256, 4096).toInt() : 4096;
+    return (messages: messages, tools: tools, maxTokens: maxTokens);
+  }
+
+  static AiCapability _requireAi() {
     final ai = PluginRegistry.I.capability<AiCapability>(PluginIds.ai);
     if (ai == null || !ai.available) {
       throw ArgumentError('AI 还没配好：到「我的 → AI 设置」选择提供商并填写 Key 与模型');
     }
-    final reply = await ai.chatWithTools(messages, tools: tools, maxTokens: maxTokens);
-    return {
-      'text': reply.text,
-      'usedTools': reply.usedTools,
-      'finishReason': reply.finishReason,
-      'toolCalls': [
-        for (final c in reply.toolCalls)
-          {'id': c.id, 'name': c.name, 'arguments': c.argumentsJson},
-      ],
-    };
+    return ai;
   }
+
+  static Map<String, Object?> _aiReplyJson(AiChatReply reply) => {
+        'text': reply.text,
+        'reasoning': reply.reasoning,
+        'usedTools': reply.usedTools,
+        'finishReason': reply.finishReason,
+        'toolCalls': [
+          for (final c in reply.toolCalls)
+            {'id': c.id, 'name': c.name, 'arguments': c.argumentsJson},
+        ],
+      };
 
   // ==================== 拓展工坊（内置拓展专用）====================
 
@@ -261,12 +347,38 @@ class ExtBridge extends WebBridge {
     switch (method) {
       case 'workshop.list':
         final drafts = await workshop.listDrafts();
-        return {'drafts': [for (final d in drafts) d.toJson()]};
+        final installed = ExtensionStore.I.items.map((e) => e.id).toSet();
+        return {
+          'drafts': [
+            for (final d in drafts)
+              {...d.toJson(), 'installed': installed.contains(d.id)},
+          ],
+        };
 
       case 'workshop.create':
         final name = '${a['name'] ?? '未命名拓展'}'.trim();
         final draft = await workshop.create(name: name.isEmpty ? '未命名拓展' : name);
-        return draft.toJson();
+        return {...draft.toJson(), 'installed': false};
+
+      case 'workshop.deleteDraft':
+        final id = _argString(a, 'draftId');
+        if (ExtensionStore.I.isBuiltin(id)) {
+          throw ArgumentError('内置拓展的草稿不能删除');
+        }
+        if (ExtensionStore.I.items.any((e) => e.id == id)) {
+          throw ArgumentError('「$id」已安装：先到「拓展」页卸载，再删除草稿');
+        }
+        final draft = await workshop.load(id);
+        if (draft == null) throw ArgumentError('草稿不存在或 ext.json 已损坏');
+        // 删草稿只可能来自用户点按钮，不属于 Agent 的「完全访问」范围，始终确认
+        final ok = await _confirm(
+          title: '删除草稿「${draft.manifest.name}」',
+          detail: '整个草稿目录（含文件与全部对话记录）会被删除，不可恢复。',
+          danger: true,
+        );
+        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除草稿'};
+        await workshop.deleteDraft(id);
+        return {'ok': true};
 
       case 'workshop.files':
         final id = _argString(a, 'draftId');
@@ -307,14 +419,102 @@ class ExtBridge extends WebBridge {
         await workshop.deleteFile(id, path, expectedVersion: expectedVersion);
         return {'ok': true};
 
+      case 'workshop.session.list':
+        final list = await workshop.listConversations(_argString(a, 'draftId'));
+        return {'conversations': [for (final c in list) c.toJson()]};
+
+      case 'workshop.session.create':
+        final created = await workshop.createConversation(
+            _argString(a, 'draftId'),
+            title: '${a['title'] ?? '新对话'}');
+        return created.toJson();
+
+      case 'workshop.session.delete':
+        final draftId = _argString(a, 'draftId');
+        final conversationId = _argString(a, 'conversationId');
+        // 删对话同样只从界面触发，始终确认
+        final ok = await _confirm(
+          title: '删除这段对话',
+          detail: '只会删掉这段对话的记录，草稿文件和其它对话不受影响。',
+          danger: true,
+        );
+        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除对话'};
+        await workshop.deleteConversation(draftId, conversationId);
+        return {'ok': true};
+
       case 'workshop.session.get':
-        return workshop.loadSession(_argString(a, 'draftId'));
+        final draftId = _argString(a, 'draftId');
+        final conversationId = '${a['conversationId'] ?? ''}'.trim();
+        return conversationId.isEmpty
+            ? workshop.loadSession(draftId)
+            : workshop.loadConversation(draftId, conversationId);
 
       case 'workshop.session.set':
         final id = _argString(a, 'draftId');
         final data = a['data'] is String ? a['data'] as String : '${a['data'] ?? ''}';
-        await workshop.saveSession(id, data);
+        final conversationId = '${a['conversationId'] ?? ''}'.trim();
+        if (conversationId.isEmpty) {
+          await workshop.saveSession(id, data);
+        } else {
+          await workshop.saveConversation(id, conversationId, data);
+        }
         return true;
+
+      case 'workshop.skills.list':
+        final list = await workshop.listSkills();
+        return {'skills': [for (final s in list) s.toJson()]};
+
+      case 'workshop.skills.read':
+        final skill = await workshop.readSkill(_argString(a, 'id'));
+        return {
+          'id': skill.id,
+          'name': skill.name,
+          'description': skill.description,
+          'content': skill.content,
+        };
+
+      case 'workshop.skills.install':
+        final name = _argString(a, 'name');
+        final content =
+            a['content'] is String ? a['content'] as String : '${a['content'] ?? ''}';
+        final ok = await _approve(
+          title: '安装技能「$name」',
+          detail: '${content.length} 字符\n\n${_previewText(content)}',
+        );
+        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝安装技能'};
+        final skill = await workshop.installSkill(
+          name: name,
+          description: '${a['description'] ?? ''}',
+          content: content,
+        );
+        return {...skill.toJson(), 'ok': true};
+
+      case 'workshop.skills.delete':
+        final id = _argString(a, 'id');
+        final confirm = a['userInitiated'] == true ? _confirm : _approve;
+        final ok = await confirm(
+          title: '删除技能',
+          detail: '删除后 Agent 不再能读取这条技能，草稿与拓展不受影响。',
+          danger: true,
+        );
+        if (!ok) return {'ok': false, 'denied': true, 'reason': '用户拒绝删除技能'};
+        await workshop.deleteSkill(id);
+        return {'ok': true};
+
+      case 'workshop.setFullAccess':
+        final enabled = a['enabled'] == true;
+        if (enabled && !_fullAccess) {
+          // 这是个危险开关：即使已经开了完全访问，也要走原始确认框，不能被自己跳过
+          final ok = await _confirm(
+            title: '开启完全访问模式',
+            detail: '开启后，Agent 写入 / 删除文件、安装拓展和技能将不再逐次弹确认。\n'
+                '只在你完全信任当前任务时使用；随时可以在工坊顶部关掉。',
+            danger: true,
+          );
+          if (!ok) return {'ok': false, 'denied': true};
+        }
+        _fullAccess = enabled;
+        return {'ok': true, 'enabled': _fullAccess};
 
       case 'workshop.validate':
         final problems = await workshop.validate(_argString(a, 'draftId'));
@@ -375,6 +575,16 @@ class ExtBridge extends WebBridge {
   }
 
   Future<bool> _approve({
+    required String title,
+    required String detail,
+    bool danger = false,
+  }) async {
+    // 完全访问模式：所有「写入 / 删除 / 安装」确认都直接放行
+    if (_fullAccess) return true;
+    return _confirm(title: title, detail: detail, danger: danger);
+  }
+
+  Future<bool> _confirm({
     required String title,
     required String detail,
     bool danger = false,
