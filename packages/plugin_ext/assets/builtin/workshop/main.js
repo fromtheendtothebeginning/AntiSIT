@@ -26,12 +26,14 @@ let onSessionChange = () => {};
 
 const WELCOME = `
   <div class="welcome">
-    <div class="spark">✨</div>
-    <h2>和 Agent 一起写一个 Cordis 拓展</h2>
-    <p>描述你想要的小工具。Agent 会先看草稿、读文件、再改；写文件和安装前默认会弹确认。运行中也可以继续插话，下一步会看到。想先讨论方案就开「计划」，信任当前任务就开「完全访问」。</p>
-    <button data-say="做一个记录喝水次数的小工具，数据要留在本机">做一个喝水记录小工具</button>
-    <button data-say="做一个倒计时，可以设定目标日期">做一个倒计时</button>
-    <button data-say="先读一下当前 main.js，告诉我它是做什么的">读一下当前 main.js</button>
+    <div class="welcome-mark">◈</div>
+    <div class="welcome-title">和 Agent 一起写一个 Cordis 拓展</div>
+    <div class="welcome-note">描述你想要的小工具。Agent 会先看草稿、读文件、再改；写文件和安装前默认会弹确认。运行中也可以继续插话，下一步会看到。想先讨论方案就开「计划」，信任当前任务就开「完全访问」。</div>
+    <div class="welcome-says">
+      <button data-say="做一个记录喝水次数的小工具，数据要留在本机">做一个喝水记录小工具</button>
+      <button data-say="做一个倒计时，可以设定目标日期">做一个倒计时</button>
+      <button data-say="先读一下当前 main.js，告诉我它是做什么的">读一下当前 main.js</button>
+    </div>
   </div>`;
 
 // ==================== 会话日志 ====================
@@ -1432,6 +1434,101 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
+/** 行内 markdown：`code` 与 **粗体**（先转义，再替换，不会带进标签）。 */
+function mdInline(text) {
+  return text
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+}
+
+/** 一段纯文本 → 标题 / 列表 / 引用 / 段落（DSH 那种轻 markdown 渲染）。
+    先逐行转义再套行内格式，模型输出里的 HTML 不会被当标签执行。 */
+function mdText(raw) {
+  let out = '';
+  for (const rawLine of String(raw || '').split('\n')) {
+    const line = esc(rawLine);
+    const t = line.trim();
+    if (!t) {
+      out += '<div class="md-gap"></div>';
+      continue;
+    }
+    let m = t.match(/^(#{1,4})\s+(.*)$/);
+    if (m) {
+      out += '<div class="md-h md-h' + m[1].length + '">' + mdInline(m[2]) + '</div>';
+      continue;
+    }
+    m = t.match(/^[-*]\s+(.*)$/);
+    if (m) {
+      out += '<div class="md-li">' + mdInline(m[1]) + '</div>';
+      continue;
+    }
+    m = t.match(/^(\d+)[.)]\s+(.*)$/);
+    if (m) {
+      out += '<div class="md-li md-num-li"><span class="md-num">' + m[1] + '.</span>'
+        + mdInline(m[2]) + '</div>';
+      continue;
+    }
+    m = t.match(/^&gt;\s?(.*)$/);
+    if (m) {
+      out += '<div class="md-quote">' + mdInline(m[1]) + '</div>';
+      continue;
+    }
+    out += '<div class="md-p">' + mdInline(line) + '</div>';
+  }
+  return out;
+}
+
+/** 代码块（带语言标签与「复制」）：DSH Go 那种灰底、圆角、头部一行。 */
+function codeBlock(lang, code) {
+  return '<div class="code">'
+    + '<div class="code-head"><span>' + esc(lang || 'text') + '</span>'
+    + '<button class="code-copy" data-copy>复制</button></div>'
+    + '<pre><code>' + esc(String(code || '').replace(/\n$/, '')) + '</code></pre></div>';
+}
+
+/** markdown 正文 → HTML：围栏代码块单独渲染，其余按行处理。流式时未闭合的围栏也能显示。 */
+function md(raw) {
+  const text = String(raw || '');
+  const out = [];
+  const re = /```([^\n`]*)\n?([\s\S]*?)(?:```|$)/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push(mdText(text.slice(last, m.index)));
+    out.push(codeBlock(m[1].trim(), m[2]));
+    last = re.lastIndex;
+    if (!m[2]) break;
+  }
+  if (last < text.length) out.push(mdText(text.slice(last)));
+  return out.join('');
+}
+
+/** 复制到剪贴板（WebView 里 navigator.clipboard 可能不可用，退回 textarea）。 */
+function copyText(text) {
+  const value = String(text || '');
+  if (!value) return;
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      ctx.ui.toast('已复制');
+    } catch (_) {
+      ctx.ui.toast('复制失败');
+    }
+    ta.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(value).then(() => ctx.ui.toast('已复制'), fallback);
+  } else {
+    fallback();
+  }
+}
+
 export default {
   name: 'ext-workshop',
   inject: ['ui', 'ai', 'workshop'],
@@ -1455,67 +1552,71 @@ export default {
       fullAccess: false,
       skills: [],
       status: '',
+      tab: 'chat',
       alive: true,
     };
 
     root.innerHTML = `
       <div class="ws">
         <header class="ws-head">
-          <div class="ws-toolbar">
-            <label class="ws-field grow">
-              <span>草稿</span>
-              <select id="draftSelect"></select>
-            </label>
-            <button id="btnNewDraft" class="icon-btn" title="新建草稿">＋</button>
-            <button id="btnDeleteDraft" class="icon-btn danger" title="删除未安装的草稿">删</button>
+          <div class="ws-bar">
+            <button id="btnSwitch" class="ws-icon" title="切换草稿 / 对话">←</button>
+            <button id="btnTitle" class="ws-heading">
+              <span class="ws-title" id="convTitle">新对话</span>
+              <span class="ws-sub" id="draftMeta"></span>
+            </button>
+            <button id="btnMore" class="ws-icon" title="更多">⋯</button>
           </div>
-          <div class="ws-toolbar">
-            <label class="ws-field grow">
-              <span>对话</span>
-              <select id="convSelect"></select>
-            </label>
-            <button id="btnNewConv" class="icon-btn" title="新建对话">＋</button>
-            <button id="btnDeleteConv" class="icon-btn danger" title="删除当前对话">删</button>
-            <button id="btnPlan" class="chip" title="只读分析并给出执行计划">计划</button>
-            <button id="btnFull" class="chip danger" title="写入 / 安装不再逐次确认">完全访问</button>
-          </div>
-          <div class="ws-toolbar meta-row">
-            <div class="ws-sub" id="draftMeta"></div>
-            <div class="ws-actions">
-              <button id="btnSkills" title="已安装的 Agent 技能">技能</button>
-              <button id="btnFiles" title="草稿文件">文件</button>
-              <button id="btnPreview" title="预览当前草稿">预览</button>
-              <button id="btnInstall" class="primary" title="安装当前草稿">安装</button>
-            </div>
-          </div>
-          <div class="ws-warn hidden" id="fullBanner">
-            完全访问已开启：写入、删除、安装都不再弹确认
-          </div>
+          <nav class="ws-tabs">
+            <button class="ws-tab active" data-tab="chat">对话</button>
+            <button class="ws-tab" data-tab="files">文件</button>
+          </nav>
         </header>
         <main class="ws-chat" id="chat"></main>
-        <div class="ws-status hidden" id="status"></div>
-        <footer class="ws-foot">
-          <textarea id="input" rows="1" placeholder="描述要做什么，或让我改哪个文件…"></textarea>
-          <button id="btnSend" class="primary">发送</button>
-          <button id="btnStop" class="hidden">停止</button>
+        <section class="ws-files hidden" id="filesPanel">
+          <div class="files-head">
+            <span id="filesCount">文件</span>
+            <button id="btnRefreshFiles" class="ws-link">刷新</button>
+          </div>
+          <div class="file-list" id="files"></div>
+        </section>
+        <footer class="ws-composer">
+          <div class="composer-box">
+            <textarea id="input" rows="1" placeholder="描述要做什么，或直接说改哪个文件…"></textarea>
+            <div class="composer-row">
+              <button id="btnPlan" class="pill" title="只读分析并给出执行计划">计划</button>
+              <button id="btnFull" class="pill danger" title="写入 / 安装不再逐次确认">完全访问</button>
+              <span class="composer-grow"></span>
+              <button id="btnStop" class="round hidden" title="停止">■</button>
+              <button id="btnSend" class="round primary" title="发送">↑</button>
+            </div>
+          </div>
+          <div class="ws-meta"><span id="metaLine"></span><span id="status" class="hidden"></span></div>
         </footer>
-        <div class="ws-drawer hidden" id="drawer">
-          <div class="drawer-head">
-            <strong>草稿文件</strong>
-            <button id="btnCloseDrawer">关闭</button>
-          </div>
-          <div id="files"></div>
-        </div>
-        <div class="ws-drawer hidden" id="skillsDrawer">
-          <div class="drawer-head">
-            <strong>Agent 技能</strong>
-            <button id="btnCloseSkills">关闭</button>
-          </div>
-          <div id="skills"></div>
+        <div class="ws-menu hidden" id="moreMenu">
+          <button data-act="skills">技能</button>
+          <button data-act="preview">预览草稿</button>
+          <button data-act="install">安装草稿</button>
+          <button data-act="newConv">新建对话</button>
+          <button data-act="newDraft">新建草稿</button>
+          <button data-act="deleteConv" class="danger">删除当前对话</button>
+          <button data-act="deleteDraft" class="danger">删除当前草稿</button>
         </div>
         <div class="ws-backdrop hidden" id="backdrop"></div>
+        <div class="ws-sheet hidden" id="switchSheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-label">草稿</div>
+          <div id="draftList"></div>
+          <div class="sheet-label">对话</div>
+          <div id="convList"></div>
+        </div>
+        <div class="ws-sheet hidden" id="skillsDrawer">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head"><strong>Agent 技能</strong><button id="btnCloseSkills" class="ws-link">关闭</button></div>
+          <div id="skills"></div>
+        </div>
         <div class="ws-viewer hidden" id="viewer">
-          <div class="viewer-head"><strong id="viewerTitle"></strong><button id="btnCloseViewer">关闭</button></div>
+          <div class="viewer-head"><strong id="viewerTitle"></strong><button id="btnCloseViewer" class="ws-link">关闭</button></div>
           <pre id="viewerBody"></pre>
         </div>
       </div>`;
@@ -1524,11 +1625,12 @@ export default {
     const chat = $('#chat');
     const input = $('#input');
     const status = $('#status');
-    const drawer = $('#drawer');
+    const filesPanel = $('#filesPanel');
+    const switchSheet = $('#switchSheet');
     const skillsDrawer = $('#skillsDrawer');
-    const fullBanner = $('#fullBanner');
     const backdrop = $('#backdrop');
     const viewer = $('#viewer');
+    const moreMenu = $('#moreMenu');
     let renderScheduled = false;
 
     // AI 流式增量：只认当前这一轮的 streamId（重试会换 id）
@@ -1564,54 +1666,93 @@ export default {
     function render() {
       if (!S.alive) return;
       const draft = S.draft;
+      const conv = (S.conversations || []).find((c) => c.id === S.conversationId);
+      $('#convTitle').textContent = (conv && conv.title) || '新对话';
       $('#draftMeta').textContent = draft
-        ? draft.name + ' · ' + draft.id + ' · v' + draft.version + (draft.installed ? ' · 已安装' : '')
+        ? draft.name + ' · v' + draft.version + (draft.installed ? ' · 已安装' : '')
         : '还没有草稿';
-      const draftSelect = $('#draftSelect');
-      draftSelect.innerHTML = S.drafts
-        .map((d) => '<option value="' + esc(d.id) + '">' + esc(d.name) + '</option>')
-        .join('');
-      if (draft) draftSelect.value = draft.id;
-      draftSelect.disabled = S.running || S.drafts.length <= 1;
-      $('#btnNewDraft').disabled = S.running;
-      $('#btnDeleteDraft').disabled = S.running || !draft || !!draft.installed;
-      $('#btnDeleteDraft').title = draft && draft.installed
-        ? '已安装：先到「拓展」页卸载，再删草稿'
-        : '删除未安装的草稿';
-
-      const convSelect = $('#convSelect');
-      convSelect.innerHTML = S.conversations
-        .map((c) => '<option value="' + esc(c.id) + '">' + esc(c.title || '新对话') + '</option>')
-        .join('');
-      if (S.conversationId) convSelect.value = S.conversationId;
-      convSelect.disabled = S.running || S.conversations.length <= 1;
-      $('#btnNewConv').disabled = S.running || !draft;
-      $('#btnDeleteConv').disabled = S.running || !S.conversationId;
 
       $('#btnPlan').classList.toggle('active', !!S.planMode);
       $('#btnPlan').disabled = S.running;
       $('#btnFull').classList.toggle('active', !!S.fullAccess);
       $('#btnFull').disabled = S.running;
-      fullBanner.classList.toggle('hidden', !S.fullAccess);
 
-      $('#btnInstall').disabled = S.running || !draft;
-      $('#btnPreview').disabled = S.running || !draft;
-      $('#btnFiles').disabled = S.running || !draft;
-      $('#btnSkills').disabled = S.running;
-      $('#btnSend').classList.remove('hidden');
+      $('#btnSend').classList.toggle('hidden', S.running);
       $('#btnSend').disabled = !S.session;
       $('#btnStop').classList.toggle('hidden', !S.running);
-      status.classList.toggle('hidden', !S.running);
-      const queued = S.inbox.nextTurn.length + S.inbox.nextStep.length;
-      status.textContent = (S.status || '处理中…') + (queued ? ' · 已排队 ' + queued + ' 条' : '');
       input.placeholder = S.running
         ? '可以继续输入，Agent 下一步会看到…'
         : S.planMode
-          ? '计划模式：只读分析并给出计划，不会改文件…'
-          : '描述要做什么，或让我改哪个文件…';
+          ? '计划模式：只读分析，先给方案…'
+          : '描述要做什么，或直接说改哪个文件…';
+
+      const queued = S.inbox.nextTurn.length + S.inbox.nextStep.length;
+      const metaLine = $('#metaLine');
+      metaLine.classList.toggle('running', !!S.running);
+      metaLine.textContent = S.running
+        ? (S.status || '处理中…') + (queued ? ' · 已排队 ' + queued + ' 条' : '')
+        : [
+            (S.conversations || []).length + ' 条对话',
+            S.files.length + ' 个文件',
+            S.planMode ? '计划模式' : (S.fullAccess ? '完全访问' : '自动确认'),
+          ].join(' · ');
+      status.classList.add('hidden');
+      status.textContent = '';
+
+      $('#filesCount').textContent = S.files.length + ' 个文件';
+
       renderChat();
       renderFiles();
+      if (!switchSheet.classList.contains('hidden')) renderSwitch();
       if (!skillsDrawer.classList.contains('hidden')) renderSkills();
+    }
+
+    /** 「切换」面板：草稿列表 + 当前草稿的对话列表（点一下切过去）。 */
+    function renderSwitch() {
+      const draftBox = $('#draftList');
+      draftBox.innerHTML = '';
+      for (const d of S.drafts) {
+        const b = document.createElement('button');
+        b.className = 'pick' + (S.draft && d.id === S.draft.id ? ' active' : '');
+        b.innerHTML = '<span class="pick-main"><strong>' + esc(d.name) + '</strong>'
+          + '<em>v' + esc(d.version) + (d.installed ? ' · 已安装' : '') + '</em></span>'
+          + '<span class="pick-check">' + (S.draft && d.id === S.draft.id ? '✓' : '') + '</span>';
+        b.disabled = S.running;
+        b.addEventListener('click', async () => {
+          closeOverlays();
+          if (S.running || (S.draft && d.id === S.draft.id)) return;
+          try {
+            await selectDraft(d);
+          } catch (e) {
+            ctx.ui.toast('切换失败：' + (e && e.message ? e.message : e));
+          }
+        });
+        draftBox.appendChild(b);
+      }
+
+      const convBox = $('#convList');
+      convBox.innerHTML = '';
+      for (const c of S.conversations) {
+        const b = document.createElement('button');
+        b.className = 'pick' + (c.id === S.conversationId ? ' active' : '');
+        b.innerHTML = '<span class="pick-main"><strong>' + esc(c.title || '新对话') + '</strong>'
+          + '<em>' + (c.updatedAt ? new Date(c.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '') + '</em></span>'
+          + '<span class="pick-check">' + (c.id === S.conversationId ? '✓' : '') + '</span>';
+        b.disabled = S.running;
+        b.addEventListener('click', async () => {
+          closeOverlays();
+          if (S.running || c.id === S.conversationId) return;
+          try {
+            await selectConversation(c.id);
+          } catch (e) {
+            ctx.ui.toast('切换对话失败：' + (e && e.message ? e.message : e));
+          }
+        });
+        convBox.appendChild(b);
+      }
+      if (!S.conversations.length) {
+        convBox.innerHTML = '<div class="empty">还没有对话</div>';
+      }
     }
 
     function renderChat() {
@@ -1637,16 +1778,31 @@ export default {
             send();
           });
         });
+        chat.dataset.ready = '1';
         return;
       }
-      if (S.session) {
-        for (const item of S.session.projectChat()) chat.appendChild(messageEl(item));
+      const items = S.session ? S.session.projectChat() : [];
+      // 连续的工具调用收成一条「已执行 N 个操作」，点开看每个的参数与结果
+      let tools = [];
+      const flushTools = () => {
+        if (!tools.length) return;
+        chat.appendChild(toolRunEl(tools));
+        tools = [];
+      };
+      for (const item of items) {
+        if (item.role === 'tool') {
+          tools.push(item);
+          continue;
+        }
+        flushTools();
+        chat.appendChild(messageEl(item));
       }
+      flushTools();
       for (const message of S.pending) {
-        const bubble = document.createElement('div');
-        bubble.className = 'bubble user pending';
-        bubble.textContent = message.text;
-        chat.appendChild(bubble);
+        const row = document.createElement('div');
+        row.className = 'msg user pending';
+        row.innerHTML = '<div class="bubble user">' + esc(message.text) + '</div>';
+        chat.appendChild(row);
       }
       if (streamText || streamReasoning) {
         chat.appendChild(messageEl({
@@ -1670,62 +1826,102 @@ export default {
       }
     }
 
-    function messageEl(m) {
-      if (m.role === 'tool') {
-        const d = document.createElement('details');
-        d.className = 'tool-card ' + (m.running ? 'running' : (m.ok ? 'ok' : 'bad'));
-        if (m.key) d.setAttribute('data-key', m.key + ':tool');
-        if (m.running) d.open = true;
-        const summary = document.createElement('summary');
-        summary.innerHTML =
-          '<span class="dot"></span><code>' + esc(m.name) + '</code>' +
-          '<span class="tool-state">' + (m.running ? '执行中…' : (m.ok ? '完成' : '失败')) + '</span>';
-        d.appendChild(summary);
-        if (m.args) {
+    /** 一组工具调用：默认一行（✓ 已执行 N 个操作），点开逐条看参数 / 结果。 */
+    function toolRunEl(items) {
+      const running = items.some((t) => t.running);
+      const bad = items.some((t) => !t.running && !t.ok);
+      const run = document.createElement('details');
+      run.className = 'tool-run ' + (running ? 'running' : (bad ? 'bad' : 'ok'));
+      run.setAttribute('data-key', (items[0].key || 'tools') + ':tools');
+      if (running) run.open = true;
+      const summary = document.createElement('summary');
+      summary.innerHTML = '<span class="tool-dot"></span>'
+        + '<span>' + esc(running
+          ? '正在执行 ' + items.length + ' 个操作…'
+          : bad ? '有操作失败' : '已执行 ' + items.length + ' 个操作') + '</span>'
+        + '<span class="tool-chev">›</span>';
+      run.appendChild(summary);
+      const body = document.createElement('div');
+      body.className = 'tool-list';
+      for (const t of items) {
+        const row = document.createElement('details');
+        row.className = 'tool-item ' + (t.running ? 'running' : (t.ok ? 'ok' : 'bad'));
+        if (t.key) row.setAttribute('data-key', t.key + ':tool');
+        const head = document.createElement('summary');
+        head.innerHTML = '<span class="tool-dot"></span><code>' + esc(t.name) + '</code>'
+          + '<span class="tool-state">'
+          + (t.running ? '执行中' : (t.ok ? '完成' : '失败')) + '</span>';
+        row.appendChild(head);
+        if (t.args) {
           const pre = document.createElement('pre');
-          pre.textContent = m.args;
-          d.appendChild(pre);
+          pre.textContent = t.args;
+          row.appendChild(pre);
         }
-        if (m.result) {
+        if (t.result) {
           const pre = document.createElement('pre');
           pre.className = 'result';
-          pre.textContent = m.result;
-          d.appendChild(pre);
+          pre.textContent = t.result;
+          row.appendChild(pre);
         }
-        return d;
+        body.appendChild(row);
+      }
+      run.appendChild(body);
+      return run;
+    }
+
+    function messageEl(m) {
+      if (m.role === 'error') {
+        const div = document.createElement('div');
+        div.className = 'msg error';
+        div.textContent = m.text;
+        return div;
+      }
+      if (m.role === 'user') {
+        const row = document.createElement('div');
+        row.className = 'msg user';
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble user';
+        bubble.textContent = m.text;
+        row.appendChild(bubble);
+        return row;
       }
       const div = document.createElement('div');
-      div.className = 'bubble ' + m.role + (m.streaming ? ' streaming' : '');
-      if (m.role === 'assistant' && m.reasoning) {
+      div.className = 'msg assistant' + (m.streaming ? ' streaming' : '');
+      if (m.reasoning) {
         const details = document.createElement('details');
-        details.className = 'thinking';
+        details.className = 'think';
         if (m.key) details.setAttribute('data-key', m.key + ':think');
         const summary = document.createElement('summary');
-        summary.textContent = m.streaming ? '思考中…' : '思考过程';
+        summary.textContent = m.streaming ? '深度思考中…' : '深度思考';
         details.appendChild(summary);
         const body = document.createElement('div');
-        body.className = 'thinking-body';
+        body.className = 'think-body';
         body.textContent = m.reasoning;
         details.appendChild(body);
         div.appendChild(details);
       }
       if (m.text) {
         const text = document.createElement('div');
-        text.className = 'bubble-text';
-        text.textContent = m.text;
+        text.className = 'md';
+        text.innerHTML = md(m.text);
         div.appendChild(text);
       }
       if (m.streaming && !m.text && !m.reasoning) {
         const wait = document.createElement('div');
-        wait.className = 'bubble-text muted';
+        wait.className = 'md muted';
         wait.textContent = '…';
         div.appendChild(wait);
+      }
+      if (m.text && !m.streaming) {
+        const foot = document.createElement('div');
+        foot.className = 'msg-foot';
+        foot.innerHTML = '<button class="msg-copy" data-copy>复制</button>';
+        div.appendChild(foot);
       }
       return div;
     }
 
     function renderFiles() {
-      if (drawer.classList.contains('hidden')) return;
       const box = $('#files');
       box.innerHTML = '';
       if (!S.files.length) {
@@ -1803,16 +1999,36 @@ export default {
     }
 
     function closeOverlays() {
-      drawer.classList.add('hidden');
+      switchSheet.classList.add('hidden');
       skillsDrawer.classList.add('hidden');
+      moreMenu.classList.add('hidden');
       backdrop.classList.add('hidden');
       viewer.classList.add('hidden');
+    }
+
+    /** 页签：对话 / 文件（DSH 那种顶栏下划线页签）。 */
+    function setTab(tab) {
+      S.tab = tab;
+      root.querySelectorAll('.ws-tab').forEach((b) => {
+        b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+      });
+      chat.classList.toggle('hidden', tab !== 'chat');
+      filesPanel.classList.toggle('hidden', tab !== 'files');
+      if (tab === 'files') {
+        refreshFiles().then(() => {
+          if (S.alive) {
+            $('#filesCount').textContent = S.files.length + ' 个文件';
+            renderFiles();
+          }
+        }).catch(() => {});
+      }
     }
 
     function send() {
       const text = input.value.trim();
       if (!text || !S.session) return;
       input.value = '';
+      input.style.height = '';
       const message = { text: text };
       const target = S.running ? 'next-step' : 'next-turn';
       S.pending.push(message);
@@ -1841,69 +2057,111 @@ export default {
         send();
       }
     });
-    $('#draftSelect').addEventListener('change', async (e) => {
+    // 输入框跟着内容长高（最多 132px，再多就内部滚动）
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 132) + 'px';
+    });
+    // ---- 切换面板 / 页签 / 更多菜单 ----
+    const openSwitch = () => {
       if (S.running) {
-        e.target.value = S.draft.id;
+        ctx.ui.toast('Agent 运行中，先停止再切换');
         return;
       }
-      const next = S.drafts.find((d) => d.id === e.target.value) || S.drafts[0];
-      if (!next || next.id === S.draft.id) return;
+      renderSwitch();
+      switchSheet.classList.remove('hidden');
+      skillsDrawer.classList.add('hidden');
+      backdrop.classList.remove('hidden');
+    };
+    $('#btnSwitch').addEventListener('click', openSwitch);
+    $('#btnTitle').addEventListener('click', openSwitch);
+
+    root.querySelectorAll('.ws-tab').forEach((b) => {
+      b.addEventListener('click', () => setTab(b.getAttribute('data-tab')));
+    });
+    $('#btnRefreshFiles').addEventListener('click', () => setTab('files'));
+
+    $('#btnMore').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = moreMenu.classList.contains('hidden');
+      moreMenu.classList.toggle('hidden', !open);
+      if (!open) return;
+      moreMenu.querySelectorAll('button').forEach((b) => {
+        const act = b.getAttribute('data-act');
+        const needsDraft = act === 'install' || act === 'preview'
+          || act === 'newConv' || act === 'deleteConv' || act === 'deleteDraft';
+        b.disabled = S.running
+          || (needsDraft && !S.draft)
+          || (act === 'deleteDraft' && S.draft && !!S.draft.installed);
+      });
+    });
+
+    moreMenu.addEventListener('click', async (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const act = b.getAttribute('data-act');
+      moreMenu.classList.add('hidden');
+      const draft = S.draft;
       try {
-        await selectDraft(next);
+        if (act === 'skills') {
+          await refreshSkills();
+          skillsDrawer.classList.remove('hidden');
+          switchSheet.classList.add('hidden');
+          backdrop.classList.remove('hidden');
+          renderSkills();
+        } else if (act === 'preview') {
+          if (draft) await ctx.workshop.preview(draft.id);
+        } else if (act === 'install') {
+          if (!draft) return;
+          const result = await ctx.workshop.install(draft.id);
+          if (result && result.denied) return;
+          ctx.ui.toast('已安装，可在「拓展」页打开');
+          await refreshDraftList();
+          notify();
+        } else if (act === 'newConv') {
+          await newConversation();
+          ctx.ui.toast('已新建对话');
+        } else if (act === 'newDraft') {
+          if (S.session) await S.session.flush();
+          const created = await ctx.workshop.create('未命名拓展');
+          await refreshDraftList();
+          S.drafts = [created].concat(S.drafts.filter((d) => d.id !== created.id));
+          await selectDraft(created);
+          ctx.ui.toast('已新建草稿');
+        } else if (act === 'deleteConv') {
+          await deleteCurrentConversation();
+        } else if (act === 'deleteDraft') {
+          await deleteCurrentDraft();
+        }
       } catch (err) {
-        ctx.ui.toast('切换失败：' + (err && err.message ? err.message : err));
+        ctx.ui.toast('操作失败：' + (err && err.message ? err.message : err));
       }
     });
-    $('#btnNewDraft').addEventListener('click', async () => {
-      if (S.running) return;
-      try {
-        if (S.session) await S.session.flush();
-        const draft = await ctx.workshop.create('未命名拓展');
-        await refreshDraftList();
-        S.drafts = [draft].concat(S.drafts.filter((d) => d.id !== draft.id));
-        await selectDraft(draft);
-        ctx.ui.toast('已新建草稿');
-      } catch (e) {
-        ctx.ui.toast('新建失败：' + (e && e.message ? e.message : e));
+
+    // 点空白处收起更多菜单
+    root.addEventListener('click', (e) => {
+      if (!moreMenu.classList.contains('hidden')
+          && !moreMenu.contains(e.target)
+          && !e.target.closest('#btnMore')) {
+        moreMenu.classList.add('hidden');
       }
     });
-    $('#btnDeleteDraft').addEventListener('click', async () => {
-      if (S.running || !S.draft) return;
-      try {
-        await deleteCurrentDraft();
-      } catch (e) {
-        ctx.ui.toast('删除失败：' + (e && e.message ? e.message : e));
-      }
-    });
-    $('#convSelect').addEventListener('change', async (e) => {
-      if (S.running) {
-        e.target.value = S.conversationId || '';
+
+    // 代码块 / 消息的「复制」
+    chat.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-copy]');
+      if (!btn) return;
+      const code = btn.closest('.code');
+      if (code) {
+        const pre = code.querySelector('code');
+        copyText(pre ? pre.textContent : '');
         return;
       }
-      if (!e.target.value || e.target.value === S.conversationId) return;
-      try {
-        await selectConversation(e.target.value);
-      } catch (err) {
-        ctx.ui.toast('切换对话失败：' + (err && err.message ? err.message : err));
-      }
+      const msg = btn.closest('.msg');
+      const body = msg && msg.querySelector('.md');
+      copyText(body ? body.innerText : '');
     });
-    $('#btnNewConv').addEventListener('click', async () => {
-      if (S.running || !S.draft) return;
-      try {
-        await newConversation();
-        ctx.ui.toast('已新建对话');
-      } catch (e) {
-        ctx.ui.toast('新建对话失败：' + (e && e.message ? e.message : e));
-      }
-    });
-    $('#btnDeleteConv').addEventListener('click', async () => {
-      if (S.running) return;
-      try {
-        await deleteCurrentConversation();
-      } catch (e) {
-        ctx.ui.toast('删除对话失败：' + (e && e.message ? e.message : e));
-      }
-    });
+
     $('#btnPlan').addEventListener('click', async () => {
       if (S.running) return;
       S.planMode = !S.planMode;
@@ -1935,47 +2193,9 @@ export default {
         ctx.ui.toast('切换完全访问失败：' + (e && e.message ? e.message : e));
       }
     });
-    $('#btnFiles').addEventListener('click', async () => {
-      try {
-        await refreshFiles();
-      } catch (_) {}
-      drawer.classList.remove('hidden');
-      skillsDrawer.classList.add('hidden');
-      backdrop.classList.remove('hidden');
-      renderFiles();
-    });
-    $('#btnSkills').addEventListener('click', async () => {
-      try {
-        await refreshSkills();
-      } catch (_) {}
-      skillsDrawer.classList.remove('hidden');
-      drawer.classList.add('hidden');
-      backdrop.classList.remove('hidden');
-      renderSkills();
-    });
-    $('#btnCloseDrawer').addEventListener('click', closeOverlays);
     $('#btnCloseSkills').addEventListener('click', closeOverlays);
     $('#btnCloseViewer').addEventListener('click', closeOverlays);
     backdrop.addEventListener('click', closeOverlays);
-    $('#btnPreview').addEventListener('click', async () => {
-      try {
-        await ctx.workshop.preview(S.draft.id);
-      } catch (e) {
-        ctx.ui.toast('预览失败：' + (e && e.message ? e.message : e));
-      }
-    });
-    $('#btnInstall').addEventListener('click', async () => {
-      if (S.running) return;
-      try {
-        const result = await ctx.workshop.install(S.draft.id);
-        if (result && result.denied) return;
-        ctx.ui.toast('已安装，可在「拓展」页打开');
-        await refreshDraftList();
-        notify();
-      } catch (e) {
-        ctx.ui.toast('安装失败：' + (e && e.message ? e.message : e));
-      }
-    });
 
     ctx.effect(() => () => {
       S.alive = false;
