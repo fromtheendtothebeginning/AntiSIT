@@ -36,6 +36,8 @@ class CourseCloudPlugin extends FeaturePlugin {
 
   @override
   Future<void> init() async {
+    // 回到前台时也对一次：过期窗口清掉、正在上的课补亮（闹钟被系统压掉时的兜底）
+    CourseCloudService.I.attach();
     // 启动时按当前模式对一次排期：清掉过期的、补上重启后新排的（幂等）
     unawaited(CourseCloudService.I.sync());
   }

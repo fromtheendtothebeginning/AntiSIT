@@ -13,6 +13,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -20,18 +22,21 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.math.max
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 流体云 / 原子通知 / 焦点通知的**无 SDK** 接入。
  *
- * 三家系统都按系统通知规则识别「常驻进度通知」：
- *  - Android 16+：`Notification.ProgressStyle` + `setRequestPromotedOngoing(true)`
- *    （promoted ongoing），由系统决定是否升格成流体云 / 原子通知 / 焦点通知；
- *  - Android 15 及更早：同一套字段退回常驻倒计时通知（`setUsesChronometer` + 倒计时）。
+ * 用常驻通知 + 系统倒计时（`setUsesChronometer` + `setChronometerCountDown`）表达
+ * 「还有多久下课」，由系统决定是否升格成流体云 / 原子通知 / 焦点通知。
+ *
+ * 曾经用 `Notification.ProgressStyle` 画课程进度条，但 MagicOS 等桌面会把它渲染成
+ * 一条静态条（不会随重发前进），所以改成「地点 + 下节课程」的信息，不再依赖进度动画。
  *
  * 课程窗口（几点亮、几点收）用 AlarmManager 排期，App 被杀掉也生效；
- * 开机 / 应用更新后由 [FluidCloudBootReceiver] 恢复。
+ * 进程活着时还有 15 秒一次的进程内刷新；开机 / 应用更新后由 [FluidCloudBootReceiver] 恢复。
  */
 data class FluidWindow(
     val id: String,
@@ -50,6 +55,7 @@ object FluidCloud {
     private const val notificationId = 8801
 
     const val actionStart = "top.anticraft.campus_service.FLUID_START"
+    const val actionUpdate = "top.anticraft.campus_service.FLUID_UPDATE"
     const val actionEnd = "top.anticraft.campus_service.FLUID_END"
 
     // ---------- 系统信息 ----------
@@ -72,7 +78,7 @@ object FluidCloud {
         return am.canScheduleExactAlarms()
     }
 
-    /** 读取 ROM 标识：ColorOS / OriginOS / 澎湃OS（MIUI），其它算通用。 */
+    /** 读取 ROM 标识：ColorOS / OriginOS / 荣耀 MagicOS / 澎湃OS（MIUI），其它算通用。 */
     private fun vendor(): Pair<String, String> {
         val oppo = listOf("ro.build.version.opporom", "ro.build.version.oplusrom", "ro.oplus.version")
             .firstNotNullOfOrNull { prop(it).takeIf { v -> v.isNotEmpty() } }
@@ -80,6 +86,11 @@ object FluidCloud {
         val vivo = listOf("ro.vivo.os.version", "ro.vivo.rom.version")
             .firstNotNullOfOrNull { prop(it).takeIf { v -> v.isNotEmpty() } }
         if (vivo != null) return "originos" to "OriginOS"
+        // 荣耀：MagicOS 有 ro.build.version.magic；厂商 / 品牌也认 HONOR
+        val honor = prop("ro.build.version.magic").isNotEmpty() ||
+            Build.MANUFACTURER.equals("HONOR", ignoreCase = true) ||
+            prop("ro.product.brand").equals("HONOR", ignoreCase = true)
+        if (honor) return "magicos" to "荣耀 MagicOS"
         val hyper = prop("ro.mi.os.version.name")
         if (hyper.isNotEmpty()) return "hyperos" to "澎湃OS"
         val miui = listOf("ro.miui.ui.version.name", "ro.miui.ui.version.code")
@@ -112,11 +123,72 @@ object FluidCloud {
         nm.createNotificationChannel(ch)
     }
 
+    private val handler = Handler(Looper.getMainLooper())
+    private var ticker: Runnable? = null
+
     fun show(ctx: Context, w: FluidWindow) {
         if (w.title.isBlank()) return
+        // 已经下课：别再亮着（预览 / 迟到的更新闹钟都会走到这里）
+        if (System.currentTimeMillis() >= w.endAt) {
+            dismiss(ctx)
+            return
+        }
+        if (!buildAndNotify(ctx, w)) return
+        // 进程活着时每 15 秒刷一次：预览与「App 在前台」的场景不依赖闹钟，进度一定在动
+        startTicker(ctx, w)
+        // 进程被杀后的兜底：每分钟一次更新闹钟 + 下课闹钟
+        scheduleUpdate(ctx, w)
+        setAlarm(ctx, w.endAt, requestCode(w.id, actionEnd), actionEnd, w)
+    }
+
+    /** 进程内刷新：进度条与剩余时间跟着走，到点自己收。 */
+    private fun startTicker(ctx: Context, w: FluidWindow) {
+        val app = ctx.applicationContext
+        ticker?.let { handler.removeCallbacks(it) }
+        val runnable = object : Runnable {
+            override fun run() {
+                if (System.currentTimeMillis() >= w.endAt) {
+                    dismiss(app)
+                    return
+                }
+                buildAndNotify(app, w)
+                handler.postDelayed(this, 15_000L)
+            }
+        }
+        ticker = runnable
+        handler.postDelayed(runnable, 15_000L)
+    }
+
+    private fun stopTicker() {
+        ticker?.let { handler.removeCallbacks(it) }
+        ticker = null
+    }
+
+    /** 排下一次刷新（进程被杀后由闹钟接着刷进度）。 */
+    private fun scheduleUpdate(ctx: Context, w: FluidWindow) {
+        val now = System.currentTimeMillis()
+        val next = minOf(now + 60_000L, w.endAt - 2_000L)
+        if (next <= now) return
+        setAlarm(ctx, next, requestCode(w.id, actionUpdate), actionUpdate, w)
+    }
+
+    /** 当前窗口之后最近的一节课（只看排期里存着的窗口，最多往后 12 小时）。 */
+    private fun nextWindow(ctx: Context, w: FluidWindow): FluidWindow? {
+        val windows = decode(prefs(ctx).getString(keyWindows, null))
+        return windows
+            .filter {
+                it.title.isNotBlank() &&
+                    it.startAt >= w.endAt &&
+                    it.startAt - w.endAt <= 12 * 60 * 60 * 1000L
+            }
+            .minByOrNull { it.startAt }
+    }
+
+    /** 组装并发出通知；返回是否真的发了。 */
+    private fun buildAndNotify(ctx: Context, w: FluidWindow): Boolean {
         ensureChannel(ctx)
-        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
-        if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return false
+        if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return false
         val content = Intent(ctx, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("antisit.route", "timetable")
@@ -124,16 +196,23 @@ object FluidCloud {
         val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val contentPi = PendingIntent.getActivity(ctx, 8804, content, piFlags)
         val now = System.currentTimeMillis()
-        val span = max(1L, w.endAt - w.startAt)
-        val elapsed = (now - w.startAt).coerceIn(0L, span)
-        // 状态短语放 subText：紧凑态也能一眼看出「还有多久 / 已经上了多久」
         val status = if (now < w.startAt) {
             val mins = ((w.startAt - now) / 60_000L + 1).coerceAtLeast(1L)
             "$mins 分钟后上课"
         } else {
             val left = ((w.endAt - now) / 60_000L).coerceAtLeast(0L)
-            "上课中 · 剩余 ${if (left <= 0) "不到 1" else left} 分钟"
+            "剩余 ${if (left <= 0) "不到 1" else left} 分钟"
         }
+        val place = w.subtitle.trim()
+        val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+        // 进度条在部分 ROM 上不会动（MagicOS 等直接渲染成静态条），这里不再用渐进条，
+        // 改为「地点 + 下一节课」这种更有用的信息；倒计时仍由系统 chronometer 自己走。
+        val next = nextWindow(ctx, w)
+        val nextText = next?.let { "下节 ${timeFmt.format(Date(it.startAt))} ${it.title}" }
+        val statusLine = listOfNotNull(
+            place.takeIf { it.isNotEmpty() },
+            if (now < w.startAt) status else (nextText ?: status),
+        ).joinToString(" · ")
         val builder = if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(ctx, channelId)
         } else {
@@ -141,10 +220,10 @@ object FluidCloud {
             Notification.Builder(ctx).setPriority(Notification.PRIORITY_LOW)
         }
         builder
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_course)
             .setContentTitle(w.title)
-            .setContentText(w.subtitle.ifEmpty { "上课中" })
-            .setSubText(status)
+            .setContentText(if (place.isEmpty()) "上课中" else place)
+            .setSubText(statusLine)
             .setContentIntent(contentPi)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -154,55 +233,27 @@ object FluidCloud {
             .setChronometerCountDown(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setCategory(Notification.CATEGORY_EVENT)
+        // Android 16.1 的胶囊文案（有就填，没有就算了）
+        runCatching {
+            Notification.Builder::class.java
+                .getMethod("setShortCriticalText", CharSequence::class.java)
+                .invoke(builder, if (now < w.startAt) status else "上课中")
+        }
         runCatching {
             builder.addAction(
                 Notification.Action.Builder(
-                    Icon.createWithResource(ctx, R.drawable.ic_shortcut_timetable),
+                    Icon.createWithResource(ctx, R.drawable.ic_action_timetable),
                     "课表",
                     contentPi,
                 ).build()
             )
         }
-        // 16 以下的系统没有 ProgressStyle：用进度条 + 倒计时表达同一件事
-        if (Build.VERSION.SDK_INT < 36) {
-            runCatching {
-                builder.setProgress(100, ((elapsed.toFloat() / span) * 100).toInt().coerceIn(0, 100), false)
-            }
-        }
-        if (Build.VERSION.SDK_INT >= 36) {
-            // Android 16 的 live update：分段进度 + promoted ongoing，系统据此决定是否升格
-            runCatching {
-                val elapsedMin = (elapsed / 60_000L).toInt().coerceAtLeast(1)
-                val remainMin = ((span - elapsed) / 60_000L).toInt().coerceAtLeast(1)
-                val style = Notification.ProgressStyle()
-                    .setProgressSegments(
-                        listOf(
-                            Notification.ProgressStyle.Segment(elapsedMin),
-                            Notification.ProgressStyle.Segment(remainMin),
-                        )
-                    )
-                    .setProgressPoints(
-                        listOf(
-                            Notification.ProgressStyle.Point(0),
-                            Notification.ProgressStyle.Point(elapsedMin + remainMin),
-                        )
-                    )
-                    .setStyledByProgress(true)
-                    .setProgress(elapsedMin)
-                builder.setStyle(style)
-                // setRequestPromotedOngoing 是 36.1 才有的 API：反射调用，
-                // 36.0 上不存在就跳过（ProgressStyle + ongoing 本身已经能升格）。
-                runCatching {
-                    Notification.Builder::class.java
-                        .getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
-                        .invoke(builder, true)
-                }
-            }
-        }
         runCatching { nm.notify(notificationId, builder.build()) }
+        return true
     }
 
     fun dismiss(ctx: Context) {
+        stopTicker()
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         runCatching { nm.cancel(notificationId) }
         prefs(ctx).edit().remove(keyActiveEnd).apply()
@@ -249,6 +300,7 @@ object FluidCloud {
         val old = decode(prefs(ctx).getString(keyWindows, null))
         for (w in old) {
             cancelAlarm(ctx, requestCode(w.id, actionStart), actionStart, w)
+            cancelAlarm(ctx, requestCode(w.id, actionUpdate), actionUpdate, w)
             cancelAlarm(ctx, requestCode(w.id, actionEnd), actionEnd, w)
         }
         prefs(ctx).edit().remove(keyWindows).apply()
@@ -349,6 +401,15 @@ class FluidCloudReceiver : BroadcastReceiver() {
             FluidCloud.actionStart -> {
                 FluidCloud.markActive(context, w.endAt)
                 FluidCloud.show(context, w)
+            }
+            FluidCloud.actionUpdate -> {
+                // 每分钟刷新：进度条与「剩余 N 分钟」跟着时间走；过了下课点就收掉
+                if (System.currentTimeMillis() >= w.endAt) {
+                    FluidCloud.endIfActive(context, w.endAt)
+                } else {
+                    FluidCloud.markActive(context, w.endAt)
+                    FluidCloud.show(context, w)
+                }
             }
             FluidCloud.actionEnd -> FluidCloud.endIfActive(context, w.endAt)
         }

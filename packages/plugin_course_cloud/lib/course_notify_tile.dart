@@ -98,7 +98,7 @@ class _CourseNotifyTileState extends State<CourseNotifyTile> {
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    '未识别到 ColorOS / OriginOS / 澎湃OS：流体云会以普通常驻通知显示。',
+                    '未识别到 ColorOS / OriginOS / 荣耀 MagicOS / 澎湃OS：流体云会以普通常驻通知显示。',
                     style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.5),
                   ),
                 )
@@ -115,7 +115,15 @@ class _CourseNotifyTileState extends State<CourseNotifyTile> {
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    '已识别 ${info.label}（Android ${info.apiLevel}）：将由系统按流体云 / 原子通知 / 焦点通知展示。',
+                    '已识别 ${info.label}（Android ${info.apiLevel}）：将由系统按流体云 / 原子通知 / 焦点通知 / 灵动胶囊展示。',
+                    style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.5),
+                  ),
+                ),
+              if (info != null && info.vendor == 'coloros')
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'ColorOS 的真实流体云形态需要 OPPO 泛在服务卡片（UPK）接入；当前按系统实时通知呈现。',
                     style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.5),
                   ),
                 ),
@@ -124,6 +132,12 @@ class _CourseNotifyTileState extends State<CourseNotifyTile> {
                   padding: const EdgeInsets.only(top: 6),
                   child: Text('通知权限未开启：流体云不会显示，请到系统设置里允许 AntiSIT 发通知。',
                       style: TextStyle(fontSize: 11, color: SemColors.danger, height: 1.5)),
+                ),
+              if (info != null && info.notificationsEnabled && !info.exactAlarm)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text('精确闹钟未授权：后台到点亮起 / 收起可能延迟，可在系统设置里允许「闹钟与提醒」。',
+                      style: TextStyle(fontSize: 11, color: SemColors.warning, height: 1.5)),
                 ),
               if (AppState.I.courseNotifyMode == CourseNotifyMode.cloud) ...[
                 const Divider(height: 18),
@@ -200,9 +214,6 @@ class _FluidCloudPreview extends StatelessWidget {
     final hero = current ?? upcoming ??
         const _TtSlot('高等数学', '二教E101', 10 * 60 + 15, 10 * 60 + 55);
     final isCurrent = current != null;
-    final progress = isCurrent
-        ? ((nowMin - hero.start) / (hero.end - hero.start).clamp(1, 1 << 20)).clamp(0.0, 1.0)
-        : 0.0;
     final status = isCurrent
         ? '上课中'
         : upcoming != null
@@ -228,16 +239,10 @@ class _FluidCloudPreview extends StatelessWidget {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          // 和 App 内的玻璃卡一致：卡面 + 细边框，不用深色渐变
           decoration: BoxDecoration(
+            color: SemColors.card,
             borderRadius: BorderRadius.circular(18),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                SemColors.accentSoft,
-                SemColors.card,
-              ],
-            ),
             border: Border.all(color: SemColors.border),
           ),
           child: Column(
@@ -279,16 +284,6 @@ class _FluidCloudPreview extends StatelessWidget {
                 style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary),
               ),
               const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 4,
-                  backgroundColor: SemColors.border,
-                  valueColor: AlwaysStoppedAnimation<Color>(SemColors.accent),
-                ),
-              ),
-              const SizedBox(height: 6),
               Row(
                 children: [
                   Text(
@@ -296,8 +291,16 @@ class _FluidCloudPreview extends StatelessWidget {
                     style: TextStyle(fontSize: 10.5, color: SemColors.textMuted),
                   ),
                   const Spacer(),
-                  Text('点开查看课表',
-                      style: TextStyle(fontSize: 10.5, color: SemColors.accent)),
+                  // 底部信息（OPPO 组合模板的 trailing）：只放一个操作
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: SemColors.accentSoft,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text('查看课表 ›',
+                        style: TextStyle(fontSize: 10.5, color: SemColors.accent)),
+                  ),
                 ],
               ),
             ],
@@ -316,22 +319,17 @@ class _FluidCloudPreview extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isCurrent ? SemColors.accent : SemColors.warning,
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Text(hero.name,
+                Icon(Icons.calendar_month_outlined,
+                    size: 13, color: isCurrent ? SemColors.accent : SemColors.warning),
+                const SizedBox(width: 6),
+                // 胶囊文案按 OPPO 规范尽量短（≤5 字），长文本会截断
+                Text(isCurrent ? '上课中' : '即将上课',
                     style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
                         color: SemColors.bg)),
                 const SizedBox(width: 10),
-                Text(isCurrent ? '剩 $remaining 分' : '$remaining 分后',
+                Text(isCurrent ? '$remaining 分' : '$remaining 分后',
                     style: TextStyle(fontSize: 11, color: SemColors.bg)),
               ],
             ),

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:campus_core/campus_core.dart';
+import 'package:flutter/widgets.dart';
 
 /// 课程通知方式（与 [AppState.courseNotifyMode] 的字符串一一对应）。
 abstract final class CourseNotifyMode {
@@ -31,9 +34,27 @@ class CourseCloudSyncImpl implements CourseCloudCapability {
 /// 三选一里的**流体云**模式由它负责：从课程表算出未来 7 天的课程窗口，
 /// 整批交给 [FluidCloudCapability] 用原生闹钟排期；其它模式把已排的窗口清掉。
 /// 课程通知的**弹窗**模式仍归「上课提醒」插件，两边靠 [AppState.courseNotifyMode] 互斥。
-class CourseCloudService {
+class CourseCloudService with WidgetsBindingObserver {
   CourseCloudService._();
   static final CourseCloudService I = CourseCloudService._();
+
+  bool _attached = false;
+
+  /// 监听前后台：回到前台时对一次排期——过期的窗口会被清掉，正在上的课补亮。
+  void attach() {
+    if (_attached) return;
+    try {
+      WidgetsBinding.instance.addObserver(this);
+      _attached = true;
+    } catch (_) {
+      // 测试环境没有 WidgetsBinding：跳过
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(sync());
+  }
 
   /// 课前多少分钟亮起（与上课提醒一致）。
   static const int leadMinutes = 15;

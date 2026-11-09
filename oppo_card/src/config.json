@@ -1,0 +1,41 @@
+{
+  "identifier": {
+    "url": "top.anticraft.campus_service.course",
+    "id": "auto_generate",
+    "type": "seedling",
+    "name": "AntiSIT 课程",
+    "description": "今日课程与下一节课的流体云卡片",
+    "version": "1.0.0",
+    "versionCode": 1000000,
+    "icons": ["images/icon.png"]
+  },
+  "intent": {
+    "action": ["pantanal.intent.action.REPLACE_WITH_ALLOCATED_ACTION"],
+    "domain": "REPLACE_WITH_ALLOCATED_DOMAIN"
+  },
+  "runtime": {
+    "type": "interactive",
+    "use-software": {
+      "platform-version": 2000000
+    },
+    "support-hardware": {
+      "device": [
+        {
+          "type": "PHONE",
+          "entry": ["statusbar", "notification", "lockscreen", "aod", "desktop"]
+        }
+      ]
+    },
+    "interactive": {
+      "seedling-type": "live",
+      "pages": ["pages/index"],
+      "window": {
+        "design-width": 720,
+        "auto-design-width": false
+      }
+    }
+  },
+  "meta-data": {
+    "card-config": "assets/card-config.json"
+  }
+}

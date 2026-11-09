@@ -110,6 +110,7 @@ object HomeWidget {
             views.setViewVisibility(R.id.widget_hero, View.GONE)
             views.setViewVisibility(R.id.widget_section, View.GONE)
             for (row in rowIds) views.setViewVisibility(row.first, View.GONE)
+            views.setViewVisibility(R.id.widget_action, View.GONE)
             views.setTextViewText(R.id.widget_next, message)
         }
         if (raw.isNullOrBlank()) {
@@ -185,10 +186,11 @@ object HomeWidget {
                     views.setTextViewText(rowIds[i].second[2], c.optString("place"))
                 }
             }
+            views.setViewVisibility(R.id.widget_action, View.VISIBLE)
             views.setTextViewText(
                 R.id.widget_next,
                 if (current == null && upcoming.isEmpty()) "今天的课都上完了"
-                else "共 ${courses.length()} 节 · 点开查看完整课表"
+                else "共 ${courses.length()} 节"
             )
             views
         } catch (_: Throwable) {

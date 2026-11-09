@@ -241,11 +241,51 @@ class CordisRuntime {
         style.textContent = css;
         document.head.appendChild(style);
       }
-      if (theme.bg) document.documentElement.style.setProperty('--antisit-bg', theme.bg);
-      if (theme.card) document.documentElement.style.setProperty('--antisit-card', theme.card);
-      if (theme.textPrimary) document.documentElement.style.setProperty('--antisit-fg', theme.textPrimary);
-      if (theme.accent) document.documentElement.style.setProperty('--antisit-accent', theme.accent);
-      if (theme.border) document.documentElement.style.setProperty('--antisit-border', theme.border);
+      // 颜色合成：深色玻璃主题的 card 是半透明白（8%），弹层 / 卡片要铺
+      // 「合成到背景之后」的实底，否则会白成一片（深色模式适配的关键）。
+      function parseColor(v) {
+        if (!v) return null;
+        // 不用正则：Dart 字符串里的美元符号会当插值，反斜杠转义也容易踩坑
+        if (v.indexOf('rgb(') === 0 || v.indexOf('rgba(') === 0) {
+          var inner = v.slice(v.indexOf('(') + 1, v.indexOf(')'));
+          var p = inner.split(',').map(function (x) { return parseFloat(x); });
+          return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+        }
+        if (v.charAt(0) === '#' && v.length >= 7) {
+          var n = parseInt(v.slice(1, 7), 16);
+          if (!isNaN(n)) {
+            return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 };
+          }
+        }
+        return null;
+      }
+      function over(fg, bg) {
+        var f = parseColor(fg);
+        if (!f) return fg;
+        var b = parseColor(bg) || { r: 255, g: 255, b: 255, a: 1 };
+        var a = f.a + b.a * (1 - f.a);
+        if (a <= 0) return 'transparent';
+        var r = Math.round((f.r * f.a + b.r * b.a * (1 - f.a)) / a);
+        var g = Math.round((f.g * f.a + b.g * b.a * (1 - f.a)) / a);
+        var bl = Math.round((f.b * f.a + b.b * b.a * (1 - f.a)) / a);
+        return 'rgb(' + r + ',' + g + ',' + bl + ')';
+      }
+      var doc = document.documentElement;
+      if (theme.isDark) doc.classList.add('dark');
+      if (theme.bg) doc.style.setProperty('--antisit-bg', theme.bg);
+      if (theme.card) {
+        doc.style.setProperty('--antisit-card', theme.card);
+        doc.style.setProperty('--antisit-card-solid', over(theme.card, theme.bg));
+      }
+      if (theme.textPrimary) doc.style.setProperty('--antisit-fg', theme.textPrimary);
+      if (theme.textSecondary) doc.style.setProperty('--antisit-text-secondary', theme.textSecondary);
+      if (theme.textMuted) doc.style.setProperty('--antisit-text-muted', theme.textMuted);
+      if (theme.accent) doc.style.setProperty('--antisit-accent', theme.accent);
+      if (theme.accentSoft) doc.style.setProperty('--antisit-accent-soft', theme.accentSoft);
+      if (theme.border) doc.style.setProperty('--antisit-border', theme.border);
+      if (theme.danger) doc.style.setProperty('--antisit-danger', theme.danger);
+      if (theme.success) doc.style.setProperty('--antisit-success', theme.success);
+      doc.style.colorScheme = theme.isDark ? 'dark' : 'light';
       document.body.style.background = theme.bg || '';
       document.body.style.color = theme.textPrimary || '';
 

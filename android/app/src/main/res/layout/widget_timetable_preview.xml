@@ -121,7 +121,13 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <TextView
+<TextView
+            android:layout_width="3dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="7dp"
+            android:background="@drawable/widget_bar" />
+
+                <TextView
             android:layout_width="58dp"
             android:layout_height="wrap_content"
             android:text="13:00"
@@ -155,7 +161,13 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <TextView
+<TextView
+            android:layout_width="3dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="7dp"
+            android:background="@drawable/widget_bar" />
+
+                <TextView
             android:layout_width="58dp"
             android:layout_height="wrap_content"
             android:text="14:55"
@@ -182,13 +194,33 @@
             android:textSize="10.5sp" />
     </LinearLayout>
 
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:text="共 4 节 · 点开查看完整课表"
-        android:textColor="@color/widget_muted"
-        android:textSize="10.5sp" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="共 4 节 · 点开查看完整课表"
+            android:textColor="@color/widget_muted"
+            android:textSize="10.5sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_pill"
+            android:paddingStart="9dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="9dp"
+            android:paddingBottom="3dp"
+            android:text="查看课表 ›"
+            android:textColor="@color/widget_accent"
+            android:textSize="11sp" />
+    </LinearLayout>
 </LinearLayout>

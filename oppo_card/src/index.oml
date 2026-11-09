@@ -1,0 +1,150 @@
+<template>
+  <card-template entry="notification" category="modular">
+    <compact>
+      <leading>
+        <image level="A*" src="./assets/images/icon.png"></image>
+        <text level="B*">{{ capsuleLeft }}</text>
+      </leading>
+      <trailing>
+        <text level="B0">{{ capsuleRight }}</text>
+      </trailing>
+    </compact>
+
+    <expanded bg-color="#101219" border-color="#2A2E3A" level="F1*">
+      <leading>
+        <image level="D8" src="./assets/images/icon.png"></image>
+        <text level="C10">{{ slotText }}</text>
+        <text level="C11">{{ dateText }}</text>
+      </leading>
+      <center category="common">
+        <text level="B1*">{{ courseName }}</text>
+        <text level="C1">{{ place }}</text>
+        <text level="C2">{{ timeRange }}</text>
+        <text level="C3">{{ statusText }}</text>
+        <button level="E1*" onclick="openTimetable">{{ actionText }}</button>
+      </center>
+      <trailing>
+        <text level="C14">{{ remainingText }}</text>
+      </trailing>
+    </expanded>
+
+    <voice>{{ voiceLabel }}</voice>
+    <image level="A1*" src="./assets/images/icon.png"></image>
+  </card-template>
+
+  <card-template entry="desktop">
+    <div class="card">
+      <div class="head">
+        <text class="title">今日课程</text>
+        <text class="date">{{ dateText }}</text>
+      </div>
+      <div class="hero">
+        <text class="hero-name">{{ courseName }}</text>
+        <text class="hero-meta">{{ place }} · {{ timeRange }}</text>
+        <text class="hero-status">{{ statusText }}</text>
+      </div>
+      <text class="row">{{ next1 }}</text>
+      <text class="row">{{ next2 }}</text>
+      <div class="foot">
+        <text class="hint">{{ footerText }}</text>
+        <text class="pill" onclick="openTimetable">{{ actionText }} ›</text>
+      </div>
+    </div>
+  </card-template>
+</template>
+
+<style>
+.card {
+  padding: 16px 16px 14px;
+  border-radius: 20px;
+  background-color: #ffffff;
+}
+.head {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.title {
+  font-size: 15px;
+  font-weight: bold;
+  color: #16233a;
+}
+.date {
+  font-size: 11px;
+  color: #7a7f88;
+}
+.hero {
+  margin-top: 10px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background-color: #f2f5ff;
+}
+.hero-name {
+  font-size: 17px;
+  font-weight: bold;
+  color: #16233a;
+}
+.hero-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #6b6b70;
+}
+.hero-status {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #4f6ef7;
+}
+.row {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #3a3f4a;
+}
+.foot {
+  margin-top: 10px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.hint {
+  font-size: 10px;
+  color: #7a7f88;
+}
+.pill {
+  padding: 3px 9px;
+  border-radius: 99px;
+  font-size: 11px;
+  color: #4f6ef7;
+  background-color: #e5ebff;
+}
+</style>
+
+<data>
+{
+  "uiData": {
+    "capsuleLeft": "上课中",
+    "capsuleRight": "剩35分",
+    "slotText": "第3-4节",
+    "dateText": "11月9日 周一",
+    "courseName": "高等数学",
+    "place": "二教E101",
+    "timeRange": "10:15-11:55",
+    "statusText": "上课中 · 剩余 35 分钟",
+    "remainingText": "35 分钟后下课",
+    "actionText": "查看课表",
+    "voiceLabel": "高等数学，10点15分上课，地点二教E101",
+    "next1": "13:00  大学英语  一教B203",
+    "next2": "14:55  数据结构  二教A305",
+    "footerText": "共 4 节 · 点开查看完整课表"
+  },
+  "uiEvent": {
+    "openTimetable": {
+      "type": "deeplink",
+      "uri": "nativeapp://android.intent.action.MAIN",
+      "package": "top.anticraft.campus_service",
+      "params": {
+        "antisit.route": "timetable"
+      }
+    }
+  }
+}
+</data>

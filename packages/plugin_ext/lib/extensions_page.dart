@@ -546,7 +546,9 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         child: DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: SemColors.card.withValues(alpha: 0.72),
+            // card 本身带透明度，withValues 会覆盖掉 alpha（深色下变近白）：
+            // 先与页面底色合成，得到实底又不发白
+            color: Color.alphaBlend(SemColors.card, SemColors.bg),
             border: Border.all(color: SemColors.border),
             boxShadow: [
               BoxShadow(
@@ -604,7 +606,9 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             height: 30,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: SemColors.card.withValues(alpha: 0.72),
+              // card 本身带透明度，withValues 会覆盖掉 alpha（深色下变近白）：
+            // 先与页面底色合成，得到实底又不发白
+            color: Color.alphaBlend(SemColors.card, SemColors.bg),
               border: Border.all(color: SemColors.border),
             ),
             child: Icon(Icons.more_horiz, size: 18, color: SemColors.textMuted),

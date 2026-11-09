@@ -1,0 +1,20 @@
+{
+  "host": {
+    "packageName": "top.anticraft.campus_service",
+    "componentName": "top.anticraft.campus_service.SeedlingCardProvider",
+    "minHostVersion": 100
+  },
+  "card": {
+    "support": "2*4|notification_sm|notification_md|notification_lg"
+  },
+  "click": [
+    {
+      "type": "activity",
+      "packageName": "top.anticraft.campus_service",
+      "action": "android.intent.action.MAIN",
+      "params": {
+        "antisit.route": "timetable"
+      }
+    }
+  ]
+}

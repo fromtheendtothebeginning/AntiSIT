@@ -657,9 +657,18 @@ class ExtBridge extends WebBridge {
         'success': _hex(SemColors.success),
       };
 
-  /// '#RRGGBB'（与主题导入导出用同一套写法）。
-  static String _hex(Color c) =>
-      '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}';
+  /// CSS 颜色：带透明度输出 `rgba()`（CSS 的 8 位 hex 是 RRGGBBAA，和 Android 的 ARGB
+  /// 相反；玻璃主题深色卡的 card 就是半透明白，丢掉 alpha 会白成一片）。
+  static String _hex(Color c) {
+    final v = c.toARGB32();
+    final a = (v >> 24) & 0xFF;
+    final r = (v >> 16) & 0xFF;
+    final g = (v >> 8) & 0xFF;
+    final b = v & 0xFF;
+    String hx(int x) => x.toRadixString(16).padLeft(2, '0');
+    if (a == 0xFF) return '#${hx(r)}${hx(g)}${hx(b)}';
+    return 'rgba($r, $g, $b, ${(a / 255).toStringAsFixed(3)})';
+  }
 
   void _toast(Object? args) {
     if (!context.mounted) return;
