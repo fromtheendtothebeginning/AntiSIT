@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.30.0+126
+version: 1.32.3+133
 
 environment:
   sdk: ^3.9.2
@@ -57,6 +57,12 @@ workspace:
   - packages/plugin_ai_mimo
   - packages/plugin_ai_minimax
   - packages/plugin_reminder
+  # 流体云 / 原子通知 / 焦点通知：常驻课程通知（系统通知 API，无需厂商 SDK）
+  - packages/plugin_fluid_cloud
+  # 流体云课程通知：课程通知三选一（不通知 / 弹窗 / 流体云）
+  - packages/plugin_course_cloud
+  # 桌面卡片：今日课程 / 校园卡余额小组件 + 长按图标快捷方式
+  - packages/plugin_home_widget
   - packages/plugin_theme_glass
   - packages/plugin_theme_ink
   - packages/plugin_theme_bamboo
@@ -155,6 +161,12 @@ dependencies:
     path: packages/plugin_ai_minimax
   plugin_reminder:
     path: packages/plugin_reminder
+  plugin_fluid_cloud:
+    path: packages/plugin_fluid_cloud
+  plugin_course_cloud:
+    path: packages/plugin_course_cloud
+  plugin_home_widget:
+    path: packages/plugin_home_widget
   plugin_theme_glass:
     path: packages/plugin_theme_glass
   plugin_theme_ink:
