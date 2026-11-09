@@ -19,6 +19,10 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.29.1', date: '2026-11-09', notes: [
+    '修复应用内「安装」必定失败：传给系统安装器的参数格式不对，安装器其实从来没被拉起',
+    '安装失败时的报错只留关键一行，不再甩一整段堆栈',
+  ]),
   ChangelogEntry(version: '1.29.0', date: '2026-11-09', notes: [
     '拓展工坊支持流式输出：正文与思考过程边生成边显示，思考默认折叠、点开可看全文',
     '一个拓展草稿可以开多段对话（新建 / 切换 / 删除），未安装的草稿可直接删除',
