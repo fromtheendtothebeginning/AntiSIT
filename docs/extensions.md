@@ -22,6 +22,9 @@ App 内置一个 **「拓展工坊」**（`builtin.workshop`）：它本身也�
 | 编译前固定 | 在 `packages/plugin_ext/lib/builtin_extensions.dart` 的 `kBuiltinExtensions` 里加 |
 | 拓展工坊 | 在「拓展」页打开内置工坊，用自然语言让 Agent 写一个 Cordis 拓展 |
 
+拓展卡片默认按添加先后排列；「我的」标题栏的**排序**入口可以拖动自定义顺序，
+「恢复默认」回原始顺序。排序结果存在本机，重启 App 不变；新加的拓展排在最后。
+
 ### Cordis 压缩包的约定
 
 * 打包方式随意：`zip -r myapp.zip myapp/` 这种「所有文件都在同一个顶层目录里」的，

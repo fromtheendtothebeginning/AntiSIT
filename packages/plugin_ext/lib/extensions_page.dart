@@ -11,6 +11,7 @@ import 'cordis_bundle.dart';
 import 'ext_bridge.dart';
 import 'ext_icon.dart';
 import 'ext_open.dart';
+import 'ext_order_page.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
 import 'market/market_installer.dart';
@@ -356,6 +357,13 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   /// 藏在标题栏是因为它管的是「整页要不要露网址」，摆在页面上会一直占位置。
   Future<void> _toggleHideUrls() => _store.setHideUrls(!_store.hideUrls);
 
+  /// 打开排序页：拖完回来宫格按新顺序排（排序结果由 store 落盘）。
+  Future<void> _openSorter() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ExtensionOrderPage()));
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     _navHost = NavSwipeScope.of(context);
@@ -395,6 +403,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                     items.isEmpty ? null : _toggleHideUrls,
                     color: hide ? SemColors.accent : null,
                   ),
+                  if (items.length > 1)
+                    _roundAction(Icons.swap_vert_rounded, '排序拓展', _openSorter),
                   _roundAction(Icons.add, '添加拓展', _addMenu),
                 ],
               ],

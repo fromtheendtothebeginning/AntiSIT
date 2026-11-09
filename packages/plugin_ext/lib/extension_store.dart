@@ -24,6 +24,7 @@ class ExtensionStore extends ChangeNotifier {
   static List<ExtensionItem> builtins = kBuiltinExtensions;
 
   static const String _kItems = 'plugin.ext.items';
+  static const String _kOrder = 'plugin.ext.order';
   static const String _kHideUrls = 'plugin.ext.hide_urls';
   static const String _kBuiltinCard = 'plugin.ext.builtin_card';
   static const String _kDataPrefix = 'plugin.ext.data.';
@@ -35,11 +36,37 @@ class ExtensionStore extends ChangeNotifier {
   /// 用户自己加的拓展不需要这一层——接口直接改清单条目（见 [setCard]）。
   Map<String, Map<String, String>> _builtinCard = {};
 
-  /// 当前的拓展清单（副本，外部改不动）。内置的排在前面。
-  /// 内置项已套上接口覆盖值：调用方拿到的一律是**卡片上实际显示**的那份。
-  List<ExtensionItem> get items => List.unmodifiable([
+  /// 卡片的自定义排序（按拓展 id 记）：空 = 默认顺序（内置在前，其后按添加先后）。
+  /// 增删拓展都不用改它——没排到的按原顺序接在后面，已删的留在里面也无害。
+  List<String> _order = const [];
+
+  /// 当前的拓展清单（副本，外部改不动）。默认内置排在前面，用户拖过排序后按
+  /// [_order] 排（见 [setOrder]）。内置项已套上接口覆盖值：调用方拿到的一律是
+  /// **卡片上实际显示**的那份。
+  List<ExtensionItem> get items => List.unmodifiable(_applyOrder([
         for (final e in _items) e.builtin ? _withBuiltinCard(e) : e,
-      ]);
+      ]));
+
+  /// 按 [_order] 重排：排过的在前（按存的先后），没排过的保持原顺序接在后面。
+  List<ExtensionItem> _applyOrder(List<ExtensionItem> all) {
+    if (_order.isEmpty) return all;
+    final pos = {for (var i = 0; i < _order.length; i++) _order[i]: i};
+    final ordered = [for (final e in all) if (pos.containsKey(e.id)) e]
+      ..sort((a, b) => pos[a.id]!.compareTo(pos[b.id]!));
+    return [...ordered, for (final e in all) if (!pos.containsKey(e.id)) e];
+  }
+
+  /// 保存自定义排序（按显示顺序传 id）；传空 = 恢复默认顺序。
+  Future<void> setOrder(List<String> ids) async {
+    _order = List.unmodifiable(ids);
+    final sp = await SharedPreferences.getInstance();
+    if (ids.isEmpty) {
+      await sp.remove(_kOrder);
+    } else {
+      await sp.setStringList(_kOrder, ids);
+    }
+    notifyListeners();
+  }
 
   /// 隐藏全部网址（拓展页右上角那一个总开关）：卡片上直接不显示网址那一行。
   /// 编辑 / 详情里始终看得到，不然就没法改。
@@ -58,6 +85,7 @@ class ExtensionStore extends ChangeNotifier {
       for (final raw in sp.getStringList(_kItems) ?? const <String>[])
         ..._tryParseOne(raw),
     ];
+    _order = sp.getStringList(_kOrder) ?? const [];
     hideUrls = sp.getBool(_kHideUrls) ?? false;
     _builtinCard = _parseBuiltinCard(sp.getString(_kBuiltinCard));
     loaded = true;

@@ -8,6 +8,7 @@ export 'cordis_runtime.dart';
 export 'ext_bridge.dart';
 export 'ext_icon.dart';
 export 'ext_open.dart';
+export 'ext_order_page.dart';
 export 'ext_permissions.dart';
 export 'ext_plugin.dart';
 export 'extension_item.dart';
