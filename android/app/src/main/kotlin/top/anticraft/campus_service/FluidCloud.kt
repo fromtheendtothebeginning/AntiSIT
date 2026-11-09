@@ -13,6 +13,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.ActivityCompat
@@ -51,7 +52,7 @@ object FluidCloud {
     private const val prefsName = "fluid_cloud"
     private const val keyWindows = "windows"
     private const val keyActiveEnd = "active_end"
-    private const val channelId = "antisit.course.live"
+    private const val channelId = "antisit.course.live2"
     private const val notificationId = 8801
 
     const val actionStart = "top.anticraft.campus_service.FLUID_START"
@@ -113,7 +114,7 @@ object FluidCloud {
         if (Build.VERSION.SDK_INT < 26) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(channelId) != null) return
-        val ch = NotificationChannel(channelId, "课程流体云", NotificationManager.IMPORTANCE_LOW).apply {
+        val ch = NotificationChannel(channelId, "课程流体云", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "上课时常驻的流体云 / 原子通知 / 焦点通知"
             setSound(null, null)
             enableVibration(false)
@@ -126,19 +127,20 @@ object FluidCloud {
     private val handler = Handler(Looper.getMainLooper())
     private var ticker: Runnable? = null
 
-    fun show(ctx: Context, w: FluidWindow) {
-        if (w.title.isBlank()) return
+    fun show(ctx: Context, w: FluidWindow): Boolean {
+        if (w.title.isBlank()) return false
         // 已经下课：别再亮着（预览 / 迟到的更新闹钟都会走到这里）
         if (System.currentTimeMillis() >= w.endAt) {
             dismiss(ctx)
-            return
+            return false
         }
-        if (!buildAndNotify(ctx, w)) return
+        if (!buildAndNotify(ctx, w)) return false
         // 进程活着时每 15 秒刷一次：预览与「App 在前台」的场景不依赖闹钟，进度一定在动
         startTicker(ctx, w)
         // 进程被杀后的兜底：每分钟一次更新闹钟 + 下课闹钟
         scheduleUpdate(ctx, w)
         setAlarm(ctx, w.endAt, requestCode(w.id, actionEnd), actionEnd, w)
+        return true
     }
 
     /** 进程内刷新：进度条与剩余时间跟着走，到点自己收。 */
@@ -220,7 +222,7 @@ object FluidCloud {
             Notification.Builder(ctx).setPriority(Notification.PRIORITY_LOW)
         }
         builder
-            .setSmallIcon(R.drawable.ic_stat_course)
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(w.title)
             .setContentText(if (place.isEmpty()) "上课中" else place)
             .setSubText(statusLine)
@@ -248,8 +250,14 @@ object FluidCloud {
                 ).build()
             )
         }
-        runCatching { nm.notify(notificationId, builder.build()) }
-        return true
+        return try {
+            nm.notify(notificationId, builder.build())
+            true
+        } catch (e: Throwable) {
+            // 小图标不合规 / 渠道被关 / ROM 拒绝：把原因留在日志里，Dart 侧也会收到 false
+            Log.e("FluidCloud", "notify failed", e)
+            false
+        }
     }
 
     fun dismiss(ctx: Context) {
@@ -440,8 +448,7 @@ class FluidCloudBridge(private val activity: Activity) {
                     if (w == null) {
                         result.error("args", "缺少窗口参数", null)
                     } else {
-                        FluidCloud.show(activity, w)
-                        result.success(true)
+                        result.success(FluidCloud.show(activity, w))
                     }
                 }
                 "dismiss" -> {

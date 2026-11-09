@@ -101,8 +101,8 @@ abstract class FluidCloudCapability extends PluginCapability {
   /// 当前系统信息（品牌、通知权限、精确闹钟、是否支持 promoted ongoing）。
   Future<FluidCloudInfo> info();
 
-  /// 立刻亮一条（预览 / App 在前台时补亮）。
-  Future<void> show(FluidCloudWindow window);
+  /// 立刻亮一条（预览 / App 在前台时补亮）。返回 false = 没发出去（通知权限/渠道被关）。
+  Future<bool> show(FluidCloudWindow window);
 
   /// 收起当前这条。
   Future<void> dismiss();

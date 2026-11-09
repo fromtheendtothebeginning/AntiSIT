@@ -216,8 +216,9 @@ class _FakeCloud implements FluidCloudCapability {
       );
 
   @override
-  Future<void> show(FluidCloudWindow window) async {
+  Future<bool> show(FluidCloudWindow window) async {
     previews += 1;
+    return true;
   }
 
   @override

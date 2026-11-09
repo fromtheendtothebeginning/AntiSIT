@@ -144,7 +144,17 @@ class _CourseNotifyTileState extends State<CourseNotifyTile> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: () => CourseCloudService.I.preview(),
+                    onPressed: () async {
+                      final ok = await CourseCloudService.I.preview();
+                      if (!ctx.mounted) return;
+                      // 预览失败最常见的是通知权限没开 / 渠道被系统关了，直接说清楚
+                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                        content: Text(ok
+                            ? '已发送预览通知，1 分钟后自动收起'
+                            : '预览发送失败：请允许 AntiSIT 发送通知后重试'),
+                        behavior: SnackBarBehavior.floating,
+                      ));
+                    },
                     icon: const Icon(Icons.play_circle_outline, size: 18),
                     label: const Text('预览流体云通知（1 分钟）'),
                   ),

@@ -35,12 +35,15 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
   }
 
   @override
-  Future<void> show(FluidCloudWindow window) async {
-    if (!_isAndroid) return;
+  Future<bool> show(FluidCloudWindow window) async {
+    if (!_isAndroid) return false;
     try {
-      await _channel.invokeMethod('show', window.toJson());
+      return await _channel.invokeMethod<bool>('show', window.toJson()) ?? false;
     } on PlatformException catch (e) {
       debugPrint('[流体云] 展示失败：$e');
+      return false;
+    } on MissingPluginException {
+      return false;
     }
   }
 

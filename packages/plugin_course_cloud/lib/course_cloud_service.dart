@@ -99,9 +99,17 @@ class CourseCloudService with WidgetsBindingObserver {
   }
 
   /// 立刻亮一条 1 分钟的窗口（设置面板里预览流体云样式用）。
-  Future<void> preview() async {
+  /// 返回 false = 系统没让发（通知权限 / 渠道被关），调用方给用户一句提示。
+  Future<bool> preview() async {
+    final cloud = _cloud;
+    if (cloud == null) return false;
+    final info = await cloud.info();
+    if (!info.notificationsEnabled) {
+      await cloud.requestPermission();
+      if (!(await cloud.info()).notificationsEnabled) return false;
+    }
     final now = DateTime.now();
-    await _cloud?.show(FluidCloudWindow(
+    return cloud.show(FluidCloudWindow(
       id: 'preview',
       title: '预览：高等数学',
       subtitle: '二教E101 · 演示',
