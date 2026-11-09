@@ -213,6 +213,26 @@ void main() {
       expect(calls.length, 2);
     });
 
+    test('installApk 的 path 走 Map 参数（native 用 call.argument 取）', () async {
+      const channel = MethodChannel('antisit/system');
+      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      MethodCall? seen;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        seen = call;
+        return true;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+      UpdateDownloader.I.readyPath = '/tmp/AntiSIT-1.29.1.apk';
+      await UpdateDownloader.I.install();
+
+      expect(seen?.method, 'installApk');
+      expect(seen?.arguments, isA<Map>(),
+          reason: '裸字符串会让 MethodCall.argument 抛 ClassCastException，安装器根本拉不起来');
+      expect((seen!.arguments as Map)['path'], '/tmp/AntiSIT-1.29.1.apk');
+      expect(UpdateDownloader.I.installNote, isNull);
+    });
+
     test('拉起失败的错误细节透传到提示里（native 返回 error: 原因）', () async {
       UpdateDownloader.I.readyPath = '/tmp/AntiSIT-1.27.0.apk'; // 就绪态，只测 install 的提示分支
       UpdateDownloader.debugInstall = (path) async => 'error: FileProvider(路径不在白名单)';

@@ -161,11 +161,15 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     Object? r = 'error';
     try {
-      r = await (debugInstall?.call(path) ?? _channel.invokeMethod('installApk', path));
+      // 参数必须是 Map：native 侧用 call.argument("path") 取，MethodCall.argument 遇到
+      // 裸字符串会直接抛 ClassCastException（表现为「没能拉起安装器」）。
+      r = await (debugInstall?.call(path) ??
+          _channel.invokeMethod('installApk', {'path': path}));
     } catch (e) {
       // 通道异常也带上原因：MissingPluginException（没实现）/ PlatformException
-      // （ROM 拒绝）各有不同修法，笼统一句没法定位
-      r = 'error: $e';
+      // （ROM 拒绝）各有不同修法，笼统一句没法定位；PlatformException 的 toString
+      // 带整段堆栈，只留第一行够定位
+      r = 'error: ${'$e'.split('\n').first}';
     }
     _awaitingSettings = r == 'settings';
     installNote = switch (r) {

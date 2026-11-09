@@ -58,8 +58,12 @@ class MainActivity : FlutterActivity() {
                                 shown || open(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri())
                             )
                         }
-                        // 应用内更新的最后一步：把下载好并校验过的 APK 交给系统安装器
-                        "installApk" -> result.success(installApk(call.argument<String>("path").orEmpty()))
+                        // 应用内更新的最后一步：把下载好并校验过的 APK 交给系统安装器。
+                        // path 兼容 Map {"path": ...} 与裸字符串：call.argument 遇到非 Map
+                        // 会抛 ClassCastException，通道里抛出去整条安装就废了。
+                        "installApk" -> result.success(
+                            installApk((call.arguments as? String) ?: call.argument<String>("path").orEmpty())
+                        )
                         else -> result.notImplemented()
                     }
                 }
