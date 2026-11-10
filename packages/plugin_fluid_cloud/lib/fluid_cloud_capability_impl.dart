@@ -11,6 +11,21 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
 
   static const _channel = MethodChannel('antisit/fluid_cloud');
 
+  /// 把 App 当前主题（玻璃卡合成后的实底色 + 文字/强调色）带给原生，
+  /// 自定义通知内容视图按这套颜色画，和 App 内一致。
+  static Map<String, Object> _theme() {
+    final cardSolid = Color.alphaBlend(SemColors.card, SemColors.bg);
+    return {
+      'isDark': SemColors.isDark,
+      'card': cardSolid.toARGB32(),
+      'border': SemColors.border.toARGB32(),
+      'accent': SemColors.accent.toARGB32(),
+      'textPrimary': SemColors.textPrimary.toARGB32(),
+      'textSecondary': SemColors.textSecondary.toARGB32(),
+      'textMuted': SemColors.textMuted.toARGB32(),
+    };
+  }
+
   static bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
   static const _fallback = FluidCloudInfo(
@@ -38,7 +53,7 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
   Future<bool> show(FluidCloudWindow window) async {
     if (!_isAndroid) return false;
     try {
-      return await _channel.invokeMethod<bool>('show', window.toJson()) ?? false;
+      return await _channel.invokeMethod<bool>('show', {...window.toJson(), 'theme': _theme()}) ?? false;
     } on PlatformException catch (e) {
       debugPrint('[流体云] 展示失败：$e');
       return false;
@@ -63,6 +78,7 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
     try {
       final n = await _channel.invokeMethod<int>('schedule', {
         'windows': [for (final w in windows) w.toJson()],
+        'theme': _theme(),
       });
       return n ?? 0;
     } on PlatformException catch (e) {

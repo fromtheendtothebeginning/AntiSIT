@@ -42,6 +42,21 @@ oppo_card/
       images/icon.png         # 144×144 PNG（已从 App 图标生成）
 ```
 
+## 上岛（流体云胶囊）字段映射
+
+ColorOS 的上岛左右文字**只能由 UPK 卡片的模板控制**，普通 APK 通知无法指定：
+
+| 位置 | 模板节点 | 绑定字段 |
+|---|---|---|
+| 摄像头左边 | `<compact><leading>` 的 `<text level="B*">` | `courseName`（课程名） |
+| 摄像头右边 | `<compact><trailing>` 的 `<text level="B0">` | `place`（地点） |
+| 展开态顶部 | `<expanded><leading>` | `slotText` / `dateText` |
+| 展开态核心 | `<expanded><center>` | `courseName` / `place` / `timeRange` / `statusText` |
+| 展开态底部 | `<expanded><trailing>` | `remainingText` + 「查看课表」按钮 |
+
+App 侧通过 SeedlingSupportSDK 的 `updateData(card, Bundle)` 把这些字段推过去即可。
+**没有上架 UPK 之前**，ColorOS 只会把普通通知按系统默认模板展示，左右字段不受 App 控制。
+
 ## 上线前必须替换的占位
 
 `src/config.json`：

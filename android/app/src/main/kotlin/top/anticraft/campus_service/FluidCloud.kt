@@ -217,10 +217,11 @@ object FluidCloud {
             val np = it.subtitle.trim()
             if (np.isEmpty()) "下节 ${it.title}" else "下节 $np · ${it.title}"
         }
+        // 本节与下节课分行、加一条分隔线；标准通知展开后会按多行显示
         val bodyText = listOfNotNull(
             place.takeIf { it.isNotEmpty() } ?: "上课中",
             nextText,
-        ).joinToString(" · ")
+        ).joinToString("\n──────────────\n")
         val builder = if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(ctx, channelId)
         } else {

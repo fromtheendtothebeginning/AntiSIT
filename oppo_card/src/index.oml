@@ -1,12 +1,13 @@
 <template>
   <card-template entry="notification" category="modular">
+    <!-- 胶囊/上岛：摄像头左边 = 课程名，右边 = 地点 -->
     <compact>
       <leading>
         <image level="A*" src="./assets/images/icon.png"></image>
-        <text level="B*">{{ capsuleLeft }}</text>
+        <text level="B*">{{ courseName }}</text>
       </leading>
       <trailing>
-        <text level="B0">{{ capsuleRight }}</text>
+        <text level="B0">{{ place }}</text>
       </trailing>
     </compact>
 
@@ -121,8 +122,6 @@
 <data>
 {
   "uiData": {
-    "capsuleLeft": "上课中",
-    "capsuleRight": "剩35分",
     "slotText": "第3-4节",
     "dateText": "11月9日 周一",
     "courseName": "高等数学",

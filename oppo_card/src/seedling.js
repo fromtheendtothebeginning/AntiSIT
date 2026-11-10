@@ -5,8 +5,6 @@
 // 保证宿主还没连上时卡片不是空白。
 
 const FALLBACK = {
-  capsuleLeft: '暂无课程',
-  capsuleRight: '',
   slotText: '',
   dateText: '',
   courseName: '打开 AntiSIT 同步课表',

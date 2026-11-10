@@ -311,7 +311,9 @@ class _FluidCloudPreview extends StatelessWidget {
                 style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary),
               ),
               if (nextText != null) ...[
-                const SizedBox(height: 2),
+                const SizedBox(height: 8),
+                Divider(height: 1, color: SemColors.border),
+                const SizedBox(height: 6),
                 Text(nextText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -350,19 +352,35 @@ class _FluidCloudPreview extends StatelessWidget {
               color: SemColors.textPrimary,
               borderRadius: BorderRadius.circular(999),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.calendar_month_outlined,
-                    size: 13, color: isCurrent ? SemColors.accent : SemColors.warning),
-                const SizedBox(width: 6),
-                // 胶囊文案按规范尽量短（≤5 字），不带跳动的倒计时
-                Text(nearEnd ? '快下课了' : (isCurrent ? '上课中' : '即将上课'),
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: SemColors.bg)),
-              ],
+            // 上岛排版：摄像头左边课程名、右边地点
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.calendar_month_outlined,
+                      size: 13, color: isCurrent ? SemColors.accent : SemColors.warning),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(hero.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: SemColors.bg)),
+                  ),
+                  if (hero.place.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(hero.place,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: SemColors.bg)),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
