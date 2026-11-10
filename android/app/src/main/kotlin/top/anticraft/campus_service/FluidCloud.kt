@@ -201,22 +201,25 @@ object FluidCloud {
         val now = System.currentTimeMillis()
         val span = max(1L, w.endAt - w.startAt)
         val elapsed = (now - w.startAt).coerceIn(0L, span)
-        val status = if (now < w.startAt) {
-            val mins = ((w.startAt - now) / 60_000L + 1).coerceAtLeast(1L)
-            "$mins 分钟后上课"
-        } else {
-            val left = ((w.endAt - now) / 60_000L).coerceAtLeast(0L)
-            "剩余 ${if (left <= 0) "不到 1" else left} 分钟"
-        }
         val place = w.subtitle.trim()
         val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-        // 进度条在部分 ROM 上不会动（MagicOS 等直接渲染成静态条），这里不再用渐进条，
-        // 改为「地点 + 下一节课」这种更有用的信息；倒计时仍由系统 chronometer 自己走。
+        // 流体云的时间不精准（系统倒计时会跳/停），这里不用 chronometer：
+        // 课前说「N 分钟后上课」，上课中只给大概时间，最后 15 分钟固定说「还有十五分钟下课」。
+        val leftMin = ((w.endAt - now) / 60_000L).toInt()
+        val status = when {
+            now < w.startAt -> "${((w.startAt - now) / 60_000L + 1).coerceAtLeast(1L)} 分钟后上课"
+            leftMin in 1..15 -> "还有十五分钟下课"
+            else -> "上课中 · ${timeFmt.format(Date(w.endAt))} 下课"
+        }
         val next = nextWindow(ctx, w)
-        val nextText = next?.let { "下节 ${timeFmt.format(Date(it.startAt))} ${it.title}" }
-        val statusLine = listOfNotNull(
-            place.takeIf { it.isNotEmpty() },
-            if (now < w.startAt) status else (nextText ?: status),
+        // 下节课只放「地点 + 课程名」，不带时间，排版更稳
+        val nextText = next?.let {
+            val np = it.subtitle.trim()
+            if (np.isEmpty()) "下节 ${it.title}" else "下节 $np · ${it.title}"
+        }
+        val bodyText = listOfNotNull(
+            place.takeIf { it.isNotEmpty() } ?: "上课中",
+            nextText,
         ).joinToString(" · ")
         val builder = if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(ctx, channelId)
@@ -227,22 +230,19 @@ object FluidCloud {
         builder
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(w.title)
-            .setContentText(if (place.isEmpty()) "上课中" else place)
-            .setSubText(statusLine)
+            .setContentText(bodyText)
+            .setSubText(status)
             .setContentIntent(contentPi)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setShowWhen(true)
-            .setWhen(w.endAt)
-            .setUsesChronometer(true)
-            .setChronometerCountDown(true)
+            .setShowWhen(false)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setCategory(Notification.CATEGORY_EVENT)
         // Android 16.1 的胶囊文案（有就填，没有就算了）
         runCatching {
             Notification.Builder::class.java
                 .getMethod("setShortCriticalText", CharSequence::class.java)
-                .invoke(builder, if (now < w.startAt) status else "上课中")
+                .invoke(builder, status)
         }
         runCatching {
             builder.addAction(
@@ -263,21 +263,13 @@ object FluidCloud {
             // 部分 ROM（MagicOS）只有在通知带 ProgressStyle 时才把它当「实时活动」展示；
             // 去掉进度条会导致预览根本不出现，所以这里保留（不额外加 Point，避免圆点）。
             runCatching {
-                val elapsedMin = (elapsed / 60_000L).toInt().coerceAtLeast(1)
-                val remainMin = ((span - elapsed) / 60_000L).toInt().coerceAtLeast(1)
+                // 单段进度：荣耀等桌面把「多段」画成一条线 + 起点小点，看起来像没进度；
+                // 只用一段 + setProgress，系统会按比例填充（已上是实色、未上是浅色）。
+                val totalMin = (span / 60_000L).toInt().coerceAtLeast(1)
+                val elapsedMin = (elapsed / 60_000L).toInt().coerceIn(0, totalMin)
                 val style = Notification.ProgressStyle()
-                    .setProgressSegments(
-                        listOf(
-                            Notification.ProgressStyle.Segment(elapsedMin),
-                            Notification.ProgressStyle.Segment(remainMin),
-                        )
-                    )
-                    .setStyledByProgress(true)
+                    .setProgressSegments(listOf(Notification.ProgressStyle.Segment(totalMin)))
                     .setProgress(elapsedMin)
-                    // 默认游标是系统画的小三角，换成 1×1 透明图去掉它
-                    .setProgressTrackerIcon(
-                        Icon.createWithResource(ctx, R.drawable.ic_progress_tracker)
-                    )
                 builder.setStyle(style)
                 runCatching {
                     Notification.Builder::class.java

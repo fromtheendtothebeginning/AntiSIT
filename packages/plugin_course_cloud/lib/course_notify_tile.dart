@@ -224,13 +224,30 @@ class _FluidCloudPreview extends StatelessWidget {
     final hero = current ?? upcoming ??
         const _TtSlot('高等数学', '二教E101', 10 * 60 + 15, 10 * 60 + 55);
     final isCurrent = current != null;
-    final status = isCurrent
-        ? '上课中'
-        : upcoming != null
-            ? '${hero.start - nowMin} 分钟后上课'
-            : '下一节课';
     final remaining = isCurrent ? (hero.end - nowMin).clamp(0, 24 * 60) : leadMinutes;
+    final nearEnd = isCurrent && remaining <= 15;
+    // 系统里的倒计时会跳，这里统一直给「大概时间」；最后 15 分钟固定一句话
+    final status = nearEnd
+        ? '还有十五分钟下课'
+        : isCurrent
+            ? '上课中 · ${_hhmm(hero.end)} 下课'
+            : upcoming != null
+                ? '${hero.start - nowMin} 分钟后上课'
+                : '下一节课';
     final range = '${_hhmm(hero.start)}–${_hhmm(hero.end)}';
+    _TtSlot? next;
+    for (final c in today) {
+      final start = _minutes(c.start);
+      if (start < hero.end) continue;
+      if (next == null || start < next.start) {
+        next = _TtSlot(c.name, c.place, start, _minutes(c.end));
+      }
+    }
+    final nextText = next == null
+        ? null
+        : (next.place.isEmpty
+            ? '下节 ${next.name}'
+            : '下节 ${next.place} · ${next.name}');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,11 +310,18 @@ class _FluidCloudPreview extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary),
               ),
+              if (nextText != null) ...[
+                const SizedBox(height: 2),
+                Text(nextText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+              ],
               const SizedBox(height: 10),
               Row(
                 children: [
                   Text(
-                    isCurrent ? '剩余 $remaining 分钟' : '$remaining 分钟后开始',
+                    isCurrent ? '${_hhmm(hero.end)} 下课' : '${_hhmm(hero.start)} 上课',
                     style: TextStyle(fontSize: 10.5, color: SemColors.textMuted),
                   ),
                   const Spacer(),
@@ -332,15 +356,12 @@ class _FluidCloudPreview extends StatelessWidget {
                 Icon(Icons.calendar_month_outlined,
                     size: 13, color: isCurrent ? SemColors.accent : SemColors.warning),
                 const SizedBox(width: 6),
-                // 胶囊文案按 OPPO 规范尽量短（≤5 字），长文本会截断
-                Text(isCurrent ? '上课中' : '即将上课',
+                // 胶囊文案按规范尽量短（≤5 字），不带跳动的倒计时
+                Text(nearEnd ? '快下课了' : (isCurrent ? '上课中' : '即将上课'),
                     style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
                         color: SemColors.bg)),
-                const SizedBox(width: 10),
-                Text(isCurrent ? '$remaining 分' : '$remaining 分后',
-                    style: TextStyle(fontSize: 11, color: SemColors.bg)),
               ],
             ),
           ),

@@ -98,7 +98,31 @@ void main() {
 
   group('同步到底层卡片能力', () {
     test('保存课表后同步今日课程与下一节', () async {
-      TimetableStore.instance.semesters = {'2026-3': semester()};
+      // 用「今天所在的这一周」造学期：这个测试跑在任意星期都不能挂
+      final now = DateTime.now();
+      final monday = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: now.weekday - 1));
+      String iso(DateTime d) =>
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      TimetableStore.instance.semesters = {
+        '2026-3': SemesterTt(
+          startDate: iso(monday),
+          weekCount: 20,
+          courses: [
+            TtCourse(
+              id: 'c1',
+              name: '高等数学',
+              place: '二教E101',
+              day: now.weekday - 1,
+              slotStart: 2,
+              slotEnd: 2,
+              weekType: 'all',
+              weekStart: 1,
+              weekEnd: 20,
+            ),
+          ],
+        ),
+      };
       await TimetableStore.instance.persist();
       await Future<void>.delayed(Duration.zero);
 
