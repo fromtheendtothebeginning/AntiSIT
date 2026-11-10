@@ -19,6 +19,21 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.32.22', date: '2026-11-10', notes: [
+    '课表快捷方式换成正确的课表图形 logo（上一版错用了扫码图形），同样是白底圆角卡片',
+  ]),
+  ChangelogEntry(version: '1.32.21', date: '2026-11-10', notes: [
+    '课表快捷方式（长按 App 图标）换成新的课表 logo，白色圆角底',
+    '校园码快捷方式换成扫码图形 logo，同样是白底圆角卡片',
+  ]),
+  ChangelogEntry(version: '1.32.20', date: '2026-11-10', notes: [
+    '流体云正文去掉分隔线：上一行地点、下一行「下节 地点 课程名」，不再被系统截成省略号',
+    '预览通知也带一条下节课数据，方便看清实际样式',
+  ]),
+  ChangelogEntry(version: '1.32.19', date: '2026-11-10', notes: [
+    '流体云分隔线改成短横线（长破折号会被系统截成省略号），本课与下节课保持两行',
+    '隐藏进度条上的三角游标',
+  ]),
   ChangelogEntry(version: '1.32.18', date: '2026-11-10', notes: [
     '回滚流体云的自定义通知视图：恢复系统标准通知 + 进度条，上岛 / 锁屏卡片重新可见',
     '本课与下节课在正文里换行并用分隔线隔开',
