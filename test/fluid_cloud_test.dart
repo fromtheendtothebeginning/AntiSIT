@@ -157,6 +157,7 @@ void main() {
       await tester.tap(button);
       await tester.pumpAndSettle();
       expect(fake.previews, 1);
+      expect(fake.lastShown?.nextTitle, '大学物理', reason: '预览正文带上「下节」');
     });
   });
 
@@ -204,6 +205,7 @@ class _FakeCloud implements FluidCloudCapability {
   int previews = 0;
   bool permissionAsked = false;
   List<FluidCloudWindow> windows = const [];
+  FluidCloudWindow? lastShown;
 
   @override
   Future<FluidCloudInfo> info() async => const FluidCloudInfo(
@@ -218,6 +220,7 @@ class _FakeCloud implements FluidCloudCapability {
   @override
   Future<bool> show(FluidCloudWindow window) async {
     previews += 1;
+    lastShown = window;
     return true;
   }
 

@@ -47,6 +47,9 @@ data class FluidWindow(
     val startAt: Long,
     val endAt: Long,
     val leadMinutes: Int,
+    /** 下一节课：地点 / 课程名。为空时从排期里自己找。 */
+    val nextPlace: String = "",
+    val nextTitle: String = "",
 )
 
 object FluidCloud {
@@ -187,6 +190,16 @@ object FluidCloud {
             .minByOrNull { it.startAt }
     }
 
+    /** 下节课文案：「下节 二教E201 大学物理」。副标题里的时间段丢掉，避免正文过长。 */
+    private fun nextLabel(subtitle: String, title: String): String {
+        val place = subtitle.trim().substringBefore(" · ").trim()
+        return if (place.isEmpty() || place.matches(Regex("\\d{1,2}:\\d{2}–\\d{1,2}:\\d{2}"))) {
+            "下节 $title"
+        } else {
+            "下节 $place $title"
+        }
+    }
+
     /** 组装并发出通知；返回是否真的发了。 */
     private fun buildAndNotify(ctx: Context, w: FluidWindow): Boolean {
         ensureChannel(ctx)
@@ -211,17 +224,16 @@ object FluidCloud {
             leftMin in 1..15 -> "还有十五分钟下课"
             else -> "上课中 · ${timeFmt.format(Date(w.endAt))} 下课"
         }
-        val next = nextWindow(ctx, w)
-        // 下节课只放「地点 + 课程名」，不带时间，排版更稳
-        val nextText = next?.let {
-            val np = it.subtitle.trim()
-            if (np.isEmpty()) "下节 ${it.title}" else "下节 $np · ${it.title}"
+        // 下节课：优先用调用方给的（预览用），否则从排期里找。
+        // 正文两行：地点 / 下节课。不再加分隔线——横线会被系统截成「…」占掉一行。
+        val nextText = when {
+            w.nextTitle.isNotBlank() -> nextLabel(w.nextPlace, w.nextTitle)
+            else -> nextWindow(ctx, w)?.let { nextLabel(it.subtitle, it.title) }
         }
-        // 本节与下节课分行、加一条分隔线；标准通知展开后会按多行显示
         val bodyText = listOfNotNull(
-            place.takeIf { it.isNotEmpty() } ?: "上课中",
+            place.takeIf { it.isNotEmpty() },
             nextText,
-        ).joinToString("\n──────────────\n")
+        ).joinToString("\n").ifEmpty { status }
         val builder = if (Build.VERSION.SDK_INT >= 26) {
             Notification.Builder(ctx, channelId)
         } else {
@@ -271,6 +283,9 @@ object FluidCloud {
                 val style = Notification.ProgressStyle()
                     .setProgressSegments(listOf(Notification.ProgressStyle.Segment(totalMin)))
                     .setProgress(elapsedMin)
+                    .setProgressTrackerIcon(
+                        Icon.createWithResource(ctx, R.drawable.ic_progress_tracker)
+                    )
                 builder.setStyle(style)
                 runCatching {
                     Notification.Builder::class.java
@@ -378,6 +393,8 @@ object FluidCloud {
             .putExtra("startAt", w.startAt)
             .putExtra("endAt", w.endAt)
             .putExtra("leadMinutes", w.leadMinutes)
+            .putExtra("nextPlace", w.nextPlace)
+            .putExtra("nextTitle", w.nextTitle)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getBroadcast(ctx, code, intent, flags)
     }
@@ -396,6 +413,8 @@ object FluidCloud {
                 put("startAt", w.startAt)
                 put("endAt", w.endAt)
                 put("leadMinutes", w.leadMinutes)
+                put("nextPlace", w.nextPlace)
+                put("nextTitle", w.nextTitle)
             })
         }
         return arr.toString()
@@ -414,6 +433,8 @@ object FluidCloud {
                     startAt = o.optLong("startAt"),
                     endAt = o.optLong("endAt"),
                     leadMinutes = o.optInt("leadMinutes", 15),
+                    nextPlace = o.optString("nextPlace"),
+                    nextTitle = o.optString("nextTitle"),
                 )
             }
         } catch (_: Throwable) {
@@ -433,6 +454,8 @@ class FluidCloudReceiver : BroadcastReceiver() {
             startAt = intent.getLongExtra("startAt", 0L),
             endAt = intent.getLongExtra("endAt", 0L),
             leadMinutes = intent.getIntExtra("leadMinutes", 15),
+            nextPlace = intent.getStringExtra("nextPlace") ?: "",
+            nextTitle = intent.getStringExtra("nextTitle") ?: "",
         )
         when (intent.action) {
             FluidCloud.actionStart -> {
@@ -518,6 +541,8 @@ class FluidCloudBridge(private val activity: Activity) {
             startAt = (map["startAt"] as? Number)?.toLong() ?: 0L,
             endAt = (map["endAt"] as? Number)?.toLong() ?: 0L,
             leadMinutes = (map["leadMinutes"] as? Number)?.toInt() ?: 15,
+            nextPlace = "${map["nextPlace"] ?: ""}",
+            nextTitle = "${map["nextTitle"] ?: ""}",
         )
     }
 

@@ -117,6 +117,9 @@ class CourseCloudService with WidgetsBindingObserver {
       startAt: now.millisecondsSinceEpoch,
       endAt: now.add(const Duration(minutes: 1)).millisecondsSinceEpoch,
       leadMinutes: 0,
+      // 预览固定带一条「下节课」，让用户看清正文长什么样
+      nextPlace: '二教E201',
+      nextTitle: '大学物理',
     ));
   }
 

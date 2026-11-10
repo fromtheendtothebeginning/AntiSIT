@@ -60,6 +60,8 @@ class FluidCloudWindow {
     required this.endAt,
     this.subtitle = '',
     this.leadMinutes = 15,
+    this.nextPlace = '',
+    this.nextTitle = '',
   });
 
   final String id;
@@ -73,6 +75,10 @@ class FluidCloudWindow {
   /// 提前多少分钟亮起。
   final int leadMinutes;
 
+  /// 下一节课的地点 / 课程名（预览用；排期发出的窗口留空，由原生自己找）。
+  final String nextPlace;
+  final String nextTitle;
+
   Map<String, Object?> toJson() => {
         'id': id,
         'title': title,
@@ -80,6 +86,8 @@ class FluidCloudWindow {
         'startAt': startAt,
         'endAt': endAt,
         'leadMinutes': leadMinutes,
+        'nextPlace': nextPlace,
+        'nextTitle': nextTitle,
       };
 
   static FluidCloudWindow fromJson(Map<Object?, Object?> j) => FluidCloudWindow(
@@ -89,6 +97,8 @@ class FluidCloudWindow {
         startAt: j['startAt'] is num ? (j['startAt'] as num).toInt() : 0,
         endAt: j['endAt'] is num ? (j['endAt'] as num).toInt() : 0,
         leadMinutes: j['leadMinutes'] is num ? (j['leadMinutes'] as num).toInt() : 15,
+        nextPlace: '${j['nextPlace'] ?? ''}',
+        nextTitle: '${j['nextTitle'] ?? ''}',
       );
 }
 

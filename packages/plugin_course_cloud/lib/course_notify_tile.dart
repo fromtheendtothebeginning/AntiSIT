@@ -247,7 +247,7 @@ class _FluidCloudPreview extends StatelessWidget {
         ? null
         : (next.place.isEmpty
             ? '下节 ${next.name}'
-            : '下节 ${next.place} · ${next.name}');
+            : '下节 ${next.place} ${next.name}');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -311,9 +311,7 @@ class _FluidCloudPreview extends StatelessWidget {
                 style: TextStyle(fontSize: 11.5, color: SemColors.textSecondary),
               ),
               if (nextText != null) ...[
-                const SizedBox(height: 8),
-                Divider(height: 1, color: SemColors.border),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(nextText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
