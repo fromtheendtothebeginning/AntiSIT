@@ -38,7 +38,7 @@ class ReminderPlugin extends FeaturePlugin {
     try {
       await ClassReminderService.I.reschedule();
     } catch (e) {
-      debugPrint('[上课提醒] 启动排期失败：$e');
+      debugLog('[上课提醒] 启动排期失败：$e');
     }
   }
 

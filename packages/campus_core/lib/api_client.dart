@@ -77,7 +77,8 @@ class ApiClient {
     bool once = false,
   }) async {
     final st = AppState.I;
-    if (st.demo) return DemoData.handle(method, path, body: body, query: query);
+    // kDebugMode 是编译期常量：release 里这一分支不可达，DemoData 可被摇树剔除。
+    if (kDebugMode && st.demo) return DemoData.handle(method, path, body: body, query: query);
     _requireServer();
 
     Future<Map<String, dynamic>> attempt(void Function() onWarm) async {

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:campus_core/campus_core.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../cordis_bundle.dart';
@@ -166,12 +166,12 @@ class WorkshopStore {
       final manifest =
           CordisManifest.parse(jsonDecode(manifestFile.readAsStringSync()));
       if (p.basename(dir) != manifest.id) {
-        debugPrint('[ext-workshop] 草稿目录 $dir 与 ext.json 的 id 不一致，已跳过');
+        debugLog('[ext-workshop] 草稿目录 $dir 与 ext.json 的 id 不一致，已跳过');
         return null;
       }
       return WorkshopDraft(id: manifest.id, dir: dir, manifest: manifest);
     } catch (e) {
-      debugPrint('[ext-workshop] 草稿 $dir 的 ext.json 读不了，已跳过：$e');
+      debugLog('[ext-workshop] 草稿 $dir 的 ext.json 读不了，已跳过：$e');
       return null;
     }
   }
@@ -285,7 +285,7 @@ class WorkshopStore {
           title: title.isEmpty ? '未命名对话' : title,
           updatedAt: updated);
     } catch (e) {
-      debugPrint('[ext-workshop] 对话 $id 读不了，已跳过：$e');
+      debugLog('[ext-workshop] 对话 $id 读不了，已跳过：$e');
       return null;
     }
   }
@@ -453,7 +453,7 @@ class WorkshopStore {
             : 0,
       };
     } catch (e) {
-      debugPrint('[ext-workshop] 技能 ${file.path} 读不了，已跳过：$e');
+      debugLog('[ext-workshop] 技能 ${file.path} 读不了，已跳过：$e');
       return null;
     }
   }

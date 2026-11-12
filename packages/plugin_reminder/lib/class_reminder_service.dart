@@ -241,7 +241,7 @@ class ClassReminderService extends ChangeNotifier {
           ));
       _ready = true;
     } catch (e) {
-      debugPrint('[上课提醒] 通知插件初始化失败：$e');
+      debugLog('[上课提醒] 通知插件初始化失败：$e');
     }
   }
 
@@ -258,7 +258,7 @@ class ClassReminderService extends ChangeNotifier {
     for (final l in tz.timeZoneDatabase.locations.values) {
       if (l.currentTimeZone.offset == offset.inMilliseconds) return l;
     }
-    debugPrint('[上课提醒] 设备时区 "$name" 不可识别，按 UTC 处理（提醒时刻可能偏移）');    return tz.getLocation('UTC');
+    debugLog('[上课提醒] 设备时区 "$name" 不可识别，按 UTC 处理（提醒时刻可能偏移）');    return tz.getLocation('UTC');
   }
 
   /// 重新排期：清空本 App 排过的通知，再按当前课表排未来 [horizonDays] 天的提醒。
@@ -283,7 +283,7 @@ class ClassReminderService extends ChangeNotifier {
         planned: reminders.length,
       );
       if (action == ReminderAction.skip) {
-        debugPrint('[上课提醒] 课表尚未读出来，保留现有排期不动');
+        debugLog('[上课提醒] 课表尚未读出来，保留现有排期不动');
         return;
       }
       await _plugin.cancelAll();
@@ -311,11 +311,11 @@ class ClassReminderService extends ChangeNotifier {
           androidScheduleMode: mode,
         );
       }
-      debugPrint('[上课提醒] 已排期 ${reminders.length} 条（未来 $horizonDays 天，'
+      debugLog('[上课提醒] 已排期 ${reminders.length} 条（未来 $horizonDays 天，'
           '${mode == AndroidScheduleMode.exactAllowWhileIdle ? '精确' : '不精确'}闹钟）');
     } catch (e) {
       // 排期异常不让提醒功能炸掉页面
-      debugPrint('[上课提醒] 排期失败：$e');
+      debugLog('[上课提醒] 排期失败：$e');
     }
   }
 
@@ -349,7 +349,7 @@ class ClassReminderService extends ChangeNotifier {
       final ok = await android?.canScheduleExactNotifications();
       if (ok == true) return AndroidScheduleMode.exactAllowWhileIdle;
     } catch (e) {
-      debugPrint('[上课提醒] 精确闹钟权限探活失败，改用不精确闹钟：$e');
+      debugLog('[上课提醒] 精确闹钟权限探活失败，改用不精确闹钟：$e');
     }
     return AndroidScheduleMode.inexactAllowWhileIdle;
   }
@@ -408,7 +408,7 @@ class ClassReminderService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('[上课提醒] 权限申请异常：$e');
+      debugLog('[上课提醒] 权限申请异常：$e');
     }
     await _setEnabled(true);
     await reschedule();
@@ -467,7 +467,7 @@ class ClassReminderService extends ChangeNotifier {
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await android?.requestExactAlarmsPermission();
     } catch (e) {
-      debugPrint('[上课提醒] 打开精确闹钟设置失败：$e');
+      debugLog('[上课提醒] 打开精确闹钟设置失败：$e');
     }
   }
 
@@ -485,7 +485,7 @@ class ClassReminderService extends ChangeNotifier {
     try {
       return await _systemChannel.invokeMethod<bool>(method) ?? false;
     } catch (e) {
-      debugPrint('[上课提醒] 打开系统设置页失败（$method）：$e');
+      debugLog('[上课提醒] 打开系统设置页失败（$method）：$e');
       return false;
     }
   }

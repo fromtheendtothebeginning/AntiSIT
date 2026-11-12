@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -125,7 +126,7 @@ class ExtSourceStore extends ChangeNotifier {
     try {
       return ExtSource.tryParse(jsonDecode(line));
     } catch (e) {
-      debugPrint('[market] 源条目解析失败已跳过：$e');
+      debugLog('[market] 源条目解析失败已跳过：$e');
       return null;
     }
   }

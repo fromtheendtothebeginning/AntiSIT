@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+import 'debug_log.dart';
 import 'json_num.dart';
 import 'app_state.dart';
 import 'plugins/course_cloud_capability.dart';
@@ -79,7 +80,7 @@ class TimetableStore {
         return;
       }
     } catch (e) {
-      debugPrint('[课表] 自定义上课时间读取失败，用默认：$e');
+      debugLog('[课表] 自定义上课时间读取失败，用默认：$e');
     }
     slotStarts = defaultSlotStarts;
     slotEnds = defaultSlotEnds;
@@ -126,7 +127,7 @@ class TimetableStore {
     // 启动早期提醒服务会先跑一遍（那时 store 还是空的，会主动跳过不排），
     // 只有在这里补一发，用户「不刷新课表的那次启动」才不会丢提醒。
     _rescheduleReminder();
-    debugPrint('[课表] 载入完成 → 重排上课提醒');
+    debugLog('[课表] 载入完成 → 重排上课提醒');
   }
 
   void _adoptJson(dynamic decoded) {
@@ -212,7 +213,7 @@ class TimetableStore {
         next: upcoming.isEmpty ? null : upcoming.first,
       );
     } catch (e) {
-      debugPrint('[课表] 同步桌面卡片失败：$e');
+      debugLog('[课表] 同步桌面卡片失败：$e');
     }
   }
 
@@ -337,8 +338,6 @@ class TimetableStore {
     return week;
   }
 
-  static int todayDayIndex() => DateTime.now().weekday - 1; // 0=周一
-
   /// 下课时刻是否已过（课表页「已上过的课置灰」依据；网站 lessonPassed 同款）。
   /// [colISO] 是**纯日期**（yyyy-MM-dd）——直接 parse 出来是当天 00:00，
   /// 必须把 hh:mm 拼上去再比，否则永远判成「还没下课」（曾因此整周全不置灰）。
@@ -370,26 +369,6 @@ class TimetableStore {
     final colISO = iso(dateOfWeekDay(startDate, week, dayIndex));
     return courses
         .where((c) => !lessonPassed(colISO, endTimes[c.slotEnd.clamp(0, endTimes.length - 1)],
-            now: t))
-        .toList()
-      ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
-  }
-
-  /// 某周某天「已经上完」的课，按上课时刻升序——顶部卡片里这些课淡显（透明度降低）。
-  /// 与 [upcomingOn] 互补：两者合起来就是当天全部课。
-  static List<TtCourse> pastOn(
-    List<TtCourse> courses, {
-    required String startDate,
-    required int week,
-    required int dayIndex,
-    required List<String> endTimes,
-    DateTime? now,
-  }) {
-    if (startDate.isEmpty) return const [];
-    final t = now ?? DateTime.now();
-    final colISO = iso(dateOfWeekDay(startDate, week, dayIndex));
-    return courses
-        .where((c) => lessonPassed(colISO, endTimes[c.slotEnd.clamp(0, endTimes.length - 1)],
             now: t))
         .toList()
       ..sort((a, b) => a.slotStart.compareTo(b.slotStart));

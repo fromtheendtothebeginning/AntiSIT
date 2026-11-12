@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../api_client.dart';
+import '../debug_log.dart';
 import '../direct/campus_direct.dart';
 import '../plugins/ai_capability.dart';
 import '../plugins/plugin.dart';
@@ -60,7 +61,7 @@ Future<String?> _aiThenManual(
   final pending = () async {
     final text = await ai!.solveCaptcha(image);
     if (text != null && text.isNotEmpty) {
-      debugPrint('[AI] 自动识别验证码（$hint，第 $attempt 次）：$text');
+      debugLog('[AI] 自动识别验证码（$hint，第 $attempt 次）：$text');
     }
     return text;
   }();

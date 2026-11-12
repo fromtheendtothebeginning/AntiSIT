@@ -23,7 +23,7 @@ Future<String?> solveCaptcha(Uint8List image) async {
     final cleaned = text.replaceAll(RegExp(r'^["\s]+|["\s]+$'), '');
     return cleaned.isEmpty ? null : cleaned;
   } catch (e) {
-    debugPrint('[AI] 验证码识别失败，回退手动输入：$e');
+    debugLog('[AI] 验证码识别失败，回退手动输入：$e');
     return null;
   }
 }

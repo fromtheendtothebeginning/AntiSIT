@@ -44,7 +44,7 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
       final raw = await _channel.invokeMapMethod<Object?, Object?>('info');
       return raw == null ? _fallback : FluidCloudInfo.fromJson(raw);
     } on PlatformException catch (e) {
-      debugPrint('[流体云] 读取系统信息失败：$e');
+      debugLog('[流体云] 读取系统信息失败：$e');
       return _fallback;
     }
   }
@@ -55,7 +55,7 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
     try {
       return await _channel.invokeMethod<bool>('show', {...window.toJson(), 'theme': _theme()}) ?? false;
     } on PlatformException catch (e) {
-      debugPrint('[流体云] 展示失败：$e');
+      debugLog('[流体云] 展示失败：$e');
       return false;
     } on MissingPluginException {
       return false;
@@ -68,7 +68,7 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
     try {
       await _channel.invokeMethod('dismiss');
     } on PlatformException catch (e) {
-      debugPrint('[流体云] 收起失败：$e');
+      debugLog('[流体云] 收起失败：$e');
     }
   }
 
@@ -82,7 +82,7 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
       });
       return n ?? 0;
     } on PlatformException catch (e) {
-      debugPrint('[流体云] 排期失败：$e');
+      debugLog('[流体云] 排期失败：$e');
       return 0;
     }
   }
@@ -93,7 +93,7 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
     try {
       await _channel.invokeMethod('clear');
     } on PlatformException catch (e) {
-      debugPrint('[流体云] 清空排期失败：$e');
+      debugLog('[流体云] 清空排期失败：$e');
     }
   }
 
@@ -103,7 +103,7 @@ class FluidCloudCapabilityImpl implements FluidCloudCapability {
     try {
       return await _channel.invokeMethod<bool>('requestPermission') ?? false;
     } on PlatformException catch (e) {
-      debugPrint('[流体云] 申请通知权限失败：$e');
+      debugLog('[流体云] 申请通知权限失败：$e');
       return false;
     }
   }

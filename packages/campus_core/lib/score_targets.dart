@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'debug_log.dart';
 import 'json_num.dart';
 
 /// 二课达标线：一级板块目标（德育/劳育…）与二级条目目标（讲座/志愿…）。
@@ -217,7 +217,7 @@ class ScoreTargets {  const ScoreTargets({
         }
       }
     } catch (e) {
-      debugPrint('[二课达标线] 拉取配置失败：$e');
+      debugLog('[二课达标线] 拉取配置失败：$e');
     }
 
     if (cached != null) {

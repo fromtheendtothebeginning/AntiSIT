@@ -73,9 +73,7 @@ class ActivitiesPage extends StatefulWidget {
   State<ActivitiesPage> createState() => _ActivitiesPageState();
 }
 
-class _ActivitiesPageState extends State<ActivitiesPage> {
-  bool _loading = true;
-  String? _err;
+class _ActivitiesPageState extends ToolPageState<ActivitiesPage> {
   List<Map<String, dynamic>> _list = [];
   String _query = '';
   int _filter = 0; // 0全部 1报名中 2即将报名 3已结束
@@ -83,10 +81,6 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   // 类别筛选：一级（大类）→ 二级（类别）级联；'' = 全部。
   String _dl = '';
   String _lb = '';
-
-  /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用）。
-  bool _fromCache = false;
-  bool _refreshFailed = false;
 
   // 左右滑动切换：0=活动广场，1=我的报名
   final PageController _tabs = PageController();
@@ -104,8 +98,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
 
   @override
   void initState() {
-    super.initState();
-    _restore();
+    super.initState(); // 基类会先读「活动广场」缓存并按设置刷新
     _restoreSigned();
   }
 
@@ -163,47 +156,31 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     }
   }
 
-  /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否后台拉新。
-  Future<void> _restore() async {
-    final cached = await ToolPageCache.read(_cacheKey);
+  @override
+  String get cacheKey => _cacheKey;
+
+  @override
+  String get errorTitle => '活动加载失败';
+
+  @override
+  bool get hasData => _list.isNotEmpty;
+
+  @override
+  bool applyCache(Map<String, dynamic>? cached) {
     final list = ((((cached?['data'] as Map?)?['activities'] as List?) ?? const []))
         .cast<Map<String, dynamic>>();
-    if (!mounted) return;
-    if (list.isNotEmpty) {
-      setState(() {
-        _list = list;
-        _loading = false;
-        _fromCache = true;
-      });
-    }
-    if (!AppState.I.autoRefreshTools && _list.isNotEmpty) return;
-    await _load();
+    if (list.isEmpty) return false;
+    _list = list;
+    return true;
   }
 
-  Future<void> _load() async {
-    if (_loading && _list.isNotEmpty) return;
-    setState(() {
-      _loading = true;
-      _refreshFailed = false;
-      if (_list.isEmpty) _err = null;
-    });
-    try {
-      final r = await ApiClient.I.activities();
-      final data = r['data'] as Map?;
-      _list = ((data?['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
-      _fromCache = false;
-      await ToolPageCache.write(_cacheKey, {'data': data});
-    } catch (e) {
-      // 有缓存时保留旧列表、只在顶部提示失败，不弹窗打断。
-      if (_list.isEmpty) {
-        _err = e is ApiError ? e.message : e.toString();
-        if (mounted) showErr(context, e, title: '活动加载失败');
-      } else {
-        _refreshFailed = true;
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  @override
+  Future<bool> fetchData() async {
+    final r = await ApiClient.I.activities();
+    final data = r['data'] as Map?;
+    _list = ((data?['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    await ToolPageCache.write(_cacheKey, {'data': data});
+    return true;
   }
 
   List<Map<String, dynamic>> get _filtered {
@@ -329,22 +306,22 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   Widget _marketView() {
     final list = _filtered;
     return PageStateView(
-        loading: _loading && _list.isEmpty,
-        error: _err,
-        empty: !_loading && _err == null && _list.isEmpty,
+        loading: loading && _list.isEmpty,
+        error: error,
+        empty: !loading && error == null && _list.isEmpty,
         emptyText: '暂无活动',
-        onRetry: _load,
+        onRetry: refresh,
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: refresh,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
             children: [
               ToolRefreshBar(
-                refreshing: _loading,
-                fromCache: _fromCache,
-                failed: _refreshFailed,
-                onRefresh: _load,
+                refreshing: loading,
+                fromCache: fromCache,
+                failed: refreshFailed,
+                onRefresh: refresh,
               ),
               TextField(
                 onChanged: (v) => setState(() => _query = v.trim()),

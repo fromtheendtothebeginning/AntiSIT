@@ -28,8 +28,11 @@ class NetworkPlugin extends FeaturePlugin {
 
   @override
   Future<void> init() async {
-    // 调试构建：学校档案指向本机回环时拉起本地模拟校园服务（直连模式无校园网也能测）
-    await MockCampusServer.instance.ensureIfConfigured();
+    // 调试构建：学校档案指向本机回环时拉起本地模拟校园服务（直连模式无校园网也能测）。
+    // 调用点本身用编译期常量包住，release 的 AOT 才能确定整块不可达、把 mock 服务摇掉。
+    if (kDebugMode) {
+      await MockCampusServer.instance.ensureIfConfigured();
+    }
   }
 }
 

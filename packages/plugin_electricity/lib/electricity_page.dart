@@ -10,41 +10,56 @@ class ElectricityPage extends StatefulWidget {
   State<ElectricityPage> createState() => _ElectricityPageState();
 }
 
-class _ElectricityPageState extends State<ElectricityPage> {
-  bool _loading = true;
+class _ElectricityPageState extends ToolPageState<ElectricityPage> {
   bool _historyLoading = false;
-  String? _err;
   Map<String, dynamic>? _data;
   List<Map<String, dynamic>> _history = [];
   int _days = 90;
-
-  /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用）。
-  bool _fromCache = false;
-  bool _refreshFailed = false;
 
   static const _queryKey = 'electricity';
   static String _historyKey(int days) => 'electricity.history.$days';
 
   @override
-  void initState() {
-    super.initState();
-    _restore();
+  String get cacheKey => _queryKey;
+
+  @override
+  String get errorTitle => '电费加载失败';
+
+  @override
+  bool get hasData => _data != null;
+
+  @override
+  bool applyCache(Map<String, dynamic>? cached) {
+    final data = (cached?['data'] as Map?)?.cast<String, dynamic>();
+    if (data == null) return false;
+    _data = data;
+    return true;
   }
 
-  /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否后台拉新。
-  Future<void> _restore() async {
+  @override
+  Future<bool> fetchData() async {
+    final r = await ApiClient.I.electricityQuery();
+    final data = r['data'] as Map<String, dynamic>?;
+    _data = data;
+    ToolCache.electricity = ToolCache.electricityOf(data);
+    await ToolPageCache.write(_queryKey, {'data': data});
+    return true;
+  }
+
+  /// 电费页有两份缓存（余额 + 历史曲线），基类只认主 key，所以这里自己读两份。
+  @override
+  Future<void> restore() async {
     final cached = await ToolPageCache.read(_queryKey);
     final cachedHistory = await ToolPageCache.read(_historyKey(_days));
     if (!mounted) return;
-    final data = (cached?['data'] as Map?)?.cast<String, dynamic>();
+    final applied = applyCache(cached);
     final history =
         ((cachedHistory?['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
-    if (data != null || history.isNotEmpty) {
+    if (applied || history.isNotEmpty) {
       setState(() {
-        _data = data;
         _history = history;
-        _loading = false;
-        _fromCache = true;
+        loading = false;
+        fromCache = true;
       });
     }
     if (!AppState.I.autoRefreshTools && (_data != null || _history.isNotEmpty)) {
@@ -53,40 +68,13 @@ class _ElectricityPageState extends State<ElectricityPage> {
     await _refreshAll();
   }
 
-  Future<void> _refreshAll() => Future.wait([_load(), _loadHistory()]);
-
-  Future<void> _load() async {
-    if (_loading && _data != null) return;
-    setState(() {
-      _loading = true;
-      _refreshFailed = false;
-      if (_data == null) _err = null;
-    });
-    try {
-      final r = await ApiClient.I.electricityQuery();
-      final data = r['data'] as Map<String, dynamic>?;
-      _data = data;
-      ToolCache.electricity = ToolCache.electricityOf(data);
-      _fromCache = false;
-      await ToolPageCache.write(_queryKey, {'data': data});
-    } catch (e) {
-      // 有缓存时保留旧数据、只在顶部提示失败，不弹窗打断。
-      if (_data == null) {
-        _err = e is ApiError ? e.message : e.toString();
-        if (mounted) showErr(context, e, title: '电费加载失败');
-      } else {
-        _refreshFailed = true;
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
+  Future<void> _refreshAll() => Future.wait([refresh(), _loadHistory()]);
 
   Future<void> _loadHistory() async {
     final days = _days;
     setState(() {
       _historyLoading = _history.isEmpty;
-      _refreshFailed = false;
+      refreshFailed = false;
     });
     try {
       final r = await ApiClient.I.electricityHistory(days: days);
@@ -110,7 +98,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
     setState(() {
       _days = days;
       _history = records;
-      _fromCache = records.isNotEmpty;
+      fromCache = records.isNotEmpty;
     });
     await _loadHistory();
   }
@@ -179,13 +167,13 @@ class _ElectricityPageState extends State<ElectricityPage> {
           content: Text('金额须在 0.01 - 500 元之间'), behavior: SnackBarBehavior.floating));
       return;
     }
-    setState(() => _loading = true);
+    setState(() => loading = true);
     try {
       await ApiClient.I.electricityRecharge(amount);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('✓ 充值成功'), behavior: SnackBarBehavior.floating));
-      await _load();
+      await refresh(force: true); // 充值成功后必须重拉余额；此时 loading 已被置 true
     } catch (e) {
       if (!mounted) return;
       final msg = e is ApiError ? e.message : e.toString();
@@ -201,7 +189,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => loading = false);
     }
   }
 
@@ -237,8 +225,8 @@ class _ElectricityPageState extends State<ElectricityPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('宿舍电费')),
       body: PageStateView(
-        loading: _loading && _data == null,
-        error: _err,
+        loading: loading && _data == null,
+        error: error,
         onRetry: _refreshAll,
         child: RefreshIndicator(
           onRefresh: _refreshAll,
@@ -247,9 +235,9 @@ class _ElectricityPageState extends State<ElectricityPage> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             children: [
               ToolRefreshBar(
-                refreshing: _loading || _historyLoading,
-                fromCache: _fromCache,
-                failed: _refreshFailed,
+                refreshing: loading || _historyLoading,
+                fromCache: fromCache,
+                failed: refreshFailed,
                 onRefresh: _refreshAll,
               ),
               AppCard(
@@ -277,7 +265,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
                     Row(
                       children: [
                         FilledButton(
-                          onPressed: _loading ? null : _recharge,
+                          onPressed: loading ? null : _recharge,
                           style: FilledButton.styleFrom(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
@@ -286,12 +274,12 @@ class _ElectricityPageState extends State<ElectricityPage> {
                         ),
                         const SizedBox(width: 10),
                         OutlinedButton(
-                          onPressed: _loading ? null : _load,
+                          onPressed: loading ? null : refresh,
                           style: OutlinedButton.styleFrom(
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                           ),
-                          child: Text(_loading ? '查询中…' : '刷新'),
+                          child: Text(loading ? '查询中…' : '刷新'),
                         ),
                       ],
                     ),

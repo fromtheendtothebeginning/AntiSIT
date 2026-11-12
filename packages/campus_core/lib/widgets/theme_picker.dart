@@ -86,19 +86,6 @@ class ThemePickerList extends StatelessWidget {
   }
 }
 
-/// 打开主题选择弹层。
-Future<void> showThemePicker(BuildContext context) {
-  return showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: SemColors.menuBg,
-    shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-    builder: (_) => const SafeArea(
-      child: SingleChildScrollView(child: ThemePickerList(showHeader: true)),
-    ),
-  );
-}
-
 /// 色板预览：底色 + 面底 + 强调色三层，一眼看出主题的气质。
 class _Swatch extends StatelessWidget {
   const _Swatch({required this.theme});
