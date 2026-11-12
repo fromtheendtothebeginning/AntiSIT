@@ -8,6 +8,7 @@ import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api_error.dart';
+import '../secure_store.dart';
 
 /// 单次请求结果。[redirect]=false 时不跟随跳转，便于识别 302（登录失效 / SSO 握手）。
 class HttpResult {
@@ -37,14 +38,23 @@ class HttpResult {
   bool get isImage => contentType.contains('image');
 }
 
-/// 直连校园系统用的 HTTP 会话：Cookie 罐（可按需持久化）+ 校内自签证书容忍 + 内网错误文案。
+/// 直连校园系统用的 HTTP 会话：Cookie 罐（可按需持久化）+ 可选的自签证书容忍 + 内网错误文案。
 class HttpSession {
-  HttpSession({required this.trustHosts, this.persistKey});
+  HttpSession({
+    required this.trustHosts,
+    this.persistKey,
+    this.allowSelfSigned = false,
+  });
 
   /// 允许自签/校内 CA 证书的主机（后缀匹配）。
   final List<String> trustHosts;
 
-  /// 非空时把 Cookie 存到 SharedPreferences（跨启动复用登录态）。
+  /// 是否接受这些主机的无效证书。默认 **false**；只有学校系统确实使用自签证书、
+  /// 且用户在学校档案里显式开启时才放行。开启后该主机的任意证书错误都会被接受，
+  /// 校园网里的 MITM 可借此替换登录页——开启前要确认风险。
+  final bool allowSelfSigned;
+
+  /// 非空时把 Cookie 持久化（跨启动复用登录态）。
   final String? persistKey;
 
   late final http.Client _client = _buildClient();
@@ -53,7 +63,7 @@ class HttpSession {
 
   http.Client _buildClient() {
     final io = HttpClient()..connectionTimeout = const Duration(seconds: 20);
-    io.badCertificateCallback = (_, host, __) => _trusted(host);
+    io.badCertificateCallback = (_, host, __) => allowSelfSigned && _trusted(host);
     return IOClient(io);
   }
 
@@ -114,7 +124,18 @@ class HttpSession {
     if (key == null) return;
     try {
       final sp = await SharedPreferences.getInstance();
-      final raw = sp.getString(key);
+      final secure = SecureStore.I;
+      // 会话 Cookie 在有效期内等价于登录态（可查成绩/校园码），走加密存储；
+      // 旧版本留在明文 SharedPreferences 里的值一次性迁入并删除。
+      var raw = await secure.read(key);
+      if (raw == null || raw.isEmpty) {
+        final legacy = sp.getString(key);
+        if (legacy != null && legacy.isNotEmpty) {
+          await secure.write(key, legacy);
+          raw = legacy;
+        }
+      }
+      await sp.remove(key);
       if (raw == null || raw.isEmpty) return;
       final obj = jsonDecode(raw);
       if (obj is Map) {
@@ -132,7 +153,8 @@ class HttpSession {
     if (key == null) return;
     try {
       final sp = await SharedPreferences.getInstance();
-      await sp.setString(key, jsonEncode(_jar));
+      await SecureStore.I.write(key, jsonEncode(_jar));
+      await sp.remove(key); // 清掉旧版本可能留下的明文 Cookie
     } catch (_) {}
   }
 

@@ -10,6 +10,7 @@ class SchoolProfile {
     required this.xgBase,
     required this.ecardBase,
     this.dektAesKey = '',
+    this.allowSelfSigned = false,
   });
 
   String name;
@@ -18,6 +19,11 @@ class SchoolProfile {
   String xgBase; // 学工（第二课堂）
   String ecardBase; // 校付宝（校园码/电费）
   String dektAesKey; // isEncrypt 响应解密密钥，留空表示不加密（SIT 默认未启用）
+
+  /// 是否允许这些主机使用自签 / 无效证书。默认 **false**：TLS 校验失败就断开，
+  /// 避免校园网 MITM 用假证书替换登录页（进而拿到密码）。只有学校系统确实用
+  /// 自签证书、且用户确认过风险时才在「连接设置 → 高级」里打开。
+  bool allowSelfSigned;
 
   static SchoolProfile sit() => SchoolProfile(
         name: '上海应用技术大学',
@@ -46,15 +52,6 @@ class SchoolProfile {
     );
   }
 
-  SchoolProfile clone() => SchoolProfile(
-        name: name,
-        authBase: authBase,
-        jwxtBase: jwxtBase,
-        xgBase: xgBase,
-        ecardBase: ecardBase,
-        dektAesKey: dektAesKey,
-      );
-
   Map<String, dynamic> toJson() => {
         'name': name,
         'authBase': authBase,
@@ -62,6 +59,7 @@ class SchoolProfile {
         'xgBase': xgBase,
         'ecardBase': ecardBase,
         'dektAesKey': dektAesKey,
+        'allowSelfSigned': allowSelfSigned,
       };
 
   static SchoolProfile fromJson(Map<String, dynamic> j) => SchoolProfile(
@@ -71,6 +69,7 @@ class SchoolProfile {
         xgBase: (j['xgBase'] ?? '').toString(),
         ecardBase: (j['ecardBase'] ?? '').toString(),
         dektAesKey: (j['dektAesKey'] ?? '').toString(),
+        allowSelfSigned: j['allowSelfSigned'] == true,
       );
 
   static String encodeList(List<SchoolProfile> list) =>
@@ -93,7 +92,8 @@ class SchoolProfile {
 }
 
 /// 直连模式的校园凭据（学号 / 统一身份认证密码 / 校付宝支付密码 / 寝室 / 姓名）。
-/// 明文存本机（与「记住密码」同一安全级别），仅用于本机直连学校系统。
+/// 仅用于本机直连学校系统；由 [AppState] 序列化后写入 `SecureStore`
+/// （Android Keystore / iOS Keychain / Windows DPAPI），不落明文 SharedPreferences。
 class CampusCreds {
   String studentId = '';
   String password = ''; // 统一身份认证密码（= VPN 密码）
@@ -106,10 +106,6 @@ class CampusCreds {
   bool get hasPay => payPassword.isNotEmpty;
   bool get hasDorm => dorm.trim().isNotEmpty;
   bool get hasGrade => RegExp(r'^\d{4}$').hasMatch(grade.trim());
-
-  void clearSession() {
-    // 凭据保留，仅清空会话（token/会话由 CampusDirect 持有）
-  }
 
   Map<String, dynamic> toJson() => {
         'studentId': studentId,

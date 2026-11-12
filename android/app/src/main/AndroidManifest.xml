@@ -20,10 +20,15 @@
          设置里按应用授予（缺了会先跳授权页，见 MainActivity.installApk），
          只装自己下载的那一个包，不涉及应用商店的分发限制。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- 关闭自动备份 / 换机迁移：本应用的本机数据里有课表、成绩、缓存的校园卡数据，
+         以及（加密后的）登录凭据与 AI Key。备份到云端或迁到另一台设备没有产品必要，
+         却会把个人数据带出本机。 -->
     <application
         android:label="AntiSIT"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true">
         <activity
             android:name=".MainActivity"

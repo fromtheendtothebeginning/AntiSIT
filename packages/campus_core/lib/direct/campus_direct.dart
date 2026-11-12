@@ -54,7 +54,10 @@ class CampusDirect {
 
   void _syncClients() {
     final s = AppState.I.school;
-    final key = [s.name, s.authBase, s.jwxtBase, s.xgBase, s.ecardBase, s.dektAesKey].join('|');
+    final key = [
+      s.name, s.authBase, s.jwxtBase, s.xgBase, s.ecardBase, s.dektAesKey,
+      s.allowSelfSigned,
+    ].join('|');
     if (key == _schoolKey) return;
     _jwxt?.dispose();
     _xg?.dispose();
@@ -74,18 +77,25 @@ class CampusDirect {
       AppState.I.school.jwxtBase,
       aesKey: AppState.I.school.dektAesKey,
       authBase: AppState.I.school.authBase,
+      allowSelfSigned: AppState.I.school.allowSelfSigned,
     );
   }
 
   XgClient get _xgClient {
     _syncClients();
-    return _xg ??=
-        XgClient(authBase: AppState.I.school.authBase, xgBase: AppState.I.school.xgBase);
+    return _xg ??= XgClient(
+      authBase: AppState.I.school.authBase,
+      xgBase: AppState.I.school.xgBase,
+      allowSelfSigned: AppState.I.school.allowSelfSigned,
+    );
   }
 
   EpayClient get _epayClient {
     _syncClients();
-    return _epay ??= EpayClient(AppState.I.school.ecardBase);
+    return _epay ??= EpayClient(
+      AppState.I.school.ecardBase,
+      allowSelfSigned: AppState.I.school.allowSelfSigned,
+    );
   }
 
   /// 断开直连会话（登录态与 Cookie 一并清掉，下次查询必须重新登录）。
@@ -526,7 +536,8 @@ class CampusDirect {
     final s = AppState.I.school;
     final out = <ProbeResult>[];
     out.add(await _probe('教务系统', () async {
-      final c = JwxtClient(s.jwxtBase, aesKey: s.dektAesKey);
+      final c = JwxtClient(s.jwxtBase,
+          aesKey: s.dektAesKey, allowSelfSigned: s.allowSelfSigned);
       try {
         final r = await c.probe();
         return r;
@@ -535,7 +546,11 @@ class CampusDirect {
       }
     }));
     out.add(await _probe('学工系统', () async {
-      final c = XgClient(authBase: s.authBase, xgBase: s.xgBase);
+      final c = XgClient(
+        authBase: s.authBase,
+        xgBase: s.xgBase,
+        allowSelfSigned: s.allowSelfSigned,
+      );
       try {
         final r = await c.probe();
         return r;
@@ -544,7 +559,7 @@ class CampusDirect {
       }
     }));
     out.add(await _probe('校园卡', () async {
-      final c = EpayClient(s.ecardBase);
+      final c = EpayClient(s.ecardBase, allowSelfSigned: s.allowSelfSigned);
       try {
         return await c.probe();
       } finally {

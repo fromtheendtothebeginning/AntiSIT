@@ -48,6 +48,34 @@ void main() {
     });
   });
 
+  group('桥接能力按来源放行', () {
+    bool allowed(String? current, {required String initial, bool inline = false}) =>
+        bridgeAllowedOnPage(
+            currentUrl: current, initialUrl: initial, fromInlineHtml: inline);
+
+    test('网址形态：同源才允许（含端口），跨站立即失效', () {
+      expect(allowed('https://ext.example.com/page2', initial: 'https://ext.example.com/app'),
+          isTrue);
+      expect(allowed('https://ext.example.com:8443/app', initial: 'https://ext.example.com/app'),
+          isFalse);
+      expect(allowed('https://evil.example.com/x', initial: 'https://ext.example.com/app'),
+          isFalse);
+      expect(allowed('http://ext.example.com/app', initial: 'https://ext.example.com/app'),
+          isFalse, reason: '协议不同也不同源');
+    });
+
+    test('网址形态：加载中 / 空地址不给能力', () {
+      expect(allowed(null, initial: 'https://ext.example.com/app'), isFalse);
+      expect(allowed('', initial: 'https://ext.example.com/app'), isFalse);
+      expect(allowed('about:blank', initial: 'https://ext.example.com/app'), isFalse);
+    });
+
+    test('内联 html 是拓展自己的页面：始终允许', () {
+      expect(allowed('about:blank', initial: '', inline: true), isTrue);
+      expect(allowed(null, initial: '', inline: true), isTrue);
+    });
+  });
+
   group('垫片预注入', () {
     const shim = 'window.antiSIT = 1;';
 

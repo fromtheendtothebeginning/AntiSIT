@@ -29,7 +29,7 @@ void main() {
             },
           {
             'name': 'AntiSIT-${tag.replaceFirst('v', '')}.apk.sha256',
-            'browser_download_url': 'https://example.com/x.sha256',
+            'browser_download_url': 'https://gitee.com/ender123/AntiSIT/x.sha256',
           },
         ],
       };
@@ -72,7 +72,9 @@ void main() {
       final info = parseRelease(releaseJson('v1.13.6'))!;
       expect(info.version, '1.13.6');
       expect(info.apkUrl, endsWith('/v1.13.6/x.apk'), reason: '挑 .apk 资产，不是 .sha256');
-      expect(info.sha256Url, 'https://example.com/x.sha256', reason: '应用内下载完要对哈希');
+      expect(info.sha256Url, 'https://gitee.com/ender123/AntiSIT/x.sha256',
+          reason: '应用内下载完要对哈希');
+      expect(info.canSelfInstall, isTrue);
       expect(info.pageUrl, endsWith('/releases/tag/v1.13.6'));
       expect(info.notes, '· 修了某个 bug\n· 加了更新检查');
       expect(info.notes, isNot(contains('安装说明模板')), reason: '模板部分不带给用户看');
@@ -101,7 +103,60 @@ void main() {
     test('没挂 APK 资产时只有页面地址', () {
       final info = parseRelease(releaseJson('v1.13.6', withApk: false))!;
       expect(info.apkUrl, isNull);
+      expect(info.canSelfInstall, isFalse);
       expect(info.pageUrl, isNotEmpty);
+    });
+
+    test('只接受发布域白名单内的 https 资产链接', () {
+      final info = parseRelease(const {
+        'tag_name': 'v1.30.0',
+        'assets': [
+          {
+            'name': 'a.apk',
+            'browser_download_url': 'http://gitee.com/x/a.apk', // 明文
+          },
+          {
+            'name': 'a.apk.sha256',
+            'browser_download_url': 'https://evil.example/x.sha256', // 非发布域
+          },
+          {
+            'name': 'b.apk',
+            'browser_download_url': 'https://objects.githubusercontent.com/x/b.apk',
+          },
+          {
+            'name': 'b.apk.sha256',
+            'browser_download_url': 'https://anticraft.top/apk/b.apk.sha256',
+          },
+        ],
+      })!;
+      expect(info.apkUrl, 'https://objects.githubusercontent.com/x/b.apk',
+          reason: '明文 / 非白名单地址被丢弃，CDN 主机放行');
+      expect(info.sha256Url, 'https://anticraft.top/apk/b.apk.sha256');
+      expect(info.canSelfInstall, isTrue);
+    });
+
+    test('缺 sha256 时不允许应用内安装', () {
+      final info = parseRelease(const {
+        'tag_name': 'v1.30.0',
+        'assets': [
+          {
+            'name': 'AntiSIT-1.30.0.apk',
+            'browser_download_url': 'https://gitee.com/x/a.apk',
+          },
+        ],
+      })!;
+      expect(info.apkUrl, isNotNull);
+      expect(info.sha256Url, isNull);
+      expect(info.canSelfInstall, isFalse);
+    });
+
+    test('更新地址白名单：https + 发布域', () {
+      expect(isAllowedUpdateUrl(Uri.parse('https://gitee.com/a.apk')), isTrue);
+      expect(isAllowedUpdateUrl(Uri.parse('https://api.github.com/a.apk')), isTrue);
+      expect(isAllowedUpdateUrl(Uri.parse('https://anticraft.top/apk/a.apk')), isTrue);
+      expect(isAllowedUpdateUrl(Uri.parse('http://gitee.com/a.apk')), isFalse);
+      expect(isAllowedUpdateUrl(Uri.parse('https://evil.com/a.apk')), isFalse);
+      expect(isAllowedUpdateUrl(Uri.parse('https://gitee.com.evil.com/a.apk')), isFalse);
     });
 
     test('没有 tag_name（出错的返回体）返回 null', () {

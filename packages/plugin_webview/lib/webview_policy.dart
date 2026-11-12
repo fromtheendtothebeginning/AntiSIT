@@ -40,6 +40,30 @@ NavAction decideMainFrameNavigation(
   };
 }
 
+/// 当前页面是否还能使用桥接能力。
+///
+/// * 内联 html（压缩包拓展）：页面由拓展包提供，允许；
+/// * 网址形态：只有当前页与打开时的初始页**同源**才允许。用户从拓展页点到第三方站点后，
+///   内核的 JS 通道仍然存在（`addJavaScriptChannel` 不会随导航消失），必须在这里拒绝，
+///   否则外部页面可以直接调 `antiSITBridge`，用掉用户的 AI Key / 读写该拓展的 storage。
+bool bridgeAllowedOnPage({
+  required String? currentUrl,
+  required String initialUrl,
+  required bool fromInlineHtml,
+}) {
+  if (fromInlineHtml) return true;
+  final current = Uri.tryParse(currentUrl?.trim() ?? '');
+  final initial = Uri.tryParse(initialUrl.trim());
+  if (current == null || initial == null) return false;
+  // Uri.origin 只对 http/https 有效，对 about:/data: 会直接抛错。
+  String? originOf(Uri u) =>
+      (u.scheme == 'http' || u.scheme == 'https') ? u.origin : null;
+  final a = originOf(current);
+  final b = originOf(initial);
+  if (a == null || b == null) return false;
+  return a == b;
+}
+
 /// 把桥垫片写进 html 本身。
 ///
 /// 内核原本只在 `onPageFinished` 里注入——那是**页面脚本已经跑完**之后，

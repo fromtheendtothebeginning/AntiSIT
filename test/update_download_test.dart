@@ -48,6 +48,8 @@ void main() {
     UpdateDownloader.I.reset();
     tmp = Directory.systemTemp.createTempSync('update_dl');
     UpdateDownloader.debugSaveDir = () async => tmp;
+    // 单测没有 Android 原生实现：默认签名校验通过，专门测它的用例再覆盖。
+    UpdateDownloader.debugVerifySignature = (_) async => null;
   });
   tearDown(() {
     UpdateDownloader.I.reset();
@@ -97,7 +99,7 @@ void main() {
       expect(installed, isEmpty);
     });
 
-    test('发布页没挂 .sha256：跳过校验直接就绪', () async {
+    test('发布页没挂 .sha256：拒绝自动安装，不碰安装器', () async {
       UpdateDownloader.debugStream = (_) async => okResponse();
       final installed = <String>[];
       UpdateDownloader.debugInstall = (_) async {
@@ -107,8 +109,73 @@ void main() {
 
       await UpdateDownloader.I.start(info(withSha: false));
 
-      expect(UpdateDownloader.I.status, 'ready');
-      expect(installed, isNotEmpty);
+      expect(UpdateDownloader.I.status, 'error');
+      expect(UpdateDownloader.I.error, contains('缺少'));
+      expect(installed, isEmpty);
+      expect(UpdateDownloader.I.readyPath, isNull);
+    });
+
+    test('版本号里的路径字符不会逃出 update 目录', () async {
+      UpdateDownloader.debugStream = (_) async => okResponse();
+      UpdateDownloader.debugText = (_) async => sha256Of(payload);
+      UpdateDownloader.debugInstall = (_) async => true;
+      final tricky = UpdateInfo(
+        version: '../../evil',
+        notes: '',
+        pageUrl: 'https://gitee.com/ender123/AntiSIT/releases',
+        apkUrl: 'https://gitee.com/x/a.apk',
+        sha256Url: 'https://gitee.com/x/a.apk.sha256',
+      );
+
+      await UpdateDownloader.I.start(tricky);
+
+      final path = UpdateDownloader.I.readyPath!;
+      expect(path, startsWith('${tmp.path}/update/'));
+      expect(path.split(RegExp(r'[\\/]')).any((p) => p == '..'), isFalse,
+          reason: '版本号不能把文件写到 update 目录之外');
+    });
+
+    test('下载地址不在发布域：拒绝自动安装', () async {
+      UpdateDownloader.debugStream = (_) async => okResponse();
+      final installed = <String>[];
+      UpdateDownloader.debugInstall = (_) async {
+        installed.add('x');
+        return true;
+      };
+      final bad = UpdateInfo(
+        version: '1.26.0',
+        notes: '',
+        pageUrl: 'https://gitee.com/ender123/AntiSIT/releases',
+        apkUrl: 'https://evil.example/AntiSIT.apk',
+        sha256Url: 'https://gitee.com/x/a.sha256',
+      );
+
+      await UpdateDownloader.I.start(bad);
+
+      expect(UpdateDownloader.I.status, 'error');
+      expect(UpdateDownloader.I.error, contains('发布源'));
+      expect(installed, isEmpty);
+    });
+
+    test('包签名与当前版本不一致：拒绝安装、删包', () async {
+      UpdateDownloader.debugStream = (_) async => okResponse();
+      UpdateDownloader.debugText = (_) async => sha256Of(payload);
+      UpdateDownloader.debugVerifySignature =
+          (_) async => '安装包签名与当前版本不一致（可能不是官方更新）';
+      final installed = <String>[];
+      UpdateDownloader.debugInstall = (_) async {
+        installed.add('x');
+        return true;
+      };
+
+      await UpdateDownloader.I.start(info());
+
+      expect(UpdateDownloader.I.status, 'error');
+      expect(UpdateDownloader.I.error, contains('签名'));
+      expect(installed, isEmpty);
+      expect(File('${tmp.path}/update/AntiSIT-1.26.0.apk').existsSync(), isFalse,
+          reason: '签名不过的包不能留到安装确认页');
+      expect(UpdateDownloader.I.readyPath, isNull);
     });
 
     test('下载 404：进 error，原因带上状态码', () async {
@@ -313,6 +380,7 @@ void main() {
     Future<void> pumpDialog(WidgetTester tester) async {
       UpdateDownloader.I.reset();
       UpdateDownloader.debugSaveDir = () async => tmp;
+      UpdateDownloader.debugVerifySignature = (_) async => null;
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: Builder(

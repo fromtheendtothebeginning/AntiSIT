@@ -22,6 +22,32 @@ final List<Uri> latestReleaseApis = [
   Uri.parse('https://anticraft.top/apk/latest.json'),
 ];
 
+/// 允许下载安装包 / 校验文件的主机。Release JSON 由三个更新源之一返回，
+/// 任何一个源被替换都可以塞任意 `browser_download_url`；不限制主机的话，
+/// 一个被控的镜像就能把 APK 指到任意地址。只放行实际会用到的发布域及其 CDN。
+const Set<String> _allowedUpdateHosts = {
+  'gitee.com',
+  'github.com',
+  'anticraft.top',
+};
+
+const List<String> _allowedUpdateHostSuffixes = [
+  '.gitee.com',
+  '.giteeusercontent.com',
+  '.github.com',
+  '.githubusercontent.com',
+  '.anticraft.top',
+];
+
+/// 更新下载地址是否可信：必须 https，且主机在发布域白名单内。
+bool isAllowedUpdateUrl(Uri uri) {
+  if (uri.scheme != 'https') return false;
+  final host = uri.host.toLowerCase();
+  if (host.isEmpty) return false;
+  return _allowedUpdateHosts.contains(host) ||
+      _allowedUpdateHostSuffixes.any((s) => host.endsWith(s));
+}
+
 /// 一个比本机新的版本，以及引导更新要用的东西。
 class UpdateInfo {
   const UpdateInfo({
@@ -44,9 +70,17 @@ class UpdateInfo {
   /// 安装包直链（Release 资产里的 .apk）；没挂资产时为 null。
   final String? apkUrl;
 
-  /// 安装包的 sha256 校验文件（Release 资产里的 .apk.sha256）；没挂就跳过校验。
+  /// 安装包的 sha256 校验文件（Release 资产里的 .apk.sha256）。
   /// 应用内下载完成后会先对一遍哈希再交给系统安装器（见 UpdateDownloader）。
   final String? sha256Url;
+
+  /// 能否应用内下载安装：APK 直链和 sha256 校验文件缺一不可，且都必须在发布域白名单内。
+  /// 发布页漏挂校验文件时退回浏览器下载，绝不在没有哈希的情况下自动安装。
+  bool get canSelfInstall {
+    final a = apkUrl == null ? null : Uri.tryParse(apkUrl!);
+    final s = sha256Url == null ? null : Uri.tryParse(sha256Url!);
+    return a != null && s != null && isAllowedUpdateUrl(a) && isAllowedUpdateUrl(s);
+  }
 }
 
 /// 'v1.13.5' / ' 1.13.5 ' → '1.13.5'
@@ -94,16 +128,22 @@ UpdateInfo? parseRelease(Map<String, dynamic> json) {
     final name = '${asset['name'] ?? ''}';
     final url = '${asset['browser_download_url'] ?? ''}';
     if (url.isEmpty) continue;
+    // 不在发布域白名单里的资产直接丢弃：宁可退回浏览器，也不把任意地址当成官方 APK。
+    final parsed = Uri.tryParse(url);
+    if (parsed == null || !isAllowedUpdateUrl(parsed)) continue;
     if (name.endsWith('.apk')) apk ??= url;
     if (name.endsWith('.apk.sha256')) sha256 ??= url;
   }
   final page = '${json['html_url'] ?? ''}';
+  final pageUri = Uri.tryParse(page);
   return UpdateInfo(
     version: normalizeVersion(tag),
     notes: releaseSummary('${json['body'] ?? ''}'),
     // Gitee 的接口不返回 html_url（实测是 null），发布页回落到 Gitee 仓库页——
-    // 点「查看发布页」不该把国内用户带去打不开的 GitHub
-    pageUrl: page.isNotEmpty ? page : 'https://gitee.com/$giteeUpdateRepo/releases',
+    // 点「查看发布页」不该把国内用户带去打不开的 GitHub；非 https 的页面地址一律弃用。
+    pageUrl: pageUri != null && pageUri.scheme == 'https'
+        ? page
+        : 'https://gitee.com/$giteeUpdateRepo/releases',
     apkUrl: apk,
     sha256Url: sha256,
   );

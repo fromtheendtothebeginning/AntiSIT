@@ -1,8 +1,9 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// 敏感凭据（登录 token / 账号密码 / 校园凭据——里面还有能直接扣款的支付密码）
-/// 的存储口。明文 SharedPreferences 在 root / adb backup / 维修导数据面前裸奔，
-/// 这类值一律走这里：真机上是 Keystore 加密的 [FlutterSecureStore]。
+/// 敏感凭据（登录 token / 账号密码 / 校园凭据——里面还有能直接扣款的支付密码 /
+/// 直连模式会话 Cookie / AI 服务 API Key）的存储口。明文 SharedPreferences 在
+/// root / adb backup / 维修导数据面前裸奔，这类值一律走这里：
+/// 真机上是 Keystore 加密的 [FlutterSecureStore]。
 ///
 /// 默认给 [MemorySecureStore]（进程内内存，不持久化）：**flutter_test 里没有平台
 /// 实现，平台调用挂起不返回**（不是抛 MissingPluginException，testWidgets 的
@@ -28,18 +29,30 @@ class FlutterSecureStore implements SecureStore {
   final Map<String, String> _mem = {};
 
   @override
-  Future<String?> read(String key) async => await _storage.read(key: key) ?? _mem[key];
+  Future<String?> read(String key) async {
+    try {
+      return await _storage.read(key: key) ?? _mem[key];
+    } catch (_) {
+      return _mem[key]; // Keystore 偶发失败：本次会话退回内存副本，别让调用方崩
+    }
+  }
 
   @override
   Future<void> write(String key, String value) async {
     _mem[key] = value;
-    await _storage.write(key: key, value: value);
+    try {
+      await _storage.write(key: key, value: value);
+    } catch (_) {
+      // 写盘失败不该把登录/配置流程打断；内存副本仍可用，下次启动可能丢失
+    }
   }
 
   @override
   Future<void> remove(String key) async {
     _mem.remove(key);
-    await _storage.delete(key: key);
+    try {
+      await _storage.delete(key: key);
+    } catch (_) {}
   }
 }
 

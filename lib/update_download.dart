@@ -10,8 +10,9 @@ import 'package:path_provider/path_provider.dart';
 
 import 'update_check.dart';
 
-/// 「去下载」的应用内实现：把 Release 的 APK 流式拉到本机缓存，对照发布页同时挂的
-/// `.apk.sha256` 校验通过后，经平台通道拉起系统安装器覆盖安装（数据保留）。
+/// 「去下载」的应用内实现：把 Release 的 APK 流式拉到本机缓存，**必须**对照发布页
+/// 同时挂的 `.apk.sha256` 校验（缺失即拒绝，不跳过），并让 native 确认下载包的包名/
+/// 签名与当前安装版本一致，才交给系统安装器覆盖安装（数据保留）。
 ///
 /// 状态机：idle → downloading → verifying → ready（自动拉起安装器）；任何一步失败
 /// 进 error，弹窗里可以重试，也可以退回「浏览器打开下载链接」。安卓侧的授权与安装
@@ -66,6 +67,10 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   @visibleForTesting
   static Future<Directory> Function()? debugSaveDir;
 
+  /// 测试注入：原生签名校验。返回 null = 通过，返回字符串 = 失败原因。
+  @visibleForTesting
+  static Future<String?> Function(String path)? debugVerifySignature;
+
   http.Client? _client;
   StreamSubscription<List<int>>? _sub;
   Completer<void>? _completer;
@@ -73,11 +78,25 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   File? _partial;
   int _notified = 0;
 
-  /// 下载 [info] 的 APK → 校验 sha256 → 自动拉起安装器。
+  /// 下载 [info] 的 APK → 校验 sha256 → 校验包名/签名 → 自动拉起安装器。
   Future<void> start(UpdateInfo info) async {
     final apk = info.apkUrl;
+    final sha = info.sha256Url;
     if (apk == null || busy) return;
     await cancel(); // 清掉上一轮的状态与半截文件
+    if (sha == null || sha.isEmpty) {
+      _fail('发布页缺少 .apk.sha256 校验文件，已拒绝自动安装；请用浏览器下载');
+      return;
+    }
+    final apkUri = Uri.tryParse(apk);
+    final shaUri = Uri.tryParse(sha);
+    if (apkUri == null ||
+        shaUri == null ||
+        !isAllowedUpdateUrl(apkUri) ||
+        !isAllowedUpdateUrl(shaUri)) {
+      _fail('更新地址不在允许的发布源内，已拒绝自动安装；请用浏览器打开发布页');
+      return;
+    }
     status = 'downloading';
     received = 0;
     total = 0;
@@ -91,7 +110,10 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
       final base = await (debugSaveDir?.call() ?? getTemporaryDirectory());
       final dir = Directory('${base.path}/update');
       await dir.create(recursive: true);
-      final file = File('${dir.path}/AntiSIT-${info.version}.apk');
+      // 版本号来自更新源 JSON，不能直接拼进文件名（防 `../` 之类越界）；
+      // 正常版本号（1.26.0 / 1.14.0-rc1）原样保留，测试也依赖这个命名。
+      final safeVersion = info.version.replaceAll(RegExp(r'[^0-9A-Za-z._-]'), '_');
+      final file = File('${dir.path}/AntiSIT-$safeVersion.apk');
       _partial = file;
 
       final res = debugStream != null
@@ -125,7 +147,10 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
 
       status = 'verifying';
       notifyListeners();
-      _verify(await _sha256Of(info), await _digestOf(file));
+      _verify(await _sha256Of(sha), await _digestOf(file));
+      final signatureProblem = await (debugVerifySignature?.call(file.path) ??
+          _verifyApkSignature(file.path));
+      if (signatureProblem != null) throw FormatException(signatureProblem);
       readyPath = file.path;
       _partial = null;
       status = 'ready';
@@ -278,24 +303,34 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     debugText = null;
     debugInstall = null;
     debugSaveDir = null;
+    debugVerifySignature = null;
   }
 
-  /// 发布页挂了 `.apk.sha256` 就取它来校验；没挂返回 null = 跳过校验。
-  Future<String?> _sha256Of(UpdateInfo info) async {
-    final url = info.sha256Url;
-    if (url == null) return null;
-    return (await (debugText?.call(Uri.parse(url)) ?? http.read(Uri.parse(url)))).trim();
-  }
+  /// 取发布页挂的 `.apk.sha256`。调用方已保证 [sha256Url] 非空且在发布域白名单内。
+  Future<String> _sha256Of(String url) async =>
+      (await (debugText?.call(Uri.parse(url)) ?? http.read(Uri.parse(url)))).trim();
 
   Future<String> _digestOf(File file) async =>
       (await crypto.sha256.bind(file.openRead()).first).toString();
 
-  void _verify(String? want, String got) {
-    if (want == null || want.isEmpty) return;
+  void _verify(String want, String got) {
     final w = RegExp(r'[0-9a-fA-F]{64}').firstMatch(want)?.group(0);
     if (w == null) throw const FormatException('校验文件里没有 sha256');
     if (w.toLowerCase() != got.toLowerCase()) {
       throw const FormatException('安装包校验不通过（可能下载坏了或被篡改）');
+    }
+  }
+
+  /// 原生校验：下载的 APK 必须与当前安装版本的包名、签名一致（Android 安装器本身也会拦，
+  /// 但先在这里拦能给用户一句清楚的原因，别把可疑包送到安装确认页）。返回 null = 通过。
+  Future<String?> _verifyApkSignature(String path) async {
+    try {
+      final r = await _channel.invokeMethod<Object?>('verifyApkSignature', {'path': path});
+      if (r == true) return null;
+      if (r is String && r.isNotEmpty) return r;
+      return '安装包签名校验未通过（可能不是官方更新）';
+    } catch (e) {
+      return '无法校验安装包签名：${'$e'.split('\n').first}';
     }
   }
 

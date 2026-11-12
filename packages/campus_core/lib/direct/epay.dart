@@ -34,10 +34,12 @@ String composeDorm(String building, String room) {
 /// 公网可达：不需要校园网/VPN，也不需要验证码；支付密码用 SM4 加密提交。
 /// 移植自 index 后端 campus/electricity.py 与 campus/ecard.py。
 class EpayClient {
-  EpayClient(String base) : base = base.replaceAll(RegExp(r'/+$'), '') {
+  EpayClient(String base, {bool allowSelfSigned = false})
+      : base = base.replaceAll(RegExp(r'/+$'), '') {
     _http = HttpSession(
       trustHosts: [Uri.parse(this.base).host],
       persistKey: 'direct_cookies_epay',
+      allowSelfSigned: allowSelfSigned,
     );
   }
 

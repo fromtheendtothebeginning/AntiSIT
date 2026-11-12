@@ -46,9 +46,32 @@ class AiVision {
   Future<AiConfig> load() async {
     if (_loaded) return _config;
     final sp = await SharedPreferences.getInstance();
-    _config = AiConfig.decode(sp.getString(_spKey));
-    // 开发期临时 Key：只存在本机 prefs、不进仓库，且仅 debug 构建读取。
-    if (kDebugMode) _config.debugApiKey = sp.getString(_debugKeyPref) ?? '';
+    final secure = SecureStore.I;
+    // 配置里有各提供商的 API Key（可直接计费的凭证），走加密存储；旧版本留在明文
+    // SharedPreferences 里的值一次性迁入并删除。
+    var raw = await secure.read(_spKey);
+    if (raw == null || raw.isEmpty) {
+      final legacy = sp.getString(_spKey);
+      if (legacy != null && legacy.isNotEmpty) {
+        await secure.write(_spKey, legacy);
+        raw = legacy;
+      }
+    }
+    await sp.remove(_spKey);
+    _config = AiConfig.decode(raw);
+    // 开发期临时 Key：只存本机安全存储、不进仓库，且仅 debug 构建读取。
+    if (kDebugMode) {
+      var debugKey = await secure.read(_debugKeyPref);
+      if (debugKey == null || debugKey.isEmpty) {
+        final legacy = sp.getString(_debugKeyPref);
+        if (legacy != null && legacy.isNotEmpty) {
+          await secure.write(_debugKeyPref, legacy);
+          debugKey = legacy;
+        }
+      }
+      await sp.remove(_debugKeyPref);
+      _config.debugApiKey = debugKey ?? '';
+    }
     _loadModelsCache(sp);
     _loaded = true;
     return _config;
@@ -65,14 +88,17 @@ class AiVision {
     _config = c;
     _loaded = true;
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_spKey, AiConfig.encode(c)); // 调试 Key 不参与持久化 JSON
+    final secure = SecureStore.I;
+    await secure.write(_spKey, AiConfig.encode(c)); // 调试 Key 不参与持久化 JSON
+    await sp.remove(_spKey); // 清掉旧版本可能留下的明文配置
     if (kDebugMode) {
       final k = c.debugApiKey.trim();
       if (k.isEmpty) {
-        await sp.remove(_debugKeyPref);
+        await secure.remove(_debugKeyPref);
       } else {
-        await sp.setString(_debugKeyPref, k);
+        await secure.write(_debugKeyPref, k);
       }
+      await sp.remove(_debugKeyPref);
     }
   }
 
@@ -766,12 +792,6 @@ class AiVision {
       return '${(choices.first as Map)['finish_reason'] ?? ''}';
     }
     return '';
-  }
-
-  void debugDump() {
-    if (!kDebugMode) return;
-    debugPrint('[AI] provider=${_config.providerId} model=${_config.model} '
-        'base=${_config.baseUrl} key=${_config.apiKey.isEmpty ? '未填' : '已填'}');
   }
 
   /// 1×1 透明 PNG：用于「测试连接」探活（不耗流量、不需要真实图片）。

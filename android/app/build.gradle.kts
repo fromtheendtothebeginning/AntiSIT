@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,20 +8,30 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// 发布签名：优先 `android/key.properties`（不进仓库），其次环境变量，最后才回落到仓库内的
+// release.keystore。仓库里的那把密钥是为了让历史版本能互相覆盖安装而公开的，**不构成安全边界**：
+// 拿到仓库的人都能签出可覆盖安装的包。轮换步骤见 README「发布签名」。
+val keystoreProperties = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+
+fun signingValue(key: String, env: String, fallback: String): String =
+    (keystoreProperties.getProperty(key)?.takeIf { it.isNotBlank() })
+        ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+        ?: fallback
+
 android {
     namespace = "top.anticraft.campus_service"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // GitHub 发布签名：release.keystore 随仓库公开。公开仓库的 CI 拿不到机密，而密钥每次
-    // 随机生成会让用户无法覆盖安装升级，所以固定一把专用密钥。密码与密钥同处仓库，它不构成
-    // 安全边界，只保证各版本签名一致、可互相覆盖安装；debug 构建仍用本机 debug 密钥。
     signingConfigs {
         create("release") {
-            storeFile = file("release.keystore")
-            storePassword = "antisit"
-            keyAlias = "antisit"
-            keyPassword = "antisit"
+            storeFile = file(signingValue("storeFile", "RELEASE_STORE_FILE", "release.keystore"))
+            storePassword = signingValue("storePassword", "RELEASE_STORE_PASSWORD", "antisit")
+            keyAlias = signingValue("keyAlias", "RELEASE_KEY_ALIAS", "antisit")
+            keyPassword = signingValue("keyPassword", "RELEASE_KEY_PASSWORD", "antisit")
         }
     }
 

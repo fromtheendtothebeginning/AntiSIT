@@ -79,6 +79,29 @@ jobs:
           touch "$DEST/gradle-8.14-bin.zip.ok"
           echo "已预装: $DEST/gradle-8.14"
 
+      - name: 配置发布签名（可选）
+        # 配了 RELEASE_KEYSTORE_BASE64 就用仓库 Secrets 里的私钥覆盖仓库内的
+        # release.keystore；没配则沿用仓库内的密钥（历史版本互相覆盖安装用）。
+        # 轮换私钥的步骤见 README「发布签名」。
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "未配置 RELEASE_KEYSTORE_BASE64，使用仓库内 android/app/release.keystore"
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          {
+            echo "storeFile=release.keystore"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/key.properties
+          echo "已用仓库 Secrets 配置发布签名"
+
       - name: 构建 APK
         # runner 的网络偶尔抽风：依赖下载超时 / 连接被重置，flutter 只会给一句
         # "Gradle threw an error while downloading artifacts from the network"。
@@ -95,15 +118,17 @@ jobs:
           exit 1
 
       - name: 校验签名指纹
+        env:
+          # 换用私有密钥后，把新证书的 SHA-1（去冒号、小写）配成这个 Secret
+          WANT: ${{ secrets.RELEASE_CERT_SHA1 || '498c439fcafb1304cb3461514575a19c768765e5' }}
         run: |
           APK=build/app/outputs/flutter-apk/app-release.apk
           APKSIGNER=$(ls "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
           GOT=$("$APKSIGNER" verify --print-certs "$APK" |
             sed -n 's/.*SHA-1 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
-          WANT=498c439fcafb1304cb3461514575a19c768765e5
           echo "APK 签名 SHA-1：$GOT"
           if [ "$GOT" != "$WANT" ]; then
-            echo "签名指纹与仓库内的 android/app/release.keystore 不符——换了密钥就发不出能覆盖安装的版本，中止发布"
+            echo "APK 签名指纹 $GOT 与期望 $WANT 不符：检查签名配置（key.properties / Secrets）后重试"
             exit 1
           fi
 

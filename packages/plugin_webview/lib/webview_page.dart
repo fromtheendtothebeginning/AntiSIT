@@ -39,9 +39,18 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
   double _progress = 0; // 0 = 没在加载
   String? _error;
 
+  /// 主框架当前地址（跨站导航后桥接能力要关掉，见 [bridgeAllowedOnPage]）。
+  String? _currentUrl;
+
   /// 这份内容是「内联 html」（压缩包拓展）还是「网址」——导航判定按它分岔。
   bool get _inline =>
       widget.html != null && (widget.url == null || widget.url!.trim().isEmpty);
+
+  bool get _canUseBridge => bridgeAllowedOnPage(
+        currentUrl: _currentUrl ?? widget.url,
+        initialUrl: widget.url ?? '',
+        fromInlineHtml: _inline,
+      );
 
   @override
   void initState() {
@@ -50,6 +59,8 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (p) => mounted ? setState(() => _progress = p / 100) : null,
+        onPageStarted: (url) => _currentUrl = url,
+        onUrlChange: (change) => _currentUrl = change.url,
         onPageFinished: (_) => _injectBridge(),
         onNavigationRequest: _onNavigationRequest,
         onWebResourceError: (e) {
@@ -75,6 +86,8 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
   /// [WebBridgeEventSink]：App → 网页的下行事件（流式输出等）。
   @override
   void emit(String event, Object? data) {
+    // 跨站页面不再持有桥接能力，流式 AI 的增量也不能再推过去。
+    if (!_canUseBridge) return;
     unawaited(_controller
         .runJavaScript(
             'window.__antiSITEvent && window.__antiSITEvent(${jsonEncode(event)}, ${jsonEncode(data)})')
@@ -130,8 +143,10 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
   }
 
   /// 页面加载完成后注入垫片：网页里才有 `window.antiSIT` 可用。
+  /// 只给拓展自己的页面注入；跨站导航后不注入（直接调通道的也会在 [_onBridgeCall] 被拒）。
   Future<void> _injectBridge() async {
     if (widget.bridge == null) return;
+    if (!_canUseBridge) return;
     try {
       await _controller.runJavaScript(kWebViewBridgeShim);
     } catch (_) {
@@ -148,6 +163,9 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
       final req = jsonDecode(message.message);
       if (req is! Map) throw const FormatException('调用格式不对');
       id = req['id'];
+      if (!_canUseBridge) {
+        throw const FormatException('当前页面不在拓展的源内，接口不可用');
+      }
       final result = await bridge.call('${req['method']}', req['args']);
       await _reply('__antiSITResolve', id, result);
     } catch (e) {

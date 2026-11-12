@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../api_error.dart';
+import '../debug_log.dart';
 import 'activities_util.dart';
 import 'crypto.dart';
 import 'http_session.dart';
@@ -8,12 +9,13 @@ import 'http_session.dart';
 /// 学工（zftal-xgxt）客户端：统一身份认证 CAS 登录（AES 加密密码 + 图形验证码）、
 /// 第二课堂分数、活动列表 / 详情。移植自 index 后端 campus/dekt.py；仅能在校园网 / 校内 VPN 下访问。
 class XgClient {
-  XgClient({required String authBase, required String xgBase})
+  XgClient({required String authBase, required String xgBase, bool allowSelfSigned = false})
       : authBase = authBase.replaceAll(RegExp(r'/+$'), ''),
         xgBase = xgBase.replaceAll(RegExp(r'/+$'), '') {
     _http = HttpSession(
       trustHosts: [Uri.parse(this.authBase).host, Uri.parse(this.xgBase).host],
       persistKey: 'direct_cookies_xg',
+      allowSelfSigned: allowSelfSigned,
     );
   }
 
@@ -137,7 +139,7 @@ class XgClient {
         if (msg.isNotEmpty) return msg;
       }
     }
-    debugPrint('[统一认证登录] 学校页面没有可读错误文案（${html.length} 字）');
+    debugLog('[统一认证登录] 学校页面没有可读错误文案（${html.length} 字）');
     return fallback;
   }
 

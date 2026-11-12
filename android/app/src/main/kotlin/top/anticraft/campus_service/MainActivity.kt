@@ -2,7 +2,9 @@ package top.anticraft.campus_service
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -13,6 +15,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.security.MessageDigest
 
 /**
  * 「上课提醒」与「应用内更新」的系统级入口。
@@ -67,6 +70,14 @@ class MainActivity : FlutterActivity() {
                         // 会抛 ClassCastException，通道里抛出去整条安装就废了。
                         "installApk" -> result.success(
                             installApk((call.arguments as? String) ?: call.argument<String>("path").orEmpty())
+                        )
+                        // 应用内更新：先确认下载包的包名 / 签名与当前安装版本一致，
+                        // 再交给安装器（返回 true = 通过，字符串 = 拒绝原因）。
+                        "verifyApkSignature" -> result.success(
+                            verifyApkSignature(
+                                (call.arguments as? Map<*, *>)?.get("path")?.toString()
+                                    ?: call.argument<String>("path").orEmpty()
+                            )
                         )
                         else -> result.notImplemented()
                     }
@@ -244,6 +255,55 @@ class MainActivity : FlutterActivity() {
             }
         }
         return "error: ${last?.message ?: "未知原因"}"
+    }
+
+    /**
+     * 校验下载的 APK 是否可以作为当前安装版本的更新：
+     * 包名必须一致，签名证书集合必须与当前 App 相同（等价于 Android 安装器的覆盖安装条件）。
+     * 返回 true = 通过；字符串 = 给用户看的拒绝原因。
+     */
+    @Suppress("DEPRECATION")
+    private fun verifyApkSignature(path: String): Any {
+        val file = File(path)
+        if (!file.exists() || file.length() == 0L) return "安装包不存在或为空"
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        return try {
+            val archive = packageManager.getPackageArchiveInfo(path, flags)
+                ?: return "无法读取安装包信息"
+            if (archive.packageName != packageName) {
+                return "安装包的包名与当前应用不一致（${archive.packageName}）"
+            }
+            val installed = packageManager.getPackageInfo(packageName, flags)
+            val archiveSignatures = signaturesOf(archive)
+            val installedSignatures = signaturesOf(installed)
+            if (archiveSignatures.isEmpty()) {
+                "安装包没有签名信息"
+            } else if (archiveSignatures != installedSignatures) {
+                "安装包签名与当前版本不一致（可能不是官方更新）"
+            } else {
+                true
+            }
+        } catch (e: Exception) {
+            "签名校验失败：${e.message ?: e.javaClass.simpleName}"
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun signaturesOf(info: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners
+        } else {
+            info.signatures
+        } ?: return emptySet()
+        return signatures.mapTo(mutableSetOf()) { signature ->
+            MessageDigest.getInstance("SHA-256")
+                .digest(signature.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        }
     }
 
     /** 跳设置页；部分 ROM 没有对应页面，返回 false 让 Dart 侧走兜底。 */

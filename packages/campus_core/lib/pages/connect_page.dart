@@ -47,6 +47,7 @@ class _ConnectPageState extends State<ConnectPage> {
   final _xgBase = TextEditingController();
   final _ecardBase = TextEditingController();
   final _aesKey = TextEditingController();
+  bool _allowSelfSigned = false;
 
   final _sid = TextEditingController();
   final _pwd = TextEditingController();
@@ -92,6 +93,7 @@ class _ConnectPageState extends State<ConnectPage> {
     _xgBase.text = s.xgBase;
     _ecardBase.text = s.ecardBase;
     _aesKey.text = s.dektAesKey;
+    _allowSelfSigned = s.allowSelfSigned;
   }
 
   SchoolProfile _draftSchool() => SchoolProfile(
@@ -101,6 +103,7 @@ class _ConnectPageState extends State<ConnectPage> {
         xgBase: _xgBase.text.trim(),
         ecardBase: _ecardBase.text.trim(),
         dektAesKey: _aesKey.text.trim(),
+        allowSelfSigned: _allowSelfSigned,
       );
 
   @override
@@ -834,6 +837,18 @@ class _ConnectPageState extends State<ConnectPage> {
               childrenPadding: const EdgeInsets.only(bottom: 8),
               title: const Text('高级', style: TextStyle(fontSize: 13.5)),
               children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('允许学校系统使用自签证书',
+                      style: TextStyle(fontSize: 13.5)),
+                  subtitle: const Text(
+                    '默认关闭：证书校验失败会直接断开，避免校园网里用假证书替换登录页。'
+                    '仅当学校系统确实使用自签证书时开启；开启会降低登录密码的抗中间人能力。',
+                    style: TextStyle(fontSize: 11.5, height: 1.5),
+                  ),
+                  value: _allowSelfSigned,
+                  onChanged: (v) => setState(() => _allowSelfSigned = v),
+                ),
                 GlassField(
                   label: '响应解密密钥',
                   controller: _aesKey,

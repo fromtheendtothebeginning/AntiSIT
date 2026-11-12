@@ -68,7 +68,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) {
 /// 弹窗内容里的下载区：进度条 / 校验中 / 失败原因与兜底入口。
 List<Widget> _downloadArea(BuildContext ctx, UpdateInfo info) {
   final d = UpdateDownloader.I;
-  if (info.apkUrl == null) return const [];
+  if (!info.canSelfInstall) return const [];
   switch (d.status) {
     case 'downloading':
       return [
@@ -145,8 +145,8 @@ String _progressText(UpdateDownloader d) {
 
 /// 主按钮跟着下载状态走：去下载 → 下载中（不可点）→ 安装 / 重试。
 Widget _mainAction(BuildContext ctx, UpdateInfo info) {
-  // 没挂安装包直链：只能去发布页（页面里有下载入口）
-  if (info.apkUrl == null) {
+  // 没挂安装包直链、或发布页漏挂 sha256：只能去发布页（绝不无哈希自动安装）
+  if (!info.canSelfInstall) {
     return FilledButton.icon(
       onPressed: () => openExternalUrl(ctx, info.pageUrl),
       icon: const Icon(Icons.download_rounded, size: 18),
