@@ -114,6 +114,14 @@ class TimetableStore {
     return semesters.putIfAbsent(k, () => SemesterTt());
   }
 
+  /// 导入备份前清空内存里的课表，避免备份未包含课表时旧数据残留。
+  void resetForImport() {
+    semesters = {};
+    active = '';
+    updatedAt = 0;
+    _nj = null;
+  }
+
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
     _loadSlotTimes(sp);

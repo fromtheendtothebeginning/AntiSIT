@@ -1,0 +1,27 @@
+name: plugin_backup
+description: "AntiSIT 插件包：备份与恢复（课表 / 设置 / 学校档案 / 插件偏好）"
+publish_to: 'none'
+version: 0.1.0
+environment:
+  sdk: ^3.9.2
+
+# 与宿主同属一个 pub workspace：根目录一次 `flutter pub get` 解析全部包
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  campus_core:
+    path: ../campus_core
+  # 导出：写临时文件后交给系统分享（Android 上选择保存位置）
+  share_plus: ^12.0.2
+  path_provider: ^2.1.5
+  # 桌面端导出用「另存为」；导入用文件选择器
+  file_selector: ^1.0.3
+  # 备份文件头写 App 版本
+  package_info_plus: ^9.0.1
+  # 读取 / 恢复本机偏好
+  shared_preferences: ^2.5.5
+
+flutter:
+  uses-material-design: true

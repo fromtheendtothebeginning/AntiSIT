@@ -19,6 +19,10 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.33.0', date: '2026-11-13', notes: [
+    '新增「我的 → 备份与恢复」：把课表、学期作息、设置、学校档案与插件偏好导出为 JSON，卸载 / 换机后可导入恢复',
+    '备份不包含账号密码、登录态、AI Key、直连 Cookie、拓展数据与课表背景图；导入后需重新登录',
+  ]),
   ChangelogEntry(version: '1.32.24', date: '2026-11-13', notes: [
     '发布签名更换为私有密钥：从旧版本升级需先卸载再安装（本机数据会清空），之后版本可正常覆盖升级',
   ]),

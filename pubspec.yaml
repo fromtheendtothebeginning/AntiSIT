@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.32.24+154
+version: 1.33.0+155
 
 environment:
   sdk: ^3.9.2
@@ -131,6 +131,9 @@ dependencies:
     path: packages/plugin_ecard
   plugin_tools:
     path: packages/plugin_tools
+  # 备份与恢复：导出 / 导入课表、设置、学校档案、插件偏好
+  plugin_backup:
+    path: packages/plugin_backup
   plugin_ai:
     path: packages/plugin_ai
   # 外观设置（主题 / 深浅色 / 界面跟随滑块）：整个包可以删掉或 EXCLUDE_APPEARANCE

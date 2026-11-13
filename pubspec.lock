@@ -661,6 +661,13 @@ packages:
       url: "https://mirrors.cloud.tencent.com/dart-pub/"
     source: hosted
     version: "3.1.6"
+  plugin_backup:
+    dependency: "direct main"
+    description:
+      path: "packages/plugin_backup"
+      relative: true
+    source: path
+    version: "0.1.0"
   plugin_platform_interface:
     dependency: transitive
     description:
