@@ -54,8 +54,10 @@ app.*.map.json
 /tt_dump.json
 # 机器相关 SDK 路径
 /android/local.properties
-# 发布签名私钥与密码（可选覆盖仓库内的 release.keystore，见 android/key.properties.example）
+# 发布签名私钥与密码（见 android/key.properties.example）
 /android/key.properties
+# CI 从 Secrets 写入的临时私钥；本地私钥应放在仓库外
+/android/app/release.keystore
 
 TODO.md
 # IDE 本地配置

@@ -8,18 +8,27 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// 发布签名：优先 `android/key.properties`（不进仓库），其次环境变量，最后才回落到仓库内的
-// release.keystore。仓库里的那把密钥是为了让历史版本能互相覆盖安装而公开的，**不构成安全边界**：
-// 拿到仓库的人都能签出可覆盖安装的包。轮换步骤见 README「发布签名」。
+// 发布签名只从 `android/key.properties`（不进仓库）或环境变量读取，仓库里不再内置任何
+// 签名私钥。本地 release 构建前先按 README「发布签名」配置；CI 从 GitHub Secrets 写入。
 val keystoreProperties = Properties().apply {
     val f = rootProject.file("key.properties")
     if (f.exists()) FileInputStream(f).use { load(it) }
 }
 
-fun signingValue(key: String, env: String, fallback: String): String =
-    (keystoreProperties.getProperty(key)?.takeIf { it.isNotBlank() })
+fun signingValue(key: String, env: String): String? =
+    keystoreProperties.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: System.getenv(env)?.takeIf { it.isNotBlank() }
-        ?: fallback
+
+// 只有 release 构建才强制要求签名配置：debug 构建 / IDE 同步没有私钥也能跑。
+val buildingRelease = gradle.startParameter.taskNames.any {
+    it.contains("Release", ignoreCase = true)
+}
+if (buildingRelease && signingValue("storeFile", "RELEASE_STORE_FILE") == null) {
+    error(
+        "缺少发布签名配置：请在 android/key.properties 或环境变量中提供 " +
+            "storeFile / storePassword / keyAlias / keyPassword（见 README「发布签名」）"
+    )
+}
 
 android {
     namespace = "top.anticraft.campus_service"
@@ -28,10 +37,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file(signingValue("storeFile", "RELEASE_STORE_FILE", "release.keystore"))
-            storePassword = signingValue("storePassword", "RELEASE_STORE_PASSWORD", "antisit")
-            keyAlias = signingValue("keyAlias", "RELEASE_KEY_ALIAS", "antisit")
-            keyPassword = signingValue("keyPassword", "RELEASE_KEY_PASSWORD", "antisit")
+            signingValue("storeFile", "RELEASE_STORE_FILE")?.let { storeFile = file(it) }
+            signingValue("storePassword", "RELEASE_STORE_PASSWORD")?.let { storePassword = it }
+            signingValue("keyAlias", "RELEASE_KEY_ALIAS")?.let { keyAlias = it }
+            signingValue("keyPassword", "RELEASE_KEY_PASSWORD")?.let { keyPassword = it }
         }
     }
 

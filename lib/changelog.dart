@@ -19,6 +19,9 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.32.24', date: '2026-11-13', notes: [
+    '发布签名更换为私有密钥：从旧版本升级需先卸载再安装（本机数据会清空），之后版本可正常覆盖升级',
+  ]),
   ChangelogEntry(version: '1.32.23', date: '2026-11-13', notes: [
     '应用内更新更严格：必须带官方 sha256 校验并核对安装包签名，发布页缺校验文件时改用浏览器下载',
     '学校系统默认严格校验 HTTPS 证书；学校确实使用自签证书时，到「我的 → 连接设置 → 高级」开启「允许学校系统使用自签证书」',

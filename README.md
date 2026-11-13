@@ -19,16 +19,21 @@ App 里也能更新：「我的 → 检查更新」查到新版本后，引导�
 
 **Windows 版没有现成安装包**：CI 只发 Android APK，Windows 请自行构建（`flutter build windows`，需本机 Visual Studio 含 C++ 桌面开发工作负载），或用 `flutter run -d windows` 直接跑。
 
-- 发布版签名优先读 `android/key.properties`（不进仓库，模板见 [android/key.properties.example](android/key.properties.example)）或环境变量，缺省回落到仓库内的 `android/app/release.keystore`。**仓库里的这把密钥是公开的**：任何拿到仓库的人都能签出可覆盖安装的包，它只保证历史版本签名一致，不构成安全边界；要换成私有密钥见下方「发布签名」
+- 仓库**不包含签名私钥**。发布构建从 `android/key.properties`（不进仓库，模板见 [android/key.properties.example](android/key.properties.example)）或环境变量读取密钥；缺配置时 release 构建会直接失败，不会产出可安装的包
 - 本地 `flutter run` / debug 构建用的是本机 debug 密钥，与发布版签名不同，两种渠道互相覆盖前需先卸载
 - **发版**：`pubspec.yaml` 升版本号 → 提交推送 → 打同名 tag（`git tag v1.0.4 && git push origin v1.0.4`），[release.yml](.github/workflows/release.yml) 会构建、校验签名指纹、发布 Release
 
-### 发布签名（可选加固）
+### 发布签名
 
-1. 生成新的 release keystore，放在本机安全位置（不要提交）；
-2. 本地构建：复制 `android/key.properties.example` → `android/key.properties`，填 `storeFile`（绝对路径，或相对 `android/app/` 的路径）、`storePassword`、`keyAlias`、`keyPassword`；
-3. CI：在 GitHub 仓库 Secrets 配置 `RELEASE_KEYSTORE_BASE64`（keystore 文件 base64）、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`、`RELEASE_CERT_SHA1`（新证书 SHA-1，去冒号、小写）。`release.yml` 会用它们覆盖仓库内的密钥并校验指纹；
-4. **换钥后旧版本无法覆盖安装**：老用户必须先卸载再装（本机数据会丢），发版说明里要明确写出来。
+1. 生成 release keystore，存放在**仓库外**的安全位置并做好备份（私钥丢失 = 老用户再也无法覆盖升级）；
+2. 本地构建：复制 `android/key.properties.example` → `android/key.properties`，填 `storeFile`（建议绝对路径）、`storePassword`、`keyAlias`、`keyPassword`；
+3. CI：在 GitHub 仓库 Secrets 配置
+   - `RELEASE_KEYSTORE_BASE64`：keystore 文件的 base64（单行）
+   - `RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`
+   - `RELEASE_CERT_SHA1`：证书 SHA-1（去冒号、小写）
+
+   `release.yml` 会用它们写入临时密钥与 `key.properties`，缺任何一个都会中止发布；
+4. **换钥后旧版本无法覆盖安装**：老用户必须先卸载再装（本机数据会丢），发版说明里要明确写出来。旧密钥已经存在于仓库历史中，无法靠删文件收回；换钥后旧密钥签的包也不能覆盖新密钥版本。
 
 ## 开发：多包结构
 

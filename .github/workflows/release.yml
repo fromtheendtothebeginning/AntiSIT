@@ -79,19 +79,18 @@ jobs:
           touch "$DEST/gradle-8.14-bin.zip.ok"
           echo "已预装: $DEST/gradle-8.14"
 
-      - name: 配置发布签名（可选）
-        # 配了 RELEASE_KEYSTORE_BASE64 就用仓库 Secrets 里的私钥覆盖仓库内的
-        # release.keystore；没配则沿用仓库内的密钥（历史版本互相覆盖安装用）。
-        # 轮换私钥的步骤见 README「发布签名」。
+      - name: 配置发布签名
+        # 仓库不再内置签名私钥：必须从 GitHub Secrets 取。缺任何一个都直接失败，
+        # 避免误发一把临时/错误密钥签名的包。轮换步骤见 README「发布签名」。
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "未配置 RELEASE_KEYSTORE_BASE64，使用仓库内 android/app/release.keystore"
-            exit 0
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "缺少发布签名 Secrets：RELEASE_KEYSTORE_BASE64 / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD" >&2
+            exit 1
           fi
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
           {
@@ -100,7 +99,7 @@ jobs:
             echo "keyAlias=$KEY_ALIAS"
             echo "keyPassword=$KEY_PASSWORD"
           } > android/key.properties
-          echo "已用仓库 Secrets 配置发布签名"
+          echo "已用 GitHub Secrets 配置发布签名"
 
       - name: 构建 APK
         # runner 的网络偶尔抽风：依赖下载超时 / 连接被重置，flutter 只会给一句
@@ -119,9 +118,13 @@ jobs:
 
       - name: 校验签名指纹
         env:
-          # 换用私有密钥后，把新证书的 SHA-1（去冒号、小写）配成这个 Secret
-          WANT: ${{ secrets.RELEASE_CERT_SHA1 || '498c439fcafb1304cb3461514575a19c768765e5' }}
+          # 私有密钥证书的 SHA-1（去冒号、小写）
+          WANT: ${{ secrets.RELEASE_CERT_SHA1 }}
         run: |
+          if [ -z "$WANT" ]; then
+            echo "缺少 RELEASE_CERT_SHA1（发布证书 SHA-1，去冒号小写）" >&2
+            exit 1
+          fi
           APK=build/app/outputs/flutter-apk/app-release.apk
           APKSIGNER=$(ls "$ANDROID_SDK_ROOT"/build-tools/*/apksigner | sort -V | tail -1)
           GOT=$("$APKSIGNER" verify --print-certs "$APK" |
