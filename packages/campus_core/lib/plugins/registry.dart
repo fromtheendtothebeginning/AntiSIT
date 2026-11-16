@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../debug_log.dart';
 import '../widgets/common.dart';
 import 'capability.dart';
 import 'json_theme.dart';
@@ -441,7 +440,7 @@ class PluginRegistry extends ChangeNotifier {
       try {
         _extraThemes.add(JsonThemePlugin.parse(raw));
       } catch (e) {
-        debugLog('[registry] 自定义主题解析失败已跳过：$e');
+        debugPrint('[registry] 自定义主题解析失败已跳过：$e');
       }
     }
     final savedTheme = sp.getString(_kTheme);
@@ -458,7 +457,7 @@ class PluginRegistry extends ChangeNotifier {
       try {
         await p.init();
       } catch (e) {
-        debugLog('[插件] ${p.id} 初始化失败：$e');
+        debugPrint('[插件] ${p.id} 初始化失败：$e');
       }
     }
   }

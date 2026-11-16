@@ -16,37 +16,67 @@ class AcademicPage extends StatefulWidget {
   State<AcademicPage> createState() => _AcademicPageState();
 }
 
-class _AcademicPageState extends ToolPageState<AcademicPage> {
+class _AcademicPageState extends State<AcademicPage> {
+  bool _loading = true;
+  String? _err;
   Map<String, dynamic>? _data;
 
-  @override
-  String get cacheKey => 'academic';
+  /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用）。
+  bool _fromCache = false;
+  bool _refreshFailed = false;
+
+  static const _cacheKey = 'academic';
 
   @override
-  String get errorTitle => '学业情况加载失败';
-
-  @override
-  bool get hasData => _data != null;
-
-  @override
-  bool applyCache(Map<String, dynamic>? cached) {
-    final data = _objOf(cached?['data']);
-    if (data == null) return false;
-    _data = data;
-    return true;
+  void initState() {
+    super.initState();
+    _restore();
   }
 
-  @override
-  Future<bool> fetchData() async {
-    final r = await ApiClient.I.academicStatus();
-    final data = _objOf(r['data']);
-    // 解析层已把学校 alert-danger 抬成 ApiError；这里再兜一层：
-    // 个别实现会把错误塞在 data.error 里，同时返回空统计 + 空类别。
-    final msg = _strOf(data?['error']);
-    if (msg.isNotEmpty) throw ApiError('学业情况查询失败：$msg');
-    _data = data ?? const <String, dynamic>{};
-    await ToolPageCache.write(cacheKey, {'data': _data});
-    return true;
+  /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否后台拉新。
+  Future<void> _restore() async {
+    final cached = await ToolPageCache.read(_cacheKey);
+    final data = _objOf(cached?['data']);
+    if (!mounted) return;
+    if (data != null) {
+      setState(() {
+        _data = data;
+        _loading = false;
+        _fromCache = true;
+      });
+    }
+    if (!AppState.I.autoRefreshTools && data != null) return;
+    await _load();
+  }
+
+  Future<void> _load() async {
+    if (_loading && _data != null) return;
+    setState(() {
+      _loading = true;
+      _refreshFailed = false;
+      if (_data == null) _err = null;
+    });
+    try {
+      final r = await ApiClient.I.academicStatus();
+      final data = _objOf(r['data']);
+      // 解析层已把学校 alert-danger 抬成 ApiError；这里再兜一层：
+      // 个别实现会把错误塞在 data.error 里，同时返回空统计 + 空类别。
+      final msg = _strOf(data?['error']);
+      if (msg.isNotEmpty) throw ApiError('学业情况查询失败：$msg');
+      _data = data ?? const <String, dynamic>{};
+      _fromCache = false;
+      await ToolPageCache.write(_cacheKey, {'data': _data});
+    } catch (e) {
+      // 有缓存时保留旧数据、只在顶部提示失败，不弹窗打断。
+      if (_data == null) {
+        _err = e is ApiError ? e.message : e.toString();
+        if (mounted) showErr(context, e, title: '学业情况加载失败');
+      } else {
+        _refreshFailed = true;
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -108,22 +138,22 @@ class _AcademicPageState extends ToolPageState<AcademicPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('学业情况')),
       body: PageStateView(
-        loading: loading && data == null,
-        error: error,
-        empty: !loading && error == null && !hasContent,
+        loading: _loading && data == null,
+        error: _err,
+        empty: !_loading && _err == null && !hasContent,
         emptyText: '暂无学业情况数据：教务系统可能未返回统计与课程类别',
-        onRetry: refresh,
+        onRetry: _load,
         child: RefreshIndicator(
-          onRefresh: refresh,
+          onRefresh: _load,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
             children: [
               ToolRefreshBar(
-                refreshing: loading,
-                fromCache: fromCache,
-                failed: refreshFailed,
-                onRefresh: refresh,
+                refreshing: _loading,
+                fromCache: _fromCache,
+                failed: _refreshFailed,
+                onRefresh: _load,
               ),
               _gpaCard(gpa, sid, planed),
               if (planed != null || unplaned != null) _statsCard(planed, unplaned),

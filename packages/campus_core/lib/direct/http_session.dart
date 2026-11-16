@@ -59,7 +59,7 @@ class HttpSession {
 
   late final http.Client _client = _buildClient();
   final Map<String, Map<String, String>> _jar = {};
-  bool _loaded = false;
+  Future<void>? _loading;
 
   http.Client _buildClient() {
     final io = HttpClient()..connectionTimeout = const Duration(seconds: 20);
@@ -117,9 +117,14 @@ class HttpSession {
     unawaited(persist());
   }
 
-  Future<void> load() async {
-    if (_loaded) return;
-    _loaded = true;
+  /// 首次请求前载入持久化 Cookie。
+  ///
+  /// 多个请求会并发走到这里（成绩 / 课表 / 考试可能同时开拉）：必须共享同一个
+  /// Future，后到的请求等它读完再发，否则它们会在 Cookie 还没进罐时就发出去，
+  /// 学校系统认不出登录态，表现为「带 Cookie 的接口全部失效」。
+  Future<void> load() => _loading ??= _loadOnce();
+
+  Future<void> _loadOnce() async {
     final key = persistKey;
     if (key == null) return;
     try {

@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import '../api_error.dart';
-import '../debug_log.dart';
 import 'activities_util.dart';
 import 'crypto.dart';
 import 'http_session.dart';
@@ -139,7 +138,7 @@ class XgClient {
         if (msg.isNotEmpty) return msg;
       }
     }
-    debugLog('[统一认证登录] 学校页面没有可读错误文案（${html.length} 字）');
+    debugPrint('[统一认证登录] 学校页面没有可读错误文案（${html.length} 字）');
     return fallback;
   }
 

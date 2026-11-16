@@ -75,6 +75,9 @@ class CourseCloudService with WidgetsBindingObserver {
   Future<void> sync() async {
     final cloud = _cloud;
     if (cloud == null) return;
+    // 启动早期插件先于课表加载跑：这时 semesters 为空不代表「用户没有课」，
+    // 拿它去 schedule([]) 会把上一次排好的原生闹钟全清掉，流体云就再也不亮了。
+    if (!TimetableStore.instance.loaded) return;
     if (AppState.I.courseNotifyMode != CourseNotifyMode.cloud) {
       await cloud.clear();
       return;

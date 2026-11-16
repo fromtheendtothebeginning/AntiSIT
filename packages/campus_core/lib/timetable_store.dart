@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
-import 'debug_log.dart';
 import 'json_num.dart';
 import 'app_state.dart';
 import 'plugins/course_cloud_capability.dart';
@@ -80,7 +79,7 @@ class TimetableStore {
         return;
       }
     } catch (e) {
-      debugLog('[课表] 自定义上课时间读取失败，用默认：$e');
+      debugPrint('[课表] 自定义上课时间读取失败，用默认：$e');
     }
     slotStarts = defaultSlotStarts;
     slotEnds = defaultSlotEnds;
@@ -91,6 +90,11 @@ class TimetableStore {
   String active = '';
   int updatedAt = 0;
   String? _nj;
+
+  /// 是否已经从本机读过一次课表。
+  /// 启动早期插件初始化会先跑（那时 store 还是空的），流体云不能拿空课表去清掉
+  /// 上一次排好的原生闹钟；[load] 完成（无论有没有课）后才是可信的空。
+  bool loaded = false;
 
   /// 学期显示名：基于入学年 nj 换算「大一上~大四下」（与网站 semesterLabel 一致）。
   String? semesterLabel(String key) {
@@ -120,6 +124,7 @@ class TimetableStore {
     active = '';
     updatedAt = 0;
     _nj = null;
+    loaded = false;
   }
 
   Future<void> load() async {
@@ -134,8 +139,9 @@ class TimetableStore {
     // 课表到位后重排提醒。
     // 启动早期提醒服务会先跑一遍（那时 store 还是空的，会主动跳过不排），
     // 只有在这里补一发，用户「不刷新课表的那次启动」才不会丢提醒。
+    loaded = true;
     _rescheduleReminder();
-    debugLog('[课表] 载入完成 → 重排上课提醒');
+    debugPrint('[课表] 载入完成 → 重排上课提醒');
   }
 
   void _adoptJson(dynamic decoded) {
@@ -221,7 +227,7 @@ class TimetableStore {
         next: upcoming.isEmpty ? null : upcoming.first,
       );
     } catch (e) {
-      debugLog('[课表] 同步桌面卡片失败：$e');
+      debugPrint('[课表] 同步桌面卡片失败：$e');
     }
   }
 
@@ -346,6 +352,8 @@ class TimetableStore {
     return week;
   }
 
+  static int todayDayIndex() => DateTime.now().weekday - 1; // 0=周一
+
   /// 下课时刻是否已过（课表页「已上过的课置灰」依据；网站 lessonPassed 同款）。
   /// [colISO] 是**纯日期**（yyyy-MM-dd）——直接 parse 出来是当天 00:00，
   /// 必须把 hh:mm 拼上去再比，否则永远判成「还没下课」（曾因此整周全不置灰）。
@@ -377,6 +385,26 @@ class TimetableStore {
     final colISO = iso(dateOfWeekDay(startDate, week, dayIndex));
     return courses
         .where((c) => !lessonPassed(colISO, endTimes[c.slotEnd.clamp(0, endTimes.length - 1)],
+            now: t))
+        .toList()
+      ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
+  }
+
+  /// 某周某天「已经上完」的课，按上课时刻升序——顶部卡片里这些课淡显（透明度降低）。
+  /// 与 [upcomingOn] 互补：两者合起来就是当天全部课。
+  static List<TtCourse> pastOn(
+    List<TtCourse> courses, {
+    required String startDate,
+    required int week,
+    required int dayIndex,
+    required List<String> endTimes,
+    DateTime? now,
+  }) {
+    if (startDate.isEmpty) return const [];
+    final t = now ?? DateTime.now();
+    final colISO = iso(dateOfWeekDay(startDate, week, dayIndex));
+    return courses
+        .where((c) => lessonPassed(colISO, endTimes[c.slotEnd.clamp(0, endTimes.length - 1)],
             now: t))
         .toList()
       ..sort((a, b) => a.slotStart.compareTo(b.slotStart));

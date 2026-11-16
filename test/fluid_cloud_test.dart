@@ -19,6 +19,7 @@ void main() {
     await AppState.I.load();
     await AppState.I.setCourseNotifyMode('popup');
     TimetableStore.instance.semesters = {};
+    TimetableStore.instance.loaded = true; // 测试直接注入课表，等同「已读过本机数据」
     TimetableStore.slotStarts = TimetableStore.defaultSlotStarts;
     TimetableStore.slotEnds = TimetableStore.defaultSlotEnds;
     fake = _FakeCloud();
@@ -110,6 +111,29 @@ void main() {
       await CourseCloudService.I.setMode(CourseNotifyMode.none);
       expect(fake.cleared, greaterThanOrEqualTo(1));
       expect(AppState.I.courseNotifyMode, CourseNotifyMode.none);
+    });
+
+    test('课表还没读出来时 sync 不清掉已有排期', () async {
+      // 启动早期插件先于课表加载：这时拿空 store 去 schedule([]) 会把上次排的
+      // 原生闹钟全清掉，流体云之后就不会再亮。
+      await AppState.I.setCourseNotifyMode(CourseNotifyMode.cloud);
+      TimetableStore.instance.loaded = false;
+      fake.windows = [
+        FluidCloudWindow(
+          id: 'old',
+          title: '旧课',
+          subtitle: '二教E101 · 10:15–10:55',
+          startAt: DateTime.now().millisecondsSinceEpoch,
+          endAt: DateTime.now().add(const Duration(minutes: 40)).millisecondsSinceEpoch,
+          leadMinutes: 15,
+        ),
+      ];
+
+      await CourseCloudService.I.sync();
+
+      expect(fake.scheduled, 0, reason: '未加载的课表不能当排期依据');
+      expect(fake.cleared, 0, reason: '更不能把已有排期清掉');
+      expect(fake.windows, hasLength(1));
     });
 
     testWidgets('课程表设置里是三选一，点一下就切换并重排', (tester) async {

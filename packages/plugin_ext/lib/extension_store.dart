@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:campus_core/campus_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -178,7 +177,7 @@ class ExtensionStore extends ChangeNotifier {
             },
       };
     } catch (err) {
-      debugLog('[ext] 卡片覆盖值解析失败已忽略：$err');
+      debugPrint('[ext] 卡片覆盖值解析失败已忽略：$err');
       return {};
     }
   }
@@ -199,7 +198,7 @@ class ExtensionStore extends ChangeNotifier {
       final dir = Directory(await bundleDir(id));
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     } catch (e) {
-      debugLog('[ext] 清理压缩包目录失败：$e');
+      debugPrint('[ext] 清理压缩包目录失败：$e');
     }
   }
 
@@ -256,7 +255,7 @@ class ExtensionStore extends ChangeNotifier {
     try {
       return [ExtensionItem.parse(jsonDecode(raw))];
     } catch (e) {
-      debugLog('[ext] 拓展条目解析失败已跳过：$e');
+      debugPrint('[ext] 拓展条目解析失败已跳过：$e');
       return const [];
     }
   }

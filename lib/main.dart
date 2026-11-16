@@ -592,6 +592,9 @@ class _BootPageState extends State<BootPage> {
     await AppState.I.load();
     // 插件清单：读启停状态与当前主题（此后底栏、工具宫格、设置项都按启用集合组装）
     await PluginRegistry.I.load();
+    // 课表也要在插件初始化前读出来：流体云 / 上课提醒 / 桌面卡片都靠它在启动时排期，
+    // 否则插件先跑会拿空课表把上一次排好的闹钟清掉。
+    await TimetableStore.instance.load();
     // 各启用插件的初始化：AI 配置、上课提醒排期、调试用的本地模拟校园服务
     await PluginRegistry.I.initAll();
     if (!mounted) return;

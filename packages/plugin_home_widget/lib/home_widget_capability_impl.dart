@@ -1,4 +1,5 @@
 import 'package:campus_core/campus_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// 桌面卡片能力的实现：走原生通道 `antisit/home_widget`
@@ -27,7 +28,7 @@ class HomeWidgetCapabilityImpl implements HomeWidgetCapability {
     } on PlatformException catch (e) {
       // 桌面端 / 没声明小组件时直接跳过，不影响课表本身
       assert(() {
-        debugLog('[桌面卡片] 同步课程失败：$e');
+        debugPrint('[桌面卡片] 同步课程失败：$e');
         return true;
       }());
     } on MissingPluginException {

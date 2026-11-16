@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import '../api_error.dart';
-import '../debug_log.dart';
 import 'academic.dart';
 import 'cas.dart';
 import 'course_select.dart';
@@ -182,7 +181,7 @@ class JwxtClient {
   /// 被当成验证码错误，白白重试三次。
   static String _loginError(HttpResult r) {
     final tip = _schoolTip(r.text);
-    debugLog('[教务登录] HTTP ${r.status} tip=[$tip] ${_pageSnippet(r.text)}');
+    debugPrint('[教务登录] HTTP ${r.status} tip=[$tip] ${_pageSnippet(r.text)}');
     if (tip.isNotEmpty) return tip;
     return '教务登录未通过（HTTP ${r.status}，学校登录页没有错误文案，可能是登录页改版）：'
         '${_pageSnippet(r.text)}';
