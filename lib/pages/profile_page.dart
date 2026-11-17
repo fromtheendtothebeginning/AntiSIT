@@ -217,7 +217,10 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
           body: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+            // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：列表底部要多让出底栏这一截，
+            // 最后一张设置卡才能滚到玻璃上方，而不是永远压在它下面
+            padding: EdgeInsets.fromLTRB(
+                12, 4, 12, 24 + MediaQuery.paddingOf(context).bottom),
             children: [
               // 头部（未登录时整卡可点，直接进登录页）
               AppCard(

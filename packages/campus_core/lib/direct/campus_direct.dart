@@ -204,6 +204,16 @@ class CampusDirect {
     });
   }
 
+  /// 教务会话 Cookie（name → value）：评教助手把这份登录态带进内嵌的评教页，
+  /// 网页打开就是登录后的样子，不用在内嵌浏览器里再输一次账号密码。
+  ///
+  /// 会先确保教务已登录（没登录就走同一个验证码登录流程，把 UI 交给调用方）；
+  /// 拿不到（未登录 / 登录被取消）时抛 [ApiError]，调用方退回「网页里手动登录」。
+  Future<Map<String, String>> jwxtCookies() async {
+    await _ensureJwxt();
+    return _jwxtClient.cookies();
+  }
+
   Future<void> _loginJwxt() async {
     _requireCreds();
     if (_jwxt != null && _jwxt!.loggedIn) return;

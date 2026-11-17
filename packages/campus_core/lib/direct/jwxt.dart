@@ -64,6 +64,10 @@ class JwxtClient {
 
   void dispose() => _http.dispose();
 
+  /// 当前教务会话的 Cookie（name → value）。评教助手把它塞进 WebView，
+  /// 评教页打开就是登录后的样子——用户不用在内嵌网页里再登一次。
+  Future<Map<String, String>> cookies() => _http.cookiesFor(Uri.parse(base).host);
+
   /// 丢弃会话：登录态与 Cookie（含持久化的）一起清，下次调用重新走登录流程。
   void clearSession() {
     loggedIn = false;

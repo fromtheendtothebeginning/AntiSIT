@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'webview_host.dart';
 import 'webview_page.dart';
 
 /// WebView 内核能力实现（webview_flutter）。
@@ -24,6 +25,26 @@ class WebViewCapabilityImpl extends WebViewCapability {
   @override
   Widget view({String? url, String? html}) =>
       WebViewPage(url: url, html: html);
+
+  /// 可编程网页视图（[WebViewHost]）：评教助手这类要注入脚本、收网页消息的页面用。
+  /// 平台不支持时返回 null（与 [available] 一致）。
+  @override
+  WebViewHost? host({
+    required String url,
+    required String channel,
+    required void Function(WebViewHost host, String message) onMessage,
+    required void Function(WebViewHost host) onPageReady,
+    Map<String, String> cookies = const {},
+  }) {
+    if (!_platformSupported) return null;
+    return KernelWebViewHost(
+      url: url,
+      channel: channel,
+      cookies: cookies,
+      onMessage: onMessage,
+      onPageReady: onPageReady,
+    );
+  }
 
   @override
   Future<void> openPage(

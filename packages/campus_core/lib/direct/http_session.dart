@@ -117,6 +117,19 @@ class HttpSession {
     unawaited(persist());
   }
 
+  /// 某主机（含其父域）当前的 Cookie：给「要把登录态带进 WebView」的页面用
+  /// （评教助手：网页里直接是登录后的样子，不用再登一次）。
+  ///
+  /// 返回扁平的 name → value；同名以更具体的域为准（后写的覆盖）。
+  Future<Map<String, String>> cookiesFor(String host) async {
+    await load();
+    final out = <String, String>{};
+    _jar.forEach((domain, cookies) {
+      if (host == domain || host.endsWith('.$domain')) out.addAll(cookies);
+    });
+    return Map<String, String>.unmodifiable(out);
+  }
+
   /// 首次请求前载入持久化 Cookie。
   ///
   /// 多个请求会并发走到这里（成绩 / 课表 / 考试可能同时开拉）：必须共享同一个

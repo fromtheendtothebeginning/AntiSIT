@@ -83,4 +83,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(picked, isEmpty);
   });
+
+  // 底栏内区高度 = 66 − 边框 1×2 − 内边距 4×2 = 56；滑块必须正好填满它。
+  // 曾经写死 height: 58，多出的 2px 被 Stack 的 Clip.hardEdge 从底部切平，
+  // 下滑块的下边框和两个下圆角就缺了一块。
+  testWidgets('滑块高度 = 底栏内区高度：下边框不会被 Stack 裁掉', (tester) async {
+    await pumpBar(tester);
+    final stack = find.descendant(
+        of: find.byType(GlassNavBar), matching: find.byType(Stack));
+    final thumb = find.descendant(
+        of: find.byType(GlassNavBar),
+        matching: find.byWidgetPredicate((w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).borderRadius == BorderRadius.circular(18)));
+    expect(thumb, findsOneWidget);
+    expect(tester.getSize(thumb).height, tester.getSize(stack).height,
+        reason: '滑块比 Stack 高就会被裁掉底部，高度要由容器内区决定');
+  });
 }

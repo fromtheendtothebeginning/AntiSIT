@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'capability.dart';
@@ -37,6 +38,58 @@ abstract class WebViewCapability extends PluginCapability {
     String title = '',
     WebBridge? bridge,
   });
+
+  /// 建一个**可编程**的网页视图（见 [WebViewHost]）：评教助手这类页面要自己注入脚本、
+  /// 自己接网页消息，[view] 那种「只看不改」的视图不够用。
+  ///
+  /// * [channel]：网页侧 `window[channel].postMessage(...)` 的通道名（内核负责注册）；
+  /// * [onMessage]：网页发来的字符串原样交回来（约定由调用方定，内核不解析）；
+  /// * [onPageReady]：每次主文档加载完成后回调——注入脚本放这里最稳（换页后旧上下文没了）；
+  /// * [cookies]：先写进 WebView 的 Cookie（name → value，按 [url] 的域名）。
+  ///   给「App 已经登录过这个站点」的场景用（评教助手复用教务会话），网页首次请求
+  ///   就是登录态，不用在内嵌浏览器里再登一次。
+  ///
+  /// 平台不支持（桌面端）时返回 null，调用方按不可用降级。
+  ///
+  /// 默认实现返回 null：只提供 [view] / [openPage] 的内核（或测试替身）不必实现它，
+  /// 需要脚本注入能力的调用方自然会降级。
+  WebViewHost? host({
+    required String url,
+    required String channel,
+    required void Function(WebViewHost host, String message) onMessage,
+    required void Function(WebViewHost host) onPageReady,
+    Map<String, String> cookies = const {},
+  }) =>
+      null;
+}
+
+/// 一个**可编程**的网页视图：内核建好 WebView 与消息通道，[run] 往里注入脚本，
+/// [load] / [reload] 换页，界面长什么样、放在页面的哪一块，全由调用方决定。
+///
+/// 生命周期：调用方在 `initState` 里建，`dispose` 里 [dispose]；[view] 只放进树一次。
+abstract class WebViewHost {
+  /// 网页视图（一个 host 只应放进页面一次）。
+  Widget get view;
+
+  /// 当前地址（主框架导航会更新）。
+  String get url;
+
+  /// 加载进度 0..1：0 = 没在加载。
+  ValueListenable<double> get progress;
+
+  /// 主文档加载失败的文案；成功加载后清空。
+  ValueListenable<String?> get error;
+
+  /// 注入脚本执行（不等返回值；注入失败不抛，避免把页面搞崩）。
+  Future<void> run(String js);
+
+  /// 导航到新地址。
+  Future<void> load(String url);
+
+  /// 重新加载当前地址。
+  Future<void> reload();
+
+  void dispose();
 }
 
 /// 网页里的接口垫片：把 `antiSIT.call/post` 变成一次消息 + 等 Promise 回填，

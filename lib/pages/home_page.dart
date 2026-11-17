@@ -224,6 +224,11 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
               KeyedSubtree(key: ValueKey(pages[k].$1.id), child: pages[k].$2.build(k)),
           ];
           return Scaffold(
+            // 底栏是浮在页面上的玻璃条：页面铺满整屏、从它底下穿过去，玻璃才有「透」的
+            // 内容可折射。不给这行时 body 只排到底栏上沿，底栏背后永远是同一块底色，
+            // 再淡的玻璃也看着像一块不透明的板子。
+            // 各页自己的滚动底距要按 MediaQuery.paddingOf(context).bottom（= 底栏高度）加。
+            extendBody: true,
             body: pages.isEmpty
                 ? const Center(
                     child: Padding(

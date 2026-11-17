@@ -42,6 +42,28 @@ void main() {
     expect(cookies, everyElement('JSESSIONID=secret-session'),
         reason: '两个并发请求都必须等 Cookie 载入后再发');
   });
+
+  test('导出某个主机的 Cookie：父域也带上，域更具体的优先', () async {
+    final jar = jsonEncode({
+      'sit.edu.cn': {'route': 'abc', 'JSESSIONID': 'parent'},
+      'jwxt.sit.edu.cn': {'JSESSIONID': 'exact'},
+      'other.edu.cn': {'x': 'y'},
+    });
+    SecureStore.I = _SlowSecureStore(jar, Duration.zero);
+    final session =
+        HttpSession(trustHosts: const ['jwxt.sit.edu.cn'], persistKey: 'test_cookies_for');
+
+    // 评教助手把这份 Cookie 塞进 WebView：父域里的 route + 本域的 JSESSIONID 都要有
+    expect(await session.cookiesFor('jwxt.sit.edu.cn'),
+        {'route': 'abc', 'JSESSIONID': 'exact'});
+    expect(await session.cookiesFor('xg.sit.edu.cn'),
+        {'route': 'abc', 'JSESSIONID': 'parent'},
+        reason: '同校其他子域拿到父域 Cookie，拿不到 jwxt 自己的');
+    expect(await session.cookiesFor('other.edu.cn'), {'x': 'y'});
+    expect(await session.cookiesFor('evil.com'), isEmpty);
+    expect(await session.cookiesFor('notsit.edu.cn'), isEmpty,
+        reason: '域后缀要比到「.」边界，不能把 notsit.edu.cn 当成 sit.edu.cn 的子域');
+  });
 }
 
 /// 让读 Cookie 慢一点，稳定复现「第二个请求先于载入完成就返回」的时序。

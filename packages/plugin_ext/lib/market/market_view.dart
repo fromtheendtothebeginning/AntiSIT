@@ -331,6 +331,10 @@ class _MarketViewState extends State<MarketView> {
                 SliverToBoxAdapter(child: _empty())
               else
                 const SliverToBoxAdapter(child: SizedBox(height: 0)),
+              // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：列表底部让出底栏这一截，
+              // 最后一条源/拓展才不会被玻璃压住
+              SliverToBoxAdapter(
+                  child: SizedBox(height: MediaQuery.paddingOf(context).bottom)),
             ],
           ),
         ),

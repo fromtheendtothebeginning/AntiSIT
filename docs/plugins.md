@@ -83,6 +83,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_ext` | `ext` | `webview` | `ai`、`scan` | `ai`、`scan`、`webview` | ✓ | 底栏页 |
 | `plugin_camera` | `camera` | — | — | — | ✓ | 无界面 |
 | `plugin_scan` | `scan` | `camera` | `webview`、`activities` | `activities`、`camera`、`webview` | ✓ | 无界面 |
+| `plugin_evaluate` | `evaluate` | `webview` | — | `webview` | ✓ | 工具卡片 |
 | `plugin_ecard` | `ecard` | `network` | `risk`、`home_widget` | `home_widget`、`risk` | ✓ | 底栏页 |
 | `plugin_tools` | `tools` | — | — | — | ✓ | 底栏页 |
 | `plugin_backup` | `backup` | — | — | — | ✓ | 设置条目 |

@@ -597,7 +597,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     // 两页都留在树里：横滑时一起位移，State（搜索词、滚动位置）也不会切走就丢。
     // 市场页仍按需挂载，见 _marketMounted。
     final panels = <Widget>[
-      items.isEmpty ? _empty() : _grid(items),
+      items.isEmpty ? _empty(context) : _grid(context, items),
       if (market || _marketMounted) MarketView(onInstalled: _toast),
     ];
     return Scaffold(
@@ -692,9 +692,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     );
   }
 
-  Widget _empty() => Center(
+  Widget _empty(BuildContext context) => Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：滚动底部让出底栏这一截
+          padding: EdgeInsets.fromLTRB(
+              20, 20, 20, 20 + MediaQuery.paddingOf(context).bottom),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: AppCard(
@@ -738,7 +740,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         ),
       );
 
-  Widget _grid(List<ExtensionItem> items) => CustomScrollView(
+  Widget _grid(BuildContext context, List<ExtensionItem> items) => CustomScrollView(
         slivers: [
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -757,7 +759,9 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+            // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：最后一张卡也要能滚出底栏上方
+            padding: EdgeInsets.fromLTRB(
+                14, 12, 14, 24 + MediaQuery.paddingOf(context).bottom),
             sliver: SliverToBoxAdapter(child: _addCard()),
           ),
         ],

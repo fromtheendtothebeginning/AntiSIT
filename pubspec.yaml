@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.38.0+173
+version: 1.38.3+178
 
 environment:
   sdk: ^3.9.2
@@ -39,6 +39,8 @@ workspace:
   - packages/plugin_camera
   # 扫一扫：入口在二课活动 / 拓展页，软关联 WebView 内核与二课活动
   - packages/plugin_scan
+  # 学生评教助手：内嵌教务评教页，一键同分 / 逐项滑块调分（硬依赖 WebView 内核）
+  - packages/plugin_evaluate
   - packages/plugin_ecard
   - packages/plugin_tools
   - packages/plugin_ai
@@ -127,6 +129,9 @@ dependencies:
   # 扫一扫（无界面）：入口在二课活动 / 拓展页右上角
   plugin_scan:
     path: packages/plugin_scan
+  # 学生评教助手（工具卡片）：内嵌教务评教页 + 评分面板；硬依赖 WebView 内核
+  plugin_evaluate:
+    path: packages/plugin_evaluate
   plugin_ecard:
     path: packages/plugin_ecard
   plugin_tools:

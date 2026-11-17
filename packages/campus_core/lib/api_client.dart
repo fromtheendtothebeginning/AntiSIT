@@ -314,6 +314,13 @@ class ApiClient {
       ? CampusDirect.I.score()
       : _call('GET', '/api/campus-open/score', tunnel: true);
 
+  /// 教务会话 Cookie（name → value）：内嵌评教页这类「要在网页里保持登录态」的页面用。
+  /// 只有直连模式有本地会话（会先确保教务已登录）；服务器 / 演示模式没有，返回空。
+  Future<Map<String, String>> jwxtCookies() async {
+    if (!_useDirect) return const {};
+    return CampusDirect.I.jwxtCookies();
+  }
+
   /// xnm/xqm 均不传时返回全部学期成绩 + terms 列表。
   Future<Map<String, dynamic>> grades({String? xnm, String? xqm}) => _useDirect
       ? CampusDirect.I.grades(xnm: xnm, xqm: xqm)
