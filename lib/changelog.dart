@@ -19,6 +19,10 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.38.0', date: '2026-11-17', notes: [
+    '工具页新增「学生评教」：内嵌教务评教页，识别出评分项后可以一键给全部子项打同一分，也能逐项用滑块调分',
+    '评教只改分不代提交——填好后仍在网页里自己点提交',
+  ]),
   ChangelogEntry(version: '1.36.2', date: '2026-11-17', notes: [
     '拓展工坊顶栏新增「发布」按钮，连接 GitHub / Gitee 发布拓展的入口更明显',
   ]),

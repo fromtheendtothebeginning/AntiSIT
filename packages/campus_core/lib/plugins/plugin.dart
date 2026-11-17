@@ -185,6 +185,9 @@ abstract final class PluginIds {
   static const risk = 'risk';
   static const tools = 'tools';
   static const webview = 'webview';
+
+  /// 学生评教助手（`packages/plugin_evaluate`）：内嵌教务评教页，一键同分 / 逐项调分。
+  static const evaluate = 'evaluate';
   static const camera = 'camera';
   static const scan = 'scan';
   static const activities = 'activities';
