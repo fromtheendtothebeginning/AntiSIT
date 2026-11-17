@@ -442,10 +442,11 @@ const PROMPT_SECTIONS = [
       'export default { name: "my-tool", inject: ["ui"], apply(ctx) { ctx.ui.root.innerHTML = "<h1>你好</h1>"; } };',
       '',
       'Available services after declaring them in inject:',
-      '- ctx.ui: root, toast(text), close(), theme',
+      '- ctx.ui: root, toast(text), close(), theme, push({onPop}) (returns {root, close}), pop(), depth, canGoBack (page stack; system back pops it first)',
       '- ctx.storage: get/set/remove(key), Promise-based, isolated by extension id',
       '- ctx.card: setName/setDesc/setIcon',
       '- ctx.ai: chat(prompt, {system, maxTokens})',
+      '- ctx.notify: show({title, body, key}), schedule({key, title, body, at}), cancel(key), cancelAll() — requires the notification permission',
       '- ctx.app: id/name/version/permissions/close()',
       'Cordis ctx.effect / ctx.on / ctx.plugin are also available.',
     ].join('\n'),
@@ -457,6 +458,7 @@ const PROMPT_SECTIONS = [
       '## Hard constraints',
       '- The page is an inline opaque origin: localStorage, sessionStorage and document.cookie throw. Use ctx.storage.',
       '- Do not load remote scripts or CSS. Prefer data: for images and fonts. Network access requires the network permission in ext.json and fetch.',
+      '- Notifications require the notification permission in ext.json; the first ctx.notify.* call asks the user for system notification permission.',
       '- main.js is one file; do not use local imports. Put styles in style.css.',
       '- Draw inside ctx.ui.root. Do not read or write files outside the draft; do not try to run shell commands.',
     ].join('\n'),
@@ -1597,6 +1599,7 @@ export default {
           <button data-act="skills">技能</button>
           <button data-act="preview">预览拓展</button>
           <button data-act="install">安装拓展</button>
+          <button data-act="publish">发布拓展…</button>
           <button data-act="newConv">新建对话</button>
           <button data-act="newDraft">新建拓展</button>
           <button data-act="renameConv">重命名当前对话</button>
@@ -2169,7 +2172,8 @@ export default {
       if (!open) return;
       moreMenu.querySelectorAll('button').forEach((b) => {
         const act = b.getAttribute('data-act');
-        const needsDraft = act === 'install' || act === 'preview' || act === 'newConv'
+        const needsDraft = act === 'install' || act === 'preview' || act === 'publish'
+          || act === 'newConv'
           || act === 'deleteConv' || act === 'deleteDraft'
           || act === 'renameConv' || act === 'renameDraft';
         b.disabled = S.running
@@ -2201,6 +2205,9 @@ export default {
           ctx.ui.toast('已安装，可在「拓展」页打开');
           await refreshDraftList();
           notify();
+        } else if (act === 'publish') {
+          if (!draft) return;
+          await ctx.workshop.publish(draft.id);
         } else if (act === 'newConv') {
           await newConversation();
           ctx.ui.toast('已新建对话');

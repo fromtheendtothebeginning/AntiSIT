@@ -112,6 +112,11 @@ abstract class WebBridge {
   /// 需要推流的实现覆写它并保存 [sink]，用 `sink.emit(事件名, 数据)` 发事件。
   void attachEventSink(WebBridgeEventSink? sink) {}
 
+  /// 网页侧页面栈深度变化：`true` = 栈里还有页面，系统返回键应先交给网页
+  /// （`window.__antiSITBack()`）回退，而不是直接关掉整页。
+  /// 不关心返回栈的实现不用覆写，系统返回保持默认行为。
+  void attachBackGuard(void Function(bool canGoBack)? guard) {}
+
   /// 处理一次调用。[method] 由网页给出，[args] 是它带上的原样参数
   /// （Map / List / 标量 / null，取决于网页怎么传）。
   Future<Object?> call(String method, Object? args);

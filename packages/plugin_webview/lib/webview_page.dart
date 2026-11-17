@@ -42,6 +42,10 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
   /// 主框架当前地址（跨站导航后桥接能力要关掉，见 [bridgeAllowedOnPage]）。
   String? _currentUrl;
 
+  /// 网页自己的页面栈是否还有页面（`ctx.ui.push` 叠上去没退完）。
+  /// 为 true 时系统返回先让网页回退栈内页面，栈空才关整页。
+  bool _hasStackPage = false;
+
   /// 这份内容是「内联 html」（压缩包拓展）还是「网址」——导航判定按它分岔。
   bool get _inline =>
       widget.html != null && (widget.url == null || widget.url!.trim().isEmpty);
@@ -73,6 +77,7 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
     if (widget.bridge != null) {
       _controller.addJavaScriptChannel('antiSITBridge', onMessageReceived: _onBridgeCall);
       widget.bridge!.attachEventSink(this);
+      widget.bridge!.attachBackGuard(_onBackGuard);
     }
     _load();
   }
@@ -80,7 +85,32 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
   @override
   void dispose() {
     widget.bridge?.attachEventSink(null);
+    widget.bridge?.attachBackGuard(null);
     super.dispose();
+  }
+
+  /// 网页告诉我们它的页面栈空了没有。栈里还有页面时拦下系统返回，
+  /// 先让它回退一层；否则保持默认行为（返回直接关掉这页）。
+  void _onBackGuard(bool canGoBack) {
+    if (!mounted || _hasStackPage == canGoBack) return;
+    setState(() => _hasStackPage = canGoBack);
+  }
+
+  /// 系统返回 / 左上角返回箭头：先问网页能不能自己回退。
+  /// 网页返回 false（或已经不在）才关掉整页，避免把用户困在拓展里。
+  Future<void> _backFromStack() async {
+    var handled = false;
+    try {
+      final value = await _controller.runJavaScriptReturningResult(
+          'window.__antiSITBack ? window.__antiSITBack() : false');
+      handled = value == true || value == 'true';
+    } catch (_) {
+      handled = false;
+    }
+    if (!handled && mounted) {
+      setState(() => _hasStackPage = false);
+      Navigator.of(context).pop();
+    }
   }
 
   /// [WebBridgeEventSink]：App → 网页的下行事件（流式输出等）。
@@ -185,30 +215,38 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title.isEmpty ? '网页' : widget.title, overflow: TextOverflow.ellipsis),
-        bottom: _progress > 0 && _progress < 1
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(2),
-                child: LinearProgressIndicator(value: _progress, minHeight: 2),
-              )
-            : null,
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_error != null)
-            Material(
-              color: SemColors.dangerSoft,
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Text(_error!,
-                    style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
+    return PopScope<Object?>(
+      // 栈里有页面时先拦下返回，交给网页自己的页面栈回退
+      canPop: !_hasStackPage,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _backFromStack();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.title.isEmpty ? '网页' : widget.title, overflow: TextOverflow.ellipsis),
+          bottom: _progress > 0 && _progress < 1
+              ? PreferredSize(
+                  preferredSize: const Size.fromHeight(2),
+                  child: LinearProgressIndicator(value: _progress, minHeight: 2),
+                )
+              : null,
+        ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_error != null)
+              Material(
+                color: SemColors.dangerSoft,
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Text(_error!,
+                      style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
+                ),
               ),
-            ),
-          Expanded(child: WebViewWidget(controller: _controller)),
-        ],
+            Expanded(child: WebViewWidget(controller: _controller)),
+          ],
+        ),
       ),
     );
   }

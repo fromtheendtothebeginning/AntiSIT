@@ -1,5 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:archive/archive.dart';
 import 'package:campus_core/campus_core.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -435,6 +440,228 @@ void main() {
       expect(find.byIcon(Icons.qr_code_scanner_outlined), findsNothing);
     });
   });
+
+  group('拓展模式扫码（网址 / 安装码）', () {
+    Future<void> pumpScan(
+      WidgetTester tester, {
+      required void Function(ScanOutcome?) onResult,
+    }) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () async {
+                  final r = await Navigator.of(context).push<ScanOutcome>(
+                    MaterialPageRoute(
+                      builder: (_) => const ScanPage(mode: ScanMode.addExtension),
+                    ),
+                  );
+                  onResult(r);
+                },
+                child: const Text('打开扫码'),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('打开扫码'));
+      await tester.pumpAndSettle();
+    }
+
+    final sha = 'a' * 64;
+    final bundleCode = jsonEncode({
+      'antisit': 'ext',
+      'url': 'https://example.com/sit.demo.zip',
+      'sha256': sha,
+      'name': '扫码演示',
+      'id': 'sit.demo',
+    });
+
+    test('安装码格式：https + 64 位 sha256 才算；普通网址按链接；坏格式不算', () {
+      final bundle = ScanPage.extensionOutcome(bundleCode);
+      expect(bundle, isA<ScanBundleOutcome>());
+      expect((bundle as ScanBundleOutcome).url, 'https://example.com/sit.demo.zip');
+      expect(bundle.sha256, sha);
+      expect(bundle.name, '扫码演示');
+      expect(bundle.id, 'sit.demo');
+
+      expect(ScanPage.extensionOutcome('https://example.com/a'),
+          isA<ScanLinkOutcome>());
+      expect(ScanPage.extensionOutcome('http://example.com/a'),
+          isA<ScanLinkOutcome>(), reason: '普通 http 网址仍是可添加的链接');
+      expect(ScanPage.extensionOutcome('ftp://example.com/a'), isNull);
+      expect(ScanPage.extensionOutcome('hello'), isNull);
+      expect(
+          ScanPage.extensionOutcome(
+              '{"antisit":"ext","url":"http://example.com/x.zip","sha256":"$sha"}'),
+          isNull,
+          reason: '安装包只认 https');
+      expect(
+          ScanPage.extensionOutcome(
+              '{"antisit":"ext","url":"https://example.com/x.zip","sha256":"abc"}'),
+          isNull,
+          reason: 'sha256 不是 64 位就不算安装码');
+      expect(ScanPage.looksLikeExtensionCode('{"antisit":"ext"}'), isTrue);
+      expect(ScanPage.looksLikeExtensionCode('{"hello":1}'), isFalse);
+    });
+
+    testWidgets('扫到网址：给「添加链接」，点下去带着网址回到调用方', (tester) async {
+      ScanOutcome? outcome;
+      await pumpScan(tester, onResult: (r) => outcome = r);
+      await detect(tester, 'https://example.com/web');
+
+      expect(find.text('网址'), findsOneWidget);
+      expect(find.text('下载拓展'), findsNothing);
+      final button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('添加链接'),
+        matching: find.bySubtype<FilledButton>(),
+      ));
+      expect(button.style?.backgroundColor?.resolve({}), SemColors.success,
+          reason: '「添加链接」用成功绿，和「下载拓展」区分开');
+
+      await tester.tap(find.text('添加链接'));
+      await tester.pumpAndSettle();
+      expect(outcome, isA<ScanLinkOutcome>());
+      expect((outcome as ScanLinkOutcome).url, 'https://example.com/web');
+      expect(find.byType(ScanPage), findsNothing, reason: '确认后关掉扫码页');
+    });
+
+    testWidgets('扫到安装码：给「下载拓展」，点下去带着安装信息回到调用方', (tester) async {
+      ScanOutcome? outcome;
+      await pumpScan(tester, onResult: (r) => outcome = r);
+      await detect(tester, bundleCode);
+
+      expect(find.text('拓展安装码'), findsOneWidget);
+      expect(find.text('添加链接'), findsNothing);
+      final button = tester.widget<FilledButton>(find.ancestor(
+        of: find.text('下载拓展'),
+        matching: find.bySubtype<FilledButton>(),
+      ));
+      expect(button.style?.backgroundColor?.resolve({}), SemColors.accent,
+          reason: '「下载拓展」用主题强调色');
+
+      await tester.tap(find.text('下载拓展'));
+      await tester.pumpAndSettle();
+      expect(outcome, isA<ScanBundleOutcome>());
+      final spec = outcome as ScanBundleOutcome;
+      expect(spec.url, 'https://example.com/sit.demo.zip');
+      expect(spec.sha256, sha);
+      expect(find.byType(ScanPage), findsNothing);
+    });
+
+    testWidgets('安装码字段不合法：提示格式不对，不弹结果面板', (tester) async {
+      await pumpScan(tester, onResult: (_) {});
+      await detect(
+          tester, '{"antisit":"ext","url":"http://example.com/x.zip","sha256":"$sha"}');
+
+      expect(find.textContaining('格式不对'), findsOneWidget);
+      expect(find.text('下载拓展'), findsNothing);
+      expect(find.byType(ScanPage), findsOneWidget, reason: '还在取景页');
+    });
+  });
+
+  group('拓展页：扫码结果直接落库', () {
+    Future<void> pumpExtWith(WidgetTester tester, ScanOutcome? outcome) async {
+      ExtensionStore.I = ExtensionStore();
+      ExtensionStore.builtins = const [];
+      MarketSource.I = MarketSource();
+      MarketSource.fetcher = (Uri url) => throw Exception('offline');
+      PluginRegistry.I = PluginRegistry(
+        features: const [WebViewPlugin(), ExtPlugin(), ScanPlugin()],
+        themes: const [GlassTheme()],
+        capabilities: {
+          PluginIds.webview: const WebViewCapabilityImpl(),
+          PluginIds.scan: _OutcomeScanCapability(outcome),
+        },
+      );
+      tester.view.physicalSize = const Size(1080, 2200);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const MaterialApp(home: ExtensionsPage()));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('扫码得到网址：弹添加弹窗，确认后成为 web 拓展', (tester) async {
+      await pumpExtWith(
+          tester, const ScanLinkOutcome(url: 'https://example.com/app', raw: 'qr'));
+      await tester.tap(find.byIcon(Icons.qr_code_scanner_outlined));
+      await tester.pumpAndSettle();
+
+      expect(find.text('添加拓展'), findsOneWidget);
+      final values = tester
+          .widgetList<TextField>(find.descendant(
+              of: find.byType(AlertDialog), matching: find.byType(TextField)))
+          .map((f) => f.controller?.text)
+          .toList();
+      expect(values, contains('https://example.com/app'), reason: '网址预填');
+      await tester.tap(find.text('添加'));
+      await tester.pumpAndSettle();
+
+      final item = ExtensionStore.I.items.single;
+      expect(item.url, 'https://example.com/app');
+      expect(item.name, 'example.com', reason: '名称默认用域名');
+      expect(item.bundled, isFalse);
+    });
+
+    testWidgets('扫码得到安装码：下载校验 → 权限确认 → 入列', (tester) async {
+      final dir = Directory.systemTemp.createTempSync('scan_ext_page_');
+      final savedDocs = ExtensionStore.documentsDirectory;
+      ExtensionStore.documentsDirectory = () async => dir.path;
+      addTearDown(() {
+        ExtensionStore.documentsDirectory = savedDocs;
+        ScannedBundleInstaller.debugDownload = null;
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+
+      final bytes = _makeZip({
+        'ext.json': '{"id":"sit.qr-ui","name":"扫码拓展","desc":"扫码装的",'
+            '"version":"2.0.0","main":"main.js","permissions":["notification"]}',
+        'main.js': 'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }',
+      });
+      ScannedBundleInstaller.debugDownload = (_) async => bytes;
+      final raw = jsonEncode({
+        'antisit': 'ext',
+        'url': 'https://example.com/sit.qr-ui.zip',
+        'sha256': sha256.convert(bytes).toString(),
+      });
+      await pumpExtWith(tester, ScanPage.extensionOutcome(raw));
+
+      await tester.tap(find.byIcon(Icons.qr_code_scanner_outlined));
+      await tester.pumpAndSettle();
+
+      expect(find.text('安装「扫码拓展」？'), findsOneWidget);
+      expect(find.textContaining('给你发通知'), findsOneWidget, reason: '敏感权限要列给用户');
+      await tester.tap(find.text('安装'));
+      await tester.pumpAndSettle();
+
+      final item = ExtensionStore.I.items.single;
+      expect(item.id, 'sit.qr-ui');
+      expect(item.version, '2.0.0');
+      expect(item.bundled, isTrue);
+      expect(File(item.url).existsSync(), isTrue);
+    });
+  });
+}
+
+List<int> _makeZip(Map<String, String> files) {
+  final archive = Archive();
+  files.forEach((name, content) {
+    final bytes = utf8.encode(content);
+    archive.addFile(ArchiveFile(name, bytes.length, bytes));
+  });
+  return ZipEncoder().encode(archive);
+}
+
+class _OutcomeScanCapability extends ScanCapability {
+  const _OutcomeScanCapability(this.outcome);
+
+  final ScanOutcome? outcome;
+
+  @override
+  Future<ScanOutcome?> open(BuildContext context,
+          {ScanMode mode = ScanMode.generic}) async =>
+      outcome;
 }
 
 /// 扫一扫替身：推一页带标志文本的页面，证明入口真的打开了扫码功能，
@@ -443,8 +670,10 @@ class _StubScanCapability extends ScanCapability {
   const _StubScanCapability();
 
   @override
-  Future<void> open(BuildContext context) => Navigator.of(context).push(
-        MaterialPageRoute<void>(
+  Future<ScanOutcome?> open(BuildContext context,
+          {ScanMode mode = ScanMode.generic}) =>
+      Navigator.of(context).push<ScanOutcome>(
+        MaterialPageRoute<ScanOutcome>(
             builder: (_) => const Scaffold(
                 body: Center(child: Text('扫码页替身')))),
       );

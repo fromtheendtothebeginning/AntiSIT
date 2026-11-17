@@ -7,9 +7,11 @@ import 'package:campus_core/campus_core.dart';
 
 import 'cordis_bundle.dart';
 import 'ext_icon.dart';
+import 'ext_notification.dart';
 import 'ext_permissions.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
+import 'publish/publish_page.dart';
 import 'workshop/workshop_store.dart';
 
 /// 拓展网页能用的接口（方法表见 `docs/extensions.md`，网页侧统一 `antiSIT.call(...)`）：
@@ -22,6 +24,10 @@ import 'workshop/workshop_store.dart';
 /// | `card.setName` | `{text}` | 换卡片上的名称（≤ 20 字；id 不变） |
 /// | `card.setDesc` | `{text}` | 换卡片上的简介（≤ 60 字；空串 = 不显示简介） |
 /// | `card.setIcon` | `{text}` | 换卡片上的图标（`line:<name>` 镂空图标、图片网址，或 ≤ 4 字的文字 / emoji；空串 = 用网站 favicon） |
+/// | `ui.backDepth` | `{depth}` | 网页页面栈深度变化；内核据此决定系统返回先退栈还是关页 |
+/// | `notify.show` | `{title, body?, key?}` | 立即发一条本地通知（同 key 覆盖）；首次调用申请系统通知权限 |
+/// | `notify.schedule` | `{key, title, body?, at}` | 定时通知；`at` 为 ISO 8601 或毫秒时间戳（未来） |
+/// | `notify.cancel` | `{key}` | 撤掉一条 / `notify.cancelAll` 撤掉这条拓展的全部通知 |
 /// | `storage.get` | `{key}` | 该拓展自己存的任意 JSON；没有则 null |
 /// | `storage.set` | `{key, value}` | true |
 /// | `storage.remove` | `{key}` | true |
@@ -60,12 +66,20 @@ class ExtBridge extends WebBridge {
   /// 内核 → 网页的下行通道（流式 AI 增量用）；页面关掉后为 null。
   WebBridgeEventSink? _events;
 
+  /// 网页页面栈深度变化时通知内核（系统返回键先回退栈内页面）。
+  void Function(bool canGoBack)? _backGuard;
+
   /// 完全访问模式：跳过写入 / 删除 / 安装的原生确认（只由工坊自己的开关打开）。
   bool _fullAccess = false;
 
   @override
   void attachEventSink(WebBridgeEventSink? sink) {
     _events = sink;
+  }
+
+  @override
+  void attachBackGuard(void Function(bool canGoBack)? guard) {
+    _backGuard = guard;
   }
 
   @override
@@ -92,6 +106,16 @@ class ExtBridge extends WebBridge {
         return _setCard(args, field: 'desc');
       case 'card.setIcon':
         return _setCard(args, field: 'icon');
+      case 'ui.backDepth':
+        return _backDepth(args);
+      case 'notify.show':
+        return _notifyShow(args);
+      case 'notify.schedule':
+        return _notifySchedule(args);
+      case 'notify.cancel':
+        return _notifyCancel(args);
+      case 'notify.cancelAll':
+        return _notifyCancelAll();
       case 'storage.get':
         return store.dataGet(extId, _key(args));
       case 'storage.set':
@@ -124,6 +148,94 @@ class ExtBridge extends WebBridge {
     if (!it.permissions.contains(need)) {
       throw ArgumentError('这条拓展没有声明「${kPermissionLabels[need] ?? need}」权限（$need），接口已拒');
     }
+  }
+
+  /// 页面栈深度同步：网页执行 `ctx.ui.push` / `pop` 后告诉我们还剩几层。
+  /// 内核据此把系统返回键先交给网页（`window.__antiSITBack()`），栈空才关整页。
+  Object? _backDepth(Object? args) {
+    final raw = args is Map ? args['depth'] : null;
+    final depth = raw is num ? raw.toInt() : int.tryParse('$raw') ?? 0;
+    _backGuard?.call(depth > 0);
+    return true;
+  }
+
+  // ==================== 通知（notification 权限）====================
+
+  Future<Object?> _notifyShow(Object? args) async {
+    await ExtNotificationService.instance.show(
+      extId: extId,
+      key: _notifyKey(args, required: false),
+      title: _notifyTitle(args),
+      body: _notifyBody(args),
+    );
+    return true;
+  }
+
+  Future<Object?> _notifySchedule(Object? args) async {
+    if (args is! Map) throw ArgumentError('notify.schedule 要带 {key, title, at}');
+    await ExtNotificationService.instance.schedule(
+      extId: extId,
+      key: _notifyKey(args, required: true)!,
+      title: _notifyTitle(args),
+      body: _notifyBody(args),
+      at: _notifyAt(args),
+    );
+    return true;
+  }
+
+  Future<Object?> _notifyCancel(Object? args) async {
+    await ExtNotificationService.instance
+        .cancel(extId: extId, key: _notifyKey(args, required: true)!);
+    return true;
+  }
+
+  Future<Object?> _notifyCancelAll() async {
+    await ExtNotificationService.instance.cancelAll(extId: extId);
+    return true;
+  }
+
+  /// 通知标题：必填，给个 200 字上限（系统通知栏也放不下更多）。
+  static String _notifyTitle(Object? args) {
+    final title = args is Map ? '${args['title'] ?? ''}'.trim() : '';
+    if (title.isEmpty) throw ArgumentError('通知要带 title');
+    if (title.length > 200) throw ArgumentError('通知 title 最多 200 字');
+    return title;
+  }
+
+  /// 通知正文：可空；空串按没有正文处理。
+  static String? _notifyBody(Object? args) {
+    if (args is! Map) return null;
+    final body = '${args['body'] ?? ''}'.trim();
+    if (body.length > 1000) throw ArgumentError('通知 body 最多 1000 字');
+    return body.isEmpty ? null : body;
+  }
+
+  /// 拓展自己给的稳定 key：取消 / 覆盖同一条通知靠它。
+  /// [required] 为 false 时可以不传（立即通知用当前时刻生成一个）。
+  static String? _notifyKey(Object? args, {required bool required}) {
+    final key = args is Map ? '${args['key'] ?? ''}'.trim() : '';
+    if (key.isEmpty) {
+      if (required) throw ArgumentError('要带 key（取消 / 覆盖同一条通知靠它）');
+      return null;
+    }
+    if (key.length > 100) throw ArgumentError('通知 key 最多 100 字');
+    return key;
+  }
+
+  /// 定时时刻：ISO 8601 字符串或毫秒时间戳；只接受未来时间。
+  static DateTime _notifyAt(Object? args) {
+    final raw = args is Map ? args['at'] : null;
+    DateTime? at;
+    if (raw is num) {
+      at = DateTime.fromMillisecondsSinceEpoch(raw.toInt());
+    } else if (raw is String && raw.trim().isNotEmpty) {
+      at = DateTime.tryParse(raw.trim());
+    }
+    if (at == null) {
+      throw ArgumentError('notify.schedule 要带 at（ISO 8601 时间或毫秒时间戳）');
+    }
+    if (!at.isAfter(DateTime.now())) throw ArgumentError('at 必须是未来时间');
+    return at;
   }
 
   /// 改自己卡片上的一个字段（名称 / 简介 / 图标），改完落盘，回到列表即可见。
@@ -576,6 +688,20 @@ class ExtBridge extends WebBridge {
             title: '预览 · ${draft.manifest.name}',
             bridge: ExtBridge(extId: draft.id, context: context, item: item),
           ));
+        }
+        return {'ok': true};
+
+      case 'workshop.publish':
+        final draft = await workshop.load(_argString(a, 'draftId'));
+        if (draft == null) throw ArgumentError('拓展不存在或 ext.json 已损坏');
+        final problems = await workshop.validate(draft.id);
+        if (problems.isNotEmpty) throw FormatException(problems.join('\n'));
+        if (context.mounted) {
+          await Navigator.of(context, rootNavigator: true).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PublishPage(draft: draft, workshop: workshop),
+            ),
+          );
         }
         return {'ok': true};
 

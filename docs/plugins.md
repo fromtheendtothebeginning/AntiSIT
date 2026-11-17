@@ -218,14 +218,14 @@ const PluginBundle pluginBundle = PluginBundle(providers: [DeepSeekProvider()]);
 底栏：用户填网址、导入 html/js/css 压缩包（自动解压 + 内联成自包含页面）或粘贴 JSON 添加，
 发行方还能在源码里放**编译前固定的内置拓展**（用户端只读）。打开网页时内核会注入
 `antiSIT` 通道，网页据此读 App 配色、用自己（按拓展 id 隔离）的本地存储、弹提示、
-关页面——通道契约 `WebBridge` 在 campus_core，内核（`plugin_webview`）只管收发，
-支持哪些方法由前端（`plugin_ext`）决定。写法、接口表与最小示例见
-[拓展（网页形态的小功能）](extensions.md)。
+发通知、在自己的页面栈里前进后退、关页面——通道契约 `WebBridge` 在 campus_core，
+内核（`plugin_webview`）只管收发，支持哪些方法由前端（`plugin_ext`）决定。
+写法、接口表与最小示例见 [拓展（网页形态的小功能）](extensions.md)。
 
 同一页里还有第二个标签**「市场」**：从插件市场（网页形态拓展的目录，单独一个仓库）
 发现并安装拓展——装的是同一套 zip，装完就出现在「我的」里。目录必须过**签名校验**
-（公钥内置在 App 里），包必须对得上 sha256 才解压；敏感接口（`storage` / `network`）
-要在清单里声明，安装时列给用户看。目录格式、投稿流程与权限表见
+（公钥内置在 App 里），包必须对得上 sha256 才解压；敏感接口（`storage` / `network` /
+`ai` / `notification`）要在清单里声明，安装时列给用户看。目录格式、投稿流程与权限表见
 [拓展 → 插件市场](extensions.md)。
 
 ## 导入一个插件

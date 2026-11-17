@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'builtin_extensions.dart';
+import 'ext_notification.dart';
 import 'extension_item.dart';
 
 /// 拓展清单 + 每个拓展自己的键值存储。
@@ -122,6 +123,10 @@ class ExtensionStore extends ChangeNotifier {
     for (final e in gone) {
       if (e.bundled) await _deleteBundle(e.id);
     }
+    // 卸载时把它排过的通知一起撤掉（非移动端 / 权限异常不该挡住卸载）
+    try {
+      await ExtNotificationService.instance.cancelAll(extId: id);
+    } catch (_) {}
     await clearData(id);
     notifyListeners();
   }

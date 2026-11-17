@@ -12,12 +12,14 @@ import 'ext_bridge.dart';
 import 'ext_icon.dart';
 import 'ext_open.dart';
 import 'ext_order_page.dart';
+import 'ext_permissions.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
 import 'market/market_installer.dart';
 import 'market/market_source.dart';
 import 'market/market_sources.dart';
 import 'market/market_view.dart';
+import 'scanned_install.dart';
 
 /// 「拓展」页：网页形态的小功能，用户自己加进来。
 ///
@@ -262,6 +264,106 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     _toast('已导入 ${list.length} 个拓展');
   }
 
+  /// 扫一扫加拓展：网址 → 加一条 web 拓展；规定格式的安装码 → 下载安装。
+  /// 码型识别与结果面板在扫码插件里，这里只处理「用户确认后」的落库动作。
+  Future<void> _scanExtension(ScanCapability scan) async {
+    final outcome = await scan.open(context, mode: ScanMode.addExtension);
+    if (!mounted || outcome == null) return;
+    switch (outcome) {
+      case ScanLinkOutcome link:
+        await _addScannedLink(link.url);
+      case ScanBundleOutcome bundle:
+        await _installScannedBundle(bundle);
+    }
+  }
+
+  /// 把扫到的网址作为 web 拓展加进来：名称默认用域名，弹窗里仍可改。
+  Future<void> _addScannedLink(String url) async {
+    final normalized = ExtensionItem.normalizeUrl(url) ?? url;
+    final host = Uri.tryParse(normalized)?.host ?? '';
+    final preset = ExtensionItem(
+      id: ExtensionItem.newId(),
+      name: host,
+      url: normalized,
+    );
+    final item = await showDialog<ExtensionItem>(
+      context: context,
+      builder: (_) => _AddEditDialog(item: preset, isNew: true),
+    );
+    if (item == null) return;
+    await _store.add(item);
+    _toast('已添加「${item.name}」');
+  }
+
+  /// 下载 + 校验扫码得到的拓展包：下载过程弹不可取消的进度框，
+  /// 校验通过后把包里的名称 / id / 版本 / 权限列给用户，确认才解压入列。
+  Future<void> _installScannedBundle(ScanBundleOutcome code) async {
+    final installer = ScannedBundleInstaller(store: _store);
+    final result = await showDialog<Object?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DownloadDialog(
+        label: '正在下载拓展…',
+        task: () => installer.download(code),
+      ),
+    );
+    if (!mounted) return;
+    if (result is _DownloadFailure) {
+      _toast(_scanError(result.error));
+      return;
+    }
+    if (result is! ScannedBundle) return;
+    final bundle = result;
+
+    final ok = await _confirmScannedInstall(bundle, code.url);
+    if (!mounted || !ok) return;
+    try {
+      final item = await installer.install(bundle);
+      _toast('已安装「${item.name}」');
+    } catch (e) {
+      _toast(_scanError(e));
+    }
+  }
+
+  /// 安装前确认：包里的清单（不是二维码里写的）才是最终内容，权限尤其要看清楚。
+  Future<bool> _confirmScannedInstall(ScannedBundle bundle, String url) async {
+    final m = bundle.manifest;
+    final perms = m.permissions.isEmpty
+        ? '无'
+        : describeSensitivePermissions(m.permissions).join('\n');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('安装「${m.name}」？'),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.5),
+          child: SingleChildScrollView(
+            child: Text(
+              'id：${m.id}\n'
+              '版本：${m.version}\n'
+              '来源：$url\n\n'
+              '敏感权限：\n$perms',
+              style: const TextStyle(fontSize: 12.5, height: 1.6),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('安装')),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  /// 把下载 / 解压错误翻成一句能给用户看的提示。
+  static String _scanError(Object e) {
+    if (e is FormatException) return e.message;
+    if (e is StateError) return e.message;
+    if (e is TimeoutException) return '下载超时，请检查网络后重试';
+    return '$e';
+  }
+
   // ==================== 单条菜单 ====================
 
   Future<void> _itemMenu(ExtensionItem e) async {
@@ -389,10 +491,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
+                // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）。
+                // 从这页进去的扫码会把网址 / 拓展安装码带回来，直接用。
                 if (scan != null)
                   _roundAction(Icons.qr_code_scanner_outlined, '扫一扫',
-                      () => scan.open(context)),
+                      () => _scanExtension(scan)),
                 if (market)
                   _roundAction(Icons.refresh_rounded, '重新拉市场目录',
                       () => unawaited(MarketSource.I.load(force: true)))
@@ -714,6 +817,53 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                 ],
               ),
             ),
+          ),
+        ),
+      );
+}
+
+/// 下载失败：把异常包一层再从进度框带回来（失败和结果走同一个返回值）。
+class _DownloadFailure {
+  const _DownloadFailure(this.error);
+
+  final Object error;
+}
+
+/// 不可取消的下载进度框：任务完成 / 失败时自己关掉，并把结果交给调用方。
+class _DownloadDialog<T> extends StatefulWidget {
+  const _DownloadDialog({required this.label, required this.task});
+
+  final String label;
+  final Future<T> Function() task;
+
+  @override
+  State<_DownloadDialog<T>> createState() => _DownloadDialogState<T>();
+}
+
+class _DownloadDialogState<T> extends State<_DownloadDialog<T>> {
+  @override
+  void initState() {
+    super.initState();
+    Future<T>.microtask(widget.task).then((value) {
+      if (mounted) Navigator.of(context).pop<Object?>(value);
+    }).catchError((Object e, StackTrace _) {
+      if (mounted) Navigator.of(context).pop<Object?>(_DownloadFailure(e));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              const SizedBox(
+                  width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(widget.label, style: const TextStyle(fontSize: 13.5)),
+              ),
+            ],
           ),
         ),
       );

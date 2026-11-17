@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
@@ -13,9 +14,59 @@ import 'package:url_launcher/url_launcher.dart';
 /// 识出**第二课堂活动的签到码**时不走通用面板：给出「完成签到 / 签退」按钮，
 /// 由学校接口判定这次算签到还是签退（见 [ScanPage.debugSign] 的正式实现）。
 ///
+/// 从「拓展」页进入时 [mode] 为 [ScanMode.addExtension]：普通网址给「添加链接」，
+/// 规定格式的安装码给「下载拓展」，确认后关页把结果交给拓展页处理。
+///
 /// 扫出的网址用 WebView 内核打开；内核没装 / 被停用时退回系统浏览器。
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key});
+  const ScanPage({super.key, this.mode = ScanMode.generic});
+
+  /// 扫码用途（见 [ScanMode]）：普通扫一扫 / 给拓展页加内容。
+  final ScanMode mode;
+
+  /// 拓展安装码：二维码里放一段 JSON——
+  /// `{"antisit":"ext","url":"https://…/x.zip","sha256":"64 位十六进制"}`，
+  /// 可选 `name` / `id` 只用于安装前展示，最终以包里的 `ext.json` 为准。
+  /// 只认 https；sha256 对不上就不下载安装（见插件里 `ScannedBundleInstaller`）。
+  @visibleForTesting
+  static ScanOutcome? extensionOutcome(String code) {
+    final text = code.trim();
+    if (!text.startsWith('{')) {
+      final uri = Uri.tryParse(text);
+      if (uri != null &&
+          (uri.scheme == 'http' || uri.scheme == 'https') &&
+          uri.host.isNotEmpty) {
+        return ScanLinkOutcome(url: text, raw: text);
+      }
+      return null;
+    }
+    try {
+      final raw = jsonDecode(text);
+      if (raw is! Map || '${raw['antisit'] ?? ''}'.trim() != 'ext') return null;
+      final url = '${raw['url'] ?? ''}'.trim();
+      final sha = '${raw['sha256'] ?? ''}'.trim().toLowerCase();
+      final uri = Uri.tryParse(url);
+      if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) return null;
+      if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(sha)) return null;
+      final name = '${raw['name'] ?? ''}'.trim();
+      final id = '${raw['id'] ?? ''}'.trim();
+      return ScanBundleOutcome(
+        url: url,
+        sha256: sha,
+        name: name.isEmpty ? null : name,
+        id: id.isEmpty ? null : id,
+        raw: text,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 像安装码但字段不合法（用于给出「格式不对」而不是闷头当普通文本）。
+  static bool looksLikeExtensionCode(String code) {
+    final text = code.trim();
+    return text.startsWith('{') && text.contains('"antisit"');
+  }
 
   /// 二课活动签到二维码：`https://xg.sit.edu.cn/hdgl/hdxq/qd/:hdId/:hdActId/:时间戳`
   /// （签退形态是同路由的 qt 变体，学校同一个接口 signInOrSignOut 按状态判定方向）。
@@ -117,6 +168,23 @@ class _ScanPageState extends State<ScanPage> {
 
   Future<void> _onCode(String code) async {
     if (_pausedValue != null) return;
+    // 从「拓展」页进来的：只判拓展安装码 / 普通网址，两种按钮交给用户确认后
+    // 关页把结果带回去（下载安装、权限确认这些在拓展插件里做）。
+    if (widget.mode == ScanMode.addExtension) {
+      final outcome = ScanPage.extensionOutcome(code);
+      if (outcome != null) {
+        await _extensionFlow(outcome);
+        return;
+      }
+      if (ScanPage.looksLikeExtensionCode(code)) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+              content: Text('拓展安装码格式不对：需要 https 下载地址和 64 位 sha256'),
+              behavior: SnackBarBehavior.floating));
+        return;
+      }
+    }
     // 门户包装（/login?redirect=…）先拆出内部地址，再按码型匹配
     final effective = unwrapLoginRedirect(code) ?? code;
     // 二课活动的签到码：走专门的签到面板（学校接口判定本次是签到还是签退）
@@ -165,6 +233,22 @@ class _ScanPageState extends State<ScanPage> {
       return;
     }
     await _openExternalUrl(context, url);
+  }
+
+  /// 拓展模式的结果面板：确认「下载拓展」/「添加链接」后关掉扫码页，
+  /// 把 [ScanOutcome] 交给调用方（拓展页）。取消则继续取景。
+  Future<void> _extensionFlow(ScanOutcome outcome) async {
+    setState(() => _pausedValue = outcome.raw);
+    final picked = await showModalBottomSheet<ScanOutcome>(
+      context: context,
+      builder: (ctx) => _ExtensionOutcomeSheet(outcome: outcome),
+    );
+    if (!mounted) return;
+    if (picked != null) {
+      Navigator.of(context).pop(picked);
+      return;
+    }
+    setState(() => _pausedValue = null); // 面板关了，回到取景继续扫
   }
 
   /// 二课签到流程：弹签到面板，提交经学工系统（学校返回判定原文）。
@@ -706,6 +790,102 @@ class _DetailSheet extends StatelessWidget {
                   },
                   icon: const Icon(Icons.copy_rounded, size: 18),
                   label: const Text('复制码内容'),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('继续扫码'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 拓展模式的结果面板：网址 →「添加链接」，安装码 →「下载拓展」。
+/// 两个按钮颜色与文字不同（下载用主题强调色、加链接用成功绿），点下去把
+/// [ScanOutcome] 带回拓展页；「继续扫码」关掉面板回取景。
+class _ExtensionOutcomeSheet extends StatelessWidget {
+  const _ExtensionOutcomeSheet({required this.outcome});
+
+  final ScanOutcome outcome;
+
+  @override
+  Widget build(BuildContext context) {
+    final bundle = outcome is ScanBundleOutcome ? outcome as ScanBundleOutcome : null;
+    final link = outcome is ScanLinkOutcome ? outcome as ScanLinkOutcome : null;
+    final title = bundle != null ? '拓展安装码' : '网址';
+    final label = bundle != null ? '下载拓展' : '添加链接';
+    final icon = bundle != null ? Icons.download_rounded : Icons.add_link_rounded;
+    final bg = bundle != null ? SemColors.accent : SemColors.success;
+    final fg = bundle != null
+        ? (SemColors.isDark ? SemColors.bg : Colors.white)
+        : (SemColors.isDark ? Colors.black : Colors.white);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface)),
+            const SizedBox(height: 10),
+            if (bundle != null) ...[
+              if (bundle.name != null || bundle.id != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    [bundle.name, bundle.id].whereType<String>().join(' · '),
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurface),
+                  ),
+                ),
+              SelectableText(bundle.url,
+                  style: TextStyle(
+                      fontSize: 13, height: 1.5,
+                      color: Theme.of(context).colorScheme.onSurface)),
+              const SizedBox(height: 4),
+              Text('sha256：${bundle.sha256.substring(0, 16)}…',
+                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+            ] else
+              SelectableText(link?.url ?? outcome.raw,
+                  style: TextStyle(
+                      fontSize: 13.5, height: 1.5,
+                      color: Theme.of(context).colorScheme.onSurface)),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: bg,
+                  foregroundColor: fg,
+                  minimumSize: const Size.fromHeight(46),
+                ),
+                onPressed: () => Navigator.pop(context, outcome),
+                icon: Icon(icon, size: 19),
+                label: Text(label),
+              ),
+            ),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: outcome.raw));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('已复制'),
+                        behavior: SnackBarBehavior.floating));
+                  },
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('复制'),
                 ),
                 const Spacer(),
                 TextButton(

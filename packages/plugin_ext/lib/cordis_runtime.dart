@@ -20,8 +20,8 @@ class CordisPage {
 /// 页面结构：
 /// 1. `antiSIT` 垫片（网页第一个脚本就能用宿主通道）
 /// 2. Cordis 运行时（MIT，assets/cordis.min.js）
-/// 3. 引导脚本：建 Context、注册 `ui` / `storage` / `card` / `ai` / `app` /
-///    `workshop` 服务，再把 `main.js` 当 ES module 加载并 `ctx.plugin(plugin)`
+/// 3. 引导脚本：建 Context、注册 `ui` / `storage` / `card` / `ai` / `notify` /
+///    `app` / `workshop` 服务，再把 `main.js` 当 ES module 加载并 `ctx.plugin(plugin)`
 ///
 /// 拓展插件就是一个标准 Cordis 插件：
 /// ```js
@@ -109,6 +109,24 @@ class CordisRuntime {
     console.error('[Cordis]', e);
   }
   function call(method, args) { return window.antiSIT.call(method, args); }
+
+  // 页面栈：拓展用 ctx.ui.push() 叠自己的子页面。栈非空时系统返回键先由
+  // __antiSITBack 回退一层（宿主靠 ui.backDepth 知道该不该拦），栈空了才关整页。
+  var pageStack = [];
+  function stackTop() { return pageStack.length ? pageStack[pageStack.length - 1] : null; }
+  function stackSync() {
+    try { call('ui.backDepth', { depth: pageStack.length }); } catch (_) {}
+  }
+  window.__antiSITBack = function () {
+    var top = stackTop();
+    if (!top) return false;
+    pageStack.pop();
+    try { top.el.remove(); } catch (_) {}
+    try { top.onPop && top.onPop(); } catch (e) { console.error('[Cordis] onPop', e); }
+    stackSync();
+    return true;
+  };
+
   (async function () {
     try {
       if (!window.Cordis) throw new Error('Cordis 运行时没有加载');
@@ -128,6 +146,40 @@ class CordisRuntime {
         }
         toast(text) { return call('toast', { text: String(text) }); }
         close() { return call('close'); }
+
+        /// 叠一层子页面：返回 { root, close }，往 root 里画自己的内容。
+        /// [options.onPop] 在退回上一层后回调；系统返回键 / 左上角箭头会先退它。
+        push(options) {
+          options = options || {};
+          var el = document.createElement('div');
+          el.className = 'antisit-stack-page';
+          el.style.position = 'fixed';
+          el.style.inset = '0';
+          el.style.overflow = 'auto';
+          el.style.boxSizing = 'border-box';
+          el.style.background = 'var(--antisit-bg, #fff)';
+          el.style.zIndex = String(100 + pageStack.length);
+          (this.root || document.body).appendChild(el);
+          var entry = {
+            el: el,
+            onPop: typeof options.onPop === 'function' ? options.onPop : null,
+          };
+          pageStack.push(entry);
+          stackSync();
+          return {
+            root: el,
+            close: function () {
+              if (stackTop() !== entry) return false;
+              return window.__antiSITBack();
+            },
+          };
+        }
+
+        /// 退回上一层；已经在最外层返回 false。
+        pop() { return window.__antiSITBack(); }
+
+        get depth() { return pageStack.length; }
+        get canGoBack() { return pageStack.length > 0; }
       }
       class Storage extends Service {
         constructor(c) { super(c, 'storage'); }
@@ -153,6 +205,13 @@ class CordisRuntime {
         }
         chatTools(payload) { return call('ai.chatTools', payload); }
         chatToolsStream(payload) { return call('ai.chatToolsStream', payload); }
+      }
+      class Notify extends Service {
+        constructor(c) { super(c, 'notify'); }
+        show(payload) { return call('notify.show', payload || {}); }
+        schedule(payload) { return call('notify.schedule', payload || {}); }
+        cancel(key) { return call('notify.cancel', { key: String(key) }); }
+        cancelAll() { return call('notify.cancelAll'); }
       }
       class App extends Service {
         constructor(c) {
@@ -188,6 +247,7 @@ class CordisRuntime {
         }
         install(draftId) { return call('workshop.install', { draftId: draftId }); }
         preview(draftId) { return call('workshop.preview', { draftId: draftId }); }
+        publish(draftId) { return call('workshop.publish', { draftId: draftId }); }
         listConversations(draftId) {
           return call('workshop.session.list', { draftId: draftId });
         }
@@ -232,6 +292,7 @@ class CordisRuntime {
       await ctx.plugin(Storage);
       await ctx.plugin(Card);
       await ctx.plugin(Ai);
+      await ctx.plugin(Notify);
       await ctx.plugin(App);
       await ctx.plugin(Workshop);
 

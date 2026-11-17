@@ -8,7 +8,11 @@ class ScanCapabilityImpl extends ScanCapability {
   const ScanCapabilityImpl();
 
   @override
-  Future<void> open(BuildContext context) => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const ScanPage()),
+  Future<ScanOutcome?> open(BuildContext context,
+          {ScanMode mode = ScanMode.generic}) =>
+      Navigator.of(context).push<ScanOutcome>(
+        MaterialPageRoute<ScanOutcome>(
+          builder: (_) => ScanPage(mode: mode),
+        ),
       );
 }

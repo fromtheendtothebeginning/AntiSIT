@@ -19,6 +19,24 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.36.1', date: '2026-11-17', notes: [
+    '发布拓展时说明 / 笔记类文件不再打进给用户的安装包，源码仍保留在仓库里',
+  ]),
+  ChangelogEntry(version: '1.36.0', date: '2026-11-17', notes: [
+    '拓展工坊新增发布：填 GitHub / Gitee Token 可把当前拓展推到公开仓库，自动生成第三方市场源与直装二维码',
+    '别人扫码即可安装；把源地址加入市场后能接收后续更新；发布密钥保存在本机加密存储',
+  ]),
+  ChangelogEntry(version: '1.35.1', date: '2026-11-17', notes: [
+    '扫码下载拓展超时时给出明确提示，不再把原始异常直接摊给用户',
+  ]),
+  ChangelogEntry(version: '1.35.0', date: '2026-11-17', notes: [
+    '拓展页扫一扫支持扫码添加：普通网址点「添加链接」直接成为 web 拓展',
+    '规定格式的拓展安装码点「下载拓展」：只认 https，下载后核对 sha256，再把包里的权限列给用户确认',
+  ]),
+  ChangelogEntry(version: '1.34.0', date: '2026-11-17', notes: [
+    '拓展新增页面栈：ctx.ui.push / pop，系统返回键先回退拓展内子页面，栈空才关闭拓展',
+    '拓展新增通知能力：声明 notification 权限后可用 ctx.notify 发即时 / 定时本地通知',
+  ]),
   ChangelogEntry(version: '1.33.1', date: '2026-11-16', notes: [
     '回退工具页、课表与插件相关重构，恢复到之前验证过的实现',
     '修复并发请求时 Cookie 还没载入就发出，导致带登录态的接口与网页失效',

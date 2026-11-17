@@ -19,11 +19,35 @@ App 内置一个 **「拓展工坊」**（`builtin.workshop`）：它本身也�
 | 填写网址 | 名称 + `http(s)` 网址，作为网页书签打开；不跑 Cordis，也不注入拓展服务 |
 | 导入 Cordis 压缩包 | zip 根目录放 `ext.json` + `main.js`（可选 `style.css`），导入后解压到本地 |
 | 导入 JSON | 粘贴网页书签（单条或数组）；Cordis 拓展请用压缩包 |
+| 扫码添加 | 「拓展」页右上角扫一扫：普通网址 →「添加链接」；规定格式的安装码 →「下载拓展」 |
 | 编译前固定 | 在 `packages/plugin_ext/lib/builtin_extensions.dart` 的 `kBuiltinExtensions` 里加 |
 | 拓展工坊 | 在「拓展」页打开内置工坊，用自然语言让 Agent 写一个 Cordis 拓展 |
 
 拓展卡片默认按添加先后排列；「我的」标题栏的**排序**入口可以拖动自定义顺序，
 「恢复默认」回原始顺序。排序结果存在本机，重启 App 不变；新加的拓展排在最后。
+
+### 扫码添加
+
+从「拓展」页右上角进入的扫一扫会把结果带回来，按码型给**不同颜色 / 文字**的按钮：
+
+* **普通 http(s) 网址** → 绿色「**添加链接**」：把网址作为 web 拓展加进来，
+  名称默认用域名，确认弹窗里仍可改；
+* **拓展安装码** → 主题强调色「**下载拓展**」：二维码内容必须是一段 JSON：
+
+```json
+{
+  "antisit": "ext",
+  "url": "https://example.com/sit.my-tool.zip",
+  "sha256": "64 位十六进制（小写 / 大写都行）",
+  "name": "可选，仅安装前展示",
+  "id": "可选；写了就必须与包里的 ext.json 一致"
+}
+```
+
+安装码只认 **https**，并且必须带 sha256：下载后先核对内容，对不上连解压都不做；
+校验通过后把包里的名称 / id / 版本 / 权限列给用户，确认后才解压入列。
+已存在同 id / 与内置拓展冲突会拒绝（先卸载或让作者换 id）。
+生成二维码时把上面这段 JSON 直接编码即可，不需要 App 专用 scheme。
 
 ### Cordis 压缩包的约定
 
@@ -101,14 +125,19 @@ export default {
 | `ctx.ui` | `root` | 页面根元素（一个 `div`） |
 | | `toast(text)` | 弹一条 App 风格提示 |
 | | `close()` | 关闭当前拓展页 |
+| | `push({onPop})` | 叠一层子页面，返回 `{root, close}`；往 `root` 里画这层的内容，`close()` = 退回上一层 |
+| | `pop()` / `depth` / `canGoBack` | 退回上一层 / 当前栈深 / 栈里有没有页面 |
 | | `theme` | 当前配色：`isDark` / `accent` / `bg` / `card` / `border` / `textPrimary` …（`#RRGGBB`） |
 | `ctx.storage` | `get(key)` / `set(key, value)` / `remove(key)` | 按拓展 id 隔离的本地存储，返回 Promise |
 | `ctx.card` | `setName(text)` / `setDesc(text)` / `setIcon(text)` | 改拓展列表卡片上的显示值 |
 | `ctx.ai` | `chat(prompt, {system, maxTokens})` | 走用户在「AI 设置」里配置的模型；Key 不出 App |
 | | `chatTools({messages, tools, maxTokens})` | 多轮 + OpenAI 兼容 function calling（拓展工坊用） |
 | | `chatToolsStream({streamId, messages, tools, maxTokens})` | 流式版；增量通过 `antiSIT.on('ai.stream')` 推下来，返回值仍是完整回复 |
+| `ctx.notify` | `show({title, body?, key?})` | 立即发一条本地通知；同 `key` 覆盖上一条，不传自动生成；首次调用会申请系统通知权限 |
+| | `schedule({key, title, body?, at})` | 定时通知，`at` 是 ISO 8601 时间或毫秒时间戳（必须是未来）；App 没开也能到点弹出 |
+| | `cancel(key)` / `cancelAll()` | 撤销一条 / 撤销这条拓展排过的全部通知（不影响上课提醒） |
 | `ctx.app` | `id` / `name` / `version` / `permissions` / `close()` | 当前拓展信息 |
-| `ctx.workshop` | `list` / `create` / `deleteDraft` / `files` / `read` / `write` / `remove` / `validate` / `install` / `preview` | **只给内置「拓展工坊」**，其他拓展调用会被拒。`read` 返回 `{content, version}`；`write` / `remove` 要带 `expectedVersion`（读后写） |
+| `ctx.workshop` | `list` / `create` / `deleteDraft` / `files` / `read` / `write` / `remove` / `validate` / `install` / `preview` / `publish` | **只给内置「拓展工坊」**，其他拓展调用会被拒。`read` 返回 `{content, version}`；`write` / `remove` 要带 `expectedVersion`（读后写）；`publish` 打开原生发布页 |
 | | `listConversations` / `createConversation` / `deleteConversation` / `loadSession` / `saveSession` | 一个草稿多段对话；`saveSession` 带 `conversationId` |
 | | `listSkills` / `readSkill` / `installSkill` / `deleteSkill` | Agent 技能库（可复用指令文档，全局共享） |
 | | `setFullAccess(enabled)` | 完全访问：写入 / 删除 / 安装不再逐次弹原生确认 |
@@ -125,6 +154,17 @@ antiSIT.on('ai.stream', (e) => {
 });
 ```
 
+**页面栈**：`ctx.ui.push()` 叠上去的子页面会全屏盖住当前页；系统返回键 / 左上角返回箭头
+先退一层，栈空了才关闭整个拓展。`onPop` 在那层页面退出后回调，适合收尾定时器或写回数据。
+根页面先画好再 push；push 之后不要再整块改 `ctx.ui.root.innerHTML`，否则会把栈容器一起冲掉。
+
+**通知**：`ctx.notify` 走 App 自己的本地通知渠道（`ext_notify`），不依赖「上课提醒」插件；
+`cancelAll()` 只撤当前拓展排过的通知，不会动课表提醒。没授权「精确闹钟」的机型上定时通知
+可能晚几分钟，但不会被丢掉。
+
+`ctx.ui.push` / `ctx.notify` 是 **1.34.0** 起的新接口；要发到市场的拓展请把 `ext.json` 的
+`minAppVersion` 设为 `1.34.0`，旧版 App 会提示升级而不是运行到一半报「未知接口」。
+
 ## 权限
 
 市场装的拓展要在 `ext.json` 里声明敏感接口，安装弹窗会翻成人话列给用户：
@@ -134,6 +174,7 @@ antiSIT.on('ai.stream', (e) => {
 | `storage` | 在本机保存数据（记设置、记历史）；不声明就调用 `ctx.storage` → Promise reject |
 | `network` | 运行时联网。**市场装的拓展默认禁网**（CSP `connect-src 'none'`），声明后才放开 `https:` |
 | `ai` | 调用 AI（`ctx.ai.*`，走用户的模型与 Key，可能产生费用）；不声明就拒 |
+| `notification` | 给你发通知（即时 / 定时，App 没开也能收到）；不声明就调用 `ctx.notify.*` → Promise reject |
 
 用户自己填网址 / 自己导入的压缩包不受这条限制——来源是他自己选的。
 权限门是**防误用**，不是沙箱；App 的用户数据（学号、课表、成绩、凭据）不在接口里。
@@ -191,8 +232,8 @@ antiSIT.on('ai.stream', (e) => {
 里面放「计划 / 完全访问」开关与发送键，下面一行小字显示对话数、文件数或运行状态。
 
 * 点左上角返回或标题：打开**切换面板**，上面是拓展、下面是当前拓展的对话，点一下切过去。
-* 右上角「⋯」：技能 / 预览拓展 / 安装拓展 / 新建对话 / 新建拓展 / 重命名当前对话 /
-  重命名当前拓展 / 删除当前对话 / 删除当前拓展。
+* 右上角「⋯」：技能 / 预览拓展 / 安装拓展 / **发布拓展** / 新建对话 / 新建拓展 /
+  重命名当前对话 / 重命名当前拓展 / 删除当前对话 / 删除当前拓展。
 * 「文件」页签列出拓展里的文件，点开预览全文。
 
 ### 拓展与技能
@@ -231,6 +272,23 @@ antiSIT.on('ai.stream', (e) => {
 
 模型调用走用户在「AI 设置」里的提供商，优先用原生 function calling；提供商不支持 tools 时
 自动退回「每次输出一个 JSON 工具调用」的文本协议，不需要用户改配置。
+
+### 发布到 GitHub / Gitee
+
+工坊「⋯」→「发布拓展…」把当前草稿发成别人能装的拓展。
+
+* 平台：GitHub / Gitee，填 Personal Access Token（只存系统加密存储）。
+  GitHub 需要 `public_repo`（私有 / 更新用 `repo`）权限；Gitee 需要仓库 / projects 权限。
+* 仓库：填 `所有者/仓库`，也可以粘贴仓库网址。仓库必须**公开**；不存在时 App
+  会问你是否新建（GitHub 支持个人 / 组织，Gitee 只支持当前账号）。
+* 分支可空（默认分支）。发布物：`ext/<id>/`（源码，方便别人查看或继续用 CLI）、
+  `dist/<id>/<版本>.zip`、`market.json` 与 `market.json.sig`。
+* 签名：App 首次发布时在本机生成 Ed25519 密钥，私钥只进 Keystore；目录里内嵌公钥，
+  别人添加源时核对指纹。**清除 App 数据 / 换机会换密钥**，别人需要重新添加源。
+* 同一仓库可以放多条拓展：发布时读取已有目录（先验签）并合并，不会覆盖别的条目。
+* 结果页显示：
+  * **直装二维码**：别人用「拓展 → 扫一扫」扫一下，点「下载拓展」即可安装；
+  * **源地址 + 公钥指纹**：别人在「市场 → 添加第三方源」里添加后，可接收后续更新。
 
 ### 与 DSH 的差异
 
