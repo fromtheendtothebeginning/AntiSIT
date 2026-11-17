@@ -127,19 +127,53 @@ class _EvaluatePageState extends State<EvaluatePage> {
     _panel.value = _panel.value.copyWith(items: items, busy: false);
   }
 
-  /// 统一分数：拖动中每一帧都会调到这里，所以**不置 busy**（否则滑块会在拖动途中被禁用），
-  /// 直接下发；页面回执只用来校准显示，不阻塞接下来的拖动。
+  /// 连续拖动时的合并在途请求：拖动一帧几十次 runJavaScript 会把通道堵住（页面越复杂越
+  /// 明显），所以「最多一次在途」——上一次还没回来就只记最新值，回来后再补发一次。
+  double? _queuedAll;
+  bool _pushingAll = false;
+  final Map<int, double> _queuedOne = {};
+  bool _pushingOne = false;
+
+  /// 统一分数：拖动中每一帧都会调到这里（**不置 busy**，否则滑块会在拖动途中被禁用），
+  /// 页面回执只用来校准显示，不阻塞接下来的拖动。
   Future<void> _applyAll(double value) async {
     final host = _host;
     if (host == null || _panel.value.items.isEmpty) return;
-    await host.run(evaluateApplyAllCall(value));
+    if (_pushingAll) {
+      _queuedAll = value;
+      return;
+    }
+    _pushingAll = true;
+    try {
+      var v = value;
+      while (true) {
+        await host.run(evaluateApplyAllCall(v));
+        final next = _queuedAll;
+        _queuedAll = null;
+        if (next == null) break;
+        v = next;
+      }
+    } finally {
+      _pushingAll = false;
+    }
   }
 
-  /// 逐项分数：同样一拖就下发，不置 busy。
+  /// 逐项分数：同样一拖就下发；同一项只保留最新的那个分值，避免积压一串无用的写值。
   Future<void> _applyOne(EvalItem item, double value) async {
     final host = _host;
     if (host == null) return;
-    await host.run(evaluateApplyOneCall(item.index, value));
+    _queuedOne[item.index] = value;
+    if (_pushingOne) return;
+    _pushingOne = true;
+    try {
+      while (_queuedOne.isNotEmpty) {
+        final index = _queuedOne.keys.first;
+        final v = _queuedOne.remove(index)!;
+        await host.run(evaluateApplyOneCall(index, v));
+      }
+    } finally {
+      _pushingOne = false;
+    }
   }
 
   Future<void> _rescan() async {
