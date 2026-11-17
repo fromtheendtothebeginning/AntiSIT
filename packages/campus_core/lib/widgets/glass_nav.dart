@@ -118,7 +118,7 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
             child: BackdropFilter(
               // 毛玻璃底：把从底栏下面穿过去的页面内容糊掉，玻璃面再压在上面——
               // 底栏因此和内容分成两层，而不是一块和内容糊在一起的半透明色板
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
               child: _face(n),
             ),
           ),
