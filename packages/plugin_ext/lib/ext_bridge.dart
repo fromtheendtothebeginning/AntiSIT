@@ -32,7 +32,7 @@ import 'workshop/workshop_store.dart';
 /// | `card.setDesc` | `{text}` | 换卡片上的简介（≤ 60 字；空串 = 不显示简介） |
 /// | `card.setIcon` | `{text}` | 换卡片上的图标（`line:<name>` 镂空图标、图片网址，或 ≤ 4 字的文字 / emoji；空串 = 用网站 favicon） |
 /// | `ui.backDepth` | `{depth}` | 网页页面栈深度变化；内核据此决定系统返回先退栈还是关页 |
-/// | `notify.show` | `{title, body?, key?}` | 立即发一条本地通知（同 key 覆盖）；首次调用申请系统通知权限 |
+/// | `notify.show` | `{title, body?, key?, popup?}` | 立即发一条本地通知（同 key 覆盖）；`popup: true` 走高优先级「弹窗」渠道（屏幕横幅），首次会弹运行时确认；首次调用申请系统通知权限 |
 /// | `notify.schedule` | `{key, title, body?, at}` | 定时通知；`at` 为 ISO 8601 或毫秒时间戳（未来） |
 /// | `notify.cancel` | `{key}` | 撤掉一条 / `notify.cancelAll` 撤掉这条拓展的全部通知 |
 /// | `storage.get` | `{key}` | 该拓展自己存的任意 JSON；没有则 null |
@@ -276,11 +276,14 @@ class ExtBridge extends WebBridge {
   // ==================== 通知（notification 权限）====================
 
   Future<Object?> _notifyShow(Object? args) async {
+    final popup = args is Map && args['popup'] == true;
+    if (popup) await _ensureConsent('notification.popup');
     await ExtNotificationService.instance.show(
       extId: extId,
       key: _notifyKey(args, required: false),
       title: _notifyTitle(args),
       body: _notifyBody(args),
+      popup: popup,
     );
     return true;
   }

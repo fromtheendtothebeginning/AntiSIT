@@ -210,6 +210,12 @@ class CordisRuntime {
       class Notify extends Service {
         constructor(c) { super(c, 'notify'); }
         show(payload) { return call('notify.show', payload || {}); }
+        popup(payload) {
+          var p = payload || {};
+          return call('notify.show', {
+            title: p.title, body: p.body, key: p.key, popup: true
+          });
+        }
         schedule(payload) { return call('notify.schedule', payload || {}); }
         cancel(key) { return call('notify.cancel', { key: String(key) }); }
         cancelAll() { return call('notify.cancelAll'); }

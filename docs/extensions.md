@@ -154,7 +154,8 @@ export default {
 | `ctx.ai` | `chat(prompt, {system, maxTokens})` | 走用户在「AI 设置」里配置的模型；Key 不出 App |
 | | `chatTools({messages, tools, maxTokens})` | 多轮 + OpenAI 兼容 function calling（拓展工坊用） |
 | | `chatToolsStream({streamId, messages, tools, maxTokens})` | 流式版；增量通过 `antiSIT.on('ai.stream')` 推下来，返回值仍是完整回复 |
-| `ctx.notify` | `show({title, body?, key?})` | 立即发一条本地通知；同 `key` 覆盖上一条，不传自动生成；首次调用会申请系统通知权限 |
+| `ctx.notify` | `show({title, body?, key?, popup?})` | 立即发一条本地通知；同 `key` 覆盖上一条；首次调用会申请系统通知权限 |
+| | `popup({title, body?, key?})` | 高优先级弹窗通知（屏幕横幅）；首次使用会弹一次运行时确认 |
 | | `schedule({key, title, body?, at})` | 定时通知，`at` 是 ISO 8601 时间或毫秒时间戳（必须是未来）；App 没开也能到点弹出 |
 | | `cancel(key)` / `cancelAll()` | 撤销一条 / 撤销这条拓展排过的全部通知（不影响上课提醒） |
 | `ctx.app` | `id` / `name` / `version` / `permissions` / `close()` | 当前拓展信息 |
@@ -182,6 +183,10 @@ antiSIT.on('ai.stream', (e) => {
 **通知**：`ctx.notify` 走 App 自己的本地通知渠道（`ext_notify`），不依赖「上课提醒」插件；
 `cancelAll()` 只撤当前拓展排过的通知，不会动课表提醒。没授权「精确闹钟」的机型上定时通知
 可能晚几分钟，但不会被丢掉。
+
+`ctx.notify.popup(...)` / `ctx.notify.show({popup: true})` 走单独的 `ext_popup`
+高优先级渠道，会在屏幕上弹横幅（部分机型还要用户允许「悬浮通知」）。首次使用会弹一次
+运行时确认，可在拓展菜单「运行时授权」里撤销。需要 `notification` 权限。
 
 `ctx.ui.push` / `ctx.notify` 是 **1.34.0** 起的新接口；要发到市场的拓展请把 `ext.json` 的
 `minAppVersion` 设为 `1.34.0`，旧版 App 会提示升级而不是运行到一半报「未知接口」。

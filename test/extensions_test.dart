@@ -1508,6 +1508,7 @@ class _FakeNotifier implements ExtNotificationService {
   String? title;
   String? body;
   DateTime? at;
+  bool popup = false;
 
   void _record(String extId, String? key, String? title, String? body) {
     this.extId = extId;
@@ -1521,8 +1522,10 @@ class _FakeNotifier implements ExtNotificationService {
       {required String extId,
       String? key,
       required String title,
-      String? body}) async {
+      String? body,
+      bool popup = false}) async {
     calls.add('show');
+    this.popup = popup;
     _record(extId, key, title, body);
   }
 
