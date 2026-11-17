@@ -136,8 +136,11 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
                       Positioned(
                         left: pos * segW,
                         width: segW,
+                        // 高度交给容器内区（66 − 边框 1×2 − 内边距 4×2 = 56），别写死：
+                        // 原来 height: 58 比内区高 2px，超出部分被 Stack 的 Clip.hardEdge
+                        // 从底部切平——滑块的下边框与下方两个圆角正好被切掉
                         top: 0,
-                        height: 58,
+                        bottom: 0,
                         child: Container(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(18),

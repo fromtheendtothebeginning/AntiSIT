@@ -1149,9 +1149,12 @@ class _TimetablePageState extends State<TimetablePage> {
                 ),
               // 顶部「今天」卡与近期日程条不属于任何一页：它们和课表在**同一条竖向滚动**里
               // （整页一起上下滑），但左右切周 / 切天时不该跟着横向位移，所以放在分页之外。
+              // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：滚动底部与切换条都要让开它，
+              // 否则最后几节课和切换条会被压在玻璃底栏下面
               Positioned.fill(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(bottom: 90), // 给底部悬浮导航条留位
+                  padding: EdgeInsets.only(
+                      bottom: 90 + MediaQuery.paddingOf(context).bottom),
                   child: Column(
                     children: [
                       if (!AppState.I.loggedIn) _guestBanner(),
@@ -1166,11 +1169,11 @@ class _TimetablePageState extends State<TimetablePage> {
                   ),
                 ),
               ),
-              // 底部悬浮导航条：周视图切周 / 日视图切天
+              // 底部悬浮导航条：周视图切周 / 日视图切天（抬高一个底栏高度，压在玻璃底栏上方）
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: 12,
+                bottom: 12 + MediaQuery.paddingOf(context).bottom,
                 child: _dayView ? _dayNav() : _weekNav(),
               ),
             ],

@@ -71,7 +71,9 @@ class _ToolsPageState extends State<ToolsPage> {
                 ),
               )
             : ListView(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+                // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：底部多让出底栏这一截
+                padding: EdgeInsets.fromLTRB(
+                    12, 4, 12, 16 + MediaQuery.paddingOf(context).bottom),
                 children: [
                   GridView.count(
                     crossAxisCount: 2,

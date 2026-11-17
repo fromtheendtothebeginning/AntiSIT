@@ -202,7 +202,9 @@ class _EcardPageState extends State<EcardPage> {
       body: LoginGate(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：小屏滚动时底部让出底栏这一截
+            padding: EdgeInsets.fromLTRB(
+                20, 20, 20, 20 + MediaQuery.paddingOf(context).bottom),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Column(
