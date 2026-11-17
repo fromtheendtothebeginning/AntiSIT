@@ -48,6 +48,28 @@ class ScanBundleOutcome extends ScanOutcome {
   final String? id;
 }
 
+/// 第三方插件源安装码：
+/// `{"antisit":"source","repo":"owner/repo","fingerprint":"XXXX-XXXX-XXXX"}`。
+///
+/// 调用方负责拉一次目录、核对指纹（如果码里给了）再添加源。
+class ScanSourceOutcome extends ScanOutcome {
+  const ScanSourceOutcome({
+    required this.repo,
+    this.fingerprint,
+    this.branch,
+    this.name,
+    required String raw,
+  }) : super(raw);
+
+  /// `owner/repo`，或一个完整的 https 目录地址。
+  final String repo;
+
+  /// 可选的公钥指纹（`XXXX-XXXX-XXXX`）；作者给了就必须一致。
+  final String? fingerprint;
+  final String? branch;
+  final String? name;
+}
+
 /// 扫一扫能力：整页打开扫码功能（相机取景 + 相册识码 + 码型分流）。
 ///
 /// 实现方是 `plugin_scan`；入口（第二课堂活动 / 拓展页右上角）只按

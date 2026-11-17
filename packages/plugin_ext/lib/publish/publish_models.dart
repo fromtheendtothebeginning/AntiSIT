@@ -158,7 +158,18 @@ AntiSIT 拓展：$name v$version
 想接收后续更新：在「拓展 → 市场 → 添加第三方源」填
 $sourceInput
 公钥指纹：$fingerprint（添加时会显示，核对一致再确认）
+源二维码：$sourceCode
 ''';
+
+  /// 源二维码内容：`{"antisit":"source","repo":…,"fingerprint":…}`。
+  /// 别人在「市场 → 插件源 → 扫一扫添加源」扫这张码，App 会拉目录并核对指纹。
+  String get sourceCode => jsonEncode({
+        'antisit': 'source',
+        'repo': sourceInput,
+        if (branch.isNotEmpty) 'branch': branch,
+        if (fingerprint.isNotEmpty) 'fingerprint': fingerprint,
+        'name': name,
+      });
 }
 
 /// 发布签名密钥（Ed25519）。私钥只在本机加密存储里，绝不上传。

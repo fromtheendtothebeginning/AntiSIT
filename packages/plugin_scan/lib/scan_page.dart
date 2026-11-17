@@ -42,7 +42,10 @@ class ScanPage extends StatefulWidget {
     }
     try {
       final raw = jsonDecode(text);
-      if (raw is! Map || '${raw['antisit'] ?? ''}'.trim() != 'ext') return null;
+      if (raw is! Map) return null;
+      final kind = '${raw['antisit'] ?? ''}'.trim();
+      if (kind == 'source') return _sourceOutcome(raw, text);
+      if (kind != 'ext') return null;
       final url = '${raw['url'] ?? ''}'.trim();
       final sha = '${raw['sha256'] ?? ''}'.trim().toLowerCase();
       final uri = Uri.tryParse(url);
@@ -60,6 +63,40 @@ class ScanPage extends StatefulWidget {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 第三方源安装码：`{"antisit":"source","repo":"owner/repo","fingerprint":"XXXX-XXXX-XXXX"}`。
+  static ScanSourceOutcome? _sourceOutcome(Map raw, String text) {
+    final repo = '${raw['repo'] ?? ''}'.trim();
+    if (!_validSourceRepo(repo)) return null;
+    final rawFp = '${raw['fingerprint'] ?? ''}'
+        .replaceAll('-', '')
+        .trim()
+        .toUpperCase();
+    String? fingerprint;
+    if (rawFp.isNotEmpty) {
+      if (!RegExp(r'^[0-9A-F]{12}$').hasMatch(rawFp)) return null;
+      fingerprint = '${rawFp.substring(0, 4)}-${rawFp.substring(4, 8)}-'
+          '${rawFp.substring(8, 12)}';
+    }
+    final branch = '${raw['branch'] ?? ''}'.trim();
+    final name = '${raw['name'] ?? ''}'.trim();
+    return ScanSourceOutcome(
+      repo: repo,
+      fingerprint: fingerprint,
+      branch: branch.isEmpty ? null : branch,
+      name: name.isEmpty ? null : name,
+      raw: text,
+    );
+  }
+
+  static bool _validSourceRepo(String repo) {
+    if (repo.isEmpty) return false;
+    if (repo.contains('://')) {
+      final uri = Uri.tryParse(repo);
+      return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty;
+    }
+    return RegExp(r'^[\w.-]+/[\w.-]+$').hasMatch(repo);
   }
 
   /// 像安装码但字段不合法（用于给出「格式不对」而不是闷头当普通文本）。
@@ -805,9 +842,9 @@ class _DetailSheet extends StatelessWidget {
   }
 }
 
-/// 拓展模式的结果面板：网址 →「添加链接」，安装码 →「下载拓展」。
-/// 两个按钮颜色与文字不同（下载用主题强调色、加链接用成功绿），点下去把
-/// [ScanOutcome] 带回拓展页；「继续扫码」关掉面板回取景。
+/// 拓展模式的结果面板：网址 →「添加链接」，安装码 →「下载拓展」，
+/// 第三方源 →「添加插件源」。点下去把 [ScanOutcome] 带回调用方；
+/// 「继续扫码」关掉面板回取景。
 class _ExtensionOutcomeSheet extends StatelessWidget {
   const _ExtensionOutcomeSheet({required this.outcome});
 
@@ -817,11 +854,18 @@ class _ExtensionOutcomeSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final bundle = outcome is ScanBundleOutcome ? outcome as ScanBundleOutcome : null;
     final link = outcome is ScanLinkOutcome ? outcome as ScanLinkOutcome : null;
-    final title = bundle != null ? '拓展安装码' : '网址';
-    final label = bundle != null ? '下载拓展' : '添加链接';
-    final icon = bundle != null ? Icons.download_rounded : Icons.add_link_rounded;
-    final bg = bundle != null ? SemColors.accent : SemColors.success;
-    final fg = bundle != null
+    final source = outcome is ScanSourceOutcome ? outcome as ScanSourceOutcome : null;
+    final title = source != null
+        ? '第三方插件源'
+        : (bundle != null ? '拓展安装码' : '网址');
+    final label = source != null
+        ? '添加插件源'
+        : (bundle != null ? '下载拓展' : '添加链接');
+    final icon = source != null
+        ? Icons.hub_outlined
+        : (bundle != null ? Icons.download_rounded : Icons.add_link_rounded);
+    final bg = source != null || bundle != null ? SemColors.accent : SemColors.success;
+    final fg = source != null || bundle != null
         ? (SemColors.isDark ? SemColors.bg : Colors.white)
         : (SemColors.isDark ? Colors.black : Colors.white);
     return SafeArea(
@@ -837,7 +881,28 @@ class _ExtensionOutcomeSheet extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                     color: Theme.of(context).colorScheme.onSurface)),
             const SizedBox(height: 10),
-            if (bundle != null) ...[
+            if (source != null) ...[
+              if (source.name != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    source.name!,
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurface),
+                  ),
+                ),
+              SelectableText(source.repo,
+                  style: TextStyle(
+                      fontSize: 13, height: 1.5,
+                      color: Theme.of(context).colorScheme.onSurface)),
+              if (source.fingerprint != null) ...[
+                const SizedBox(height: 4),
+                Text('公钥指纹：${source.fingerprint}',
+                    style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+              ],
+            ] else if (bundle != null) ...[
               if (bundle.name != null || bundle.id != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),

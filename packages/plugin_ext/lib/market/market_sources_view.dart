@@ -17,6 +17,7 @@ Future<void> showSourceSheet(
 }) async {
   final official = MarketSource.I;
   final sources = ExtSourceStore.I;
+  final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
 
   await showModalBottomSheet<void>(
     context: context,
@@ -83,6 +84,30 @@ Future<void> showSourceSheet(
                   ],
                 ],
               ),
+              if (scan != null) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(sheetCtx);
+                      if (!context.mounted) return;
+                      final outcome =
+                          await scan.open(context, mode: ScanMode.addExtension);
+                      if (!context.mounted) return;
+                      if (outcome is ScanSourceOutcome) {
+                        await addScannedSource(context, outcome,
+                            onMessage: onMessage);
+                      } else if (outcome != null) {
+                        onMessage?.call(
+                            '这是拓展安装码或网址，请到「拓展」页扫码处理');
+                      }
+                    },
+                    icon: const Icon(Icons.qr_code_scanner_outlined, size: 18),
+                    label: const Text('扫一扫添加源'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -112,6 +137,46 @@ Future<void> addSourceFlow(
   } catch (err) {
     onMessage?.call('$err'.replaceFirst('Bad state: ', ''));
   }
+}
+
+/// 扫到「第三方源安装码」后：拉一次目录 → 核对码里的指纹 → 用户确认 → 添加。
+/// 二维码里的 `repo` 可以是 `owner/repo`，也可以是完整 https 目录地址。
+Future<bool> addScannedSource(
+  BuildContext context,
+  ScanSourceOutcome source, {
+  void Function(String message)? onMessage,
+}) async {
+  final sources = ExtSourceStore.I;
+  try {
+    // 自定义分支：二维码里给了 branch 且 repo 是 owner/repo 时，直接拼成
+    // jsDelivr 的完整地址，避免只认 main/master 的默认规则。
+    final branch = source.branch ?? '';
+    final customBranch = branch.isNotEmpty &&
+        branch != 'main' &&
+        branch != 'master' &&
+        !source.repo.contains('://');
+    final input = customBranch
+        ? 'https://cdn.jsdelivr.net/gh/${source.repo}@$branch/'
+        : source.repo;
+    final preview = await sources.preview(input);
+    final expected = (source.fingerprint ?? '').toUpperCase();
+    if (expected.isNotEmpty &&
+        preview.draft.fingerprint.toUpperCase() != expected) {
+      onMessage?.call('指纹不一致：二维码是 $expected，仓库现在是 '
+          '${preview.draft.fingerprint}；已拒绝');
+      return false;
+    }
+    if (!context.mounted) return false;
+    final ok = await confirmSourceDialog(context, preview.draft, preview.entries);
+    if (ok == true) {
+      await sources.add(preview.draft, preview.entries);
+      onMessage?.call('已添加源「${preview.draft.label}」');
+      return true;
+    }
+  } catch (err) {
+    onMessage?.call('$err'.replaceFirst('Bad state: ', ''));
+  }
+  return false;
 }
 
 Widget _tile({

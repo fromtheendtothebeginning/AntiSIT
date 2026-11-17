@@ -129,6 +129,13 @@ void main() {
     expect(code['id'], 'sit.demo');
     expect(result.sourceInput, 'me/antisit-ext');
     expect(result.fingerprint, publishKeyFingerprint(catalog['publicKey'] as String));
+
+    // 源二维码：扫到后 App 会按 antisit=source 识别，并用 fingerprint 核对
+    final sourceCode = jsonDecode(result.sourceCode) as Map;
+    expect(sourceCode['antisit'], 'source');
+    expect(sourceCode['repo'], 'me/antisit-ext');
+    expect(sourceCode['fingerprint'], result.fingerprint);
+    expect(sourceCode['name'], result.name);
   });
 
   test('发布结果能被 App 的「添加第三方源」直接识别', () async {
@@ -293,7 +300,9 @@ void main() {
 
     expect(find.textContaining('已发布「演示拓展」'), findsOneWidget);
     expect(find.byWidgetPredicate((w) => '${w.runtimeType}' == 'QrImageView'),
-        findsOneWidget);
+        findsNWidgets(2), reason: '直装二维码 + 源二维码');
+    expect(find.text('直装（扫码安装）'), findsOneWidget);
+    expect(find.text('添加插件源（接收后续更新）'), findsOneWidget);
     expect(find.text('me/antisit-ext'), findsWidgets,
         reason: '结果卡片里展示源地址（输入框也留着同一串）');
     expect(repo.files, contains('market.json'));

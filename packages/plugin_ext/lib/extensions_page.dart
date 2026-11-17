@@ -19,6 +19,7 @@ import 'extension_store.dart';
 import 'market/market_installer.dart';
 import 'market/market_source.dart';
 import 'market/market_sources.dart';
+import 'market/market_sources_view.dart';
 import 'market/market_view.dart';
 import 'scanned_install.dart';
 
@@ -275,6 +276,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         await _addScannedLink(link.url);
       case ScanBundleOutcome bundle:
         await _installScannedBundle(bundle);
+      case ScanSourceOutcome source:
+        await addScannedSource(context, source, onMessage: _toast);
     }
   }
 

@@ -506,6 +506,39 @@ void main() {
       expect(ScanPage.looksLikeExtensionCode('{"hello":1}'), isFalse);
     });
 
+    test('源安装码：repo + 可选指纹；owner/repo 与 https 地址都认，坏格式不算', () {
+      final outcome = ScanPage.extensionOutcome(jsonEncode({
+        'antisit': 'source',
+        'repo': 'someone/antisit-plugins',
+        'fingerprint': 'abcd-ef01-2345',
+        'name': '小明的源',
+      }));
+      expect(outcome, isA<ScanSourceOutcome>());
+      final source = outcome as ScanSourceOutcome;
+      expect(source.repo, 'someone/antisit-plugins');
+      expect(source.fingerprint, 'ABCD-EF01-2345');
+      expect(source.name, '小明的源');
+
+      expect(
+          ScanPage.extensionOutcome(
+              '{"antisit":"source","repo":"https://cdn.example.com/market/"}'),
+          isA<ScanSourceOutcome>());
+      expect(
+          ScanPage.extensionOutcome(
+              '{"antisit":"source","repo":"http://example.com/market/"}'),
+          isNull,
+          reason: '完整地址只认 https');
+      expect(
+          ScanPage.extensionOutcome(
+              '{"antisit":"source","repo":"not a repo"}'),
+          isNull);
+      expect(
+          ScanPage.extensionOutcome(
+              '{"antisit":"source","repo":"a/b","fingerprint":"xyz"}'),
+          isNull,
+          reason: '指纹必须是 12 位十六进制');
+    });
+
     testWidgets('扫到网址：给「添加链接」，点下去带着网址回到调用方', (tester) async {
       ScanOutcome? outcome;
       await pumpScan(tester, onResult: (r) => outcome = r);

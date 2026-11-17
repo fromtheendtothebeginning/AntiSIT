@@ -430,9 +430,17 @@ class _ResultCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          Text('别人用 AntiSIT「拓展 → 扫一扫」扫下面这张码即可下载安装。',
+          Text(
+              '别人用 AntiSIT「拓展 → 扫一扫」扫下面两张码：一张直接安装，'
+              '一张把源加进市场（接收后续更新）。',
               style: TextStyle(fontSize: 12, color: SemColors.textMuted, height: 1.5)),
           const SizedBox(height: 14),
+          Text('直装（扫码安装）',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: SemColors.textPrimary)),
+          const SizedBox(height: 8),
           Center(
             child: Container(
               padding: const EdgeInsets.all(10),
@@ -448,6 +456,31 @@ class _ResultCard extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 18),
+          Text('添加插件源（接收后续更新）',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: SemColors.textPrimary)),
+          const SizedBox(height: 8),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: QrImageView(
+                data: result.sourceCode,
+                size: 200,
+                backgroundColor: Colors.white,
+                padding: EdgeInsets.zero,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text('扫码后会先拉一次目录并核对公钥指纹，一致才让你确认添加。',
+              style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.5)),
           const SizedBox(height: 14),
           _row('源地址', result.sourceInput),
           const SizedBox(height: 6),
@@ -456,8 +489,8 @@ class _ResultCard extends StatelessWidget {
           _row('公钥指纹', result.fingerprint),
           const SizedBox(height: 12),
           Text(
-            '想接收后续更新：在「拓展 → 市场 → 添加第三方源」填上面的源地址，'
-            '核对指纹后添加；以后你重新发布，他们就能在列表里一键更新。',
+            '想接收后续更新：让对方扫上面第二张码，或在「拓展 → 市场 → 添加第三方源」'
+            '填上面的源地址，核对指纹后添加；以后你重新发布，他们就能在列表里一键更新。',
             style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.55),
           ),
           const SizedBox(height: 10),
@@ -472,6 +505,10 @@ class _ResultCard extends StatelessWidget {
               OutlinedButton(
                 onPressed: () => onCopy(result.installCode, '安装码'),
                 child: const Text('复制安装码'),
+              ),
+              OutlinedButton(
+                onPressed: () => onCopy(result.sourceCode, '源二维码内容'),
+                child: const Text('复制源二维码内容'),
               ),
               OutlinedButton(
                 onPressed: () => onCopy(result.shareText, '分享文案'),
