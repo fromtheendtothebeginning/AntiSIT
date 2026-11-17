@@ -2,11 +2,16 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:campus_core/campus_core.dart';
 
 import 'cordis_bundle.dart';
+import 'ext_background.dart';
+import 'ext_consent.dart';
+import 'ext_cookie_bridge.dart';
 import 'ext_icon.dart';
+import 'ext_login_page.dart';
 import 'ext_net.dart';
 import 'ext_secrets.dart';
 import 'ext_notification.dart';
@@ -36,7 +41,10 @@ import 'workshop/workshop_store.dart';
 /// | `secrets.get` | `{key}` | 读本拓展的加密凭据（Keystore / Keychain）；没有则 null |
 /// | `secrets.set` | `{key, value}` | 写加密凭据；值只按拓展 id 隔离 |
 /// | `secrets.remove` | `{key}` | 删除一条加密凭据 |
-/// | `net.request` | `{method?, url, headers?, body?, bodyBase64?}` | 原生 HTTPS 代理（不受 CORS 限制，可带 Cookie 头）；返回 `{status, url, headers, setCookies, text, truncated, bytes}`。只允许 https，拒绝内网地址 |
+/// | `net.request` | `{method?, url, headers?, body?, bodyBase64?}` | 原生 HTTPS 代理（不受 CORS 限制，可带 Cookie 头）；返回 `{status, url, headers, setCookies, text, truncated, bytes}`。只允许 https，拒绝内网地址；每个新域名（含重定向）首次访问会弹窗确认 |
+/// | `clipboard.read` | — | 读剪贴板文本；首次 / 未记住时弹窗确认（需 `clipboard` 权限） |
+/// | `clipboard.write` | `{text}` | 写剪贴板（需 `clipboard` 权限） |
+/// | `login.open` | `{url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?}` | 打开可见登录页；返回 `{cookies: {域名: cookie}, cookieHeader}`。`cookieUrls` 必须与登录地址同站；需 `login` 权限，打开前会弹窗确认 |
 /// | `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本。提示词由 App 本地转成当前 AI 提供商的请求（Key / 模型不出 App）；没配好 AI 或市场拓展没声明 `ai` 权限都直接报错 |
 /// | `ai.chatTools` | `{messages, tools?, maxTokens?}` | 多轮消息 + OpenAI 兼容 function calling；返回 `{text, toolCalls, usedTools, finishReason}`。提供商不支持 tools 时自动降级 |
 ///
@@ -144,7 +152,25 @@ class ExtBridge extends WebBridge {
       // 原生 HTTPS 代理：不受 CORS 限制，可带 Cookie / Authorization 头
       case 'net.request':
         if (args is! Map) throw ArgumentError('net.request 要带 {url}');
-        return ExtNetService.I.request(Map<String, Object?>.from(args));
+        return ExtNetService.I.request(
+          Map<String, Object?>.from(args),
+          onHost: (host) => _ensureConsent('net.host:$host'),
+        );
+      // 剪贴板：读要逐次授权，写只要求静态 clipboard 权限
+      case 'clipboard.read':
+        await _ensureConsent('clipboard.read');
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        return data?.text ?? '';
+      case 'clipboard.write':
+        final text = args is Map ? '${args['text'] ?? ''}' : '';
+        await Clipboard.setData(ClipboardData(text: text));
+        return true;
+      // 通用登录页：用户可见地登录，只返回声明域名的 Cookie
+      case 'login.open':
+        return _loginOpen(args);
+      // 后台保活：前台服务 + 常驻通知（插件页自己的定时器继续跑）
+      case 'background.keepAlive':
+        return _backgroundKeepAlive(args);
       case 'ai.chat':
         return _aiChat(args);
       case 'ai.chatTools':
@@ -168,6 +194,74 @@ class ExtBridge extends WebBridge {
     if (!it.permissions.contains(need)) {
       throw ArgumentError('这条拓展没有声明「${kPermissionLabels[need] ?? need}」权限（$need），接口已拒');
     }
+  }
+
+  /// 运行时授权：静态权限之外，剪贴板 / 特定域名这类动作再让用户确认一次。
+  /// 用户拒绝时抛错回网页，调用方不应继续。
+  Future<void> _ensureConsent(String capability) async {
+    final allowed = await ExtConsentService.I.ensure(
+      context,
+      extId: extId,
+      extName: item?.name ?? extId,
+      capability: capability,
+    );
+    if (!allowed) {
+      throw ArgumentError('用户没有允许这项操作（$capability）');
+    }
+  }
+
+  /// 打开一个可见的登录页，完成后只返回拓展声明的域名的 Cookie。
+  Future<Object?> _loginOpen(Object? args) async {
+    if (args is! Map) throw ArgumentError('login.open 要带 {url}');
+    if (!ExtCookieBridge.supported) {
+      throw ArgumentError('登录页目前只支持 Android');
+    }
+    final start = ExtLoginPage.parseHttpsUrl('${args['url'] ?? ''}');
+    final cookieUrls = <String>[];
+    final raw = args['cookieUrls'];
+    if (raw is List) {
+      for (final item in raw) {
+        final uri = ExtLoginPage.parseHttpsUrl('$item');
+        if (!ExtLoginPage.sameSite(start.host, uri.host)) {
+          throw ArgumentError('cookieUrls 必须与登录地址同站：${uri.host}');
+        }
+        cookieUrls.add(uri.toString());
+      }
+    }
+    if (cookieUrls.isEmpty) cookieUrls.add(start.toString());
+
+    await _ensureConsent('login.open:${start.host}');
+    if (!context.mounted) throw StateError('页面已关闭');
+    final result = await Navigator.of(context).push<Map<String, Object?>>(
+      MaterialPageRoute(
+        builder: (_) => ExtLoginPage(
+          title: '${args['title'] ?? '登录'}',
+          startUrl: start.toString(),
+          cookieUrls: cookieUrls,
+          successUrlPrefix: args['successUrlPrefix']?.toString(),
+          successCookie: args['successCookie']?.toString(),
+          userAgent: args['userAgent']?.toString(),
+        ),
+      ),
+    );
+    if (result == null) throw ArgumentError('没有完成登录');
+    return result;
+  }
+
+  /// 后台保活：开启前先要用户同意；关闭时直接停前台服务。
+  Future<Object?> _backgroundKeepAlive(Object? args) async {
+    final map = args is Map ? args : const {};
+    final enabled = map['enabled'] != false;
+    if (!enabled) {
+      await ExtBackgroundKeepAlive.stop();
+      return false;
+    }
+    await _ensureConsent('background.keepalive');
+    final ok = await ExtBackgroundKeepAlive.start(
+      title: '${map['title'] ?? item?.name ?? '拓展'}',
+      text: '${map['text'] ?? '正在后台刷新'}',
+    );
+    return ok;
   }
 
   /// 页面栈深度同步：网页执行 `ctx.ui.push` / `pop` 后告诉我们还剩几层。

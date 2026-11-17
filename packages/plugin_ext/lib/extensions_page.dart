@@ -9,6 +9,7 @@ import 'package:campus_core/campus_core.dart';
 import 'bundle_import.dart';
 import 'cordis_bundle.dart';
 import 'ext_bridge.dart';
+import 'ext_consent.dart';
 import 'ext_icon.dart';
 import 'ext_open.dart';
 import 'ext_order_page.dart';
@@ -368,6 +369,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   Future<void> _itemMenu(ExtensionItem e) async {
     final builtin = _store.isBuiltin(e.id);
+    final grants = await ExtConsentService.I.grants(e.id);
+    if (!mounted) return;
     final pick = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -381,6 +384,14 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                   style: const TextStyle(fontSize: 12)),
               onTap: () => Navigator.pop(ctx, 'detail'),
             ),
+            if (grants.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.verified_user_outlined),
+                title: const Text('运行时授权'),
+                subtitle: Text('${grants.length} 项；可撤销',
+                    style: const TextStyle(fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, 'consent'),
+              ),
             if (!builtin) ...[
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
@@ -401,12 +412,67 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     switch (pick) {
       case 'detail':
         await _edit(item: e, isNew: false, readOnly: true);
+      case 'consent':
+        await _manageConsent(e);
       case 'edit':
         await _edit(item: e, isNew: false);
       case 'delete':
         if (!await confirmRemoveExtension(context, e)) return;
         await _store.remove(e.id);
         _toast('已删除「${e.name}」');
+    }
+  }
+
+  /// 查看 / 撤销这条拓展记住的运行时授权（逐域访问、剪贴板读取等）。
+  Future<void> _manageConsent(ExtensionItem e) async {
+    final grants = await ExtConsentService.I.grants(e.id);
+    if (!mounted) return;
+    final revoke = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('运行时授权'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final entry in grants.entries)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Icon(
+                      entry.value ? Icons.check_circle_outline : Icons.block,
+                      size: 18,
+                      color: entry.value ? SemColors.accent : SemColors.danger,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(ExtConsentService.describe(entry.key))),
+                    Text(entry.value ? '已允许' : '已拒绝',
+                        style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 10),
+            const Text('撤销后，下次用到这项能力会重新询问。',
+                style: TextStyle(fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('关闭'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('全部撤销'),
+          ),
+        ],
+      ),
+    );
+    if (revoke == true) {
+      await ExtConsentService.I.revokeAll(e.id);
+      _toast('已撤销「${e.name}」的运行时授权');
     }
   }
 

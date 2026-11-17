@@ -32,6 +32,8 @@ dependencies:
   # 拓展通知：即时 + 定时本地通知（声明 notification 权限后才放行）
   flutter_local_notifications: ^19.5.0
   timezone: ^0.10.1
+  # 通用登录页：可见 WebView，登录后只读拓展声明的域名 Cookie
+  webview_flutter: ^4.10.0
   # 发布结果里的「直装二维码」
   qr_flutter: ^4.1.0
 

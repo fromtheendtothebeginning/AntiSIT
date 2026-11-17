@@ -18,6 +18,9 @@ const Set<String> kSensitivePermissions = {
   'ai',
   'notification',
   'secrets',
+  'clipboard',
+  'login',
+  'background',
 };
 
 /// 权限的中文说明（与市场仓库 `market_manifest.dart` 的文案保持一致）。
@@ -27,6 +30,9 @@ const Map<String, String> kPermissionLabels = {
   'ai': '调用 AI 对话（用你配置的模型与 API Key，可能产生费用）',
   'notification': '给你发通知（可定时提醒，App 没打开也能收到）',
   'secrets': '保存登录凭据 / Cookie（系统加密存储，按拓展隔离）',
+  'clipboard': '读写剪贴板（读取时会再弹一次确认）',
+  'login': '打开登录页并读取你声明域名的 Cookie（打开前会再弹一次确认）',
+  'background': '在后台保持运行（显示一条常驻通知，可随时停止）',
   'theme': '读取 App 配色（只读）',
   'toast': '弹一条 App 风格的提示',
   'close': '关闭自己的页面',
@@ -49,6 +55,10 @@ const Map<String, String> kMethodPermissions = {
   'secrets.set': 'secrets',
   'secrets.remove': 'secrets',
   'net.request': 'network',
+  'clipboard.read': 'clipboard',
+  'clipboard.write': 'clipboard',
+  'login.open': 'login',
+  'background.keepAlive': 'background',
 };
 
 /// 敏感权限的中文说明列表（市场页 / 安装弹窗 / 详情页共用）。

@@ -9,6 +9,10 @@
          若要上架 Google Play，可只保留 SCHEDULE_EXACT_ALARM 并在应用内引导用户授权，以免审核争议；
          RECEIVE_BOOT_COMPLETED 开机后由插件恢复已排期的提醒。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 拓展后台保活：拓展页退到后台时用前台服务保持进程，常驻通知可随时停止。
+         只做「保持插件页存活 + 定时刷新」，不在后台执行隐藏页面。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
@@ -125,6 +129,10 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/ecard_widget_info" />
         </receiver>
+        <service
+            android:name=".ExtBackgroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

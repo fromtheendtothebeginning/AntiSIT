@@ -55,8 +55,13 @@ class ExtNetService {
     'proxy-authorization',
   };
 
-  /// 发起一次请求。返回 `{status, url, headers, text, truncated, bytes}`。
-  Future<Map<String, Object?>> request(Map<String, Object?> args) async {
+  /// 发起一次请求。返回 `{status, url, headers, setCookies, text, truncated, bytes}`。
+  ///
+  /// [onHost] 在每个新域名（含重定向）发出前调用一次，宿主用它做逐域授权。
+  Future<Map<String, Object?>> request(
+    Map<String, Object?> args, {
+    Future<void> Function(String host)? onHost,
+  }) async {
     final method = '${args['method'] ?? 'GET'}'.toUpperCase();
     if (!_methods.contains(method)) {
       throw ExtNetException('不支持的方法：$method');
@@ -66,6 +71,7 @@ class ExtNetService {
     final body = _bodyBytes(args);
 
     var uri = await validateUrl('${args['url'] ?? ''}');
+    await onHost?.call(uri.host);
     final client = HttpClient()..connectionTimeout = timeout;
     final setCookies = <String>[];
     try {
@@ -87,6 +93,7 @@ class ExtNetService {
             location.isNotEmpty) {
           await response.drain<void>();
           uri = await validateUrl(uri.resolve(location).toString());
+          await onHost?.call(uri.host);
           continue;
         }
         return await _readResponse(response, uri, setCookies);

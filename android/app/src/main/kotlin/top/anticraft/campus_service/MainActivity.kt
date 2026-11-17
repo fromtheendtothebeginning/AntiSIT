@@ -40,6 +40,10 @@ class MainActivity : FlutterActivity() {
         FluidCloudBridge(this).register(flutterEngine.dartExecutor.binaryMessenger)
         // 桌面卡片：同步今日课程 / 校园卡余额，点卡片回到对应页面
         HomeWidgetBridge(this).register(flutterEngine.dartExecutor.binaryMessenger)
+        // 通用登录页：用户声明域名的 Cookie 读取（只在用户同意后打开）
+        CookieBridge(flutterEngine.dartExecutor.binaryMessenger).register()
+        // 拓展后台保活：前台服务 + 常驻通知（不执行隐藏页面）
+        ExtBackgroundBridge(this, flutterEngine.dartExecutor.binaryMessenger).register()
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .also { ch ->
                 ch.setMethodCallHandler { call, result ->

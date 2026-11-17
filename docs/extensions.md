@@ -131,6 +131,9 @@ export default {
 | `ctx.storage` | `get(key)` / `set(key, value)` / `remove(key)` | 按拓展 id 隔离的本地存储，返回 Promise |
 | `ctx.secrets` | `get(key)` / `set(key, value)` / `remove(key)` | 加密凭据（Keystore / Keychain），按拓展隔离；需 `secrets` 权限 |
 | `ctx.net` | `request({method?, url, headers?, body?, bodyBase64?})` | 原生 HTTPS 代理，不受 CORS 限制、可带 Cookie；需 `network` 权限 |
+| `ctx.clipboard` | `read()` / `write(text)` | 读写剪贴板；`read` 需 `clipboard` 权限并会弹窗确认 |
+| `ctx.login` | `open({url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?})` | 打开可见登录页；返回 `{cookies, cookieHeader}`；需 `login` 权限并会弹窗确认 |
+| `ctx.background` | `keepAlive({enabled, title?, text?})` | 开启 / 关闭后台保活（前台服务 + 常驻通知）；需 `background` 权限并会弹窗确认 |
 | `ctx.card` | `setName(text)` / `setDesc(text)` / `setIcon(text)` | 改拓展列表卡片上的显示值 |
 | `ctx.ai` | `chat(prompt, {system, maxTokens})` | 走用户在「AI 设置」里配置的模型；Key 不出 App |
 | | `chatTools({messages, tools, maxTokens})` | 多轮 + OpenAI 兼容 function calling（拓展工坊用） |
@@ -178,6 +181,9 @@ antiSIT.on('ai.stream', (e) => {
 | `ai` | 调用 AI（`ctx.ai.*`，走用户的模型与 Key，可能产生费用）；不声明就拒 |
 | `notification` | 给你发通知（即时 / 定时，App 没开也能收到）；不声明就调用 `ctx.notify.*` → Promise reject |
 | `secrets` | 在本机保存 Cookie / Token 这类登录凭据（系统加密存储，按拓展隔离）；不声明就调用 `ctx.secrets.*` → Promise reject |
+| `clipboard` | 读写剪贴板；读取时会在首次 / 未记住时再弹一次确认 |
+| `login` | 打开可见登录页并读取拓展声明域名的 Cookie；打开前会再弹一次确认 |
+| `background` | 在后台保持运行（前台服务 + 常驻通知）；开启前会再弹一次确认 |
 
 用户自己填网址 / 自己导入的压缩包不受这条限制——来源是他自己选的。
 权限门是**防误用**，不是沙箱；App 的用户数据（学号、课表、成绩、凭据）不在接口里。
@@ -200,7 +206,47 @@ antiSIT.on('ai.stream', (e) => {
 * `Host` / `Content-Length` / `Connection` 这类头由底层接管，传了会被忽略；
 * 响应最多 2 MB、超时 30 秒；
 * `setCookies` 是这一路重定向里所有 `Set-Cookie` 原文的数组，方便拓展自己维护 Cookie 罐子；
-* 需要 `network` 权限；`secrets.*` 需要 `secrets` 权限。
+* **逐域授权**：每个新域名（含重定向）第一次访问会弹窗，文案由 App 生成；
+  允许 / 拒绝会按「拓展 + 域名」记住，可在拓展菜单「运行时授权」里全部撤销；
+* 需要 `network` 权限；`secrets.*` 需要 `secrets` 权限；`clipboard.*` 需要 `clipboard` 权限。
+
+### 剪贴板
+
+`ctx.clipboard.read()` 读文本，`ctx.clipboard.write(text)` 写文本。读取属于敏感动作：
+第一次（或用户还没记住选择时）会弹「读取剪贴板」确认框，拒绝后本次调用 reject。
+
+### 通用登录页
+
+`ctx.login.open({url, cookieUrls})` 打开一个**可见的** WebView 登录页（只允许 https），
+完成后返回拓展声明的那些域名的 Cookie：
+
+```js
+const { cookieHeader } = await ctx.login.open({
+  url: 'https://passport2.example.com/login',
+  cookieUrls: [
+    'https://example.com',
+    'https://passport2.example.com',
+    'https://api.example.com',
+  ],
+  successCookie: '_uid',            // 可选：检测到这个 Cookie 就自动完成
+  successUrlPrefix: 'https://example.com/', // 可选：离开登录页后自动完成
+});
+```
+
+* `cookieUrls` 必须与登录地址**同站**（最后两段域名一致），否则直接拒绝；
+* 进入登录页前会弹一次授权框，页面底部始终显示当前域名；
+* App 只读用户声明的域名的 Cookie，不保存账号密码；
+* 没有命中成功条件时，用户点右上角「完成」手动结束。
+
+### 后台保活
+
+`ctx.background.keepAlive({enabled: true, title, text})` 会启动一个**前台服务**并显示
+常驻通知，让插件页在退到后台后继续跑自己的定时器；`enabled: false` 停止。
+
+* 它**不执行隐藏页面**：插件页本身仍在 WebView 里，刷新频率由插件自己的定时器决定；
+* 只有用户「退到后台」且没有关掉拓展页时继续；关掉拓展页 / 点通知回 App 后可停止；
+* 开启前会弹一次授权框，可在拓展菜单「运行时授权」里撤销；
+* 仅 Android。
 * 这是**前台**能力：页面打开时才能发请求。App 不提供"插件在后台自己跑"的轮询；
   到点提醒请用 `ctx.notify.schedule`（本地通知，App 没开也能弹）。
 

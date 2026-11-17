@@ -77,13 +77,21 @@ void main() {
     expect(byId['sit.game-minesweeper']!.permissions, isEmpty,
         reason: '扫雷不存数据不联网，正好当「零权限插件」的样例');
     expect(byId['sit.deadline-reminder']!.permissions,
-        containsAll(['storage', 'notification']),
-        reason: '截止提醒要存条目、发通知；不联网也不读账号');
+        containsAll([
+          'storage',
+          'notification',
+          'network',
+          'secrets',
+          'clipboard',
+          'login',
+          'background',
+        ]),
+        reason: '截止提醒：存条目、发通知、同步学习通、登录、后台刷新');
     expect(byId['sit.game-2048']!.needsNewerApp('1.24.0'), isTrue, reason: '要求 1.25.0 以上的 App');
     expect(byId['sit.game-2048']!.needsNewerApp('1.25.0'), isFalse);
-    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.33.0'), isTrue,
-        reason: '截止提醒要求 1.34.0 以上');
-    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.34.0'), isFalse);
+    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.37.6'), isTrue,
+        reason: '截止提醒依赖 1.37.7 的登录 / 后台 / 运行时授权');
+    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.37.7'), isFalse);
   }, skip: skip);
 
   // ==================== 第三方源（作者自己发的那种） ====================
