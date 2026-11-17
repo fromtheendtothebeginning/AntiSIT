@@ -60,6 +60,8 @@ class EvalItem {
       final steps = ((v - min) / step).round();
       v = min + steps * step;
     }
+    // 整数步长（百分制 0-100）落成整数：55.00000000000001 这种浮点尾巴不能漏进页面输入框
+    if (step >= 1 && step == step.roundToDouble()) v = v.roundToDouble();
     return v.clamp(min, max);
   }
 

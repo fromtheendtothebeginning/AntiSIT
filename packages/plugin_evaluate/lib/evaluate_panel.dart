@@ -120,7 +120,11 @@ class _EvaluatePanelState extends State<EvaluatePanel> {
     _uniform = _max;
   }
 
-  String _fmt(double v) => v == v.roundToDouble() ? '${v.round()}' : v.toStringAsFixed(1);
+  /// 分值显示：整数步长一律显示整数（容掉浮点误差），其余留一位小数。
+  String _fmt(double v) {
+    final r = v.roundToDouble();
+    return (v - r).abs() < 0.001 ? '${r.round()}' : v.toStringAsFixed(1);
+  }
 
   int _divisionsFor(double min, double max, double step) {
     if (max <= min) return 1;
@@ -209,8 +213,12 @@ class _EvaluatePanelState extends State<EvaluatePanel> {
         ),
       );
 
+  /// 统一分数：**拖动即生效**——拖到哪，这一页所有评分项就打到哪（不再需要「一键同分」按钮）。
+  /// 显示和下发都用整数分：Slider 的离散换算会带出 55.00000000000001 这类浮点尾巴，
+  /// 直接写进页面输入框就成了错数据。
   Widget _uniformBlock(BuildContext context) {
-    final v = (_uniform ?? _max).clamp(_min, _max);
+    final raw = (_uniform ?? _max).clamp(_min, _max);
+    final v = _snapUniform(raw);
     final divisions = _divisionsFor(_min, _max, _step);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
@@ -235,32 +243,49 @@ class _EvaluatePanelState extends State<EvaluatePanel> {
             ],
           ),
           Slider(
-            value: v,
+            value: raw,
             min: _min,
             max: _max,
             divisions: divisions,
             label: _fmt(v),
-            onChanged: (x) => setState(() => _uniform = x),
+            onChanged: _changeUniform,
           ),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '一键同分：把 ${_fmt(v)} 分打到这一页全部 ${_items.length} 项',
-                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: widget.state.busy ? null : () => widget.onApplyAll(v),
-                child: Text('一键同分'),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              '拖到哪就打到哪：当前 ${_fmt(v)} 分 → 这一页全部 ${_items.length} 项',
+              style: TextStyle(fontSize: 11.5, color: SemColors.textMuted),
+            ),
           ),
-          const SizedBox(height: 6),
         ],
       ),
     );
+  }
+
+  /// 拖动统一滑块：每一项先按自己的步长吸附到同一个分数（本地立刻跟手），再一次性下发到页面。
+  void _changeUniform(double x) {
+    setState(() {
+      _uniform = x;
+      for (final item in _items) {
+        _pending[item.index] = item.snap(x);
+      }
+    });
+    widget.onApplyAll(_snapUniform(x));
+  }
+
+  /// 拖动逐项滑块：一拖就更新这一项（不用等松手）。
+  void _changeItem(EvalItem item, double x) {
+    final v = item.snap(x);
+    setState(() => _pending[item.index] = v);
+    widget.onApplyOne(item, v);
+  }
+
+  /// 统一分数吸附到各项里最细的那档；整数步长（百分制）落成整数。
+  double _snapUniform(double raw) {
+    var v = raw < _min ? _min : (raw > _max ? _max : raw);
+    if (_step > 0) v = _min + ((v - _min) / _step).round() * _step;
+    if (_step >= 1 && _step == _step.roundToDouble()) v = v.roundToDouble();
+    return v < _min ? _min : (v > _max ? _max : v);
   }
 
   Widget _itemList(BuildContext context) => ListView.builder(
@@ -268,7 +293,8 @@ class _EvaluatePanelState extends State<EvaluatePanel> {
         itemCount: _items.length,
         itemBuilder: (context, i) {
           final item = _items[i];
-          final value = (_pending[item.index] ?? item.value).clamp(item.min, item.max);
+          // 一律按各自步长吸附后再显示/拖动：整数字段不会出现 55.00000000000001
+          final value = item.snap((_pending[item.index] ?? item.value));
           final divisions = item.discrete
               ? math.max(1, item.values.length - 1)
               : _divisionsFor(item.min, item.max, item.step);
@@ -298,15 +324,7 @@ class _EvaluatePanelState extends State<EvaluatePanel> {
                       max: item.max,
                       divisions: divisions,
                       label: _fmt(value),
-                      onChanged: widget.state.busy
-                          ? null
-                          : (x) => setState(() => _pending[item.index] = x),
-                      onChangeEnd: widget.state.busy
-                          ? null
-                          : (x) {
-                              setState(() => _pending[item.index] = x);
-                              widget.onApplyOne(item, x);
-                            },
+                      onChanged: (x) => _changeItem(item, x),
                     ),
                   ),
                 ),

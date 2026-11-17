@@ -334,11 +334,24 @@ const String _evaluateJs = r'''
     return num(el.value);
   }
 
+  // 分值吸附：夹进范围 + 按步长取整（整数字段一定落成整数，别把 55.00000000000001
+  // 这种浮点尾巴写进页面的输入框）。
+  function snapValue(it, v) {
+    var min = it.min, max = it.max;
+    if (v < min) v = min;
+    if (v > max) v = max;
+    var step = (it.step && it.step > 0) ? it.step : 1;
+    v = min + Math.round((v - min) / step) * step;
+    if (step >= 1) v = Math.round(v);
+    return v;
+  }
+
   function apply(index, value) {
     var it = items[index];
     if (!it) return null;
     var v = parseFloat(value);
     if (!isFinite(v)) return it.value;
+    v = snapValue(it, v);
     var got = null;
     if (it.kind === 'radio') got = setRadio(it.els, v);
     else if (it.kind === 'text') got = setText(it.el, v);

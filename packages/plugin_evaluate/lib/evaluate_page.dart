@@ -127,20 +127,19 @@ class _EvaluatePageState extends State<EvaluatePage> {
     _panel.value = _panel.value.copyWith(items: items, busy: false);
   }
 
+  /// 统一分数：拖动中每一帧都会调到这里，所以**不置 busy**（否则滑块会在拖动途中被禁用），
+  /// 直接下发；页面回执只用来校准显示，不阻塞接下来的拖动。
   Future<void> _applyAll(double value) async {
     final host = _host;
     if (host == null || _panel.value.items.isEmpty) return;
-    _panel.value = _panel.value.copyWith(busy: true);
     await host.run(evaluateApplyAllCall(value));
-    if (mounted) _panel.value = _panel.value.copyWith(busy: false);
   }
 
+  /// 逐项分数：同样一拖就下发，不置 busy。
   Future<void> _applyOne(EvalItem item, double value) async {
     final host = _host;
     if (host == null) return;
-    _panel.value = _panel.value.copyWith(busy: true);
     await host.run(evaluateApplyOneCall(item.index, value));
-    if (mounted) _panel.value = _panel.value.copyWith(busy: false);
   }
 
   Future<void> _rescan() async {

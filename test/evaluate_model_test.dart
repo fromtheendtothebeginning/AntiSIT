@@ -157,6 +157,21 @@ void main() {
     test('非数字回落到当前分', () {
       expect(discrete.snap(double.nan), 5);
     });
+
+    test('整数步长吸附成整数：Slider 换算出的浮点尾巴要抹掉', () {
+      const text = EvalItem(
+        index: 3,
+        label: '百分制打分',
+        kind: 'text',
+        value: 0,
+        min: 0,
+        max: 100,
+      );
+      expect(text.snap(55.00000000000001), 55);
+      expect(text.snap(54.99999999999999), 55);
+      expect(text.snap(0.4), 0);
+      expect(text.snap(99.6), 100);
+    });
   });
 
   group('评教页地址', () {
