@@ -19,6 +19,9 @@ class ChangelogEntry {
 /// 内置更新日志，新版本在最上面。**每次发版在表头加一条**，版本号与 pubspec 的
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
+  ChangelogEntry(version: '1.36.2', date: '2026-11-17', notes: [
+    '拓展工坊顶栏新增「发布」按钮，连接 GitHub / Gitee 发布拓展的入口更明显',
+  ]),
   ChangelogEntry(version: '1.36.1', date: '2026-11-17', notes: [
     '发布拓展时说明 / 笔记类文件不再打进给用户的安装包，源码仍保留在仓库里',
   ]),

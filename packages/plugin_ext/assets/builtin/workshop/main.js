@@ -1567,6 +1567,7 @@ export default {
               <span class="ws-title" id="convTitle">新对话</span>
               <span class="ws-sub" id="draftMeta"></span>
             </button>
+            <button id="btnPublish" class="ws-publish" title="连接 GitHub / Gitee 发布">发布</button>
             <button id="btnMore" class="ws-icon" title="更多">⋯</button>
           </div>
           <nav class="ws-tabs">
@@ -1599,7 +1600,7 @@ export default {
           <button data-act="skills">技能</button>
           <button data-act="preview">预览拓展</button>
           <button data-act="install">安装拓展</button>
-          <button data-act="publish">发布拓展…</button>
+          <button data-act="publish">连接 GitHub / Gitee 发布…</button>
           <button data-act="newConv">新建对话</button>
           <button data-act="newDraft">新建拓展</button>
           <button data-act="renameConv">重命名当前对话</button>
@@ -1694,6 +1695,8 @@ export default {
 
       $('#btnSend').classList.toggle('hidden', S.running);
       $('#btnSend').disabled = !S.session;
+      const publishBtn = $('#btnPublish');
+      if (publishBtn) publishBtn.disabled = S.running || !draft;
       $('#btnStop').classList.toggle('hidden', !S.running);
       input.placeholder = S.running
         ? '可以继续输入，Agent 下一步会看到…'
@@ -2164,6 +2167,15 @@ export default {
       b.addEventListener('click', () => setTab(b.getAttribute('data-tab')));
     });
     $('#btnRefreshFiles').addEventListener('click', () => setTab('files'));
+
+    $('#btnPublish').addEventListener('click', async () => {
+      if (S.running || !S.draft) return;
+      try {
+        await ctx.workshop.publish(S.draft.id);
+      } catch (err) {
+        ctx.ui.toast('打开发布页失败：' + (err && err.message ? err.message : err));
+      }
+    });
 
     $('#btnMore').addEventListener('click', (e) => {
       e.stopPropagation();

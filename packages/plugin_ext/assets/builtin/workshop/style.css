@@ -76,6 +76,20 @@ button {
 
 .ws-icon:active { background: var(--field); }
 
+/* 顶栏里的「发布」：占位小、一眼能看到「连接 GitHub / Gitee」的入口 */
+.ws-publish {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 11px;
+  background: var(--soft);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ws-publish:active { opacity: 0.65; }
+.ws-publish:disabled { opacity: 0.4; }
+
 .ws-heading {
   flex: 1 1 auto;
   min-width: 0;
