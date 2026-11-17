@@ -44,6 +44,8 @@ class MainActivity : FlutterActivity() {
         CookieBridge(flutterEngine.dartExecutor.binaryMessenger).register()
         // 拓展后台保活：前台服务 + 常驻通知（不执行隐藏页面）
         ExtBackgroundBridge(this, flutterEngine.dartExecutor.binaryMessenger).register()
+        // WebView 进程级代理：服务器模式的评教页经校园隧道打开
+        WebViewProxyBridge(this, flutterEngine.dartExecutor.binaryMessenger).register()
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .also { ch ->
                 ch.setMethodCallHandler { call, result ->

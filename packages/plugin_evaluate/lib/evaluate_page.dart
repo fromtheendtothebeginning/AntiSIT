@@ -41,11 +41,15 @@ class _EvaluatePageState extends State<EvaluatePage> {
     unawaited(_boot());
   }
 
-  /// 起页：先拿 App 自己**已经登录**的教务会话（直连模式的 Cookie），写进内嵌 WebView，
-  /// 评教页打开就是登录后的样子——用户不用再在内嵌浏览器里登一次。
+  /// 起页：先拿 App 自己**已经登录**的教务会话，写进内嵌 WebView，评教页打开就是
+  /// 登录后的样子——用户不用再在内嵌浏览器里登一次。
   ///
-  /// 拿不到（没配凭据 / 登录被取消 / 服务器模式没有本地会话）就退回「网页里手动登录」，
-  /// 不因为登录态拿不到就让整页不可用。
+  /// * 直连模式：会话在本机（[CampusDirect.jwxtCookies]），网页直接访问教务域名；
+  /// * 服务器模式：会话在服务器，手机在外网到不了教务——先向服务器要它的教务 Cookie，
+  ///   再把 WebView 代理指向该账号校园隧道容器的 HTTP 代理，网页经隧道打开。
+  ///
+  /// 拿不到（没配凭据 / 登录被取消）就退回「网页里手动登录」，不因为登录态拿不到
+  /// 就让整页不可用；但服务器模式下连隧道代理都没有时，网页在外网根本打不开，直接给引导。
   Future<void> _boot() async {
     final cap = PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
     if (cap == null) {
@@ -61,30 +65,51 @@ class _EvaluatePageState extends State<EvaluatePage> {
       }
       return;
     }
-    final url = evalUrlFor(_jwxtBase);
+    final direct = AppState.I.direct && !AppState.I.demo;
+    var base = _jwxtBase;
     var cookies = const <String, String>{};
-    if (url.isNotEmpty) {
+    var proxy = '';
+    // 直连模式没填教务域名时不必去登录（会白弹一次验证码）；服务器模式的域名由服务器给出。
+    if (!direct || evalUrlFor(base).isNotEmpty) {
       try {
-        cookies = await ApiClient.I.jwxtCookies();
+        final session = await ApiClient.I.jwxtWebSession();
+        cookies = session.cookies;
+        if (session.base.isNotEmpty) base = session.base;
       } catch (e) {
-        // 教务登录没成（取消验证码 / 没填凭据）：网页里自己登一次
+        // 教务登录没成（取消验证码 / 没填凭据 / 服务器未更新）：网页里自己登一次
         debugPrint('[学生评教] 复用教务会话失败，改网页内登录：$e');
       }
     }
+    if (!direct) {
+      try {
+        proxy = await ApiClient.I.serverWebProxy();
+      } catch (e) {
+        debugPrint('[学生评教] 取校园隧道代理失败：$e');
+      }
+    }
     if (!mounted) return;
-    final host = url.isEmpty
-        ? null
-        : cap.host(
+    final url = evalUrlFor(base);
+    // 服务器模式没有隧道代理时网页在外网打不开：不建一个注定失败的 WebView
+    final usable = url.isNotEmpty && (direct || proxy.isNotEmpty);
+    final host = usable
+        ? cap.host(
             url: url,
             channel: kEvaluateChannel,
             cookies: cookies,
+            proxy: proxy,
             onMessage: _onMessage,
             onPageReady: _onPageReady,
-          );
+          )
+        : null;
     setState(() {
       _host = host;
       if (url.isEmpty) {
-        _unsupported = '学校档案里没有填教务域名：到「我的 → 连接设置」里补上后再进来';
+        _unsupported = direct
+            ? '学校档案里没有填教务域名：到「我的 → 连接设置」里补上后再进来'
+            : '服务器没有返回教务域名：确认服务器的校园服务已配置，或到「我的 → 连接设置」补上教务域名';
+      } else if (!direct && proxy.isEmpty) {
+        _unsupported = '服务器模式要经校园隧道打开评教页，但隧道还没就绪：'
+            '先到「我的 → 校园服务」连接校园网，或切到直连模式再进来';
       } else if (host == null) {
         _unsupported = '当前平台不支持内嵌网页：评教助手只在 Android / iOS 上可用';
       }
@@ -296,7 +321,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
               child: CircularProgressIndicator(strokeWidth: 2.4),
             ),
             const SizedBox(height: 12),
-            Text('正在带上教务登录态…',
+            Text('正在准备教务会话…',
                 style: TextStyle(fontSize: 12.5, color: SemColors.textMuted)),
           ],
         ),

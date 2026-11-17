@@ -48,6 +48,8 @@ abstract class WebViewCapability extends PluginCapability {
   /// * [cookies]：先写进 WebView 的 Cookie（name → value，按 [url] 的域名）。
   ///   给「App 已经登录过这个站点」的场景用（评教助手复用教务会话），网页首次请求
   ///   就是登录态，不用在内嵌浏览器里再登一次。
+  /// * [proxy]：这页要走的 HTTP 代理（`http://host:port`），空 = 直连。服务器模式的
+  ///   评教页靠它经校园隧道打开（Android 用 WebView ProxyController，iOS 不支持）。
   ///
   /// 平台不支持（桌面端）时返回 null，调用方按不可用降级。
   ///
@@ -59,6 +61,7 @@ abstract class WebViewCapability extends PluginCapability {
     required void Function(WebViewHost host, String message) onMessage,
     required void Function(WebViewHost host) onPageReady,
     Map<String, String> cookies = const {},
+    String proxy = '',
   }) =>
       null;
 }

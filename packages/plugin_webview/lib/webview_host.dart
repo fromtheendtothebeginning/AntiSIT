@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:campus_core/campus_core.dart';
@@ -17,10 +18,12 @@ class KernelWebViewHost implements WebViewHost {
     required String url,
     required String channel,
     Map<String, String> cookies = const {},
+    String proxy = '',
     required void Function(WebViewHost host, String message) onMessage,
     required void Function(WebViewHost host) onPageReady,
   })  : _url = url,
-        _cookies = cookies {
+        _cookies = cookies,
+        _proxy = proxy {
     _ctrl = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..addJavaScriptChannel(channel, onMessageReceived: (m) => onMessage(this, m.message))
@@ -54,6 +57,13 @@ class KernelWebViewHost implements WebViewHost {
 
   late final WebViewController _ctrl;
   final Map<String, String> _cookies;
+
+  /// HTTP 代理（`http://host:port`）：服务器模式的评教页经校园隧道打开时用。
+  /// 空 = 不改 WebView 的代理（直连模式）。
+  final String _proxy;
+
+  /// 代理是进程级的（Android WebView ProxyController），原生侧用这条通道设置 / 清除。
+  static const MethodChannel _proxyChannel = MethodChannel('antisit/webview');
   final ValueNotifier<double> _progress = ValueNotifier<double>(0);
   final ValueNotifier<String?> _error = ValueNotifier<String?>(null);
   String _url;
@@ -95,11 +105,23 @@ class KernelWebViewHost implements WebViewHost {
     await _loadQuiet(url);
   }
 
-  /// 首次加载：先把调用方给的 Cookie 写进 WebView 的 Cookie 库，再发第一个请求——
-  /// 顺序反了网页拿到的就是未登录页（评教页会跳登录页）。
+  /// 首次加载：先设代理（服务器模式要经校园隧道，否则外网打不开教务页），
+  /// 再写 Cookie，最后发第一个请求——顺序反了网页拿到的就是未登录页。
   Future<void> _boot(String url) async {
+    await _applyProxy();
     await _applyCookies(url);
     await _loadQuiet(url);
+  }
+
+  Future<void> _applyProxy() async {
+    if (_proxy.isEmpty) return;
+    try {
+      final ok = await _proxyChannel.invokeMethod<bool>('setProxy', {'url': _proxy});
+      if (ok != true) debugPrint('[WebViewHost] 当前内核不支持网页代理，按直连处理');
+    } catch (e) {
+      // iOS / 桌面端没有这条通道：保持直连，页面自己会给出加载失败
+      debugPrint('[WebViewHost] 设置代理失败：$e');
+    }
   }
 
   /// 把 [WebViewHost] 的 cookies 按目标域名写进 WebView（name → value）。
@@ -146,5 +168,13 @@ class KernelWebViewHost implements WebViewHost {
     _disposed = true;
     _progress.dispose();
     _error.dispose();
+    // 代理是进程级的：不恢复的话，离开评教页后其它 WebView 也会继续走校园隧道
+    if (_proxy.isNotEmpty) {
+      unawaited(() async {
+        try {
+          await _proxyChannel.invokeMethod('setProxy', {'url': null});
+        } catch (_) {}
+      }());
+    }
   }
 }

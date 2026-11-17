@@ -314,11 +314,25 @@ class ApiClient {
       ? CampusDirect.I.score()
       : _call('GET', '/api/campus-open/score', tunnel: true);
 
-  /// 教务会话 Cookie（name → value）：内嵌评教页这类「要在网页里保持登录态」的页面用。
-  /// 只有直连模式有本地会话（会先确保教务已登录）；服务器 / 演示模式没有，返回空。
-  Future<Map<String, String>> jwxtCookies() async {
-    if (!_useDirect) return const {};
-    return CampusDirect.I.jwxtCookies();
+  /// 内嵌教务网页（评教助手）需要的会话材料。
+  ///
+  /// * 直连模式：App 本地已登录的教务 Cookie，域名用学校档案里的地址；
+  /// * 服务器模式：服务器那边代连校园网时已登录的教务 Cookie，教务域名以服务器返回为准。
+  ///   此时 WebView 还必须经 [serverWebProxy] 的代理出去，否则外网打不开教务页。
+  Future<JwxtWebSession> jwxtWebSession() async {
+    if (_useDirect) {
+      return JwxtWebSession(cookies: await CampusDirect.I.jwxtCookies());
+    }
+    if (AppState.I.demo) return const JwxtWebSession();
+    final r = await _call('GET', '/api/campus-open/jwxt/web', tunnel: true);
+    return JwxtWebSession.fromServer(r['data']);
+  }
+
+  /// 服务器模式的校园隧道网页代理（`http://host:port`）：该账号隧道容器的 HTTP 代理。
+  /// 直连 / 演示模式，或隧道没连上时返回空串。
+  Future<String> serverWebProxy() async {
+    if (_useDirect || AppState.I.demo) return '';
+    return campusProxyFromStatus(await status());
   }
 
   /// xnm/xqm 均不传时返回全部学期成绩 + terms 列表。
@@ -465,4 +479,48 @@ class ApiClient {
     if (_useDirect) return;
     await _call('PUT', '/api/timetable', body: {'data': data});
   }
+}
+
+/// 内嵌教务网页的会话材料（见 [ApiClient.jwxtWebSession]）。
+class JwxtWebSession {
+  const JwxtWebSession({this.cookies = const {}, this.base = ''});
+
+  /// 教务系统 Cookie（name → value）。
+  final Map<String, String> cookies;
+
+  /// 服务器返回的教务域名；空 = 用 App 学校档案里的地址。
+  final String base;
+
+  /// 解析服务器 `/api/campus-open/jwxt/web` 的 data；结构不对时返回空会话。
+  factory JwxtWebSession.fromServer(Object? data) {
+    final map = data is Map ? data : const {};
+    final cookies = <String, String>{};
+    final raw = map['cookies'];
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        if (v != null) cookies['$k'] = '$v';
+      });
+    }
+    return JwxtWebSession(
+      cookies: cookies,
+      base: '${map['jwxt_base'] ?? ''}'.trim(),
+    );
+  }
+}
+
+/// 从 `/api/campus-open/status` 的响应里取校园隧道网页代理（`http://host:port`）。
+/// 隧道没连上、缺端口或 host 为空时返回空串（调用方据此给出引导）。
+String campusProxyFromStatus(Object? status) {
+  final map = status is Map ? status : const {};
+  final session = map['session'];
+  if (session is! Map || session['connected'] != true) return '';
+  final host = '${session['host'] ?? ''}'
+      .trim()
+      .replaceFirst(RegExp(r'^https?://'), '')
+      .replaceAll(RegExp(r'/+$'), '');
+  final port = session['http_port'];
+  // 回环地址只对服务器自己有意义：手机拿着 127.0.0.1 只会连到自己
+  final loopback = host == 'localhost' || host.startsWith('127.');
+  if (host.isEmpty || loopback || port is! num || port <= 0) return '';
+  return 'http://$host:${port.toInt()}';
 }

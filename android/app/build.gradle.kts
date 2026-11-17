@@ -74,6 +74,8 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     // 应用内更新：MainActivity 用 FileProvider 把下载好的 APK 只读共享给系统安装器
     implementation("androidx.core:core:1.13.1")
+    // 服务器模式评教页：WebView ProxyController 把内嵌教务页指向校园隧道代理
+    implementation("androidx.webkit:webkit:1.15.0")
 }
 
 flutter {
