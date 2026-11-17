@@ -71,12 +71,19 @@ void main() {
     final entries = parseCatalog(signer);
     final byId = {for (final e in entries) e.id: e};
 
-    expect(byId.keys, containsAll(['sit.game-2048', 'sit.game-minesweeper']));
+    expect(byId.keys,
+        containsAll(['sit.game-2048', 'sit.game-minesweeper', 'sit.deadline-reminder']));
     expect(byId['sit.game-2048']!.permissions, contains('storage'), reason: '最高分要落盘');
     expect(byId['sit.game-minesweeper']!.permissions, isEmpty,
         reason: '扫雷不存数据不联网，正好当「零权限插件」的样例');
+    expect(byId['sit.deadline-reminder']!.permissions,
+        containsAll(['storage', 'notification']),
+        reason: '截止提醒要存条目、发通知；不联网也不读账号');
     expect(byId['sit.game-2048']!.needsNewerApp('1.24.0'), isTrue, reason: '要求 1.25.0 以上的 App');
     expect(byId['sit.game-2048']!.needsNewerApp('1.25.0'), isFalse);
+    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.33.0'), isTrue,
+        reason: '截止提醒要求 1.34.0 以上');
+    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.34.0'), isFalse);
   }, skip: skip);
 
   // ==================== 第三方源（作者自己发的那种） ====================
@@ -135,9 +142,9 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: Scaffold(body: MarketView())));
     await tester.pumpAndSettle();
 
-    for (final name in ['2048', '扫雷']) {
+    for (final name in ['2048', '扫雷', '截止提醒']) {
       expect(find.text(name), findsOneWidget, reason: '真实目录里的「$name」画出来了');
     }
-    expect(find.text('安装'), findsNWidgets(2), reason: '两条都还没装');
+    expect(find.text('安装'), findsNWidgets(3), reason: '三条都还没装');
   }, skip: skip != null);
 }

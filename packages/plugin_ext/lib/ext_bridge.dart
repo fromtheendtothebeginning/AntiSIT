@@ -7,6 +7,8 @@ import 'package:campus_core/campus_core.dart';
 
 import 'cordis_bundle.dart';
 import 'ext_icon.dart';
+import 'ext_net.dart';
+import 'ext_secrets.dart';
 import 'ext_notification.dart';
 import 'ext_permissions.dart';
 import 'extension_item.dart';
@@ -31,6 +33,10 @@ import 'workshop/workshop_store.dart';
 /// | `storage.get` | `{key}` | 该拓展自己存的任意 JSON；没有则 null |
 /// | `storage.set` | `{key, value}` | true |
 /// | `storage.remove` | `{key}` | true |
+/// | `secrets.get` | `{key}` | 读本拓展的加密凭据（Keystore / Keychain）；没有则 null |
+/// | `secrets.set` | `{key, value}` | 写加密凭据；值只按拓展 id 隔离 |
+/// | `secrets.remove` | `{key}` | 删除一条加密凭据 |
+/// | `net.request` | `{method?, url, headers?, body?, bodyBase64?}` | 原生 HTTPS 代理（不受 CORS 限制，可带 Cookie 头）；返回 `{status, url, headers, setCookies, text, truncated, bytes}`。只允许 https，拒绝内网地址 |
 /// | `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本。提示词由 App 本地转成当前 AI 提供商的请求（Key / 模型不出 App）；没配好 AI 或市场拓展没声明 `ai` 权限都直接报错 |
 /// | `ai.chatTools` | `{messages, tools?, maxTokens?}` | 多轮消息 + OpenAI 兼容 function calling；返回 `{text, toolCalls, usedTools, finishReason}`。提供商不支持 tools 时自动降级 |
 ///
@@ -125,6 +131,20 @@ class ExtBridge extends WebBridge {
       case 'storage.remove':
         await store.dataRemove(extId, _key(args));
         return true;
+      // 加密凭据（Keystore）：Cookie / Token 这类值不要放明文的 storage
+      case 'secrets.get':
+        return ExtSecrets.get(extId, _secretKey(args));
+      case 'secrets.set':
+        if (args is! Map) throw ArgumentError('secrets.set 要带 {key, value}');
+        await ExtSecrets.set(extId, _secretKey(args), '${args['value'] ?? ''}');
+        return true;
+      case 'secrets.remove':
+        await ExtSecrets.remove(extId, _secretKey(args));
+        return true;
+      // 原生 HTTPS 代理：不受 CORS 限制，可带 Cookie / Authorization 头
+      case 'net.request':
+        if (args is! Map) throw ArgumentError('net.request 要带 {url}');
+        return ExtNetService.I.request(Map<String, Object?>.from(args));
       case 'ai.chat':
         return _aiChat(args);
       case 'ai.chatTools':
@@ -811,6 +831,14 @@ class ExtBridge extends WebBridge {
   static String _key(Object? args) {
     final key = args is Map ? '${args['key'] ?? ''}'.trim() : '';
     if (key.isEmpty) throw ArgumentError('要带 key');
+    return key;
+  }
+
+  static String _secretKey(Object? args) {
+    final key = args is Map ? '${args['key'] ?? ''}'.trim() : '';
+    if (!ExtSecrets.validKey(key)) {
+      throw ArgumentError('密钥名不合法（1–128 位字母 / 数字 / . _ : -）');
+    }
     return key;
   }
 }

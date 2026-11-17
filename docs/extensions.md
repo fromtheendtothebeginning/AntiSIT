@@ -129,6 +129,8 @@ export default {
 | | `pop()` / `depth` / `canGoBack` | 退回上一层 / 当前栈深 / 栈里有没有页面 |
 | | `theme` | 当前配色：`isDark` / `accent` / `bg` / `card` / `border` / `textPrimary` …（`#RRGGBB`） |
 | `ctx.storage` | `get(key)` / `set(key, value)` / `remove(key)` | 按拓展 id 隔离的本地存储，返回 Promise |
+| `ctx.secrets` | `get(key)` / `set(key, value)` / `remove(key)` | 加密凭据（Keystore / Keychain），按拓展隔离；需 `secrets` 权限 |
+| `ctx.net` | `request({method?, url, headers?, body?, bodyBase64?})` | 原生 HTTPS 代理，不受 CORS 限制、可带 Cookie；需 `network` 权限 |
 | `ctx.card` | `setName(text)` / `setDesc(text)` / `setIcon(text)` | 改拓展列表卡片上的显示值 |
 | `ctx.ai` | `chat(prompt, {system, maxTokens})` | 走用户在「AI 设置」里配置的模型；Key 不出 App |
 | | `chatTools({messages, tools, maxTokens})` | 多轮 + OpenAI 兼容 function calling（拓展工坊用） |
@@ -175,9 +177,32 @@ antiSIT.on('ai.stream', (e) => {
 | `network` | 运行时联网。**市场装的拓展默认禁网**（CSP `connect-src 'none'`），声明后才放开 `https:` |
 | `ai` | 调用 AI（`ctx.ai.*`，走用户的模型与 Key，可能产生费用）；不声明就拒 |
 | `notification` | 给你发通知（即时 / 定时，App 没开也能收到）；不声明就调用 `ctx.notify.*` → Promise reject |
+| `secrets` | 在本机保存 Cookie / Token 这类登录凭据（系统加密存储，按拓展隔离）；不声明就调用 `ctx.secrets.*` → Promise reject |
 
 用户自己填网址 / 自己导入的压缩包不受这条限制——来源是他自己选的。
 权限门是**防误用**，不是沙箱；App 的用户数据（学号、课表、成绩、凭据）不在接口里。
+
+### 凭据与原生 HTTPS 代理
+
+学校系统的接口通常要带登录态，而网页直接 `fetch` 既受 CORS 限制、也不能设置 `Cookie` 头。
+所以给拓展两个通用接口，App 本身**不认识任何学校**：
+
+| 方法 | 参数 | 返回 |
+|---|---|---|
+| `secrets.get` | `{key}` | 本拓展的加密凭据字符串；没有则 null |
+| `secrets.set` | `{key, value}` | true；值走 Android Keystore / iOS Keychain |
+| `secrets.remove` | `{key}` | true |
+| `net.request` | `{method?, url, headers?, body?, bodyBase64?}` | `{status, url, headers, setCookies, text, truncated, bytes}` |
+
+`net.request` 的约束：
+
+* 只允许 **https**，拒绝 `localhost` / `内网 / 链路本地 / 保留地址`（每次重定向都会重新校验）；
+* `Host` / `Content-Length` / `Connection` 这类头由底层接管，传了会被忽略；
+* 响应最多 2 MB、超时 30 秒；
+* `setCookies` 是这一路重定向里所有 `Set-Cookie` 原文的数组，方便拓展自己维护 Cookie 罐子；
+* 需要 `network` 权限；`secrets.*` 需要 `secrets` 权限。
+* 这是**前台**能力：页面打开时才能发请求。App 不提供"插件在后台自己跑"的轮询；
+  到点提醒请用 `ctx.notify.schedule`（本地通知，App 没开也能弹）。
 
 ## 插件市场
 

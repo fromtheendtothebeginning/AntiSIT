@@ -21,7 +21,8 @@ class CordisPage {
 /// 1. `antiSIT` 垫片（网页第一个脚本就能用宿主通道）
 /// 2. Cordis 运行时（MIT，assets/cordis.min.js）
 /// 3. 引导脚本：建 Context、注册 `ui` / `storage` / `card` / `ai` / `notify` /
-///    `app` / `workshop` 服务，再把 `main.js` 当 ES module 加载并 `ctx.plugin(plugin)`
+///    `secrets` / `net` / `app` / `workshop` 服务，再把 `main.js` 当 ES module
+///    加载并 `ctx.plugin(plugin)`
 ///
 /// 拓展插件就是一个标准 Cordis 插件：
 /// ```js
@@ -213,6 +214,18 @@ class CordisRuntime {
         cancel(key) { return call('notify.cancel', { key: String(key) }); }
         cancelAll() { return call('notify.cancelAll'); }
       }
+      class Secrets extends Service {
+        constructor(c) { super(c, 'secrets'); }
+        get(key) { return call('secrets.get', { key: String(key) }); }
+        set(key, value) {
+          return call('secrets.set', { key: String(key), value: String(value) });
+        }
+        remove(key) { return call('secrets.remove', { key: String(key) }); }
+      }
+      class Net extends Service {
+        constructor(c) { super(c, 'net'); }
+        request(options) { return call('net.request', options || {}); }
+      }
       class App extends Service {
         constructor(c) {
           super(c, 'app');
@@ -293,6 +306,8 @@ class CordisRuntime {
       await ctx.plugin(Card);
       await ctx.plugin(Ai);
       await ctx.plugin(Notify);
+      await ctx.plugin(Secrets);
+      await ctx.plugin(Net);
       await ctx.plugin(App);
       await ctx.plugin(Workshop);
 
