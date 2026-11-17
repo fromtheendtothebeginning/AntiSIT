@@ -372,7 +372,6 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   Future<void> _itemMenu(ExtensionItem e) async {
     final builtin = _store.isBuiltin(e.id);
-    final grants = await ExtConsentService.I.grants(e.id);
     if (!mounted) return;
     final pick = await showModalBottomSheet<String>(
       context: context,
@@ -387,14 +386,13 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                   style: const TextStyle(fontSize: 12)),
               onTap: () => Navigator.pop(ctx, 'detail'),
             ),
-            if (grants.isNotEmpty)
-              ListTile(
-                leading: const Icon(Icons.verified_user_outlined),
-                title: const Text('运行时授权'),
-                subtitle: Text('${grants.length} 项；可撤销',
-                    style: const TextStyle(fontSize: 12)),
-                onTap: () => Navigator.pop(ctx, 'consent'),
-              ),
+            ListTile(
+              leading: const Icon(Icons.verified_user_outlined),
+              title: const Text('权限'),
+              subtitle: const Text('静态权限 + 运行时授权',
+                  style: TextStyle(fontSize: 12)),
+              onTap: () => Navigator.pop(ctx, 'consent'),
+            ),
             if (!builtin) ...[
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
@@ -426,56 +424,110 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
   }
 
-  /// 查看 / 撤销这条拓展记住的运行时授权（逐域访问、剪贴板读取等）。
+  /// 权限管理：静态权限只读展示；运行时授权逐项开关。
   Future<void> _manageConsent(ExtensionItem e) async {
     final grants = await ExtConsentService.I.grants(e.id);
     if (!mounted) return;
-    final revoke = await showDialog<bool>(
+    final staticLabels = describeSensitivePermissions(e.permissions);
+    final caps = <String>{
+      if (e.permissions.contains('notification')) 'notification.popup',
+      if (e.permissions.contains('clipboard')) 'clipboard.read',
+      if (e.permissions.contains('background')) 'background.keepalive',
+      ...grants.keys,
+    }.toList()
+      ..sort();
+    final state = <String, bool?>{for (final cap in caps) cap: grants[cap]};
+    final reset = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('运行时授权'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final entry in grants.entries)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Row(
-                  children: [
-                    Icon(
-                      entry.value ? Icons.check_circle_outline : Icons.block,
-                      size: 18,
-                      color: entry.value ? SemColors.accent : SemColors.danger,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: Text(ExtConsentService.describe(entry.key))),
-                    Text(entry.value ? '已允许' : '已拒绝',
-                        style: const TextStyle(fontSize: 12)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: Text('「${e.name}」的权限'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (staticLabels.isNotEmpty) ...[
+                    const Text('安装时声明（只读）',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    for (final label in staticLabels)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.lock_outline, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                                child: Text(label,
+                                    style: const TextStyle(fontSize: 13))),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 10),
                   ],
-                ),
+                  const Text('运行时授权',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                  if (caps.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('这个拓展没有需要单独确认的能力。',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  for (final cap in caps)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      title: Text(ExtConsentService.describe(cap)),
+                      subtitle: Text(
+                        state[cap] == true
+                            ? '已允许'
+                            : (state[cap] == false
+                                ? '已拒绝'
+                                : '未申请；插件用到时会询问'),
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      value: state[cap] == true,
+                      onChanged: (value) async {
+                        if (value) {
+                          await ExtConsentService.I.allow(e.id, cap);
+                        } else {
+                          await ExtConsentService.I.deny(e.id, cap);
+                        }
+                        setDialog(() => state[cap] = value);
+                      },
+                    ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '关闭后，插件下次用到这项能力会重新询问或直接拒绝；'
+                    '弹窗通知会立即停止。',
+                    style: TextStyle(fontSize: 11.5),
+                  ),
+                ],
               ),
-            const SizedBox(height: 10),
-            const Text('撤销后，下次用到这项能力会重新询问。',
-                style: TextStyle(fontSize: 12)),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('关闭'),
+            ),
+            if (caps.isNotEmpty)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('全部重置'),
+              ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('关闭'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('全部撤销'),
-          ),
-        ],
       ),
     );
-    if (revoke == true) {
+    if (reset == true) {
       await ExtConsentService.I.revokeAll(e.id);
-      _toast('已撤销「${e.name}」的运行时授权');
+      _toast('已重置「${e.name}」的运行时授权');
     }
   }
 

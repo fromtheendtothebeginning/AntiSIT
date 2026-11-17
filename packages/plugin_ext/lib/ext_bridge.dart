@@ -35,6 +35,8 @@ import 'workshop/workshop_store.dart';
 /// | `notify.show` | `{title, body?, key?, popup?}` | 立即发一条本地通知（同 key 覆盖）；`popup: true` 走高优先级「弹窗」渠道（屏幕横幅），首次会弹运行时确认；首次调用申请系统通知权限 |
 /// | `notify.schedule` | `{key, title, body?, at}` | 定时通知；`at` 为 ISO 8601 或毫秒时间戳（未来） |
 /// | `notify.cancel` | `{key}` | 撤掉一条 / `notify.cancelAll` 撤掉这条拓展的全部通知 |
+/// | `permissions.request` | `{name, host?}` | 显式申请一项运行时授权（`notification.popup` / `clipboard.read` / `background.keepalive` / `net.host` / `login.open`）；返回 `{name, granted}` |
+/// | `permissions.status` | `{name, host?}` | 查已记住的状态：`{name, granted}`；`granted` 为 null 表示还没问过 |
 /// | `storage.get` | `{key}` | 该拓展自己存的任意 JSON；没有则 null |
 /// | `storage.set` | `{key, value}` | true |
 /// | `storage.remove` | `{key}` | true |
@@ -130,6 +132,11 @@ class ExtBridge extends WebBridge {
         return _notifyCancel(args);
       case 'notify.cancelAll':
         return _notifyCancelAll();
+      // 运行时授权：拓展可以显式申请 / 查询（弹窗通知、剪贴板、后台、某域名）
+      case 'permissions.request':
+        return _permissionsRequest(args);
+      case 'permissions.status':
+        return _permissionsStatus(args);
       case 'storage.get':
         return store.dataGet(extId, _key(args));
       case 'storage.set':
@@ -290,12 +297,15 @@ class ExtBridge extends WebBridge {
 
   Future<Object?> _notifySchedule(Object? args) async {
     if (args is! Map) throw ArgumentError('notify.schedule 要带 {key, title, at}');
+    final popup = args['popup'] == true;
+    if (popup) await _ensureConsent('notification.popup');
     await ExtNotificationService.instance.schedule(
       extId: extId,
       key: _notifyKey(args, required: true)!,
       title: _notifyTitle(args),
       body: _notifyBody(args),
       at: _notifyAt(args),
+      popup: popup,
     );
     return true;
   }
@@ -309,6 +319,49 @@ class ExtBridge extends WebBridge {
   Future<Object?> _notifyCancelAll() async {
     await ExtNotificationService.instance.cancelAll(extId: extId);
     return true;
+  }
+
+  static const Set<String> _simpleCapabilities = {
+    'notification.popup',
+    'clipboard.read',
+    'background.keepalive',
+  };
+
+  /// 把 `{name, host?}` 解析成内部能力键；只认白名单，避免拓展写任意键。
+  static String _capabilityFromArgs(Object? args) {
+    if (args is String) return _validateCapability(args.trim());
+    if (args is! Map) throw ArgumentError('permissions 要带 {name}');
+    final name = '${args['name'] ?? ''}'.trim();
+    if (name == 'net.host' || name == 'login.open') {
+      final host = '${args['host'] ?? ''}'.trim().toLowerCase();
+      if (host.isEmpty || !RegExp(r'^[a-z0-9.-]+$').hasMatch(host)) {
+        throw ArgumentError('$name 要带合法 host');
+      }
+      return '$name:$host';
+    }
+    return _validateCapability(name);
+  }
+
+  static String _validateCapability(String name) {
+    if (_simpleCapabilities.contains(name)) return name;
+    throw ArgumentError('不认识的能力：$name');
+  }
+
+  Future<Object?> _permissionsRequest(Object? args) async {
+    final capability = _capabilityFromArgs(args);
+    final granted = await ExtConsentService.I.ensure(
+      context,
+      extId: extId,
+      extName: item?.name ?? extId,
+      capability: capability,
+    );
+    return {'name': capability, 'granted': granted};
+  }
+
+  Future<Object?> _permissionsStatus(Object? args) async {
+    final capability = _capabilityFromArgs(args);
+    final grants = await ExtConsentService.I.grants(extId);
+    return {'name': capability, 'granted': grants[capability]};
   }
 
   /// 通知标题：必填，给个 200 字上限（系统通知栏也放不下更多）。

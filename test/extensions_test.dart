@@ -1535,8 +1535,10 @@ class _FakeNotifier implements ExtNotificationService {
       required String key,
       required String title,
       String? body,
-      required DateTime at}) async {
+      required DateTime at,
+      bool popup = false}) async {
     calls.add('schedule');
+    this.popup = popup;
     _record(extId, key, title, body);
     this.at = at;
   }

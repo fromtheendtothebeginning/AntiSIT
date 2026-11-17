@@ -156,8 +156,9 @@ export default {
 | | `chatToolsStream({streamId, messages, tools, maxTokens})` | 流式版；增量通过 `antiSIT.on('ai.stream')` 推下来，返回值仍是完整回复 |
 | `ctx.notify` | `show({title, body?, key?, popup?})` | 立即发一条本地通知；同 `key` 覆盖上一条；首次调用会申请系统通知权限 |
 | | `popup({title, body?, key?})` | 高优先级弹窗通知（屏幕横幅）；首次使用会弹一次运行时确认 |
-| | `schedule({key, title, body?, at})` | 定时通知，`at` 是 ISO 8601 时间或毫秒时间戳（必须是未来）；App 没开也能到点弹出 |
+| | `schedule({key, title, body?, at, popup?})` | 定时通知，`at` 是 ISO 8601 时间或毫秒时间戳（必须是未来）；App 没开也能到点弹出；`popup: true` 到点弹横幅 |
 | | `cancel(key)` / `cancelAll()` | 撤销一条 / 撤销这条拓展排过的全部通知（不影响上课提醒） |
+| `ctx.permissions` | `request({name, host?})` / `status({name, host?})` | 显式申请 / 查询运行时授权（`notification.popup` / `clipboard.read` / `background.keepalive` / `net.host` / `login.open`）；返回 `{name, granted}` |
 | `ctx.app` | `id` / `name` / `version` / `permissions` / `close()` | 当前拓展信息 |
 | `ctx.workshop` | `list` / `create` / `deleteDraft` / `files` / `read` / `write` / `remove` / `validate` / `install` / `preview` / `publish` | **只给内置「拓展工坊」**，其他拓展调用会被拒。`read` 返回 `{content, version}`；`write` / `remove` 要带 `expectedVersion`（读后写）；`publish` 打开原生发布页 |
 | | `listConversations` / `createConversation` / `deleteConversation` / `loadSession` / `saveSession` | 一个草稿多段对话；`saveSession` 带 `conversationId` |
@@ -184,9 +185,20 @@ antiSIT.on('ai.stream', (e) => {
 `cancelAll()` 只撤当前拓展排过的通知，不会动课表提醒。没授权「精确闹钟」的机型上定时通知
 可能晚几分钟，但不会被丢掉。
 
-`ctx.notify.popup(...)` / `ctx.notify.show({popup: true})` 走单独的 `ext_popup`
-高优先级渠道，会在屏幕上弹横幅（部分机型还要用户允许「悬浮通知」）。首次使用会弹一次
-运行时确认，可在拓展菜单「运行时授权」里撤销。需要 `notification` 权限。
+`ctx.notify.popup(...)` / `ctx.notify.show({popup: true})` / `ctx.notify.schedule({..., popup: true})`
+走单独的 `ext_popup` 高优先级渠道，会在屏幕上弹横幅（部分机型还要用户允许「悬浮通知」）。
+首次使用会弹一次运行时确认；插件也可以先用 `ctx.permissions.request({name: 'notification.popup'})`
+显式申请。需要 `notification` 权限。
+
+### 权限管理
+
+拓展菜单 →「权限」：上半部分是 `ext.json` 里**安装时声明**的权限（只读），
+下半部分是**运行时授权**，逐项开关：
+
+* 关闭后，插件下次用到这项能力会重新询问或直接拒绝；
+* 弹窗通知关闭后立即不再弹横幅；
+* 「全部重置」会清掉记录，下次使用重新询问；
+* `notification.popup` / `clipboard.read` / `background.keepalive` 会在插件声明了对应静态权限时预先列出来，即使还没申请过。
 
 `ctx.ui.push` / `ctx.notify` 是 **1.34.0** 起的新接口；要发到市场的拓展请把 `ext.json` 的
 `minAppVersion` 设为 `1.34.0`，旧版 App 会提示升级而不是运行到一半报「未知接口」。

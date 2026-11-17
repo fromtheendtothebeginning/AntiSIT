@@ -49,6 +49,16 @@ void main() {
     expect((await ExtConsentService.I.grants('ext.b')).length, 1);
   });
 
+  test('权限管理界面直接允许 / 拒绝', () async {
+    await ExtConsentService.I.allow('ext.a', 'notification.popup');
+    expect((await ExtConsentService.I.grants('ext.a'))['notification.popup'],
+        isTrue);
+    await ExtConsentService.I.deny('ext.a', 'notification.popup');
+    expect((await ExtConsentService.I.grants('ext.a'))['notification.popup'],
+        isFalse);
+    expect(ExtConsentService.describe('notification.popup'), '发送弹窗通知');
+  });
+
   testWidgets('第一次弹框，允许后记住', (tester) async {
     late BuildContext ctx;
     await tester.pumpWidget(MaterialApp(

@@ -35,6 +35,17 @@ class ExtConsentService {
     await prefs.remove(_key(extId, capability));
   }
 
+  /// 权限管理界面：用户直接打开 / 关闭某项授权。
+  Future<void> allow(String extId, String capability) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key(extId, capability), true);
+  }
+
+  Future<void> deny(String extId, String capability) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key(extId, capability), false);
+  }
+
   Future<void> revokeAll(String extId) async {
     final prefs = await SharedPreferences.getInstance();
     final prefix = '$_prefix$extId.';

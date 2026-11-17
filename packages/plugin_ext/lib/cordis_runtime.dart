@@ -21,8 +21,8 @@ class CordisPage {
 /// 1. `antiSIT` 垫片（网页第一个脚本就能用宿主通道）
 /// 2. Cordis 运行时（MIT，assets/cordis.min.js）
 /// 3. 引导脚本：建 Context、注册 `ui` / `storage` / `card` / `ai` / `notify` /
-///    `secrets` / `net` / `clipboard` / `login` / `background` / `app` / `workshop`
-///    服务，再把 `main.js` 当 ES module 加载并 `ctx.plugin(plugin)`
+///    `secrets` / `net` / `clipboard` / `login` / `background` / `permissions` /
+///    `app` / `workshop` 服务，再把 `main.js` 当 ES module 加载并 `ctx.plugin(plugin)`
 ///
 /// 拓展插件就是一个标准 Cordis 插件：
 /// ```js
@@ -245,6 +245,11 @@ class CordisRuntime {
         constructor(c) { super(c, 'background'); }
         keepAlive(options) { return call('background.keepAlive', options || {}); }
       }
+      class Permissions extends Service {
+        constructor(c) { super(c, 'permissions'); }
+        request(options) { return call('permissions.request', options || {}); }
+        status(options) { return call('permissions.status', options || {}); }
+      }
       class App extends Service {
         constructor(c) {
           super(c, 'app');
@@ -330,6 +335,7 @@ class CordisRuntime {
       await ctx.plugin(Clipboard);
       await ctx.plugin(Login);
       await ctx.plugin(Background);
+      await ctx.plugin(Permissions);
       await ctx.plugin(App);
       await ctx.plugin(Workshop);
 

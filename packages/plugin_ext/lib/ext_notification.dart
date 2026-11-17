@@ -25,12 +25,14 @@ abstract class ExtNotificationService {
   });
 
   /// 到点再弹，App 没开也能收到（系统闹钟拉起）。
+  /// [popup] 为 true 时走高优先级「弹窗」渠道（到点弹横幅）。
   Future<void> schedule({
     required String extId,
     required String key,
     required String title,
     String? body,
     required DateTime at,
+    bool popup = false,
   });
 
   /// 撤掉一条（按拓展作者给的 key）。
@@ -105,6 +107,7 @@ class PlatformExtNotificationService implements ExtNotificationService {
     required String title,
     String? body,
     required DateTime at,
+    bool popup = false,
   }) async {
     final id = _idFor(extId, key);
     await _ensureReady();
@@ -114,7 +117,7 @@ class PlatformExtNotificationService implements ExtNotificationService {
       title,
       body,
       tz.TZDateTime.from(at, tz.local),
-      _details,
+      popup ? _popupDetails : _details,
       androidScheduleMode: await _scheduleMode(),
     );
     await _remember(extId, id);

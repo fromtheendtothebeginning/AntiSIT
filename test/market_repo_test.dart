@@ -89,9 +89,9 @@ void main() {
         reason: '截止提醒：存条目、发通知、同步学习通、登录、后台刷新');
     expect(byId['sit.game-2048']!.needsNewerApp('1.24.0'), isTrue, reason: '要求 1.25.0 以上的 App');
     expect(byId['sit.game-2048']!.needsNewerApp('1.25.0'), isFalse);
-    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.37.6'), isTrue,
-        reason: '截止提醒依赖 1.37.7 的登录 / 后台 / 运行时授权');
-    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.37.7'), isFalse);
+    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.37.9'), isTrue,
+        reason: '截止提醒依赖 1.38.0 的运行时权限接口与弹窗通知');
+    expect(byId['sit.deadline-reminder']!.needsNewerApp('1.38.0'), isFalse);
   }, skip: skip);
 
   // ==================== 第三方源（作者自己发的那种） ====================
