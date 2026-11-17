@@ -38,24 +38,57 @@ class _EvaluatePageState extends State<EvaluatePage> {
   @override
   void initState() {
     super.initState();
+    unawaited(_boot());
+  }
+
+  /// 起页：先拿 App 自己**已经登录**的教务会话（直连模式的 Cookie），写进内嵌 WebView，
+  /// 评教页打开就是登录后的样子——用户不用再在内嵌浏览器里登一次。
+  ///
+  /// 拿不到（没配凭据 / 登录被取消 / 服务器模式没有本地会话）就退回「网页里手动登录」，
+  /// 不因为登录态拿不到就让整页不可用。
+  Future<void> _boot() async {
     final cap = PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
     if (cap == null) {
-      _unsupported = '评教助手要跑在 WebView 内核上：到「我的 → 插件管理」里把「WebView 内核」打开';
+      if (mounted) {
+        setState(() => _unsupported =
+            '评教助手要跑在 WebView 内核上：到「我的 → 插件管理」里把「WebView 内核」打开');
+      }
       return;
     }
     if (!cap.available) {
-      _unsupported = '当前平台不支持内嵌网页：评教助手只在 Android / iOS 上可用';
+      if (mounted) {
+        setState(() => _unsupported = '当前平台不支持内嵌网页：评教助手只在 Android / iOS 上可用');
+      }
       return;
     }
-    _host = cap.host(
-      url: evalUrlFor(_jwxtBase),
-      channel: kEvaluateChannel,
-      onMessage: _onMessage,
-      onPageReady: _onPageReady,
-    );
-    if (_host == null) {
-      _unsupported = '当前平台不支持内嵌网页：评教助手只在 Android / iOS 上可用';
+    final url = evalUrlFor(_jwxtBase);
+    var cookies = const <String, String>{};
+    if (url.isNotEmpty) {
+      try {
+        cookies = await ApiClient.I.jwxtCookies();
+      } catch (e) {
+        // 教务登录没成（取消验证码 / 没填凭据）：网页里自己登一次
+        debugPrint('[学生评教] 复用教务会话失败，改网页内登录：$e');
+      }
     }
+    if (!mounted) return;
+    final host = url.isEmpty
+        ? null
+        : cap.host(
+            url: url,
+            channel: kEvaluateChannel,
+            cookies: cookies,
+            onMessage: _onMessage,
+            onPageReady: _onPageReady,
+          );
+    setState(() {
+      _host = host;
+      if (url.isEmpty) {
+        _unsupported = '学校档案里没有填教务域名：到「我的 → 连接设置」里补上后再进来';
+      } else if (host == null) {
+        _unsupported = '当前平台不支持内嵌网页：评教助手只在 Android / iOS 上可用';
+      }
+    });
   }
 
   @override
@@ -133,6 +166,9 @@ class _EvaluatePageState extends State<EvaluatePage> {
   }
 
   void _openPanel() {
+    // 打开面板时顺手扫一遍：评教页的评分表单常常是「已阅读」之后由页面用 AJAX 拉出来的，
+    // 那一刻没有页面加载完成事件，只靠 onPageReady 会扫到一张空说明页。
+    if (_panel.value.items.isEmpty && !_panel.value.busy) unawaited(_rescan());
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -176,7 +212,9 @@ class _EvaluatePageState extends State<EvaluatePage> {
             ),
         ],
       ),
-      body: unsupported != null ? _notice(unsupported) : _webBody(host!),
+      body: unsupported != null
+          ? _notice(unsupported)
+          : (host == null ? _booting() : _webBody(host)),
       floatingActionButton: host == null
           ? null
           : FloatingActionButton.extended(
@@ -211,6 +249,23 @@ class _EvaluatePageState extends State<EvaluatePage> {
           padding: const EdgeInsets.all(10),
           child: Text('网页加载失败：$error',
               style: TextStyle(fontSize: 12, height: 1.5, color: SemColors.danger)),
+        ),
+      );
+
+  /// 起页中：正在复用教务会话（可能要先过一次验证码登录），先给个转圈。
+  Widget _booting() => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
+            ),
+            const SizedBox(height: 12),
+            Text('正在带上教务登录态…',
+                style: TextStyle(fontSize: 12.5, color: SemColors.textMuted)),
+          ],
         ),
       );
 

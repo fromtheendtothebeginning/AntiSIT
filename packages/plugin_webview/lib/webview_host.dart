@@ -16,9 +16,11 @@ class KernelWebViewHost implements WebViewHost {
   KernelWebViewHost({
     required String url,
     required String channel,
+    Map<String, String> cookies = const {},
     required void Function(WebViewHost host, String message) onMessage,
     required void Function(WebViewHost host) onPageReady,
-  }) : _url = url {
+  })  : _url = url,
+        _cookies = cookies {
     _ctrl = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..addJavaScriptChannel(channel, onMessageReceived: (m) => onMessage(this, m.message))
@@ -47,10 +49,11 @@ class KernelWebViewHost implements WebViewHost {
           _error.value = e.description;
         },
       ));
-    if (url.trim().isNotEmpty) unawaited(_loadQuiet(url));
+    if (url.trim().isNotEmpty) unawaited(_boot(url));
   }
 
   late final WebViewController _ctrl;
+  final Map<String, String> _cookies;
   final ValueNotifier<double> _progress = ValueNotifier<double>(0);
   final ValueNotifier<String?> _error = ValueNotifier<String?>(null);
   String _url;
@@ -90,6 +93,34 @@ class KernelWebViewHost implements WebViewHost {
     _url = url;
     _error.value = null;
     await _loadQuiet(url);
+  }
+
+  /// 首次加载：先把调用方给的 Cookie 写进 WebView 的 Cookie 库，再发第一个请求——
+  /// 顺序反了网页拿到的就是未登录页（评教页会跳登录页）。
+  Future<void> _boot(String url) async {
+    await _applyCookies(url);
+    await _loadQuiet(url);
+  }
+
+  /// 把 [WebViewHost] 的 cookies 按目标域名写进 WebView（name → value）。
+  /// 写入失败不影响页面（最坏就是网页里重新登录一次）。
+  Future<void> _applyCookies(String url) async {
+    if (_cookies.isEmpty) return;
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || uri.host.isEmpty) return;
+    final manager = WebViewCookieManager();
+    for (final entry in _cookies.entries) {
+      try {
+        await manager.setCookie(WebViewCookie(
+          name: entry.key,
+          value: entry.value,
+          domain: uri.host,
+          path: '/',
+        ));
+      } catch (e) {
+        debugPrint('[WebViewHost] 写 Cookie 失败 ${entry.key}：$e');
+      }
+    }
   }
 
   Future<void> _loadQuiet(String url) async {

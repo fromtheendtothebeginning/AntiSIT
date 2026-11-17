@@ -133,7 +133,7 @@ EvalScan? parseEvalMessage(String raw) {
   if (type == 'none') {
     return EvalScan(
       items: const [],
-      hint: _noneHint(j['counts']),
+      hint: _noneHint(j['counts'], j['samples']),
       login: j['login'] == true,
     );
   }
@@ -174,7 +174,7 @@ Object? _decode(String raw) {
   }
 }
 
-String _noneHint(Object? counts) {
+String _noneHint(Object? counts, Object? samples) {
   final c = counts is Map ? counts : const {};
   int n(String key) {
     final v = c[key];
@@ -183,13 +183,28 @@ String _noneHint(Object? counts) {
   }
 
   final parts = <String>[
+    if (n('text') > 0) '评分输入框 ${n('text')} 个',
     if (n('radio') > 0) '单选组 ${n('radio')} 个',
     if (n('range') > 0) '滑块 ${n('range')} 个',
     if (n('slider') > 0) '页面滑块 ${n('slider')} 个',
     if (n('select') > 0) '下拉 ${n('select')} 个',
   ];
   final seen = parts.isEmpty ? '一个候选控件都没找到' : '只找到 ${parts.join(' / ')}';
-  return '没识别到评分项（$seen，评教页可能改版了）';
+  // 采样：页面上实际有哪些输入控件（改版时一眼看出它变成了什么形态）
+  final shapes = <String>[];
+  if (samples is List) {
+    for (final s in samples.take(3)) {
+      if (s is! Map) continue;
+      final tag = '${s['tag'] ?? ''}'.trim();
+      final type = '${s['type'] ?? ''}'.trim();
+      final hint = '${s['placeholder'] ?? ''}'.trim();
+      final label = [tag, if (type.isNotEmpty) type].join('/');
+      if (label.isEmpty) continue;
+      shapes.add(hint.isEmpty ? label : '$label（$hint）');
+    }
+  }
+  final detail = shapes.isEmpty ? '' : '；页面输入控件：${shapes.join('、')}';
+  return '没识别到评分项（$seen，评教页可能改版了$detail）';
 }
 
 /// 评教「评价详情」页在教务域名下的相对路径（正方 N401605）。

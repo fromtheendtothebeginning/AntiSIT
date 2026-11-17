@@ -72,6 +72,42 @@ void main() {
       expect(scan.hint, contains('页面滑块 2 个'));
     });
 
+    test('一个都没识别到：把页面输入控件的形态一起带出来（排查改版）', () {
+      final scan = parseEvalMessage(jsonEncode({
+        't': 'none',
+        'login': false,
+        'counts': {'text': 0, 'radio': 0},
+        'samples': [
+          {'tag': 'input', 'type': 'text', 'placeholder': '打分范围:0-100'},
+        ],
+      }));
+      expect(scan!.hint, contains('一个候选控件都没找到'));
+      expect(scan.hint, contains('input/text'));
+      expect(scan.hint, contains('打分范围:0-100'));
+    });
+
+    test('评分输入框（正方 9.0 的「打分范围:0-100」文本框）也当评分项', () {
+      final scan = parseEvalMessage(jsonEncode({
+        't': 'items',
+        'items': [
+          {
+            'index': 0,
+            'label': '课程教学过程融入了价值塑造和情感教育的内容',
+            'kind': 'text',
+            'value': 0,
+            'min': 0,
+            'max': 100,
+            'step': 1,
+            'values': <double>[],
+          },
+        ],
+      }));
+      expect(scan!.items.single.discrete, isFalse);
+      expect(scan.items.single.max, 100);
+      expect(scan.items.single.snap(87), 87);
+      expect(scan.items.single.snap(140), 100);
+    });
+
     test('别的消息不当成扫描结果（应用回执走 parseEvalApplied）', () {
       expect(parseEvalMessage('{"t":"applied","values":{"0":5}}'), isNull);
       expect(parseEvalMessage('不是 JSON'), isNull);

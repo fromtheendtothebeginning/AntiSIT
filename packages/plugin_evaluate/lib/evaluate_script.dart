@@ -102,8 +102,59 @@ const String _evaluateJs = r'''
     return gap || 1;
   }
 
+  // 元素是不是真的显示着：隐藏的模板 / 其它教学班的表单不参与打分。
+  function visible(el) {
+    try {
+      if (!el || !el.getClientRects) return false;
+      if (el.getClientRects().length === 0) return false;
+      var r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 从「打分范围:0-100」这类提示文字里取分值范围——正方 9.0 评教的每一项就是一个
+  // 这样的文本框（不是滑块控件），App 这边照样映射成一条滑块。
+  function rangeFromHint(text) {
+    var m = /(\d+(?:\.\d+)?)\s*(?:-|~|—|–|至|到)\s*(\d+(?:\.\d+)?)/.exec(String(text || ''));
+    if (!m) return null;
+    var lo = parseFloat(m[1]);
+    var hi = parseFloat(m[2]);
+    if (!isFinite(lo) || !isFinite(hi) || hi <= lo) return null;
+    return { min: lo, max: hi };
+  }
+
   var items = [];
-  var counts = {radio: 0, range: 0, slider: 0, select: 0};
+  var counts = { text: 0, radio: 0, range: 0, slider: 0, select: 0 };
+
+  // 数字输入框（评教最常见的形态）：范围从 placeholder / title / data-* / min-max 属性认。
+  function collectText(doc) {
+    var els = doc.querySelectorAll('input');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var type = (el.getAttribute('type') || 'text').toLowerCase();
+      if (type !== 'text' && type !== 'number' && type !== 'tel') continue;
+      if (!visible(el)) continue;
+      var hint = (el.getAttribute('placeholder') || '') + ' ' +
+          (el.getAttribute('title') || '') + ' ' + (el.getAttribute('aria-label') || '');
+      var range = rangeFromHint(hint);
+      if (!range) {
+        var lo = num(el.getAttribute('data-min'));
+        var hi = num(el.getAttribute('data-max'));
+        if (lo === null) lo = num(el.getAttribute('min'));
+        if (hi === null) hi = num(el.getAttribute('max'));
+        if (lo !== null && hi !== null && hi > lo) range = { min: lo, max: hi };
+      }
+      if (!range) continue;
+      counts.text++;
+      var cur = num(el.value);
+      items.push({
+        kind: 'text', el: el, els: null, value: cur === null ? range.min : cur,
+        min: range.min, max: range.max, step: 1, values: [], label: labelFor(el)
+      });
+    }
+  }
 
   // 单选组：同名下 >= 2 个数值选项才算评分项（「性别」这种非数值组自动跳过）。
   function collectRadio(doc) {
@@ -118,6 +169,7 @@ const String _evaluateJs = r'''
     Object.keys(groups).forEach(function (name) {
       var els = groups[name];
       if (els.length < 2) return;
+      if (!visible(els[0])) return;
       var values = [];
       var cur = null;
       for (var i = 0; i < els.length; i++) {
@@ -141,6 +193,7 @@ const String _evaluateJs = r'''
     var els = doc.querySelectorAll('input[type="range"]');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
+      if (!visible(el)) continue;
       var min = num(el.getAttribute('min'));
       var max = num(el.getAttribute('max'));
       if (min === null) min = 0;
@@ -161,6 +214,7 @@ const String _evaluateJs = r'''
     var els = doc.querySelectorAll('.ui-slider, [role="slider"]');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
+      if (!visible(el)) continue;
       var min = num(el.getAttribute('aria-valuemin'));
       var max = num(el.getAttribute('aria-valuemax'));
       var cur = num(el.getAttribute('aria-valuenow'));
@@ -179,6 +233,7 @@ const String _evaluateJs = r'''
     var els = doc.querySelectorAll('select');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
+      if (!visible(el)) continue;
       var values = [];
       for (var k = 0; k < el.options.length; k++) {
         var v = num(el.options[k].value);
@@ -224,6 +279,16 @@ const String _evaluateJs = r'''
     el.value = String(v);
     try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
     try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+    return num(el.value);
+  }
+
+  function setText(el, v) {
+    var s = String(v);
+    try { el.focus(); } catch (e) {}
+    el.value = s;
+    try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+    try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+    try { el.blur(); } catch (e) {}
     return num(el.value);
   }
 
@@ -276,12 +341,33 @@ const String _evaluateJs = r'''
     if (!isFinite(v)) return it.value;
     var got = null;
     if (it.kind === 'radio') got = setRadio(it.els, v);
+    else if (it.kind === 'text') got = setText(it.el, v);
     else if (it.kind === 'range') got = setRange(it.el, v);
     else if (it.kind === 'slider') got = setSlider(it.el, v);
     else if (it.kind === 'select') got = setSelect(it.el, v);
     if (got === null) got = it.value;
     it.value = got;
     return got;
+  }
+
+  // 没识别到评分项时用：把页面上可见的输入控件形态采样回 App（排查改版用）。
+  function sampleFields(docs) {
+    var out = [];
+    for (var d = 0; d < docs.length && out.length < 6; d++) {
+      try {
+        var els = docs[d].querySelectorAll('input, textarea, select');
+        for (var i = 0; i < els.length && out.length < 6; i++) {
+          var el = els[i];
+          if (!visible(el)) continue;
+          out.push({
+            tag: (el.tagName || '').toLowerCase(),
+            type: (el.getAttribute('type') || '').toLowerCase(),
+            placeholder: String(el.getAttribute('placeholder') || el.getAttribute('name') || '').slice(0, 24)
+          });
+        }
+      } catch (e) {}
+    }
+    return out;
   }
 
   function payload() {
@@ -299,9 +385,10 @@ const String _evaluateJs = r'''
   window.__antiSITEval = {
     scan: function () {
       items = [];
-      counts = {radio: 0, range: 0, slider: 0, select: 0};
+      counts = { text: 0, radio: 0, range: 0, slider: 0, select: 0 };
       var docs = scanDocs();
       for (var i = 0; i < docs.length; i++) {
+        try { collectText(docs[i]); } catch (e) {}
         try { collectRadio(docs[i]); } catch (e) {}
         try { collectRange(docs[i]); } catch (e) {}
         try { collectSlider(docs[i]); } catch (e) {}
@@ -309,7 +396,7 @@ const String _evaluateJs = r'''
       }
       var list = payload();
       if (!list.length) {
-        post({ t: 'none', login: looksLogin(), counts: counts });
+        post({ t: 'none', login: looksLogin(), counts: counts, samples: sampleFields(docs) });
       } else {
         post({ t: 'items', login: looksLogin(), items: list, page: { title: document.title || '' } });
       }

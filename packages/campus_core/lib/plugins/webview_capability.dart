@@ -44,7 +44,10 @@ abstract class WebViewCapability extends PluginCapability {
   ///
   /// * [channel]：网页侧 `window[channel].postMessage(...)` 的通道名（内核负责注册）；
   /// * [onMessage]：网页发来的字符串原样交回来（约定由调用方定，内核不解析）；
-  /// * [onPageReady]：每次主文档加载完成后回调——注入脚本放这里最稳（换页后旧上下文没了）。
+  /// * [onPageReady]：每次主文档加载完成后回调——注入脚本放这里最稳（换页后旧上下文没了）；
+  /// * [cookies]：先写进 WebView 的 Cookie（name → value，按 [url] 的域名）。
+  ///   给「App 已经登录过这个站点」的场景用（评教助手复用教务会话），网页首次请求
+  ///   就是登录态，不用在内嵌浏览器里再登一次。
   ///
   /// 平台不支持（桌面端）时返回 null，调用方按不可用降级。
   ///
@@ -55,6 +58,7 @@ abstract class WebViewCapability extends PluginCapability {
     required String channel,
     required void Function(WebViewHost host, String message) onMessage,
     required void Function(WebViewHost host) onPageReady,
+    Map<String, String> cookies = const {},
   }) =>
       null;
 }

@@ -34,11 +34,13 @@ class WebViewCapabilityImpl extends WebViewCapability {
     required String channel,
     required void Function(WebViewHost host, String message) onMessage,
     required void Function(WebViewHost host) onPageReady,
+    Map<String, String> cookies = const {},
   }) {
     if (!_platformSupported) return null;
     return KernelWebViewHost(
       url: url,
       channel: channel,
+      cookies: cookies,
       onMessage: onMessage,
       onPageReady: onPageReady,
     );
