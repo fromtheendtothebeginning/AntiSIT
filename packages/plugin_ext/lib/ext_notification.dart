@@ -15,20 +15,24 @@ abstract class ExtNotificationService {
   static ExtNotificationService instance = PlatformExtNotificationService();
 
   /// 立即弹一条。[key] 相同会覆盖上一条；为空时按当前时刻生成。
+  /// [popup] 为 true 时走高优先级「弹窗」渠道（会弹横幅），需要用户运行时确认。
   Future<void> show({
     required String extId,
     String? key,
     required String title,
     String? body,
+    bool popup = false,
   });
 
   /// 到点再弹，App 没开也能收到（系统闹钟拉起）。
+  /// [popup] 为 true 时走高优先级「弹窗」渠道（到点弹横幅）。
   Future<void> schedule({
     required String extId,
     required String key,
     required String title,
     String? body,
     required DateTime at,
+    bool popup = false,
   });
 
   /// 撤掉一条（按拓展作者给的 key）。
@@ -43,6 +47,12 @@ class PlatformExtNotificationService implements ExtNotificationService {
   static const String _channelId = 'ext_notify';
   static const String _channelName = '拓展通知';
   static const String _channelDesc = '拓展发来的提醒与消息';
+
+  /// 弹窗通知单独一个渠道：高重要级才会在屏幕上弹横幅；渠道建好后重要级不能再升，
+  /// 所以不能和普通的 `ext_notify` 共用。
+  static const String _popupChannelId = 'ext_popup';
+  static const String _popupChannelName = '拓展弹窗';
+  static const String _popupChannelDesc = '拓展发来的弹窗提醒（屏幕横幅）';
 
   /// notification id 高位：避开上课提醒的哈希区间（< 2^30）。
   static const int _idBase = 0x40000000;
@@ -62,17 +72,31 @@ class PlatformExtNotificationService implements ExtNotificationService {
     iOS: DarwinNotificationDetails(),
   );
 
+  static const NotificationDetails _popupDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      _popupChannelId,
+      _popupChannelName,
+      channelDescription: _popupChannelDesc,
+      importance: Importance.high,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.reminder,
+      playSound: true,
+    ),
+    iOS: DarwinNotificationDetails(presentAlert: true, presentSound: true),
+  );
+
   @override
   Future<void> show({
     required String extId,
     String? key,
     required String title,
     String? body,
+    bool popup = false,
   }) async {
     final id = _idFor(extId, key ?? 'show:${DateTime.now().microsecondsSinceEpoch}');
     await _ensureReady();
     await _ensurePermission();
-    await _plugin.show(id, title, body, _details);
+    await _plugin.show(id, title, body, popup ? _popupDetails : _details);
     await _remember(extId, id);
   }
 
@@ -83,6 +107,7 @@ class PlatformExtNotificationService implements ExtNotificationService {
     required String title,
     String? body,
     required DateTime at,
+    bool popup = false,
   }) async {
     final id = _idFor(extId, key);
     await _ensureReady();
@@ -92,7 +117,7 @@ class PlatformExtNotificationService implements ExtNotificationService {
       title,
       body,
       tz.TZDateTime.from(at, tz.local),
-      _details,
+      popup ? _popupDetails : _details,
       androidScheduleMode: await _scheduleMode(),
     );
     await _remember(extId, id);
@@ -146,14 +171,20 @@ class PlatformExtNotificationService implements ExtNotificationService {
         requestSoundPermission: false,
       ),
     ));
-    await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(const AndroidNotificationChannel(
-          _channelId,
-          _channelName,
-          description: _channelDesc,
-          importance: Importance.defaultImportance,
-        ));
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await android?.createNotificationChannel(const AndroidNotificationChannel(
+      _channelId,
+      _channelName,
+      description: _channelDesc,
+      importance: Importance.defaultImportance,
+    ));
+    await android?.createNotificationChannel(const AndroidNotificationChannel(
+      _popupChannelId,
+      _popupChannelName,
+      description: _popupChannelDesc,
+      importance: Importance.high,
+    ));
   }
 
   /// 第一次调用时申请系统通知权限（Android 13+ / iOS 都需要）。

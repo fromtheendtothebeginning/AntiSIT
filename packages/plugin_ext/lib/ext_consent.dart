@@ -35,6 +35,17 @@ class ExtConsentService {
     await prefs.remove(_key(extId, capability));
   }
 
+  /// 权限管理界面：用户直接打开 / 关闭某项授权。
+  Future<void> allow(String extId, String capability) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key(extId, capability), true);
+  }
+
+  Future<void> deny(String extId, String capability) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key(extId, capability), false);
+  }
+
   Future<void> revokeAll(String extId) async {
     final prefs = await SharedPreferences.getInstance();
     final prefix = '$_prefix$extId.';
@@ -105,6 +116,7 @@ class ExtConsentService {
       return '打开 ${capability.substring('login.open:'.length)} 的登录页';
     }
     if (capability == 'background.keepalive') return '后台保持运行';
+    if (capability == 'notification.popup') return '发送弹窗通知';
     return '授权请求';
   }
 
@@ -128,6 +140,10 @@ class ExtConsentService {
       return '「$extName」想在后台保持运行，并显示一条常驻通知。'
           '只有你退到后台且没有关掉拓展页时才会继续刷新；关掉拓展页或点通知回 App 即可停止。';
     }
+    if (capability == 'notification.popup') {
+      return '「$extName」想在屏幕上弹出横幅通知（高优先级，会盖在其他应用上方）。'
+          '只在你信任这个拓展时允许；之后可以在拓展菜单「运行时授权」里撤销。';
+    }
     return '「$extName」请求一项需要确认的权限。';
   }
 
@@ -141,6 +157,7 @@ class ExtConsentService {
       return '登录 ${capability.substring('login.open:'.length)}';
     }
     if (capability == 'background.keepalive') return '后台保持运行';
+    if (capability == 'notification.popup') return '发送弹窗通知';
     return capability;
   }
 }
