@@ -41,5 +41,8 @@ flutter:
   assets:
     # Cordis 运行时（MIT，见 assets/CORDIS-LICENSE.txt）：拓展页面启动时注入
     - assets/cordis.min.js
+    # 拓展页统一组件（AntiUI）：颜色跟宿主主题，CSS + JS 都自动注入
+    - assets/anti_ui.css
+    - assets/anti_ui.js
     # 内置「拓展工坊」：ext.json + main.js + style.css
     - assets/builtin/workshop/

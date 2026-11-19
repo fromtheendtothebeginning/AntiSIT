@@ -680,6 +680,7 @@ class WorkshopStore {
     if (draft == null) return const ['ext.json 不存在或解析失败'];
     final out = <String>[];
     final hasNetwork = draft.manifest.permissions.contains('network');
+    final hasFiles = draft.manifest.permissions.contains('files');
     void checkJs(String code, {required bool isMain}) {
       if (isMain && !RegExp(r'export\s+default').hasMatch(code)) {
         out.add('main.js 需要 `export default` 一个 Cordis 插件');
@@ -690,6 +691,11 @@ class WorkshopStore {
       }
       if (!hasNetwork && RegExp(r'\bfetch\s*\(|XMLHttpRequest').hasMatch(code)) {
         out.add('代码里用了网络请求，但 ext.json 没声明 network 权限（市场包会被 CSP 拦掉）');
+      }
+      if (!hasFiles &&
+          RegExp(r'\bctx\.files\b|\bantiSIT\.call\(\s*[\x27"]files\.')
+              .hasMatch(code)) {
+        out.add('代码里用了 ctx.files，但 ext.json 没声明 files 权限（市场包会被拒）');
       }
       if (RegExp(r"""<script[^>]+src\s*=\s*["']https?://""", caseSensitive: false)
           .hasMatch(code)) {
@@ -786,14 +792,23 @@ export default {
   name: 'agent-extension',
   inject: ['ui'],
   apply(ctx) {
-    ctx.ui.root.innerHTML = `
-      <main class="wrap">
-        <h1>${_jsString(name)}</h1>
-        <p>这是拓展工坊生成的 Cordis 拓展。</p>
-        <button id="hello">点我</button>
-      </main>`;
-    const button = ctx.ui.root.querySelector('#hello');
-    button.addEventListener('click', () => ctx.ui.toast('你好'));
+    ctx.ui.root.appendChild(AntiUI.page({
+      title: '${_jsString(name)}',
+      subtitle: '在这里写你的工具',
+      children: [
+        AntiUI.card({
+          title: '开始吧',
+          desc: '这是拓展工坊生成的 Cordis 拓展。',
+          children: [
+            AntiUI.button('点我', {
+              block: true,
+              variant: 'primary',
+              onClick: () => ctx.ui.toast('你好'),
+            }),
+          ],
+        }),
+      ],
+    }));
   },
 };
 ''';
@@ -804,8 +819,6 @@ export default {
       .replaceAll('\n', r'\n');
 
   static const String _templateCss = '''
-.wrap { padding: 20px; font-family: system-ui, sans-serif; }
-h1 { font-size: 20px; margin: 0 0 8px; }
-button { padding: 8px 14px; border-radius: 10px; border: 1px solid var(--antisit-border, #ddd); }
+/* AntiUI 已经提供基础样式；这里只写这个拓展自己的补充。 */
 ''';
 }

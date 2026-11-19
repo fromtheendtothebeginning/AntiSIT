@@ -31,6 +31,7 @@ const WELCOME = `
     <div class="welcome-note">描述你想要的小工具。Agent 会先看拓展、读文件、再改；写文件和安装前默认会弹确认。运行中也可以继续插话，下一步会看到。想先讨论方案就开「计划」，信任当前任务就开「完全访问」。</div>
     <div class="welcome-says">
       <button data-say="做一个记录喝水次数的小工具，数据要留在本机">做一个喝水记录小工具</button>
+      <button data-say="做一个用 AI 总结文本文件的工具：可以选择文件、显示摘要，还能把摘要保存成 txt">做一个 AI 文件总结工具</button>
       <button data-say="做一个倒计时，可以设定目标日期">做一个倒计时</button>
       <button data-say="先读一下当前 main.js，告诉我它是做什么的">读一下当前 main.js</button>
     </div>
@@ -439,10 +440,12 @@ const PROMPT_SECTIONS = [
       '{"id":"sit.my-tool","name":"我的工具","desc":"一句话","version":"0.1.0","main":"main.js","style":"style.css","permissions":["storage"]}',
       '',
       'main.js must export default a Cordis plugin (function or object with apply):',
-      'export default { name: "my-tool", inject: ["ui"], apply(ctx) { ctx.ui.root.innerHTML = "<h1>你好</h1>"; } };',
+      'export default { name: "my-tool", inject: ["ui"], apply(ctx) { ctx.ui.root.appendChild(AntiUI.page({ title: "你好", children: [AntiUI.card({ title: "开始吧" })] })); } };',
       '',
       'Available services after declaring them in inject:',
-      '- ctx.ui: root, toast(text), close(), theme, push({onPop}) (returns {root, close}), pop(), depth, canGoBack (page stack; system back pops it first)',
+      '- ctx.ui: root, toast(text), close(), theme, onThemeChange(fn), push({onPop}) (returns {root, close}), pop(), depth, canGoBack (page stack; system back pops it first), kit (= AntiUI), confirm(options), sheet(options)',
+      '- Theme / dark mode: the host injects the native palette as CSS variables (--antisit-bg, --antisit-card, --antisit-menu-bg, --antisit-input-fill, --antisit-gold, --antisit-on-accent, --antisit-overlay, --antisit-wells, radius-*). AntiUI consumes them, so Theme switching is automatic. ctx.ui.theme carries the same values for canvas/chart use; ctx.ui.onThemeChange(fn) fires on theme or dark-mode changes. Never hard-code light/dark colors.',
+      '- AntiUI (global): the app-styled component kit. Use it before writing your own CSS. Builders: page({title, subtitle, children}), card({title, desc, children, actions, onClick}), button(label, {variant, icon, block, onClick}), list([row]), row({title, desc, icon, side, chevron, onClick}), switchRow({title, desc, checked, onChange}), field/input/textarea, segmented({items, index, onChange}), chips(items, {value, onChange}), topbar({title, subtitle, onBack, actions}), empty({icon, title, desc, action}), spinner(), loading(text), progress(value), sheet({title, desc, content, actions}), confirm({title, text, confirmText, danger}), actions({title, items}), toast(text), copy(text), formatBytes(n). Icons: back, chevron, close, check, plus, search, file, folder, download, upload, trash, info, refresh, copy, send, sparkles, link, clock, more.',
       '- ctx.storage: get/set/remove(key), Promise-based, isolated by extension id',
       '- ctx.card: setName/setDesc/setIcon',
       '- ctx.ai: chat(prompt, {system, maxTokens})',
@@ -451,6 +454,7 @@ const PROMPT_SECTIONS = [
       '- ctx.secrets: get/set/remove(key) — encrypted credentials (Keystore/Keychain), isolated by extension id; requires the secrets permission',
       '- ctx.net: request({method, url, headers, body, bodyBase64}) — native HTTPS proxy without CORS; can carry Cookie/Authorization headers; https only, private addresses blocked; the app asks the user once per host; requires the network permission',
       '- ctx.clipboard: read() / write(text) — reading requires the clipboard permission and a user consent prompt',
+      '- ctx.files: pick({accept?, multiple?, encoding?}) → {files: [{name, size, mime, text?/base64?}]}; save({name, text?/base64?, mime?}) → true/false. Only through the system file picker; each file ≤ 8 MB. Requires the files permission. Use encoding: "base64" for binary files. An <a download> with blob:/data: is routed through files.save automatically.',
       '- ctx.login: open({url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?}) — visible login WebView; returns {cookies, cookieHeader} for the declared same-site domains; requires the login permission and a user consent prompt',
       '- ctx.background: keepAlive({enabled, title?, text?}) — starts/stops an Android foreground service with a persistent notification so the open extension page keeps running its timers in the background; requires the background permission and a user consent prompt',
       '- ctx.app: id/name/version/permissions/close()',
@@ -466,6 +470,8 @@ const PROMPT_SECTIONS = [
       '- Do not load remote scripts or CSS. Prefer data: for images and fonts. Cross-origin or cookie-bearing requests must use ctx.net.request (network permission); plain fetch only works for CORS-enabled https and cannot set Cookie.',
       '- Notifications require the notification permission in ext.json; the first ctx.notify.* call asks the user for system notification permission.',
       '- Cookies / tokens go in ctx.secrets (secrets permission, Keystore/Keychain), never in ctx.storage or the DOM.',
+      '- Use AntiUI for buttons, cards, fields, sheets and empty states. App colors come from CSS variables (--antisit-*), so do not hard-code light/dark colors; put only app-specific tweaks in style.css.',
+      '- File input / download compatibility: use ctx.files.pick and ctx.files.save (files permission). Do not try to read arbitrary local paths or request storage permissions.',
       '- The app asks the user to confirm each new host used by ctx.net, clipboard reads, login pages, background keep-alive, and popup notifications. Do not try to avoid or pre-approve these prompts.',
       '- main.js is one file; do not use local imports. Put styles in style.css.',
       '- Draw inside ctx.ui.root. Do not read or write files outside the draft; do not try to run shell commands.',

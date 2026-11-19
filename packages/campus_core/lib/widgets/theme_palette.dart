@@ -220,7 +220,22 @@ const kGlassWellsDark = <GlassWell>[
 /// 语义色入口（全站 278 处引用）：取值随 [SemColors.p] 当前色板变化，
 /// 由 CampusApp 在每次构建时按主题模式写入，MaterialApp 重建带动全站刷新。
 class SemColors {
-  static GlassPalette p = GlassPalette.light;
+  static GlassPalette _p = GlassPalette.light;
+
+  /// 当前色板。写入时如果换成了另一个色板对象，会通知 [palette] 的订阅者
+  /// （拓展 WebView 页要跟着切主题 / 夜间模式）。
+  static GlassPalette get p => _p;
+
+  static set p(GlassPalette value) {
+    if (identical(_p, value)) return;
+    _p = value;
+    palette.value = value;
+  }
+
+  /// 色板变化通知。只在 [p] 真的换成另一个对象时触发；主题插件通常返回
+  /// 同一份常量 / static final 色板，普通重建不会反复通知。
+  static final ValueNotifier<GlassPalette> palette =
+      ValueNotifier<GlassPalette>(_p);
 
   static bool get isDark => p.isDark;
   static Color get accent => p.accent;

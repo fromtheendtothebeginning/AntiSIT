@@ -35,12 +35,22 @@ class _ExtensionOrderPageState extends State<ExtensionOrderPage> {
     if (mounted) setState(() => _items = _store.items);
   }
 
+  Future<void> _resetSizes() async {
+    await _store.resetSizes();
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('拓展排序'),
         actions: [
+          if (_store.hasCustomSizes)
+            TextButton(
+              onPressed: _resetSizes,
+              child: const Text('重置大小', style: TextStyle(fontSize: 13)),
+            ),
           TextButton(
             onPressed: _reset,
             child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
@@ -52,8 +62,10 @@ class _ExtensionOrderPageState extends State<ExtensionOrderPage> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
-            child: Text('按住右侧手柄上下拖动，松手即生效（拓展页立刻跟着变）；新加的拓展排在最后',
-                style: TextStyle(fontSize: 12, color: SemColors.textMuted, height: 1.5)),
+            child: Text(
+                '按住右侧手柄上下拖动，松手即生效；拓展页里长按卡片进入整理后，顶部尺寸条可在 1×1 / 1×3 / 2×3 / 2×2 间切换，也能拖右下角弧线细调',
+                style: TextStyle(
+                    fontSize: 12, color: SemColors.textMuted, height: 1.5)),
           ),
           AppCard(
             padding: const EdgeInsets.symmetric(vertical: 4),

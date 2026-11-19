@@ -26,6 +26,15 @@ App 内置一个 **「拓展工坊」**（`builtin.workshop`）：它本身也�
 拓展卡片默认按添加先后排列；「我的」标题栏的**排序**入口可以拖动自定义顺序，
 「恢复默认」回原始顺序。排序结果存在本机，重启 App 不变；新加的拓展排在最后。
 
+在「我的」页**长按卡片**还能直接整理：选中卡片后，顶部一排尺寸按钮在四种大小间切换
+——尺寸名按**行×列**读：**1×1**（只显示图标的小方格，也留了右下角弧线，拖一下就能放大回去）、
+**1×3**（半屏宽横条）、**2×3**（2 行 3 列，半屏宽，原来的默认大小）、**2×2**（2 行 2 列，1/3 屏宽竖卡）；
+也可以拖选中卡片右下角的弧线细调。**左右滑动卡片本身同样能改大小**（往右变大、往左变小），
+**竖向拖动**才是换位。换尺寸时卡框有跟随的减速动画，不是一帧跳过去；
+拖动卡片时原位置会先留一个浅色占位符，拖出一段距离后才淡出。
+尺寸与顺序分开存（`plugin.ext.order` / `plugin.ext.sizes`），重启后都还在；
+排序页右上角的「重置大小」把所有卡片恢复成 2×3。整理态点空白处或标题栏「完成」退出。
+
 ### 扫码添加
 
 从「拓展」页右上角进入的扫一扫会把结果带回来，按码型给**不同颜色 / 文字**的按钮：
@@ -143,11 +152,14 @@ export default {
 | | `close()` | 关闭当前拓展页 |
 | | `push({onPop})` | 叠一层子页面，返回 `{root, close}`；往 `root` 里画这层的内容，`close()` = 退回上一层 |
 | | `pop()` / `depth` / `canGoBack` | 退回上一层 / 当前栈深 / 栈里有没有页面 |
-| | `theme` | 当前配色：`isDark` / `accent` / `bg` / `card` / `border` / `textPrimary` …（`#RRGGBB`） |
+| | `kit` / `confirm(opts)` / `sheet(opts)` | 统一组件（同全局 `AntiUI`）/ 确认框 / 底部弹层 |
+| | `theme` | 当前配色的完整令牌：`isDark` / `themeId` / `bg` / `card` / `menuBg` / `inputFill` / `overlay` / `gold` / `radiusCard` / `wells` …（见「主题与夜间模式」） |
+| | `onThemeChange(fn)` | 订阅主题 / 夜间模式切换（返回取消订阅函数）；AntiUI 自己会跟 CSS 变量走，不用手动重画 |
 | `ctx.storage` | `get(key)` / `set(key, value)` / `remove(key)` | 按拓展 id 隔离的本地存储，返回 Promise |
 | `ctx.secrets` | `get(key)` / `set(key, value)` / `remove(key)` | 加密凭据（Keystore / Keychain），按拓展隔离；需 `secrets` 权限 |
 | `ctx.net` | `request({method?, url, headers?, body?, bodyBase64?})` | 原生 HTTPS 代理，不受 CORS 限制、可带 Cookie；需 `network` 权限 |
 | `ctx.clipboard` | `read()` / `write(text)` | 读写剪贴板；`read` 需 `clipboard` 权限并会弹窗确认 |
+| `ctx.files` | `pick({accept?, multiple?, encoding?})` / `save({name, text?, base64?, mime?})` | 读写用户通过系统文件选择器明确选中的文件；需 `files` 权限，单文件 ≤ 8 MB |
 | `ctx.login` | `open({url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?})` | 打开可见登录页；返回 `{cookies, cookieHeader}`；需 `login` 权限并会弹窗确认 |
 | `ctx.background` | `keepAlive({enabled, title?, text?})` | 开启 / 关闭后台保活（前台服务 + 常驻通知）；需 `background` 权限并会弹窗确认 |
 | `ctx.card` | `setName(text)` / `setDesc(text)` / `setIcon(text)` | 改拓展列表卡片上的显示值 |
@@ -181,6 +193,153 @@ antiSIT.on('ai.stream', (e) => {
 先退一层，栈空了才关闭整个拓展。`onPop` 在那层页面退出后回调，适合收尾定时器或写回数据。
 根页面先画好再 push；push 之后不要再整块改 `ctx.ui.root.innerHTML`，否则会把栈容器一起冲掉。
 
+### 界面组件（AntiUI）
+
+每个拓展页都会自动注入一套 **AntiUI** 组件（CSS + 全局 `AntiUI` 对象），颜色、圆角、
+按压和弹层动效都跟 App 一致，不用自己写一套样式。`ctx.ui.kit` 也指向它。
+
+```js
+export default {
+  name: 'my-tool',
+  inject: ['ui', 'files'],
+  apply(ctx) {
+    const list = AntiUI.el('div', { class: 'au-stack' });
+    const page = AntiUI.page({
+      title: '我的文件',
+      subtitle: '只读取你在系统选择器里选中的文件',
+      children: [
+        AntiUI.button('选择文件', { variant: 'primary', block: true, onClick: pick }),
+        list,
+      ],
+    });
+    ctx.ui.root.appendChild(page);
+
+    async function pick() {
+      const { files } = await ctx.files.pick({ accept: ['text/plain', '.md'], multiple: true });
+      if (!files.length) return;
+      list.replaceChildren(AntiUI.list(files.map((f) => ({
+        title: f.name,
+        desc: `${AntiUI.formatBytes(f.size)} · ${f.text.length} 字`,
+        icon: 'file',
+        chevron: true,
+        onClick: () => ctx.ui.toast(f.name),
+      }))));
+      page.querySelector('.au-subtitle').textContent = `共 ${files.length} 个文件`;
+    }
+  },
+};
+```
+
+常用构造器：
+
+| 构造器 | 说明 |
+|---|---|
+| `AntiUI.page({title, subtitle, topbar?, children})` | 整页容器：安全区内边距 + 纵向间距 |
+| `AntiUI.topbar({title, subtitle, onBack, actions})` | 吸顶栏：返回键 + 标题 + 右侧动作 |
+| `AntiUI.card({title, desc, children, actions, onClick})` | 卡片（和 App 的 `AppCard` 同款高光 / 描边 / 阴影） |
+| `AntiUI.button(label, {variant, icon, block, onClick})` | `variant`：`primary` / `soft` / `danger` / `ghost`；`icon` 见下表 |
+| `AntiUI.iconButton(name, {label, onClick})` | 圆形图标按钮 |
+| `AntiUI.list([row...])` / `AntiUI.row({title, desc, icon, side, chevron, onClick})` | 列表 / 行 |
+| `AntiUI.switchRow({title, desc, checked, onChange})` | 带开关的行 |
+| `AntiUI.field({label, hint, control})` / `input(...)` / `textarea(...)` | 表单 |
+| `AntiUI.segmented({items, index, onChange})` | 分段选择（滑块跟手动画） |
+| `AntiUI.chips(items, {value, onChange})` | 胶囊筛选 |
+| `AntiUI.empty({icon, title, desc, action})` | 空态 |
+| `AntiUI.spinner()` / `loading(text)` / `progress(value)` | 加载与进度 |
+| `AntiUI.sheet({title, desc, content, actions})` | 底部弹层，返回 `{root, close}` |
+| `AntiUI.confirm({title, text, confirmText, danger})` | 确认框，返回 `Promise<boolean>` |
+| `AntiUI.actions({title, items})` | 动作面板，返回 `Promise<value|null>` |
+| `AntiUI.toast(text)` / `copy(text)` / `formatBytes(n)` | 提示 / 复制 / 体积格式化 |
+
+图标：`back` / `chevron` / `close` / `check` / `plus` / `search` / `file` / `folder` /
+`download` / `upload` / `trash` / `info` / `refresh` / `copy` / `send` / `sparkles` /
+`link` / `clock` / `more`。底层是 `AntiUI.icon(name, size)`，返回一个内联 SVG。
+
+也可以只用 class 写 HTML：`.au-page` / `.au-card` / `.au-btn`（配 `.au-btn--primary`）/
+`.au-list` / `.au-row` / `.au-field` / `.au-input` / `.au-seg` / `.au-chip` / `.au-empty` / `.au-spinner`。
+颜色变量是 `--antisit-accent` / `--antisit-bg` / `--antisit-card` / `--antisit-border` /
+`--antisit-text-muted` / `--antisit-danger`，深浅色切换由宿主负责。
+
+### 主题与夜间模式
+
+拓展页和原生界面**共用同一套色板**，不是近似色：宿主色板的每个令牌都会以 `--antisit-*`
+注入页面，AntiUI 直接消费它们。夜间模式切换时宿主会同时改 `html.dark`、`color-scheme`
+和全部变量，AntiUI 组件即时换色，不需要重画。
+
+常用变量：
+
+| CSS 变量 | 对应原生令牌 | 用途 |
+|---|---|---|
+| `--antisit-bg` | `SemColors.bg` | 页面底色 |
+| `--antisit-card` / `--antisit-card-solid` | `card` / 合成实底 | 玻璃卡面 / 需要实底的卡内控件 |
+| `--antisit-card-elevated` | `cardElevated` | 分栏、分段控件轨道 |
+| `--antisit-menu-bg` | `menuBg` | 弹窗 / 底栏 / SnackBar 近实底 |
+| `--antisit-border` / `--antisit-border-strong` | `border` / `borderStrong` | 描边 |
+| `--antisit-input-fill` | `inputFill` | 输入框填充 |
+| `--antisit-fg` / `--antisit-text-secondary` / `--antisit-text-muted` | 文字三级 | 文字 |
+| `--antisit-accent` / `--antisit-accent-soft` / `--antisit-accent-strong` | 强调色 | 主按钮 / 选中态 |
+| `--antisit-gold` / `--antisit-gold-soft` | 香槟金 | 主 CTA、警告、输入聚焦 |
+| `--antisit-success` / `--antisit-danger` | 语义色 | 成功 / 危险 |
+| `--antisit-on-accent` | `isDark ? bg : white` | 强调色上的文字 / 图标 |
+| `--antisit-overlay` | `overlay` | 弹层遮罩 |
+| `--antisit-shadow` | `shadow` | 卡片 / 弹层投影色 |
+| `--antisit-thumb` | `thumb` | 分段滑块的滑块面 |
+| `--antisit-radius-card` / `control` / `button` / `dialog` / `sheet` / `pill` | 16 / 12 / 16 / 24 / 24 / 999 | 圆角 |
+| `--antisit-wells` | 主题光斑 | 玻璃主题的场景光斑（CSS 渐变） |
+| `--antisit-theme-id` | 主题 id | 需要按主题做特调时用（如 `theme.glass`） |
+
+需要 JS 里读主题（比如画 canvas、生成图表）时用 `ctx.ui.theme` / `ctx.ui.onThemeChange`：
+
+```js
+function render(theme) {
+  // theme.isDark / theme.bg / theme.card / theme.menuBg / theme.wells …
+}
+render(ctx.ui.theme);
+const off = ctx.ui.onThemeChange(render);
+ctx.effect(() => off); // 页面关闭时取消订阅
+```
+
+`theme.wells` 是场景光斑数组（`{x, y, radius, color}`，`x/y` 为 -1..1 的对齐坐标）；
+非玻璃主题（墨白 / 竹青）返回空数组，页面就是纯色底。宿主已经把光斑画在页面背景上，
+只有在 canvas / 全屏图层里自己画背景时才需要用它。
+
+### AI 调用
+
+`ctx.ai` 已经可用，三种写法按需要选：
+
+```js
+// 一问一答：最省事，适合总结 / 改写 / 分类
+const text = await ctx.ai.chat('把下面这段课表说明压缩成三行：\n' + raw, {
+  system: '你是一个简洁的助手',
+  maxTokens: 512,
+});
+
+// 多轮 + function calling：自己实现 Agent 循环时用
+const reply = await ctx.ai.chatTools({
+  messages: [{ role: 'user', content: '帮我看下这两门课冲突吗' }],
+  tools: [{
+    name: 'course_info',
+    description: '按课程名查时间地点',
+    parameters: { type: 'object', properties: { name: { type: 'string' } } },
+  }],
+});
+// reply = { text, reasoning, toolCalls, usedTools, finishReason }
+
+// 流式：增量从 antiSIT.on('ai.stream') 推下来，返回值仍是完整回复
+const streamId = 's' + Date.now();
+antiSIT.on('ai.stream', (e) => {
+  if (e.streamId !== streamId) return;
+  if (e.kind === 'text') appendText(e.delta);
+});
+const full = await ctx.ai.chatToolsStream({
+  streamId,
+  messages: [{ role: 'user', content: '写一句校园卡余额提醒' }],
+});
+```
+
+需要 `ai` 权限（市场拓展），Key / 模型都在 App 侧，网页拿不到；没配好 AI 或没声明权限
+会直接 reject，不会静默返回空串。
+
 **通知**：`ctx.notify` 走 App 自己的本地通知渠道（`ext_notify`），不依赖「上课提醒」插件；
 `cancelAll()` 只撤当前拓展排过的通知，不会动课表提醒。没授权「精确闹钟」的机型上定时通知
 可能晚几分钟，但不会被丢掉。
@@ -200,8 +359,9 @@ antiSIT.on('ai.stream', (e) => {
 * 「全部重置」会清掉记录，下次使用重新询问；
 * `notification.popup` / `clipboard.read` / `background.keepalive` 会在插件声明了对应静态权限时预先列出来，即使还没申请过。
 
-`ctx.ui.push` / `ctx.notify` 是 **1.34.0** 起的新接口；要发到市场的拓展请把 `ext.json` 的
-`minAppVersion` 设为 `1.34.0`，旧版 App 会提示升级而不是运行到一半报「未知接口」。
+`ctx.ui.push` / `ctx.notify` 是 **1.34.0** 起的新接口；`ctx.files` 与 AntiUI 是
+**1.40.2** 起的新接口（主题 / 夜间模式实时同步是 **1.40.3** 起）。要发到市场的拓展请把 `ext.json` 的 `minAppVersion` 设为
+用到的最高版本，旧版 App 会提示升级而不是运行到一半报「未知接口」。
 
 ## 权限
 
@@ -215,6 +375,7 @@ antiSIT.on('ai.stream', (e) => {
 | `notification` | 给你发通知（即时 / 定时，App 没开也能收到）；不声明就调用 `ctx.notify.*` → Promise reject |
 | `secrets` | 在本机保存 Cookie / Token 这类登录凭据（系统加密存储，按拓展隔离）；不声明就调用 `ctx.secrets.*` → Promise reject |
 | `clipboard` | 读写剪贴板；读取时会在首次 / 未记住时再弹一次确认 |
+| `files` | 通过系统文件选择器读取 / 保存用户选中的文件；不扫描本机、不拿路径 |
 | `login` | 打开可见登录页并读取拓展声明域名的 Cookie；打开前会再弹一次确认 |
 | `background` | 在后台保持运行（前台服务 + 常驻通知）；开启前会再弹一次确认 |
 
@@ -247,6 +408,54 @@ antiSIT.on('ai.stream', (e) => {
 
 `ctx.clipboard.read()` 读文本，`ctx.clipboard.write(text)` 写文本。读取属于敏感动作：
 第一次（或用户还没记住选择时）会弹「读取剪贴板」确认框，拒绝后本次调用 reject。
+
+### 文件读写
+
+拓展不能按任意路径读写本机文件；要碰文件，只能通过系统选择器让用户明确选：
+
+```js
+// 选文件：accept 支持扩展名（'.csv' / 'csv'）和 MIME（'text/csv' / 'image/*'）
+const { files } = await ctx.files.pick({
+  accept: ['text/csv', '.json'],
+  multiple: false,
+  encoding: 'text',        // 缺省 text；图片 / 压缩包这类用 'base64'
+});
+// files = [{ name, size, mime, text }] 或 [{ name, size, mime, base64 }]
+// 用户取消时 files 为空数组
+
+// 存文件：系统「保存到」里选位置，取消返回 false
+await ctx.files.save({
+  name: '成绩导出.csv',
+  mime: 'text/csv',
+  text: csv,
+});
+
+// 二进制
+await ctx.files.save({ name: '图表.png', base64: pngBase64, mime: 'image/png' });
+```
+
+约束：
+
+* 需要 `files` 权限（市场拓展）；用户自己加的拓展不受静态权限门限制；
+* 单文件 ≤ 8 MB，一次最多 10 个、合计 ≤ 16 MB，超了直接报错，不截断；
+* 只返回文件内容，不返回路径；保存也只能写用户选中的那一个位置；
+* Android 走 `ACTION_CREATE_DOCUMENT` / 系统文件选择器，不需要存储权限；
+* 拓展页里的 `<a download href="blob:...">` / `data:...` 会自动转成
+  `files.save`（需声明 `files` 权限）；http(s) 下载由 App 的 DownloadManager 接管（见下）。
+
+### 网页里的上传与下载
+
+「拓展」里打开的**网址型**页面也会做浏览器该做的事：
+
+* `<input type="file">` 点开时弹出系统文件选择器，选完把文件交给网页（Android）；
+* 点击下载链接（`Content-Disposition: attachment`、直链文件等）交给系统
+  DownloadManager：通知栏有进度，下载完可以直接点开；会带上 WebView 的 Cookie
+  和 User-Agent，登录后才能下载的链接也能用；
+* `blob:` / `data:` 生成的下载在网址型页面里暂时不接管，需要这类能力的拓展
+  请用 Cordis 形态并调用 `ctx.files.save`。
+
+网页上传 / 下载接管目前只在 **Android** 生效（iOS 的 WebView 没有开放文件选择回调）；
+`ctx.files` 这两条接口本身在 Android / iOS 都能用，保存文件在 iOS 上暂不支持。
 
 ### 通用登录页
 
@@ -418,6 +627,7 @@ subagent、compaction 和 provider 中间件。单轮最多 40 step，日志超�
 * 内联页是 opaque origin：`localStorage` / `sessionStorage` / `document.cookie` 会抛错，
   请用 `ctx.storage`；
 * 市场包默认禁网；声明 `network` 才允许 `https:` 的 fetch / 图片 / 字体；
+* 文件访问只经过系统选择器：拓展拿不到路径、不能扫描目录，也拿不到用户没选的文件；
 * 不引外部脚本：审核过的代码就是手机上跑的那份；
 * 拓展工坊的写文件 / 删除 / 安装全部经过 App 原生确认，模型不能静默改你的拓展；
   写已有文件必须先读，Dart 层再用 sha256 版本校验拦截「拿旧内容覆盖」；

@@ -34,6 +34,9 @@ class MainActivity : FlutterActivity() {
     /** 最近一次安装的 APK 路径：系统没给确认界面时用它走 FileProvider 兜底。 */
     private var lastApkPath: String? = null
 
+    /** 拓展文件保存：ACTION_CREATE_DOCUMENT 的结果从这里转回 Dart。 */
+    private var extFilesBridge: ExtFilesBridge? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // 流体云 / 原子通知 / 焦点通知：课程常驻通知与闹钟排期（无厂商 SDK，走系统通知）
@@ -44,6 +47,15 @@ class MainActivity : FlutterActivity() {
         CookieBridge(flutterEngine.dartExecutor.binaryMessenger).register()
         // 拓展后台保活：前台服务 + 常驻通知（不执行隐藏页面）
         ExtBackgroundBridge(this, flutterEngine.dartExecutor.binaryMessenger).register()
+        // 拓展文件保存：系统「保存到」选择器（无存储权限）
+        extFilesBridge = ExtFilesBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+            .also { it.register() }
+        // 网页下载：把 WebView 的下载链接交给系统 DownloadManager
+        ExtWebViewFilesBridge(
+            this,
+            flutterEngine,
+            flutterEngine.dartExecutor.binaryMessenger,
+        ).register()
         // WebView 进程级代理：服务器模式的评教页经校园隧道打开
         WebViewProxyBridge(this, flutterEngine.dartExecutor.binaryMessenger).register()
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
@@ -105,6 +117,12 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         handleInstallStatus(intent)
         HomeWidget.routeOf(intent)?.let { HomeWidget.setLaunch(this, it) }
+    }
+
+    /** 拓展文件保存（ACTION_CREATE_DOCUMENT）的结果：交给 ExtFilesBridge 回填 Dart。 */
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (extFilesBridge?.handleActivityResult(requestCode, resultCode, data) == true) return
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     private fun packageUri(): Uri = Uri.fromParts("package", packageName, null)

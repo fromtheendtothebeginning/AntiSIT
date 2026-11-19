@@ -24,15 +24,18 @@ class _Fake extends FeaturePlugin {
   String get description => '测试插件';
 
   @override
-  List<PluginNavItem> navItems(PluginRegistry registry, ValueListenable<int> tab) => [
-        PluginNavItem(
-          icon: Icons.home_outlined,
-          activeIcon: Icons.home,
-          label: label,
-          order: order,
-          build: (_) => Center(child: Text('页面$label')),
-        ),
-      ];
+  List<PluginNavItem> navItems(
+    PluginRegistry registry,
+    ValueListenable<int> tab,
+  ) => [
+    PluginNavItem(
+      icon: Icons.home_outlined,
+      activeIcon: Icons.home,
+      label: label,
+      order: order,
+      build: (_) => Center(child: Text('页面$label')),
+    ),
+  ];
 
   @override
   List<PluginTool> tools(PluginRegistry registry) => toolTitle == null
@@ -49,13 +52,13 @@ class _Fake extends FeaturePlugin {
 }
 
 PluginRegistry _registry() => PluginRegistry(
-      features: const [
-        _Fake('timetable', '课程表', 10, toolTitle: '工具甲'),
-        _Fake('ecard', '校园码', 20, toolTitle: '工具乙'),
-        _Fake('tools', '工具', 30),
-      ],
-      themes: const [GlassTheme()],
-    );
+  features: const [
+    _Fake('timetable', '课程表', 10, toolTitle: '工具甲'),
+    _Fake('ecard', '校园码', 20, toolTitle: '工具乙'),
+    _Fake('tools', '工具', 30),
+  ],
+  themes: const [GlassTheme()],
+);
 
 void main() {
   setUp(() {
@@ -136,6 +139,159 @@ void main() {
     expect(topOf('工具乙'), lessThan(topOf('工具甲')), reason: '拖到下面后顺序应该换过来');
     final sp = await SharedPreferences.getInstance();
     expect(sp.getStringList('plugin_tool_order'), ['ecard', 'timetable']);
+    AppState.I.demo = false;
+  });
+
+  testWidgets('工具页长按卡片进入整理态，拖动换位并落到本地', (tester) async {
+    AppState.I.demo = true;
+    await tester.pumpWidget(MaterialApp(home: ToolsPage()));
+    await tester.pumpAndSettle();
+
+    final g = await tester.startGesture(tester.getCenter(find.text('工具甲')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('card-size-bar')),
+      findsOneWidget,
+      reason: '长按进入整理态，顶部出现尺寸条',
+    );
+    expect(find.textContaining('卡片大小'), findsOneWidget);
+
+    // 先竖向挪一点，让方向锁定在「换位置」上（横向会变成改尺寸）
+    await g.moveBy(const Offset(0, -30));
+    await tester.pump(const Duration(milliseconds: 30));
+    await g.moveTo(tester.getCenter(find.text('工具乙')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await g.up();
+    await tester.pumpAndSettle();
+
+    expect(PluginRegistry.I.toolCards.map((t) => t.title), ['工具乙', '工具甲']);
+    final sp = await SharedPreferences.getInstance();
+    expect(sp.getStringList('plugin_tool_order'), ['ecard', 'timetable']);
+
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('card-size-bar')), findsNothing);
+    AppState.I.demo = false;
+  });
+
+  testWidgets('工具卡片拖右下角手柄：按拖出来的宽高吸附到最近一档', (tester) async {
+    AppState.I.demo = true;
+    await tester.pumpWidget(MaterialApp(home: ToolsPage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('整理卡片'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('整理卡片'), findsNothing, reason: '整理态标题栏换成「完成」');
+
+    final before = tester.getSize(
+      find.byKey(const ValueKey<String>('fgrid:timetable')),
+    );
+    // 只往左拖一档（32px 就够）：2×3 往左按「大小顺序」缩一档 = 2×2 竖卡
+    await tester.drag(
+      find.byKey(const ValueKey<String>('fgrid-handle:timetable')),
+      const Offset(-40, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(PluginRegistry.I.toolSize('timetable'), GridCardSize.tall);
+    final after = tester.getSize(
+      find.byKey(const ValueKey<String>('fgrid:timetable')),
+    );
+    expect(after.width, lessThan(before.width * 0.7), reason: '从半屏宽缩成 1/3 屏宽');
+    final sp = await SharedPreferences.getInstance();
+    expect(sp.getString('plugin_tool_sizes'), contains('"timetable":"2x2"'));
+
+    // 点列表下方的空白也退出整理（不只是点卡片缝里）
+    await tester.tapAt(const Offset(400, 520));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('card-size-bar')), findsNothing);
+    AppState.I.demo = false;
+  });
+
+  testWidgets('顶部尺寸条：1×1 / 1×3 / 2×3 / 2×2 直接切换并落到本地', (tester) async {
+    AppState.I.demo = true;
+    await tester.pumpWidget(MaterialApp(home: ToolsPage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('整理卡片'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('card-size-bar')), findsOneWidget);
+    expect(find.text('卡片大小 · 2×3'), findsOneWidget, reason: '默认选中第一张工具');
+
+    final first = tester.getSize(
+      find.byKey(const ValueKey<String>('fgrid:timetable')),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('card-size-option:1x1')),
+    );
+    await tester.pumpAndSettle();
+    expect(PluginRegistry.I.toolSize('timetable'), GridCardSize.single);
+    expect(find.text('卡片大小 · 1×1'), findsOneWidget);
+    final tiny = tester.getSize(
+      find.byKey(const ValueKey<String>('fgrid:timetable')),
+    );
+    expect(tiny.height, lessThan(first.height), reason: '1x1 只有一行高');
+    expect(tiny.width, lessThan(first.width / 2), reason: '1x1 只占 1 列');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('card-size-option:1x3')),
+    );
+    await tester.pumpAndSettle();
+    expect(PluginRegistry.I.toolSize('timetable'), GridCardSize.wide);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('card-size-option:2x2')),
+    );
+    await tester.pumpAndSettle();
+    expect(PluginRegistry.I.toolSize('timetable'), GridCardSize.tall);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('card-size-option:2x3')),
+    );
+    await tester.pumpAndSettle();
+    expect(PluginRegistry.I.toolSize('timetable'), GridCardSize.standard);
+
+    final sp = await SharedPreferences.getInstance();
+    expect(
+      sp.getString('plugin_tool_sizes'),
+      isNull,
+      reason: '改回默认 2×3 后不残留条目',
+    );
+    AppState.I.demo = false;
+  });
+
+  testWidgets('窄屏（360）上 1x1 / 1x3 / 2x2 三种工具卡片都不溢出', (tester) async {
+    AppState.I.demo = true;
+    tester.view.physicalSize = const Size(720, 1600);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    PluginRegistry.I = PluginRegistry(
+      features: const [
+        _Fake('timetable', '课程表', 10, toolTitle: '工具甲'),
+        _Fake('ecard', '校园码', 20, toolTitle: '工具乙'),
+        _Fake('extra', '额外', 30, toolTitle: '工具丙'),
+      ],
+      themes: const [GlassTheme()],
+    );
+    await PluginRegistry.I.setToolSize('timetable', GridCardSize.single);
+    await PluginRegistry.I.setToolSize('ecard', GridCardSize.wide);
+    await PluginRegistry.I.setToolSize('extra', GridCardSize.tall);
+
+    await tester.pumpWidget(const MaterialApp(home: ToolsPage()));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: '1x1 / 1x3 / 2x2 卡片内容不能溢出');
+    // 1x1 只画图标（放名字会被截断），所以这一张按卡片 key 断言
+    expect(
+      find.byKey(const ValueKey<String>('fgrid:timetable')),
+      findsOneWidget,
+    );
+    expect(find.text('工具甲'), findsNothing, reason: '1x1 这档只显示图标');
+    expect(find.text('工具乙'), findsOneWidget);
+    expect(find.text('工具丙'), findsOneWidget);
+    expect(find.text('副标题'), findsNWidgets(2), reason: '1x1 这档不显示副标题');
     AppState.I.demo = false;
   });
 

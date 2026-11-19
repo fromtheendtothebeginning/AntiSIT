@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,6 +27,7 @@ class ExtensionStore extends ChangeNotifier {
 
   static const String _kItems = 'plugin.ext.items';
   static const String _kOrder = 'plugin.ext.order';
+  static const String _kSizes = 'plugin.ext.sizes';
   static const String _kHideUrls = 'plugin.ext.hide_urls';
   static const String _kBuiltinCard = 'plugin.ext.builtin_card';
   static const String _kDataPrefix = 'plugin.ext.data.';
@@ -40,6 +42,10 @@ class ExtensionStore extends ChangeNotifier {
   /// 卡片的自定义排序（按拓展 id 记）：空 = 默认顺序（内置在前，其后按添加先后）。
   /// 增删拓展都不用改它——没排到的按原顺序接在后面，已删的留在里面也无害。
   List<String> _order = const [];
+
+  /// 卡片的自定义尺寸（按拓展 id 记）：空 = 全部默认 2x3（半屏宽 × 常规高）。
+  /// 和排序一样，没记到的用默认值，已删的条目在删除 / 读盘时清掉。
+  Map<String, GridCardSize> _sizes = <String, GridCardSize>{};
 
   /// 当前的拓展清单（副本，外部改不动）。默认内置排在前面，用户拖过排序后按
   /// [_order] 排（见 [setOrder]）。内置项已套上接口覆盖值：调用方拿到的一律是
@@ -69,6 +75,65 @@ class ExtensionStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 拓展卡片的网格尺寸：没改过就是默认的 2x3。
+  GridCardSize sizeOf(String id) => _sizes[id] ?? GridCardSize.standard;
+
+  /// 是否有用户改过尺寸的拓展卡片（排序页据此决定要不要露出「重置大小」）。
+  bool get hasCustomSizes => _sizes.isNotEmpty;
+
+  /// 保存某张拓展卡片的尺寸。传 [GridCardSize.standard] = 恢复默认（不会多存一条）。
+  Future<void> setSize(String id, GridCardSize size) async {
+    if (!_items.any((e) => e.id == id)) return;
+    final next = Map<String, GridCardSize>.of(_sizes);
+    if (size == GridCardSize.standard) {
+      next.remove(id);
+    } else {
+      next[id] = size;
+    }
+    final same = next.length == _sizes.length &&
+        next.entries.every((e) => _sizes[e.key] == e.value);
+    if (same) return;
+    _sizes = next;
+    await _persistSizes();
+    notifyListeners();
+  }
+
+  /// 把所有拓展卡片恢复到默认尺寸。
+  Future<void> resetSizes() async {
+    if (_sizes.isEmpty) return;
+    _sizes = <String, GridCardSize>{};
+    await (await SharedPreferences.getInstance()).remove(_kSizes);
+    notifyListeners();
+  }
+
+  Future<void> _persistSizes() async {
+    final sp = await SharedPreferences.getInstance();
+    if (_sizes.isEmpty) {
+      await sp.remove(_kSizes);
+      return;
+    }
+    await sp.setString(_kSizes, jsonEncode({
+      for (final entry in _sizes.entries) entry.key: entry.value.key,
+    }));
+  }
+
+  /// 读尺寸表：坏数据 / 认不出的尺寸都按默认处理，不把整页带崩。
+  static Map<String, GridCardSize> _parseSizes(String? raw) {
+    if (raw == null || raw.isEmpty) return <String, GridCardSize>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return <String, GridCardSize>{};
+      return {
+        for (final entry in decoded.entries)
+          if (entry.value is String)
+            '${entry.key}': GridCardSize.parse(entry.value),
+      };
+    } catch (e) {
+      debugPrint('[ext] 卡片尺寸解析失败已忽略：$e');
+      return <String, GridCardSize>{};
+    }
+  }
+
   /// 隐藏全部网址（拓展页右上角那一个总开关）：卡片上直接不显示网址那一行。
   /// 编辑 / 详情里始终看得到，不然就没法改。
   bool hideUrls = false;
@@ -89,6 +154,11 @@ class ExtensionStore extends ChangeNotifier {
     _order = sp.getStringList(_kOrder) ?? const [];
     hideUrls = sp.getBool(_kHideUrls) ?? false;
     _builtinCard = _parseBuiltinCard(sp.getString(_kBuiltinCard));
+    // 尺寸只留清单里还存在的拓展；默认尺寸没有存的必要
+    final alive = {for (final e in _items) e.id};
+    _sizes = _parseSizes(sp.getString(_kSizes))
+      ..removeWhere((id, size) =>
+          !alive.contains(id) || size == GridCardSize.standard);
     loaded = true;
     notifyListeners();
   }
@@ -127,6 +197,7 @@ class ExtensionStore extends ChangeNotifier {
     try {
       await ExtNotificationService.instance.cancelAll(extId: id);
     } catch (_) {}
+    if (_sizes.remove(id) != null) await _persistSizes();
     await clearData(id);
     notifyListeners();
   }

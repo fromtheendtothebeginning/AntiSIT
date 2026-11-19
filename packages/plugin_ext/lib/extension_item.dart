@@ -183,8 +183,14 @@ class ExtensionItem {
       };
 
   /// 生成一个 id。
+  ///
+  /// 时间戳只到微秒：一次导入多条的数组时，它们可能在同一个微秒里生成，
+  /// 光靠 [DateTime.microsecondsSinceEpoch] 会撞 id（宫格按 id 认卡片，撞了就重键）。
+  /// 末尾再加一个进程内自增序号，重启后靠时间戳区分，同一次运行里靠序号区分。
+  static int _idSeq = 0;
   static String newId() =>
-      'e${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+      'e${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
+      '${(_idSeq++).toRadixString(36)}';
 
   /// 用户手输的网址：没写协议按 https 补；必须能解析出 http(s) 的 host，否则不算数。
   static String? normalizeUrl(String input) {

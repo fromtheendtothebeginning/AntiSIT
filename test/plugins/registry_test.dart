@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:campus_core/campus_core.dart';
 import 'package:campus_service/plugins/bootstrap.dart';
 import 'package:plugin_theme_bamboo/plugin_theme_bamboo.dart';
@@ -316,6 +318,70 @@ void main() {
       await r.setToolOrder(const ['c', 'a']);
       await r.setToolOrder(const []);
       expect(r.toolCards.map((t) => t.title), ['工具-a', '工具-b', '工具-c']);
+    });
+  });
+
+  group('工具卡片尺寸', () {
+    const fakes = [_Fake('a', tool: true), _Fake('b', tool: true)];
+
+    test('默认 2x3；设过的落盘、重开读回；恢复默认会删键', () async {
+      final r = PluginRegistry(features: fakes);
+      await r.load();
+      expect(r.toolSize('a'), GridCardSize.standard);
+      expect(r.hasCustomToolSizes, isFalse);
+
+      await r.setToolSize('a', GridCardSize.wide);
+      await r.setToolSize('b', GridCardSize.tall);
+      expect(r.toolSize('a'), GridCardSize.wide);
+      expect(r.toolSize('b'), GridCardSize.tall);
+      expect(r.hasCustomToolSizes, isTrue);
+
+      final sp = await SharedPreferences.getInstance();
+      expect(jsonDecode(sp.getString('plugin_tool_sizes')!),
+          {'a': '1x3', 'b': '2x2'});
+      final r2 = PluginRegistry(features: fakes);
+      await r2.load();
+      expect(r2.toolSize('a'), GridCardSize.wide, reason: '重启后读回');
+      expect(r2.toolSize('b'), GridCardSize.tall);
+      expect(r2.toolSize('ghost'), GridCardSize.standard,
+          reason: '没设过的插件用默认尺寸');
+
+      // 改回默认 = 从表里删掉，不留一个和默认一样的条目
+      await r2.setToolSize('a', GridCardSize.standard);
+      expect(r2.toolSize('a'), GridCardSize.standard);
+      expect(jsonDecode(sp.getString('plugin_tool_sizes')!), {'b': '2x2'});
+
+      await r2.resetToolSizes();
+      expect(r2.hasCustomToolSizes, isFalse);
+      expect(sp.getString('plugin_tool_sizes'), isNull);
+    });
+
+    test('坏数据 / 已删插件 / 认不出的尺寸都不会把页面带崩', () async {
+      SharedPreferences.setMockInitialValues({
+        'plugin_tool_sizes': '{"a":"9x9","ghost":"1x3","b":"2x2"}',
+      });
+      final r = PluginRegistry(features: fakes);
+      await r.load();
+      expect(r.toolSize('a'), GridCardSize.standard, reason: '坏值回落默认');
+      expect(r.toolSize('b'), GridCardSize.tall);
+      expect(r.hasCustomToolSizes, isTrue, reason: '只剩 b 一条，默认值不占位');
+
+      SharedPreferences.setMockInitialValues({'plugin_tool_sizes': '{oops'});
+      final broken = PluginRegistry(features: fakes);
+      await broken.load();
+      expect(broken.hasCustomToolSizes, isFalse);
+      expect(broken.toolSize('a'), GridCardSize.standard);
+    });
+
+    test('1x1 是最小尺寸：能落盘也能读回', () async {
+      final r = PluginRegistry(features: fakes);
+      await r.setToolSize('a', GridCardSize.single);
+      final sp = await SharedPreferences.getInstance();
+      expect(jsonDecode(sp.getString('plugin_tool_sizes')!), {'a': '1x1'});
+
+      final r2 = PluginRegistry(features: fakes);
+      await r2.load();
+      expect(r2.toolSize('a'), GridCardSize.single);
     });
   });
 

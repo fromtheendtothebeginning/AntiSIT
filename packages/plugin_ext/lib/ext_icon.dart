@@ -13,10 +13,13 @@ import 'site_icon.dart';
 ///
 /// 「拓展」页与「插件市场」页共用（市场里的条目也要按同一规格画）。
 class ExtIcon extends StatelessWidget {
-  const ExtIcon({super.key, required this.item, this.size = 24});
+  const ExtIcon({super.key, required this.item, this.size = 24, this.padding = 8});
 
   final ExtensionItem item;
   final double size;
+
+  /// 色块内边距：默认 8（与工具宫格一致）；1x3 窄卡片放不下时缩到 6。
+  final double padding;
 
   /// 官方 / 投稿拓展用的镂空图标名 → Material Outlined 图标。
   ///
@@ -73,10 +76,10 @@ class ExtIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget box(Widget child) => Container(
-          padding: const EdgeInsets.all(8),
+          padding: EdgeInsets.all(padding),
           decoration: BoxDecoration(
             color: SemColors.accent.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(padding + 2),
           ),
           child: SizedBox(width: size, height: size, child: Center(child: child)),
         );

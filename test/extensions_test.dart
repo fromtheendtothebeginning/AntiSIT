@@ -59,9 +59,17 @@ void main() {
     final size = frame.length;
     final offset = 6 + 16;
     out
-      ..add([size & 0xff, (size >> 8) & 0xff, (size >> 16) & 0xff, (size >> 24) & 0xff])
       ..add([
-        offset & 0xff, (offset >> 8) & 0xff, (offset >> 16) & 0xff, (offset >> 24) & 0xff
+        size & 0xff,
+        (size >> 8) & 0xff,
+        (size >> 16) & 0xff,
+        (size >> 24) & 0xff,
+      ])
+      ..add([
+        offset & 0xff,
+        (offset >> 8) & 0xff,
+        (offset >> 16) & 0xff,
+        (offset >> 24) & 0xff,
       ])
       ..add(frame);
     return out.takeBytes();
@@ -69,15 +77,24 @@ void main() {
 
   /// 1×1 的透明 PNG（真的能解码，用来验渲染）。
   Uint8List fakePng() => base64Decode(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  );
 
   test('默认开启 + 硬依赖内核：装好即可用，停用内核连带停掉拓展', () async {
     expect(PluginRegistry.I.isEnabled('ext'), isTrue, reason: '默认开启，底栏直接有「拓展」');
-    expect(PluginRegistry.I.isEnabled(PluginIds.webview), isTrue, reason: '内核跟着一起开');
-    expect(PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview), isNotNull);
+    expect(
+      PluginRegistry.I.isEnabled(PluginIds.webview),
+      isTrue,
+      reason: '内核跟着一起开',
+    );
+    expect(
+      PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview),
+      isNotNull,
+    );
 
     final labels = [
-      for (final (_, item) in PluginRegistry.I.navPages(ValueNotifier(0))) item.label,
+      for (final (_, item) in PluginRegistry.I.navPages(ValueNotifier(0)))
+        item.label,
     ];
     expect(labels, contains('拓展'), reason: '底栏名称就叫「拓展」');
 
@@ -87,13 +104,26 @@ void main() {
   });
 
   test('网址行：远程给完整网址，本地包说明来源', () {
-    const remote = ExtensionItem(id: 'r', name: 'r', url: 'https://a.example.com/path/x');
+    const remote = ExtensionItem(
+      id: 'r',
+      name: 'r',
+      url: 'https://a.example.com/path/x',
+    );
     expect(remote.urlLine, 'https://a.example.com/path/x');
 
     const bundled = ExtensionItem(
-        id: 'b', name: 'b', url: '/data/ext/b/main.js', bundled: true,
-        runtime: ExtensionItem.runtimeCordis);
+      id: 'b',
+      name: 'b',
+      url: '/data/ext/b/main.js',
+      bundled: true,
+      runtime: ExtensionItem.runtimeCordis,
+    );
     expect(bundled.urlLine, '本地 Cordis 拓展');
+  });
+
+  test('批量生成的 id 不撞：数组导入在同一个微秒里也不能重键', () {
+    final ids = {for (var i = 0; i < 500; i++) ExtensionItem.newId()};
+    expect(ids.length, 500);
   });
 
   test('镂空图标：line:<name> 映射到 Material Outlined，未知名字回退', () {
@@ -112,37 +142,59 @@ void main() {
 
       expect(SiteIcon.isIco(png), isFalse);
       expect(SiteIcon.pngFrameOfIco(png), isNull);
-      expect(SiteIcon.pngFrameOfIco(icoWithFrame(Uint8List.fromList(const [0x28, 0, 0, 0]))),
-          isNull, reason: '老式 DIB 帧不硬解，退回首字徽章');
+      expect(
+        SiteIcon.pngFrameOfIco(
+          icoWithFrame(Uint8List.fromList(const [0x28, 0, 0, 0])),
+        ),
+        isNull,
+        reason: '老式 DIB 帧不硬解，退回首字徽章',
+      );
     });
 
     test('候选地址：apple-touch-icon 优先、相对地址按页面解析、跳过 svg、站点根兜底', () {
       const origin = 'https://a.example.com';
       final page = Uri.parse('$origin/app/index.html');
       final urls = SiteIcon.iconCandidates(
-          html: '<link rel="apple-touch-icon" href="/touch.png">'
-              '<link rel="icon" type="image/svg+xml" href="/a.svg">'
-              '<link rel="icon" href="favicon.png">'
-              '<link rel="shortcut icon" href="/fav.ico">',
-          page: page,
-          origin: origin);
+        html:
+            '<link rel="apple-touch-icon" href="/touch.png">'
+            '<link rel="icon" type="image/svg+xml" href="/a.svg">'
+            '<link rel="icon" href="favicon.png">'
+            '<link rel="shortcut icon" href="/fav.ico">',
+        page: page,
+        origin: origin,
+      );
       final all = urls.map((u) => u.toString()).toList();
-      expect(all.first, '$origin/touch.png', reason: 'apple-touch-icon 最清楚，排最前');
+      expect(
+        all.first,
+        '$origin/touch.png',
+        reason: 'apple-touch-icon 最清楚，排最前',
+      );
       expect(all, contains('$origin/app/favicon.png'), reason: '相对地址按页面地址解析');
-      expect(all.any((u) => u.endsWith('.svg')), isFalse, reason: 'Flutter 不认 svg，跳过');
+      expect(
+        all.any((u) => u.endsWith('.svg')),
+        isFalse,
+        reason: 'Flutter 不认 svg，跳过',
+      );
       expect(all.last, '$origin/favicon.ico', reason: '站点根兜底');
-      expect(SiteIcon.iconCandidates(page: page, origin: origin).single.toString(),
-          '$origin/favicon.ico', reason: '页面抓不到也要有兜底');
+      expect(
+        SiteIcon.iconCandidates(page: page, origin: origin).single.toString(),
+        '$origin/favicon.ico',
+        reason: '页面抓不到也要有兜底',
+      );
     });
   });
 
   group('Cordis 压缩包导入', () {
-    Map<String, String> manifestZip({String id = 'sit.demo', String main = 'main.js'}) => {
-          'myapp/ext.json':
-              '{"id":"$id","name":"示例","version":"1.0.0","main":"$main","style":"style.css"}',
-          'myapp/$main': 'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }',
-          'myapp/style.css': 'body{color:red}',
-        };
+    Map<String, String> manifestZip({
+      String id = 'sit.demo',
+      String main = 'main.js',
+    }) => {
+      'myapp/ext.json':
+          '{"id":"$id","name":"示例","version":"1.0.0","main":"$main","style":"style.css"}',
+      'myapp/$main':
+          'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }',
+      'myapp/style.css': 'body{color:red}',
+    };
 
     test('解开 Cordis 拓展：ext.json 找到、main.js / style.css 都解出来', () {
       final dir = Directory.systemTemp.createTempSync('ext_test_');
@@ -150,11 +202,17 @@ void main() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
 
-      final bundle = extractBundle(bytes: makeZip(manifestZip()), dir: dir.path);
+      final bundle = extractBundle(
+        bytes: makeZip(manifestZip()),
+        dir: dir.path,
+      );
       expect(bundle.manifest.id, 'sit.demo');
       expect(bundle.entry, endsWith('main.js'), reason: '顶层目录只去掉一层');
       expect(File(bundle.entry).existsSync(), isTrue);
-      expect(File('${File(bundle.entry).parent.path}/style.css').existsSync(), isTrue);
+      expect(
+        File('${File(bundle.entry).parent.path}/style.css').existsSync(),
+        isTrue,
+      );
     });
 
     test('缺 ext.json / 缺入口就报错', () {
@@ -162,15 +220,22 @@ void main() {
       addTearDown(() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
-      expect(() => extractBundle(bytes: makeZip({'index.html': '<h1>x</h1>'}), dir: dir.path),
-          throwsA(isA<FormatException>()));
       expect(
-          () => extractBundle(
-              bytes: makeZip({
-                'ext.json': '{"id":"sit.bad","name":"坏","main":"missing.js"}',
-              }),
-              dir: dir.path),
-          throwsA(isA<FormatException>()));
+        () => extractBundle(
+          bytes: makeZip({'index.html': '<h1>x</h1>'}),
+          dir: dir.path,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        () => extractBundle(
+          bytes: makeZip({
+            'ext.json': '{"id":"sit.bad","name":"坏","main":"missing.js"}',
+          }),
+          dir: dir.path,
+        ),
+        throwsA(isA<FormatException>()),
+      );
     });
 
     test('zip-slip：绝对路径 / .. 的条目整条丢掉，绝不写到目标目录外面', () {
@@ -185,9 +250,14 @@ void main() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
       final bundle = extractBundle(
-          bytes: makeZip({...manifestZip(), '../evil.txt': 'bad'}), dir: dir.path);
-      expect(File('${dir.parent.path}/evil.txt').existsSync(), isFalse,
-          reason: '没写到目标目录外面');
+        bytes: makeZip({...manifestZip(), '../evil.txt': 'bad'}),
+        dir: dir.path,
+      );
+      expect(
+        File('${dir.parent.path}/evil.txt').existsSync(),
+        isFalse,
+        reason: '没写到目标目录外面',
+      );
       expect(File(bundle.entry).existsSync(), isTrue);
     });
 
@@ -196,7 +266,10 @@ void main() {
       addTearDown(() {
         if (dir.existsSync()) dir.deleteSync(recursive: true);
       });
-      final bundle = extractBundle(bytes: makeZip(manifestZip()), dir: dir.path);
+      final bundle = extractBundle(
+        bytes: makeZip(manifestZip()),
+        dir: dir.path,
+      );
 
       final closed = await CordisBundleLoader.load(
         ExtensionItem(
@@ -212,11 +285,39 @@ void main() {
       );
       expect(closed.html, contains('Content-Security-Policy'));
       expect(closed.html, contains("connect-src 'none'"));
-      expect(closed.html, contains("script-src 'unsafe-inline' blob:"),
-          reason: 'Cordis 运行时和拓展代码要能跑');
+      expect(
+        closed.html,
+        contains("script-src 'unsafe-inline' blob:"),
+        reason: 'Cordis 运行时和拓展代码要能跑',
+      );
       expect(closed.html, contains('antisit-ready'));
-      expect(closed.html, isNot(contains('ctx.ui.root.textContent')),
-          reason: 'main.js 走 base64 注入，不能直接摊在 HTML 里');
+      expect(closed.html, contains('au-btn'), reason: '每个拓展页都自动注入 AntiUI 样式');
+      expect(
+        closed.html,
+        contains('AntiUI'),
+        reason: 'AntiUI JS 要自动注入，作者不用自己带组件',
+      );
+      expect(
+        closed.html,
+        contains('ctx.plugin(Files)'),
+        reason: 'ctx.files 服务要注册进 Cordis 上下文',
+      );
+      expect(
+        closed.html,
+        contains("antiSIT.on('theme.change'"),
+        reason: '主题 / 夜间模式变化要能实时推给拓展页',
+      );
+      expect(
+        closed.html,
+        contains('--antisit-menu-bg'),
+        reason: '完整色板要映射成 CSS 变量',
+      );
+      expect(closed.html, contains('--antisit-wells'), reason: '玻璃主题的场景光斑也要共享');
+      expect(
+        closed.html,
+        isNot(contains('ctx.ui.root.textContent')),
+        reason: 'main.js 走 base64 注入，不能直接摊在 HTML 里',
+      );
 
       final open = await CordisBundleLoader.load(
         ExtensionItem(
@@ -248,8 +349,11 @@ void main() {
     await tester.tap(find.text('添加'));
     await tester.pumpAndSettle();
 
-    expect(ExtensionStore.I.items.single.url, 'https://example.com/tool',
-        reason: '没写协议按 https 补');
+    expect(
+      ExtensionStore.I.items.single.url,
+      'https://example.com/tool',
+      reason: '没写协议按 https 补',
+    );
     expect(find.text('一句话简介'), findsOneWidget, reason: '简介显示在名称下方');
     expect(find.text('🛠'), findsOneWidget, reason: '自定义图标');
 
@@ -272,14 +376,20 @@ void main() {
 
     await tester.tap(find.text('导入 JSON'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField),
-        '[{"name":"甲","url":"a.example.com"},{"url":"https://b.example.com"}]');
+    await tester.enterText(
+      find.byType(TextField),
+      '[{"name":"甲","url":"a.example.com"},{"url":"https://b.example.com"}]',
+    );
     await tester.tap(find.text('导入'));
     await tester.pumpAndSettle();
 
     expect(ExtensionStore.I.items, hasLength(2));
     expect(find.text('甲'), findsWidgets, reason: '卡片上（徽章 + 标题）');
-    expect(find.textContaining('b.example.com'), findsWidgets, reason: '缺名字用域名');
+    expect(
+      find.textContaining('b.example.com'),
+      findsWidgets,
+      reason: '缺名字用域名',
+    );
 
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
@@ -295,14 +405,17 @@ void main() {
     SiteIcon.loader = (_) async => fakePng(); // 别走网络
     await PluginRegistry.I.enable('ext');
     await ExtensionStore.I.add(
-        const ExtensionItem(id: 'e1', name: '甲', url: 'https://a.example.com'));
+      const ExtensionItem(id: 'e1', name: '甲', url: 'https://a.example.com'),
+    );
     await pumpPage(tester);
 
     final img = find.byType(Image);
     expect(img, findsOneWidget, reason: '用抓到的站点图标渲染（不是首字徽章）');
     expect(tester.getSize(img).width, 24, reason: '与工具宫格同一个 24');
     final pad = tester
-        .widget<Container>(find.ancestor(of: img, matching: find.byType(Container)).first)
+        .widget<Container>(
+          find.ancestor(of: img, matching: find.byType(Container)).first,
+        )
         .padding;
     expect(pad, const EdgeInsets.all(8), reason: '与工具宫格同一个 8 内边距');
   });
@@ -314,12 +427,14 @@ void main() {
     addTearDown(tester.view.reset);
 
     await PluginRegistry.I.enable('ext');
-    await ExtensionStore.I.add(const ExtensionItem(
-      id: 'e1',
-      name: '查空教室',
-      url: 'https://a.example.com/tool',
-      desc: '按教学楼和节次查当前空闲的教室，数据来自教务系统，支持上午下午晚上三段查询',
-    ));
+    await ExtensionStore.I.add(
+      const ExtensionItem(
+        id: 'e1',
+        name: '查空教室',
+        url: 'https://a.example.com/tool',
+        desc: '按教学楼和节次查当前空闲的教室，数据来自教务系统，支持上午下午晚上三段查询',
+      ),
+    );
     await tester.pumpWidget(const MaterialApp(home: ExtensionsPage()));
     await tester.pumpAndSettle();
 
@@ -346,10 +461,12 @@ void main() {
 
   testWidgets('总开关：一下隐藏全部网址，详情里仍能看全，再点一下恢复', (tester) async {
     await PluginRegistry.I.enable('ext');
-    await ExtensionStore.I.add(const ExtensionItem(
-        id: 'e1', name: '甲', url: 'https://a.example.com/x'));
-    await ExtensionStore.I.add(const ExtensionItem(
-        id: 'e2', name: '乙', url: 'https://b.example.com/y'));
+    await ExtensionStore.I.add(
+      const ExtensionItem(id: 'e1', name: '甲', url: 'https://a.example.com/x'),
+    );
+    await ExtensionStore.I.add(
+      const ExtensionItem(id: 'e2', name: '乙', url: 'https://b.example.com/y'),
+    );
     await pumpPage(tester);
     expect(find.textContaining('a.example.com'), findsOneWidget);
     expect(find.textContaining('b.example.com'), findsOneWidget);
@@ -357,7 +474,11 @@ void main() {
     await tester.tap(find.byIcon(Icons.visibility_outlined));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('example.com'), findsNothing, reason: '两张卡片的网址一起没了');
+    expect(
+      find.textContaining('example.com'),
+      findsNothing,
+      reason: '两张卡片的网址一起没了',
+    );
     expect(find.text('网址已隐藏'), findsNothing, reason: '不留占位文字，那一行直接不显示');
     expect(ExtensionStore.I.hideUrls, isTrue);
 
@@ -372,7 +493,11 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.visibility_off_outlined));
     await tester.pumpAndSettle();
-    expect(find.textContaining('a.example.com'), findsOneWidget, reason: '关掉开关就恢复显示');
+    expect(
+      find.textContaining('a.example.com'),
+      findsOneWidget,
+      reason: '关掉开关就恢复显示',
+    );
   });
 
   test('总开关状态落在本地：换个实例 load 还能读回来', () async {
@@ -390,11 +515,12 @@ void main() {
   testWidgets('内置拓展：带「内置」标记、没有删除入口、详情只读', (tester) async {
     ExtensionStore.builtins = const [
       ExtensionItem(
-          id: 'b1',
-          name: '内置甲',
-          url: 'https://a.example.com',
-          desc: '随包发布的固定网站',
-          builtin: true),
+        id: 'b1',
+        name: '内置甲',
+        url: 'https://a.example.com',
+        desc: '随包发布的固定网站',
+        builtin: true,
+      ),
     ];
     await PluginRegistry.I.enable('ext');
     await pumpPage(tester);
@@ -411,14 +537,18 @@ void main() {
     expect(find.text('保存'), findsNothing, reason: '只读，没有保存');
 
     await ExtensionStore.I.remove('b1');
-    expect(ExtensionStore.I.items.any((e) => e.id == 'b1'), isTrue,
-        reason: 'store 层面也删不掉');
+    expect(
+      ExtensionStore.I.items.any((e) => e.id == 'b1'),
+      isTrue,
+      reason: 'store 层面也删不掉',
+    );
   });
 
   testWidgets('卡片菜单能删掉一条', (tester) async {
     await PluginRegistry.I.enable('ext');
     await ExtensionStore.I.add(
-        const ExtensionItem(id: 'e1', name: '甲', url: 'https://a.example.com'));
+      const ExtensionItem(id: 'e1', name: '甲', url: 'https://a.example.com'),
+    );
     await pumpPage(tester);
     expect(find.text('甲'), findsWidgets);
 
@@ -437,8 +567,14 @@ void main() {
   test('清单与拓展存储落在本地：换个实例 load 还能读回来，且按拓展隔离', () async {
     final store = ExtensionStore.I;
     await store.load();
-    await store.add(const ExtensionItem(
-        id: 'x1', name: 'X', url: 'https://x.example.com', desc: '带简介'));
+    await store.add(
+      const ExtensionItem(
+        id: 'x1',
+        name: 'X',
+        url: 'https://x.example.com',
+        desc: '带简介',
+      ),
+    );
     await store.dataSet('x1', 'k', {'n': 1});
 
     ExtensionStore.I = ExtensionStore(); // 模拟重启
@@ -446,8 +582,11 @@ void main() {
     expect(ExtensionStore.I.items.single.name, 'X');
     expect(ExtensionStore.I.items.single.desc, '带简介', reason: '简介也存得住');
     expect(await ExtensionStore.I.dataGet('x1', 'k'), {'n': 1});
-    expect(await ExtensionStore.I.dataGet('别的拓展', 'k'), isNull,
-        reason: '存储按拓展 id 隔离');
+    expect(
+      await ExtensionStore.I.dataGet('别的拓展', 'k'),
+      isNull,
+      reason: '存储按拓展 id 隔离',
+    );
   });
 
   group('自定义排序', () {
@@ -460,23 +599,36 @@ void main() {
       for (final (id, name) in [('a', '甲'), ('b', '乙'), ('c', '丙')]) {
         await store.add(item(id, name));
       }
-      expect([for (final e in store.items) e.id], ['a', 'b', 'c'], reason: '默认按添加先后');
+      expect(
+        [for (final e in store.items) e.id],
+        ['a', 'b', 'c'],
+        reason: '默认按添加先后',
+      );
 
       await store.setOrder(['c', 'a', 'b']);
       expect([for (final e in store.items) e.id], ['c', 'a', 'b']);
 
       await store.add(item('d', '丁'));
-      expect([for (final e in store.items) e.id], ['c', 'a', 'b', 'd'],
-          reason: '新加的排在最后，不动已排好的位置');
+      expect(
+        [for (final e in store.items) e.id],
+        ['c', 'a', 'b', 'd'],
+        reason: '新加的排在最后，不动已排好的位置',
+      );
 
       ExtensionStore.I = ExtensionStore(); // 模拟重启
       await ExtensionStore.I.load();
-      expect([for (final e in ExtensionStore.I.items) e.id], ['c', 'a', 'b', 'd'],
-          reason: '排序落在本地');
+      expect(
+        [for (final e in ExtensionStore.I.items) e.id],
+        ['c', 'a', 'b', 'd'],
+        reason: '排序落在本地',
+      );
 
       await ExtensionStore.I.setOrder(const []);
-      expect([for (final e in ExtensionStore.I.items) e.id], ['a', 'b', 'c', 'd'],
-          reason: '恢复默认');
+      expect(
+        [for (final e in ExtensionStore.I.items) e.id],
+        ['a', 'b', 'c', 'd'],
+        reason: '恢复默认',
+      );
     });
 
     testWidgets('排序页：标题栏入口可达，恢复默认立刻回原序', (tester) async {
@@ -490,7 +642,11 @@ void main() {
       await tester.tap(find.byTooltip('排序拓展'));
       await tester.pumpAndSettle();
       expect(find.text('拓展排序'), findsOneWidget);
-      expect(find.byIcon(Icons.drag_handle_rounded), findsNWidgets(2), reason: '每条一个拖拽手柄');
+      expect(
+        find.byIcon(Icons.drag_handle_rounded),
+        findsNWidgets(2),
+        reason: '每条一个拖拽手柄',
+      );
 
       await tester.tap(find.text('恢复默认'));
       await tester.pumpAndSettle();
@@ -502,6 +658,208 @@ void main() {
       await pumpPage(tester);
       expect(find.byTooltip('排序拓展'), findsNothing);
       expect(find.byTooltip('添加拓展'), findsOneWidget, reason: '其它入口照旧');
+    });
+  });
+
+  group('卡片尺寸', () {
+    ExtensionItem item(String id, String name) =>
+        ExtensionItem(id: id, name: name, url: 'https://$id.example.com');
+
+    test('默认 2x3；改过的落盘、重开读回；删掉不残留；重置清空', () async {
+      final store = ExtensionStore.I;
+      await store.load();
+      await store.add(item('a', '甲'));
+      await store.add(item('b', '乙'));
+      expect(store.sizeOf('a'), GridCardSize.standard);
+      expect(store.hasCustomSizes, isFalse);
+
+      await store.setSize('a', GridCardSize.wide);
+      await store.setSize('b', GridCardSize.tall);
+      expect(store.sizeOf('a'), GridCardSize.wide);
+
+      final sp = await SharedPreferences.getInstance();
+      expect(jsonDecode(sp.getString('plugin.ext.sizes')!), {
+        'a': '1x3',
+        'b': '2x2',
+      });
+
+      ExtensionStore.I = ExtensionStore(); // 模拟重启
+      await ExtensionStore.I.load();
+      expect(ExtensionStore.I.sizeOf('a'), GridCardSize.wide);
+      expect(ExtensionStore.I.sizeOf('b'), GridCardSize.tall);
+      expect(ExtensionStore.I.sizeOf('ghost'), GridCardSize.standard);
+
+      // 删拓展时把它的尺寸一起清掉
+      await ExtensionStore.I.remove('a');
+      expect(ExtensionStore.I.hasCustomSizes, isTrue);
+      expect(jsonDecode(sp.getString('plugin.ext.sizes')!), {'b': '2x2'});
+
+      await ExtensionStore.I.resetSizes();
+      expect(ExtensionStore.I.hasCustomSizes, isFalse);
+      expect(sp.getString('plugin.ext.sizes'), isNull);
+    });
+
+    test('坏数据 / 已删拓展 / 认不出的尺寸按默认处理', () async {
+      SharedPreferences.setMockInitialValues({
+        'plugin.ext.sizes': '{"a":"9x9","ghost":"1x3","b":"2x2"}',
+      });
+      final store = ExtensionStore.I;
+      await store.load();
+      await store.add(item('a', '甲'));
+      await store.add(item('b', '乙'));
+      await store.load();
+      expect(store.sizeOf('a'), GridCardSize.standard);
+      expect(store.sizeOf('b'), GridCardSize.tall);
+      expect(store.hasCustomSizes, isTrue);
+
+      SharedPreferences.setMockInitialValues({'plugin.ext.sizes': '{oops'});
+      final broken = ExtensionStore.I;
+      await broken.load();
+      expect(broken.hasCustomSizes, isFalse);
+    });
+
+    testWidgets('拓展页长按卡片进入整理态，拖弧线改大小并落到本地', (tester) async {
+      await PluginRegistry.I.enable('ext');
+      await ExtensionStore.I.add(item('a', '甲'));
+      await ExtensionStore.I.add(item('b', '乙'));
+      await pumpPage(tester);
+
+      final press = await tester.startGesture(
+        tester.getCenter(find.text('甲').first),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(
+        find.byKey(const ValueKey<String>('card-size-bar')),
+        findsOneWidget,
+        reason: '长按进入整理态，顶部出现尺寸条',
+      );
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(
+        find.text('卡片大小 · 2×3'),
+        findsOneWidget,
+        reason: '长按的「甲」自动成为尺寸条作用对象',
+      );
+
+      final handle = find.byKey(const ValueKey<String>('fgrid-handle:a'));
+      expect(handle, findsOneWidget);
+      // 只往左拖一档（32px 就够）→ 2×3 按大小顺序缩一档 = 2×2 竖卡
+      await tester.drag(handle, const Offset(-40, 0));
+      await tester.pumpAndSettle();
+
+      expect(ExtensionStore.I.sizeOf('a'), GridCardSize.tall);
+      expect(find.text('卡片大小 · 2×2'), findsOneWidget);
+      final sp = await SharedPreferences.getInstance();
+      expect(sp.getString('plugin.ext.sizes'), contains('"a":"2x2"'));
+
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('card-size-bar')), findsNothing);
+    });
+
+    testWidgets('拓展页顶部尺寸条：1×1 / 1×3 / 2×3 / 2×2 直接切换并落到本地', (tester) async {
+      await PluginRegistry.I.enable('ext');
+      await ExtensionStore.I.add(item('a', '甲'));
+      await ExtensionStore.I.add(item('b', '乙'));
+      await pumpPage(tester);
+
+      final press = await tester.startGesture(
+        tester.getCenter(find.text('甲').first),
+      );
+      await tester.pump(const Duration(milliseconds: 600));
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('card-size-bar')),
+        findsOneWidget,
+      );
+
+      final chip1x1 = find.byKey(
+        const ValueKey<String>('card-size-option:1x1'),
+      );
+      await tester.tap(chip1x1);
+      await tester.pumpAndSettle();
+      expect(ExtensionStore.I.sizeOf('a'), GridCardSize.single);
+      expect(find.text('卡片大小 · 1×1'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('card-size-option:2x2')),
+      );
+      await tester.pumpAndSettle();
+      expect(ExtensionStore.I.sizeOf('a'), GridCardSize.tall);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('card-size-option:2x3')),
+      );
+      await tester.pumpAndSettle();
+      expect(ExtensionStore.I.sizeOf('a'), GridCardSize.standard);
+
+      final sp = await SharedPreferences.getInstance();
+      expect(
+        sp.getString('plugin.ext.sizes'),
+        isNull,
+        reason: '改回默认 2×3 后不残留条目',
+      );
+    });
+
+    testWidgets('窄屏（360）上 1x3 / 2x2 / 需升级 App 徽章都不溢出', (tester) async {
+      final savedLoader = ExtensionItem.appVersionLoader;
+      ExtensionItem.appVersionLoader = () async => '1.0.0';
+      addTearDown(() => ExtensionItem.appVersionLoader = savedLoader);
+      tester.view.physicalSize = const Size(720, 1600);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+
+      await PluginRegistry.I.enable('ext');
+      await ExtensionStore.I.add(
+        const ExtensionItem(
+          id: 'a',
+          name: '窄卡',
+          url: 'https://a.example.com/x',
+          desc: '按教学楼和节次查当前空闲的教室，数据来自教务系统，支持上午下午晚上三段查询',
+        ),
+      );
+      await ExtensionStore.I.add(
+        const ExtensionItem(
+          id: 'b',
+          name: '矮卡',
+          url: 'https://b.example.com/y',
+          desc: '一段很长的简介，用来撑矮宽卡片的三行排版',
+        ),
+      );
+      await ExtensionStore.I.add(
+        const ExtensionItem(
+          id: 'c',
+          name: '未来拓展',
+          url: 'https://c.example.com/z',
+          minAppVersion: '9.9.9',
+        ),
+      );
+      await ExtensionStore.I.add(
+        const ExtensionItem(
+          id: 'd',
+          name: '一格卡',
+          url: 'https://d.example.com/w',
+        ),
+      );
+      await ExtensionStore.I.setSize('a', GridCardSize.wide);
+      await ExtensionStore.I.setSize('b', GridCardSize.tall);
+      await ExtensionStore.I.setSize('d', GridCardSize.single);
+
+      await tester.pumpWidget(const MaterialApp(home: ExtensionsPage()));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '1x1 / 1x3 / 2x2 / 「需升级 App」徽章都不能溢出',
+      );
+      expect(find.text('需升级 App'), findsOneWidget);
+      expect(find.text('窄卡'), findsOneWidget);
+      expect(find.text('矮卡'), findsOneWidget);
+      // 1x1 只画图标（放名字会被截断），按卡片 key 断言
+      expect(find.byKey(const ValueKey<String>('fgrid:d')), findsOneWidget);
+      expect(find.text('一格卡'), findsNothing, reason: '1x1 这档只显示图标');
     });
   });
 
@@ -536,7 +894,8 @@ void main() {
 
     test('老版本落盘数据（没这些字段）照旧读得回，且不被当成市场装的', () {
       final old = ExtensionItem.parse(
-          jsonDecode('{"id":"e1","name":"甲","url":"https://a.example.com"}'));
+        jsonDecode('{"id":"e1","name":"甲","url":"https://a.example.com"}'),
+      );
       expect(old.version, isEmpty);
       expect(old.permissions, isEmpty);
       expect(old.fromMarket, isFalse, reason: '来源是你自己填的 → 接口照旧全量');
@@ -548,8 +907,9 @@ void main() {
       await store.load();
       await store.add(installed);
 
-      await store.update(store.items.single
-          .copyWith(name: '我改的名字', desc: '改过的简介'));
+      await store.update(
+        store.items.single.copyWith(name: '我改的名字', desc: '改过的简介'),
+      );
       await store.setCard('sit.demo-counter', icon: '🧮');
 
       final after = store.items.single;
@@ -575,16 +935,40 @@ void main() {
   });
 
   testWidgets('给拓展的接口：配色 / 存储 / 未知方法报错', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SizedBox())),
+    );
     final bridge = ExtBridge(
-        extId: 'e1',
-        context: tester.element(find.byType(SizedBox)),
-        store: ExtensionStore.I);
+      extId: 'e1',
+      context: tester.element(find.byType(SizedBox)),
+      store: ExtensionStore.I,
+    );
 
     final theme = await bridge.call('theme', null) as Map;
     expect(theme['isDark'], isFalse);
-    expect(theme['accent'], matches(RegExp(r'^#[0-9a-f]{6}$')),
-        reason: '配色给十六进制，拓展照着画');
+    expect(
+      theme['accent'],
+      matches(RegExp(r'^#[0-9a-f]{6}$')),
+      reason: '配色给十六进制，拓展照着画',
+    );
+    expect(
+      theme['menuBg'],
+      matches(RegExp(r'^(#[0-9a-f]{6}|rgba\(.*\))$')),
+      reason: '弹层底色等完整色板也要给',
+    );
+    expect(theme['inputFill'], isNotNull);
+    expect(theme['radiusCard'], 16);
+    expect(theme['wells'], isA<List>());
+
+    SemColors.p = GlassPalette.dark;
+    addTearDown(() => SemColors.p = GlassPalette.light);
+    final dark = await bridge.call('theme', null) as Map;
+    expect(dark['isDark'], isTrue);
+    expect(
+      dark['menuBg'],
+      isNot(theme['menuBg']),
+      reason: '夜间模式换的是整套色板，不只是 isDark',
+    );
 
     await bridge.call('storage.set', {'key': 'a', 'value': 42});
     expect(await bridge.call('storage.get', {'key': 'a'}), 42);
@@ -592,48 +976,124 @@ void main() {
     expect(await bridge.call('storage.get', {'key': 'a'}), isNull);
 
     await expectLater(bridge.call('没有这个接口', null), throwsArgumentError);
-    await expectLater(bridge.call('storage.get', null), throwsArgumentError,
-        reason: '参数不对要报错，不能静默失败');
+    await expectLater(
+      bridge.call('storage.get', null),
+      throwsArgumentError,
+      reason: '参数不对要报错，不能静默失败',
+    );
+  });
+
+  testWidgets('主题 / 夜间模式切换：完整色板推给网页，卸载后不再推', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SizedBox())),
+    );
+    final bridge = ExtBridge(
+      extId: 'e1',
+      context: tester.element(find.byType(SizedBox)),
+      store: ExtensionStore.I,
+    );
+    final sink = _RecordingSink();
+    bridge.attachEventSink(sink);
+    addTearDown(() {
+      bridge.attachEventSink(null);
+      SemColors.p = GlassPalette.light;
+    });
+
+    SemColors.p = GlassPalette.dark;
+    await tester.pump();
+    final events = sink.events.where((e) => e.$1 == 'theme.change').toList();
+    expect(events, hasLength(1));
+    final data = events.single.$2 as Map;
+    expect(data['isDark'], isTrue);
+    expect(data['menuBg'], isNotNull);
+    expect(data['onAccent'], isNotNull);
+    expect(data['wells'], isA<List>());
+
+    // 同一个色板对象不会造成重复推送
+    SemColors.p = GlassPalette.dark;
+    await tester.pump();
+    expect(sink.events.where((e) => e.$1 == 'theme.change'), hasLength(1));
+
+    // 页面关掉后不能再往一个已经没了的网页推
+    bridge.attachEventSink(null);
+    SemColors.p = GlassPalette.light;
+    await tester.pump();
+    expect(sink.events.where((e) => e.$1 == 'theme.change'), hasLength(1));
   });
 
   testWidgets('接口：card.setDesc 改自己卡片的简介（空串 = 不显示，落盘）', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SizedBox())),
+    );
     final context = tester.element(find.byType(SizedBox));
-    final bridge = ExtBridge(extId: 'e1', context: context, store: ExtensionStore.I);
-    await ExtensionStore.I.add(const ExtensionItem(
-        id: 'e1', name: '甲', url: 'https://a.example.com', desc: '旧简介'));
+    final bridge = ExtBridge(
+      extId: 'e1',
+      context: context,
+      store: ExtensionStore.I,
+    );
+    await ExtensionStore.I.add(
+      const ExtensionItem(
+        id: 'e1',
+        name: '甲',
+        url: 'https://a.example.com',
+        desc: '旧简介',
+      ),
+    );
 
-    expect(await bridge.call('card.setDesc', {'text': ' 上次同步 3 条 '}), isTrue,
-        reason: '两端空白会去掉');
+    expect(
+      await bridge.call('card.setDesc', {'text': ' 上次同步 3 条 '}),
+      isTrue,
+      reason: '两端空白会去掉',
+    );
     expect(ExtensionStore.I.items.single.desc, '上次同步 3 条');
 
     await bridge.call('card.setDesc', {'text': ''});
-    expect(ExtensionStore.I.items.single.desc, isEmpty, reason: '空串 = 卡片上不显示简介');
+    expect(
+      ExtensionStore.I.items.single.desc,
+      isEmpty,
+      reason: '空串 = 卡片上不显示简介',
+    );
 
     ExtensionStore.I = ExtensionStore(); // 模拟重启
     await ExtensionStore.I.load();
     expect(ExtensionStore.I.items.single.desc, isEmpty, reason: '简介落盘了');
 
-    await expectLater(bridge.call('card.setDesc', null), throwsArgumentError,
-        reason: '参数不对要报错');
     await expectLater(
-        bridge.call('card.setDesc',
-            {'text': 'x' * (ExtensionItem.descMaxLength + 1)}),
-        throwsArgumentError,
-        reason: '超长直接报错，不静默截断');
+      bridge.call('card.setDesc', null),
+      throwsArgumentError,
+      reason: '参数不对要报错',
+    );
     await expectLater(
-        ExtBridge(extId: '查无此条', context: context, store: ExtensionStore.I)
-            .call('card.setDesc', {'text': 'x'}),
-        throwsArgumentError,
-        reason: '改不了别人的 / 不在清单里的拓展');
+      bridge.call('card.setDesc', {
+        'text': 'x' * (ExtensionItem.descMaxLength + 1),
+      }),
+      throwsArgumentError,
+      reason: '超长直接报错，不静默截断',
+    );
+    await expectLater(
+      ExtBridge(
+        extId: '查无此条',
+        context: context,
+        store: ExtensionStore.I,
+      ).call('card.setDesc', {'text': 'x'}),
+      throwsArgumentError,
+      reason: '改不了别人的 / 不在清单里的拓展',
+    );
   });
 
   testWidgets('接口：card.setName / card.setIcon 也能改，校验各按各的上限', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SizedBox())),
+    );
     final context = tester.element(find.byType(SizedBox));
-    final bridge = ExtBridge(extId: 'e1', context: context, store: ExtensionStore.I);
+    final bridge = ExtBridge(
+      extId: 'e1',
+      context: context,
+      store: ExtensionStore.I,
+    );
     await ExtensionStore.I.add(
-        const ExtensionItem(id: 'e1', name: '甲', url: 'https://a.example.com'));
+      const ExtensionItem(id: 'e1', name: '甲', url: 'https://a.example.com'),
+    );
 
     await bridge.call('card.setName', {'text': '我的成绩单'});
     expect(ExtensionStore.I.items.single.name, '我的成绩单');
@@ -642,24 +1102,40 @@ void main() {
     await bridge.call('card.setIcon', {'text': '🛠'});
     expect(ExtensionStore.I.items.single.icon, '🛠');
     await bridge.call('card.setIcon', {'text': 'https://x.example.com/i.png'});
-    expect(ExtensionStore.I.items.single.iconIsImage, isTrue, reason: '图片网址照旧按图片渲染');
+    expect(
+      ExtensionStore.I.items.single.iconIsImage,
+      isTrue,
+      reason: '图片网址照旧按图片渲染',
+    );
     await bridge.call('card.setIcon', {'text': 'line:flag'});
     expect(ExtensionStore.I.items.single.icon, 'line:flag', reason: '镂空图标名合法');
-    await expectLater(bridge.call('card.setIcon', {'text': 'line:no-such'}),
-        throwsArgumentError, reason: '图标名不认识要报错，不静默回退');
+    await expectLater(
+      bridge.call('card.setIcon', {'text': 'line:no-such'}),
+      throwsArgumentError,
+      reason: '图标名不认识要报错，不静默回退',
+    );
 
-    await expectLater(bridge.call('card.setName', {'text': '   '}),
-        throwsArgumentError, reason: '名称不能空（否则卡片没标题）');
     await expectLater(
-        bridge.call('card.setName',
-            {'text': 'x' * (ExtensionItem.nameMaxLength + 1)}),
-        throwsArgumentError);
+      bridge.call('card.setName', {'text': '   '}),
+      throwsArgumentError,
+      reason: '名称不能空（否则卡片没标题）',
+    );
     await expectLater(
-        bridge.call('card.setIcon', {'text': '五个字图标'}),
-        throwsArgumentError,
-        reason: '文字图标超过 ${ExtensionItem.iconTextMaxLength} 个字要报错');
-    await expectLater(bridge.call('card.setIcon', {'text': ''}), completes,
-        reason: '空串 = 回到网站 favicon / 首字，是合法的');
+      bridge.call('card.setName', {
+        'text': 'x' * (ExtensionItem.nameMaxLength + 1),
+      }),
+      throwsArgumentError,
+    );
+    await expectLater(
+      bridge.call('card.setIcon', {'text': '五个字图标'}),
+      throwsArgumentError,
+      reason: '文字图标超过 ${ExtensionItem.iconTextMaxLength} 个字要报错',
+    );
+    await expectLater(
+      bridge.call('card.setIcon', {'text': ''}),
+      completes,
+      reason: '空串 = 回到网站 favicon / 首字，是合法的',
+    );
 
     ExtensionStore.I = ExtensionStore(); // 模拟重启
     await ExtensionStore.I.load();
@@ -670,14 +1146,21 @@ void main() {
   testWidgets('接口：内置拓展的卡片字段也能改（落在覆盖值里，源码清单不动）', (tester) async {
     ExtensionStore.builtins = const [
       ExtensionItem(
-          id: 'b1', name: '内置甲', url: 'https://a.example.com', builtin: true),
+        id: 'b1',
+        name: '内置甲',
+        url: 'https://a.example.com',
+        builtin: true,
+      ),
     ];
     await ExtensionStore.I.load();
-    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: SizedBox())),
+    );
     final bridge = ExtBridge(
-        extId: 'b1',
-        context: tester.element(find.byType(SizedBox)),
-        store: ExtensionStore.I);
+      extId: 'b1',
+      context: tester.element(find.byType(SizedBox)),
+      store: ExtensionStore.I,
+    );
 
     await bridge.call('card.setDesc', {'text': '上次同步 3 条'});
     await bridge.call('card.setName', {'text': '内置甲（改过）'});
@@ -690,8 +1173,14 @@ void main() {
     expect(ExtensionStore.I.items.single.desc, '上次同步 3 条', reason: '覆盖值落盘了');
 
     // 用户端仍然改不了内置项本身
-    await ExtensionStore.I.update(const ExtensionItem(
-        id: 'b1', name: '用户改的', url: 'https://a.example.com', builtin: true));
+    await ExtensionStore.I.update(
+      const ExtensionItem(
+        id: 'b1',
+        name: '用户改的',
+        url: 'https://a.example.com',
+        builtin: true,
+      ),
+    );
     expect(ExtensionStore.I.items.single.name, '内置甲（改过）', reason: '内置项不给用户改');
     await ExtensionStore.I.remove('b1');
     expect(ExtensionStore.I.items, hasLength(1), reason: '内置项不给用户删');
@@ -699,8 +1188,14 @@ void main() {
 
   testWidgets('卡片跟着接口改：回列表就是新简介 / 名称 / 图标', (tester) async {
     await PluginRegistry.I.enable('ext');
-    await ExtensionStore.I.add(const ExtensionItem(
-        id: 'e1', name: '甲', url: 'https://a.example.com', desc: '旧简介'));
+    await ExtensionStore.I.add(
+      const ExtensionItem(
+        id: 'e1',
+        name: '甲',
+        url: 'https://a.example.com',
+        desc: '旧简介',
+      ),
+    );
     await pumpPage(tester);
     expect(find.text('旧简介'), findsOneWidget);
 
@@ -730,16 +1225,21 @@ void main() {
       tester.view.physicalSize = const Size(1080, 2200);
       tester.view.devicePixelRatio = 2;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(NavSwipeScope(
-        host: host,
-        child: const MaterialApp(home: ExtensionsPage()),
-      ));
+      await tester.pumpWidget(
+        NavSwipeScope(
+          host: host,
+          child: const MaterialApp(home: ExtensionsPage()),
+        ),
+      );
       await tester.pumpAndSettle();
     }
 
     /// 从 [from] 起手横拖，第一步（[slopDir] 方向 20px）只为越过 touch slop
-    Future<TestGesture> beginSwipe(WidgetTester tester, Offset from,
-        {double slopDir = -1}) async {
+    Future<TestGesture> beginSwipe(
+      WidgetTester tester,
+      Offset from, {
+      double slopDir = -1,
+    }) async {
       final g = await tester.startGesture(from);
       await g.moveBy(Offset(20 * slopDir, 0));
       await tester.pump();
@@ -802,19 +1302,30 @@ void main() {
       PluginRegistry.I = PluginRegistry(
         features: [WebViewPlugin(), ExtPlugin(), _FakeAiPlugin(ai)],
         themes: const [GlassTheme()],
-        capabilities: {PluginIds.webview: WebViewCapabilityImpl(), PluginIds.ai: ai},
+        capabilities: {
+          PluginIds.webview: WebViewCapabilityImpl(),
+          PluginIds.ai: ai,
+        },
       );
     });
 
     Future<ExtBridge> bridge(WidgetTester tester, {ExtensionItem? item}) async {
-      await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: SizedBox())),
+      );
       return ExtBridge(
-          extId: 'e1', context: tester.element(find.byType(SizedBox)), item: item);
+        extId: 'e1',
+        context: tester.element(find.byType(SizedBox)),
+        item: item,
+      );
     }
 
     testWidgets('用户自己加的拓展直接能用：提示词与参数进能力，回答文本出来', (tester) async {
       final b = await bridge(tester);
-      expect(await b.call('ai.chat', {'prompt': ' 你好 ', 'system': '你是助手'}), '好的');
+      expect(
+        await b.call('ai.chat', {'prompt': ' 你好 ', 'system': '你是助手'}),
+        '好的',
+      );
       expect(ai.lastPrompt, '你好', reason: '两端空白去掉');
       expect(ai.lastSystem, '你是助手');
       expect(ai.lastMaxTokens, 1024, reason: '缺省 1024');
@@ -826,35 +1337,56 @@ void main() {
       expect(ai.lastMaxTokens, 4096);
       expect(await b.call('ai.chat', {'prompt': 'x'}), '好的');
       expect(ai.lastMaxTokens, 1024);
-      await expectLater(b.call('ai.chat', {'prompt': 'x', 'maxTokens': 0}),
-          throwsArgumentError, reason: '参数不对要报错，不静默回退');
       await expectLater(
-          b.call('ai.chat', {'prompt': 'x', 'maxTokens': '不是数字'}), throwsArgumentError);
+        b.call('ai.chat', {'prompt': 'x', 'maxTokens': 0}),
+        throwsArgumentError,
+        reason: '参数不对要报错，不静默回退',
+      );
+      await expectLater(
+        b.call('ai.chat', {'prompt': 'x', 'maxTokens': '不是数字'}),
+        throwsArgumentError,
+      );
     });
 
     testWidgets('prompt / system 超长直接报错（不序列化超大请求体）', (tester) async {
       final b = await bridge(tester);
       await expectLater(
-          b.call('ai.chat', {'prompt': 'x' * 40000}), throwsArgumentError);
+        b.call('ai.chat', {'prompt': 'x' * 40000}),
+        throwsArgumentError,
+      );
       await expectLater(
-          b.call('ai.chat', {'prompt': 'x', 'system': 's' * 40000}), throwsArgumentError);
+        b.call('ai.chat', {'prompt': 'x', 'system': 's' * 40000}),
+        throwsArgumentError,
+      );
       expect(ai.calls, 0, reason: '没到 AI 那一步就该拦下');
     });
 
     testWidgets('参数不对直接报错（Promise reject，不静默失败）', (tester) async {
       final b = await bridge(tester);
       await expectLater(b.call('ai.chat', null), throwsArgumentError);
-      await expectLater(b.call('ai.chat', {'prompt': '   '}), throwsArgumentError,
-          reason: 'prompt 不能是空的');
+      await expectLater(
+        b.call('ai.chat', {'prompt': '   '}),
+        throwsArgumentError,
+        reason: 'prompt 不能是空的',
+      );
       expect(ai.calls, 0);
     });
 
     testWidgets('市场装的拓展必须声明 ai 权限', (tester) async {
-      final denied = await bridge(tester, item: _marketItem(permissions: const ['storage']));
-      await expectLater(denied.call('ai.chat', {'prompt': 'x'}), throwsArgumentError);
+      final denied = await bridge(
+        tester,
+        item: _marketItem(permissions: const ['storage']),
+      );
+      await expectLater(
+        denied.call('ai.chat', {'prompt': 'x'}),
+        throwsArgumentError,
+      );
       expect(ai.calls, 0);
 
-      final allowed = await bridge(tester, item: _marketItem(permissions: const ['ai']));
+      final allowed = await bridge(
+        tester,
+        item: _marketItem(permissions: const ['ai']),
+      );
       expect(await allowed.call('ai.chat', {'prompt': 'x'}), '好的');
     });
 
@@ -863,7 +1395,13 @@ void main() {
       final b = await bridge(tester);
       await expectLater(
         b.call('ai.chat', {'prompt': 'x'}),
-        throwsA(isA<ArgumentError>().having((e) => e.message, 'message', contains('AI 还没配好'))),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('AI 还没配好'),
+          ),
+        ),
       );
     });
 
@@ -876,7 +1414,13 @@ void main() {
       final b = await bridge(tester);
       await expectLater(
         b.call('ai.chat', {'prompt': 'x'}),
-        throwsA(isA<ArgumentError>().having((e) => e.message, 'message', contains('AI 还没配好'))),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('AI 还没配好'),
+          ),
+        ),
       );
     });
 
@@ -886,40 +1430,50 @@ void main() {
         finishReason: 'tool_calls',
         usedTools: true,
         toolCalls: [
-          AiToolCall(id: 'c1', name: 'read_file', argumentsJson: '{"path":"main.js"}'),
+          AiToolCall(
+            id: 'c1',
+            name: 'read_file',
+            argumentsJson: '{"path":"main.js"}',
+          ),
         ],
       );
       final b = await bridge(tester);
-      final out = await b.call('ai.chatTools', {
-        'messages': [
-          {'role': 'system', 'content': '你是助手'},
-          {'role': 'user', 'content': '读 main.js'},
-          {
-            'role': 'assistant',
-            'content': '',
-            'toolCalls': [
-              {'id': 'c0', 'name': 'list_files', 'arguments': '{}'},
-            ],
-          },
-          {'role': 'tool', 'content': 'main.js 90 B', 'toolCallId': 'c0'},
-        ],
-        'tools': [
-          {
-            'type': 'function',
-            'function': {
-              'name': 'read_file',
-              'description': '读文件',
-              'parameters': {
-                'type': 'object',
-                'properties': {
-                  'path': {'type': 'string'},
-                },
-              },
-            },
-          },
-        ],
-        'maxTokens': 99999,
-      }) as Map;
+      final out =
+          await b.call('ai.chatTools', {
+                'messages': [
+                  {'role': 'system', 'content': '你是助手'},
+                  {'role': 'user', 'content': '读 main.js'},
+                  {
+                    'role': 'assistant',
+                    'content': '',
+                    'toolCalls': [
+                      {'id': 'c0', 'name': 'list_files', 'arguments': '{}'},
+                    ],
+                  },
+                  {
+                    'role': 'tool',
+                    'content': 'main.js 90 B',
+                    'toolCallId': 'c0',
+                  },
+                ],
+                'tools': [
+                  {
+                    'type': 'function',
+                    'function': {
+                      'name': 'read_file',
+                      'description': '读文件',
+                      'parameters': {
+                        'type': 'object',
+                        'properties': {
+                          'path': {'type': 'string'},
+                        },
+                      },
+                    },
+                  },
+                ],
+                'maxTokens': 99999,
+              })
+              as Map;
 
       expect(ai.chatToolsCalls, 1);
       expect(ai.lastChatToolsMaxTokens, 4096);
@@ -940,44 +1494,54 @@ void main() {
     });
 
     testWidgets('ai.chatToolsStream：增量事件推给网页，最终带 reasoning', (tester) async {
-      ai.chatToolsReply =
-          const AiChatReply(text: '流式回答', reasoning: '先想一下', usedTools: true);
+      ai.chatToolsReply = const AiChatReply(
+        text: '流式回答',
+        reasoning: '先想一下',
+        usedTools: true,
+      );
       final b = await bridge(tester);
       final sink = _RecordingSink();
       b.attachEventSink(sink);
 
-      final out = await b.call('ai.chatToolsStream', {
-        'streamId': 's1',
-        'messages': [
-          {'role': 'user', 'content': '写个拓展'},
-        ],
-      }) as Map;
+      final out =
+          await b.call('ai.chatToolsStream', {
+                'streamId': 's1',
+                'messages': [
+                  {'role': 'user', 'content': '写个拓展'},
+                ],
+              })
+              as Map;
 
       expect(ai.chatToolsStreamCalls, 1);
       expect(out['text'], '流式回答');
       expect(out['reasoning'], '先想一下');
       expect(sink.events.map((e) => e.$1).toSet(), {'ai.stream'});
-      final kinds = [
-        for (final e in sink.events) (e.$2 as Map)['kind'],
-      ];
+      final kinds = [for (final e in sink.events) (e.$2 as Map)['kind']];
       expect(kinds, ['reasoning', 'text']);
       expect((sink.events.first.$2 as Map)['streamId'], 's1');
     });
 
     testWidgets('ai.chatTools：空 messages 报错；市场拓展同样要声明 ai 权限', (tester) async {
       final b = await bridge(tester);
-      await expectLater(b.call('ai.chatTools', {'messages': []}), throwsArgumentError);
+      await expectLater(
+        b.call('ai.chatTools', {'messages': []}),
+        throwsArgumentError,
+      );
       await expectLater(b.call('ai.chatTools', null), throwsArgumentError);
       expect(ai.chatToolsCalls, 0);
 
-      final denied = await bridge(tester, item: _marketItem(permissions: const ['storage']));
+      final denied = await bridge(
+        tester,
+        item: _marketItem(permissions: const ['storage']),
+      );
       await expectLater(
-          denied.call('ai.chatTools', {
-            'messages': [
-              {'role': 'user', 'content': 'x'},
-            ],
-          }),
-          throwsArgumentError);
+        denied.call('ai.chatTools', {
+          'messages': [
+            {'role': 'user', 'content': 'x'},
+          ],
+        }),
+        throwsArgumentError,
+      );
       expect(ai.chatToolsCalls, 0);
     });
 
@@ -1005,7 +1569,9 @@ void main() {
     });
 
     Future<ExtBridge> bridge(WidgetTester tester, String extId) async {
-      await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: SizedBox())),
+      );
       return ExtBridge(
         extId: extId,
         context: tester.element(find.byType(SizedBox)),
@@ -1018,29 +1584,44 @@ void main() {
       final other = await bridge(tester, 'e1');
       await expectLater(
         other.call('workshop.list', null),
-        throwsA(isA<ArgumentError>()
-            .having((e) => e.message, 'message', contains('只允许内置「拓展工坊」调用'))),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('只允许内置「拓展工坊」调用'),
+          ),
+        ),
       );
 
       final ws = await bridge(tester, ExtBridge.workshopExtId);
       final list = await ws.call('workshop.list', null) as Map;
       expect((list['drafts'] as List).single['id'], draft.id);
 
-      final files = await ws.call('workshop.files', {'draftId': draft.id}) as Map;
-      expect((files['files'] as List).map((f) => f['path']),
-          containsAll(['ext.json', 'main.js', 'style.css']));
+      final files =
+          await ws.call('workshop.files', {'draftId': draft.id}) as Map;
+      expect(
+        (files['files'] as List).map((f) => f['path']),
+        containsAll(['ext.json', 'main.js', 'style.css']),
+      );
 
-      final read = await ws.call('workshop.read', {'draftId': draft.id, 'path': 'main.js'}) as Map;
+      final read =
+          await ws.call('workshop.read', {
+                'draftId': draft.id,
+                'path': 'main.js',
+              })
+              as Map;
       expect(read['content'], contains('export default'));
       expect(read['version'], matches(RegExp(r'^[0-9a-f]{64}$')));
-      final check = await ws.call('workshop.validate', {'draftId': draft.id}) as Map;
+      final check =
+          await ws.call('workshop.validate', {'draftId': draft.id}) as Map;
       expect(check['ok'], isTrue);
     });
 
     testWidgets('写文件前弹原生确认；确认后才落盘', (tester) async {
       final draft = await workshop.create(name: '喝水记录');
       final ws = await bridge(tester, ExtBridge.workshopExtId);
-      const code = 'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }';
+      const code =
+          'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }';
       final read = await workshop.readFileVersioned(draft.id, 'main.js');
 
       final pending = ws.call('workshop.write', {
@@ -1051,8 +1632,11 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(find.text('写入 main.js'), findsOneWidget, reason: '确认框写清是哪个文件');
-      expect(await workshop.readFile(draft.id, 'main.js'), isNot(code),
-          reason: '用户点确认前不能写');
+      expect(
+        await workshop.readFile(draft.id, 'main.js'),
+        isNot(code),
+        reason: '用户点确认前不能写',
+      );
 
       await tester.tap(find.widgetWithText(FilledButton, '写入'));
       await tester.pumpAndSettle();
@@ -1072,8 +1656,13 @@ void main() {
           'path': 'main.js',
           'content': 'export default {}',
         }),
-        throwsA(isA<FormatException>()
-            .having((e) => e.message, 'message', contains('覆盖已有文件前先读取'))),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('覆盖已有文件前先读取'),
+          ),
+        ),
       );
       await tester.pump();
       expect(find.text('写入 main.js'), findsNothing);
@@ -1096,31 +1685,57 @@ void main() {
       final result = await pending as Map;
       expect(result['ok'], isFalse);
       expect(result['denied'], isTrue);
-      expect((await workshop.readFileVersioned(draft.id, 'main.js')).content, before.content);
+      expect(
+        (await workshop.readFileVersioned(draft.id, 'main.js')).content,
+        before.content,
+      );
     });
 
     test('读后写版本门、隐藏文件与草稿 id 边界', () async {
       final draft = await workshop.create(name: '喝水记录');
       final first = await workshop.readFileVersioned(draft.id, 'main.js');
-      await workshop.writeFile(draft.id, 'main.js', 'export default {}',
-          expectedVersion: first.version);
+      await workshop.writeFile(
+        draft.id,
+        'main.js',
+        'export default {}',
+        expectedVersion: first.version,
+      );
       await expectLater(
-        workshop.writeFile(draft.id, 'main.js', 'export default { apply() {} }',
-            expectedVersion: first.version),
-        throwsA(isA<FormatException>()
-            .having((e) => e.message, 'message', contains('已变化'))),
+        workshop.writeFile(
+          draft.id,
+          'main.js',
+          'export default { apply() {} }',
+          expectedVersion: first.version,
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('已变化'),
+          ),
+        ),
         reason: '拿旧版本覆盖要拒绝',
       );
 
       await expectLater(
         workshop.readFile(draft.id, '.workshop/session.json'),
-        throwsA(isA<FormatException>()
-            .having((e) => e.message, 'message', contains('隐藏文件'))),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('隐藏文件'),
+          ),
+        ),
       );
       await expectLater(
         workshop.loadSession('../outside'),
-        throwsA(isA<FormatException>()
-            .having((e) => e.message, 'message', contains('id 不合法'))),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('id 不合法'),
+          ),
+        ),
       );
 
       final bad = await workshop.create(name: '坏清单');
@@ -1137,47 +1752,81 @@ void main() {
     testWidgets('会话日志按草稿保存与读取', (tester) async {
       final draft = await workshop.create(name: '喝水记录');
       final ws = await bridge(tester, ExtBridge.workshopExtId);
-      const payload = '{"version":1,"events":[{"type":"user/message","content":"hi"}]}';
-      expect(await ws.call('workshop.session.get', {'draftId': draft.id}), isNull);
+      const payload =
+          '{"version":1,"events":[{"type":"user/message","content":"hi"}]}';
+      expect(
+        await ws.call('workshop.session.get', {'draftId': draft.id}),
+        isNull,
+      );
 
-      expect(await ws.call('workshop.session.set',
-          {'draftId': draft.id, 'data': payload}), isTrue);
-      expect(await ws.call('workshop.session.get', {'draftId': draft.id}), payload);
+      expect(
+        await ws.call('workshop.session.set', {
+          'draftId': draft.id,
+          'data': payload,
+        }),
+        isTrue,
+      );
+      expect(
+        await ws.call('workshop.session.get', {'draftId': draft.id}),
+        payload,
+      );
       expect(File('${draft.dir}/.workshop/session.json').existsSync(), isTrue);
-      expect((await workshop.listFiles(draft.id)).map((f) => f.path),
-          isNot(contains('.workshop/session.json')),
-          reason: '会话日志不该出现在文件树 / 安装内容里');
+      expect(
+        (await workshop.listFiles(draft.id)).map((f) => f.path),
+        isNot(contains('.workshop/session.json')),
+        reason: '会话日志不该出现在文件树 / 安装内容里',
+      );
     });
 
     testWidgets('一个草稿多段对话：新建 / 列表 / 读写 / 删除', (tester) async {
       final draft = await workshop.create(name: '多对话');
       final ws = await bridge(tester, ExtBridge.workshopExtId);
 
-      final created = await ws.call('workshop.session.create',
-          {'draftId': draft.id, 'title': '第一段'}) as Map;
+      final created =
+          await ws.call('workshop.session.create', {
+                'draftId': draft.id,
+                'title': '第一段',
+              })
+              as Map;
       final cid = created['id'] as String;
       expect(cid, isNotEmpty);
 
       const payload = '{"title":"第一段","events":[]}';
-      await ws.call('workshop.session.set',
-          {'draftId': draft.id, 'conversationId': cid, 'data': payload});
-      final list = await ws.call('workshop.session.list', {'draftId': draft.id}) as Map;
+      await ws.call('workshop.session.set', {
+        'draftId': draft.id,
+        'conversationId': cid,
+        'data': payload,
+      });
+      final list =
+          await ws.call('workshop.session.list', {'draftId': draft.id}) as Map;
       final conversations = (list['conversations'] as List).cast<Map>();
-      expect(conversations.any((c) => c['id'] == cid && c['title'] == '第一段'), isTrue);
       expect(
-          await ws.call('workshop.session.get',
-              {'draftId': draft.id, 'conversationId': cid}),
-          payload);
+        conversations.any((c) => c['id'] == cid && c['title'] == '第一段'),
+        isTrue,
+      );
+      expect(
+        await ws.call('workshop.session.get', {
+          'draftId': draft.id,
+          'conversationId': cid,
+        }),
+        payload,
+      );
 
-      final pending = ws.call('workshop.session.delete',
-          {'draftId': draft.id, 'conversationId': cid});
+      final pending = ws.call('workshop.session.delete', {
+        'draftId': draft.id,
+        'conversationId': cid,
+      });
       await tester.pumpAndSettle();
       expect(find.text('删除这段对话'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, '确认执行'));
       await tester.pumpAndSettle();
       expect((await pending as Map)['ok'], isTrue);
-      final after = await ws.call('workshop.session.list', {'draftId': draft.id}) as Map;
-      expect((after['conversations'] as List).any((c) => (c as Map)['id'] == cid), isFalse);
+      final after =
+          await ws.call('workshop.session.list', {'draftId': draft.id}) as Map;
+      expect(
+        (after['conversations'] as List).any((c) => (c as Map)['id'] == cid),
+        isFalse,
+      );
     });
 
     testWidgets('删除未安装的拓展：确认后整个目录消失；已安装的拒绝', (tester) async {
@@ -1193,12 +1842,22 @@ void main() {
       expect(Directory(draft.dir).existsSync(), isFalse);
 
       final installed = await workshop.create(name: '已安装拓展');
-      await ExtensionStore.I.add(ExtensionItem(
-          id: installed.id, name: '已安装', url: 'https://example.com/x'));
+      await ExtensionStore.I.add(
+        ExtensionItem(
+          id: installed.id,
+          name: '已安装',
+          url: 'https://example.com/x',
+        ),
+      );
       await expectLater(
         ws.call('workshop.deleteDraft', {'draftId': installed.id}),
-        throwsA(isA<ArgumentError>()
-            .having((e) => e.message, 'message', contains('已安装'))),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('已安装'),
+          ),
+        ),
       );
       expect(Directory(installed.dir).existsSync(), isTrue);
     });
@@ -1210,22 +1869,29 @@ void main() {
       await ExtensionStore.I.add(item);
 
       final ws = await bridge(tester, ExtBridge.workshopExtId);
-      final renamed = await ws.call('workshop.renameDraft', {
-        'draftId': draft.id,
-        'name': '新名字',
-      }) as Map;
+      final renamed =
+          await ws.call('workshop.renameDraft', {
+                'draftId': draft.id,
+                'name': '新名字',
+              })
+              as Map;
       expect(renamed['name'], '新名字');
       expect(renamed['installed'], isTrue);
-      expect(ExtensionStore.I.items.firstWhere((e) => e.id == draft.id).name, '新名字',
-          reason: '已安装的卡片一起改名');
+      expect(
+        ExtensionStore.I.items.firstWhere((e) => e.id == draft.id).name,
+        '新名字',
+        reason: '已安装的卡片一起改名',
+      );
       expect(File('${draft.dir}/ext.json').readAsStringSync(), contains('新名字'));
 
       final conv = await workshop.createConversation(draft.id, title: '新对话');
-      final pending = await ws.call('workshop.session.rename', {
-        'draftId': draft.id,
-        'conversationId': conv.id,
-        'title': '改过的对话名',
-      }) as Map;
+      final pending =
+          await ws.call('workshop.session.rename', {
+                'draftId': draft.id,
+                'conversationId': conv.id,
+                'title': '改过的对话名',
+              })
+              as Map;
       expect(pending['title'], '改过的对话名');
       final list = await workshop.listConversations(draft.id);
       expect(list.firstWhere((c) => c.id == conv.id).title, '改过的对话名');
@@ -1276,12 +1942,14 @@ void main() {
       expect((await enabling as Map)['enabled'], isTrue);
 
       const code = 'export default { apply() {} }';
-      final written = await ws.call('workshop.write', {
-        'draftId': draft.id,
-        'path': 'main.js',
-        'content': code,
-        'expectedVersion': before.version,
-      }) as Map;
+      final written =
+          await ws.call('workshop.write', {
+                'draftId': draft.id,
+                'path': 'main.js',
+                'content': code,
+                'expectedVersion': before.version,
+              })
+              as Map;
       expect(written['ok'], isTrue);
       expect(await workshop.readFile(draft.id, 'main.js'), code);
       expect(find.text('写入 main.js'), findsNothing, reason: '完全访问下不再弹确认');
@@ -1292,8 +1960,14 @@ void main() {
     test('导入的 JSON 也能声明，落盘回读', () async {
       final store = ExtensionStore.I;
       await store.load();
-      await store.add(const ExtensionItem(
-          id: 'e1', name: '甲', url: 'https://a.example.com', minAppVersion: '1.18.0'));
+      await store.add(
+        const ExtensionItem(
+          id: 'e1',
+          name: '甲',
+          url: 'https://a.example.com',
+          minAppVersion: '1.18.0',
+        ),
+      );
 
       ExtensionStore.I = ExtensionStore(); // 模拟重启
       await ExtensionStore.I.load();
@@ -1306,15 +1980,24 @@ void main() {
       addTearDown(() => ExtensionItem.appVersionLoader = savedLoader);
 
       await PluginRegistry.I.enable('ext');
-      await ExtensionStore.I.add(const ExtensionItem(
-          id: 'e1', name: '未来拓展', url: 'https://a.example.com/tool', minAppVersion: '9.9.9'));
+      await ExtensionStore.I.add(
+        const ExtensionItem(
+          id: 'e1',
+          name: '未来拓展',
+          url: 'https://a.example.com/tool',
+          minAppVersion: '9.9.9',
+        ),
+      );
       await pumpPage(tester);
       expect(find.text('需升级 App'), findsOneWidget);
 
       await tester.tap(find.text('未来拓展'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('需要 App ≥9.9.9'), findsOneWidget,
-          reason: '打开被拦下，说清原因（版本门在内核检查之前）');
+      expect(
+        find.textContaining('需要 App ≥9.9.9'),
+        findsOneWidget,
+        reason: '打开被拦下，说清原因（版本门在内核检查之前）',
+      );
     });
 
     testWidgets('App 版本够：卡片没有标记，照常打开', (tester) async {
@@ -1323,15 +2006,24 @@ void main() {
       addTearDown(() => ExtensionItem.appVersionLoader = savedLoader);
 
       await PluginRegistry.I.enable('ext');
-      await ExtensionStore.I.add(const ExtensionItem(
-          id: 'e1', name: '未来拓展', url: 'https://a.example.com/tool', minAppVersion: '9.9.9'));
+      await ExtensionStore.I.add(
+        const ExtensionItem(
+          id: 'e1',
+          name: '未来拓展',
+          url: 'https://a.example.com/tool',
+          minAppVersion: '9.9.9',
+        ),
+      );
       await pumpPage(tester);
       expect(find.text('需升级 App'), findsNothing);
 
       await tester.tap(find.text('未来拓展'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('需要 App'), findsNothing,
-          reason: '版本门放行（测试环境内核不可用，会走平台不支持那句）');
+      expect(
+        find.textContaining('需要 App'),
+        findsNothing,
+        reason: '版本门放行（测试环境内核不可用，会走平台不支持那句）',
+      );
     });
   });
 
@@ -1343,16 +2035,24 @@ void main() {
       final page = await CordisBundleLoader.load(item, appVersion: '1.25.0');
       expect(page.html, contains('正在启动「拓展工坊」'));
       expect(page.html, contains('workshop.list'), reason: '宿主服务已注入');
-      expect(page.html, contains('workshop.session.create'),
-          reason: '多对话接口已注入');
-      expect(page.html, contains('workshop.session.rename'),
-          reason: '重命名对话接口已注入');
-      expect(page.html, contains('workshop.renameDraft'),
-          reason: '重命名拓展接口已注入');
+      expect(
+        page.html,
+        contains('workshop.session.create'),
+        reason: '多对话接口已注入',
+      );
+      expect(
+        page.html,
+        contains('workshop.session.rename'),
+        reason: '重命名对话接口已注入',
+      );
+      expect(page.html, contains('workshop.renameDraft'), reason: '重命名拓展接口已注入');
       expect(page.html, contains('ai.chatToolsStream'), reason: '流式 AI 接口已注入');
       expect(page.html, contains("script-src 'unsafe-inline' blob:"));
-      expect(page.html, isNot(contains('你是 AntiSIT「拓展工坊」里的编码 Agent')),
-          reason: 'main.js 走 base64，不应直接出现在 HTML 里');
+      expect(
+        page.html,
+        isNot(contains('你是 AntiSIT「拓展工坊」里的编码 Agent')),
+        reason: 'main.js 走 base64，不应直接出现在 HTML 里',
+      );
     });
 
     test('草稿工作区：新建 / 读写 / 校验 / 安装', () async {
@@ -1368,28 +2068,65 @@ void main() {
       final draft = await workshop.create(name: '喝水记录');
       expect(draft.manifest.name, '喝水记录');
       final files = await workshop.listFiles(draft.id);
-      expect(files.map((f) => f.path), containsAll(['ext.json', 'main.js', 'style.css']));
+      expect(
+        files.map((f) => f.path),
+        containsAll(['ext.json', 'main.js', 'style.css']),
+      );
 
       final main = await workshop.readFileVersioned(draft.id, 'main.js');
       expect(main.content, contains('export default'));
       expect(main.version, matches(RegExp(r'^[0-9a-f]{64}$')));
       expect(await workshop.validate(draft.id), isEmpty);
 
-      await workshop.writeFile(draft.id, 'main.js',
-          'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }',
-          expectedVersion: main.version);
+      await workshop.writeFile(
+        draft.id,
+        'main.js',
+        'export default { apply(ctx) { ctx.ui.root.textContent = "hi" } }',
+        expectedVersion: main.version,
+      );
       expect((await workshop.validate(draft.id)), isEmpty);
 
-      await workshop.writeFile(draft.id, 'app.js', 'localStorage.setItem("x", 1)');
-      expect((await workshop.validate(draft.id)).join(), contains('localStorage'));
+      await workshop.writeFile(
+        draft.id,
+        'app.js',
+        'localStorage.setItem("x", 1)',
+      );
+      expect(
+        (await workshop.validate(draft.id)).join(),
+        contains('localStorage'),
+      );
 
-      expect(() => workshop.readFile(draft.id, '../evil.txt'),
-          throwsA(isA<FormatException>()));
+      expect(
+        () => workshop.readFile(draft.id, '../evil.txt'),
+        throwsA(isA<FormatException>()),
+      );
 
       final app = await workshop.readFileVersioned(draft.id, 'app.js');
-      await workshop.deleteFile(draft.id, 'app.js', expectedVersion: app.version);
+      await workshop.deleteFile(
+        draft.id,
+        'app.js',
+        expectedVersion: app.version,
+      );
+      await workshop.writeFile(
+        draft.id,
+        'files.js',
+        'const picked = await ctx.files.pick({ accept: ".txt" });',
+      );
+      expect(
+        (await workshop.validate(draft.id)).join(),
+        contains('ctx.files'),
+        reason: '用了 ctx.files 却没声明 files 权限要提醒',
+      );
+      final filesJs = await workshop.readFileVersioned(draft.id, 'files.js');
+      await workshop.deleteFile(
+        draft.id,
+        'files.js',
+        expectedVersion: filesJs.version,
+      );
       await expectLater(
-          workshop.deleteFile(draft.id, 'ext.json'), throwsA(isA<FormatException>()));
+        workshop.deleteFile(draft.id, 'ext.json'),
+        throwsA(isA<FormatException>()),
+      );
       final item = await workshop.install(draft.id);
       expect(item.id, draft.id);
       expect(item.runtime, ExtensionItem.runtimeCordis);
@@ -1413,9 +2150,14 @@ void main() {
     tearDown(() => ExtNotificationService.instance = original);
 
     Future<ExtBridge> bridge(WidgetTester tester, {ExtensionItem? item}) async {
-      await tester.pumpWidget(const MaterialApp(home: Scaffold(body: SizedBox())));
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: SizedBox())),
+      );
       return ExtBridge(
-          extId: 'e1', context: tester.element(find.byType(SizedBox)), item: item);
+        extId: 'e1',
+        context: tester.element(find.byType(SizedBox)),
+        item: item,
+      );
     }
 
     testWidgets('ui.backDepth 把页面栈深度告诉内核（系统返回先回退栈内页面）', (tester) async {
@@ -1429,11 +2171,19 @@ void main() {
       expect(canGoBack, isFalse, reason: '栈空了 → 返回键关整页');
     });
 
-    testWidgets('notify.show / schedule / cancel / cancelAll：参数原样交出去', (tester) async {
+    testWidgets('notify.show / schedule / cancel / cancelAll：参数原样交出去', (
+      tester,
+    ) async {
       final b = await bridge(tester);
 
-      expect(await b.call('notify.show', {'title': ' 提醒 ', 'body': ' 正文 ', 'key': 'k1'}),
-          isTrue);
+      expect(
+        await b.call('notify.show', {
+          'title': ' 提醒 ',
+          'body': ' 正文 ',
+          'key': 'k1',
+        }),
+        isTrue,
+      );
       expect(notifier.calls.last, 'show');
       expect(notifier.extId, 'e1');
       expect(notifier.key, 'k1');
@@ -1442,16 +2192,24 @@ void main() {
 
       final at = DateTime.now().add(const Duration(hours: 1));
       expect(
-          await b.call('notify.schedule',
-              {'key': 'k2', 'title': '到点了', 'at': at.toIso8601String()}),
-          isTrue);
+        await b.call('notify.schedule', {
+          'key': 'k2',
+          'title': '到点了',
+          'at': at.toIso8601String(),
+        }),
+        isTrue,
+      );
       expect(notifier.calls.last, 'schedule');
       expect(notifier.at!.difference(at).inSeconds.abs(), lessThan(1));
 
       expect(
-          await b.call('notify.schedule',
-              {'key': 'k3', 'title': '时间戳', 'at': at.millisecondsSinceEpoch}),
-          isTrue);
+        await b.call('notify.schedule', {
+          'key': 'k3',
+          'title': '时间戳',
+          'at': at.millisecondsSinceEpoch,
+        }),
+        isTrue,
+      );
       expect(notifier.at!.difference(at).inSeconds.abs(), lessThan(1));
 
       expect(await b.call('notify.cancel', {'key': 'k1'}), isTrue);
@@ -1463,37 +2221,57 @@ void main() {
     testWidgets('通知参数不对直接报错，不静默失败', (tester) async {
       final b = await bridge(tester);
       await expectLater(b.call('notify.show', null), throwsArgumentError);
-      await expectLater(b.call('notify.show', {'title': '   '}), throwsArgumentError);
       await expectLater(
-          b.call('notify.show', {'title': 'x' * 201}), throwsArgumentError,
-          reason: '标题过长');
+        b.call('notify.show', {'title': '   '}),
+        throwsArgumentError,
+      );
       await expectLater(
-          b.call('notify.schedule', {'title': 'x', 'at': DateTime.now().toIso8601String()}),
-          throwsArgumentError,
-          reason: 'schedule 必须带 key（取消靠它）');
+        b.call('notify.show', {'title': 'x' * 201}),
+        throwsArgumentError,
+        reason: '标题过长',
+      );
       await expectLater(
-          b.call('notify.schedule', {'key': 'k', 'title': 'x'}), throwsArgumentError,
-          reason: 'schedule 必须带 at');
+        b.call('notify.schedule', {
+          'title': 'x',
+          'at': DateTime.now().toIso8601String(),
+        }),
+        throwsArgumentError,
+        reason: 'schedule 必须带 key（取消靠它）',
+      );
       await expectLater(
-          b.call('notify.schedule', {
-            'key': 'k',
-            'title': 'x',
-            'at': DateTime.now().subtract(const Duration(minutes: 1)).toIso8601String(),
-          }),
-          throwsArgumentError,
-          reason: '过去的时间排了也不会响');
+        b.call('notify.schedule', {'key': 'k', 'title': 'x'}),
+        throwsArgumentError,
+        reason: 'schedule 必须带 at',
+      );
+      await expectLater(
+        b.call('notify.schedule', {
+          'key': 'k',
+          'title': 'x',
+          'at': DateTime.now()
+              .subtract(const Duration(minutes: 1))
+              .toIso8601String(),
+        }),
+        throwsArgumentError,
+        reason: '过去的时间排了也不会响',
+      );
       expect(notifier.calls, isEmpty, reason: '参数校验就该拦下');
     });
 
     testWidgets('市场装的拓展必须声明 notification 权限', (tester) async {
-      final denied =
-          await bridge(tester, item: _marketItem(permissions: const ['storage']));
+      final denied = await bridge(
+        tester,
+        item: _marketItem(permissions: const ['storage']),
+      );
       await expectLater(
-          denied.call('notify.show', {'title': 'x'}), throwsArgumentError);
+        denied.call('notify.show', {'title': 'x'}),
+        throwsArgumentError,
+      );
       expect(notifier.calls, isEmpty);
 
-      final allowed =
-          await bridge(tester, item: _marketItem(permissions: const ['notification']));
+      final allowed = await bridge(
+        tester,
+        item: _marketItem(permissions: const ['notification']),
+      );
       expect(await allowed.call('notify.show', {'title': 'x'}), isTrue);
       expect(notifier.calls, ['show']);
     });
@@ -1518,25 +2296,27 @@ class _FakeNotifier implements ExtNotificationService {
   }
 
   @override
-  Future<void> show(
-      {required String extId,
-      String? key,
-      required String title,
-      String? body,
-      bool popup = false}) async {
+  Future<void> show({
+    required String extId,
+    String? key,
+    required String title,
+    String? body,
+    bool popup = false,
+  }) async {
     calls.add('show');
     this.popup = popup;
     _record(extId, key, title, body);
   }
 
   @override
-  Future<void> schedule(
-      {required String extId,
-      required String key,
-      required String title,
-      String? body,
-      required DateTime at,
-      bool popup = false}) async {
+  Future<void> schedule({
+    required String extId,
+    required String key,
+    required String title,
+    String? body,
+    required DateTime at,
+    bool popup = false,
+  }) async {
     calls.add('schedule');
     this.popup = popup;
     _record(extId, key, title, body);
@@ -1556,7 +2336,9 @@ class _FakeNotifier implements ExtNotificationService {
     this.extId = extId;
   }
 }
-ExtensionItem _marketItem({List<String> permissions = const []}) => ExtensionItem(
+
+ExtensionItem _marketItem({List<String> permissions = const []}) =>
+    ExtensionItem(
       id: 'sit.ai-demo',
       name: 'AI 小助手',
       url: '/data/ext/sit.ai-demo/index.html',
@@ -1614,8 +2396,7 @@ class _FakeAiCapability implements AiCapability {
     required String startDate,
     required int weekCount,
     String mime = 'image/png',
-  }) async =>
-      const [];
+  }) async => const [];
 
   @override
   Future<String> chat(String prompt, {String? system, int? maxTokens}) async {

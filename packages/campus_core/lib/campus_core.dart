@@ -60,4 +60,5 @@ export 'tool_page_cache.dart';
 export 'widgets/balance_chart.dart';
 export 'widgets/captcha_dialog.dart';
 export 'widgets/common.dart';
+export 'widgets/flexible_grid.dart';
 export 'widgets/theme_picker.dart';

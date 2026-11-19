@@ -10,6 +10,7 @@ import 'cordis_bundle.dart';
 import 'ext_background.dart';
 import 'ext_consent.dart';
 import 'ext_cookie_bridge.dart';
+import 'ext_files.dart';
 import 'ext_icon.dart';
 import 'ext_login_page.dart';
 import 'ext_net.dart';
@@ -25,7 +26,7 @@ import 'workshop/workshop_store.dart';
 ///
 /// | 方法 | 参数 | 返回 |
 /// |---|---|---|
-/// | `theme` | — | 当前配色的十六进制值（`accent` / `bg` / `card` / `textPrimary` / …） |
+/// | `theme` | — | 当前配色的完整令牌（`bg` / `card` / `menuBg` / `inputFill` / `overlay` / `gold` / `radiusCard` / `wells` …）；主题或夜间模式变化时通过 `antiSIT.on('theme.change')` 再推一次 |
 /// | `toast` | `{text}` | 弹一条 App 风格的提示 |
 /// | `close` | — | 关掉当前网页（回拓展列表） |
 /// | `card.setName` | `{text}` | 换卡片上的名称（≤ 20 字；id 不变） |
@@ -46,6 +47,8 @@ import 'workshop/workshop_store.dart';
 /// | `net.request` | `{method?, url, headers?, body?, bodyBase64?}` | 原生 HTTPS 代理（不受 CORS 限制，可带 Cookie 头）；返回 `{status, url, headers, setCookies, text, truncated, bytes}`。只允许 https，拒绝内网地址；每个新域名（含重定向）首次访问会弹窗确认 |
 /// | `clipboard.read` | — | 读剪贴板文本；首次 / 未记住时弹窗确认（需 `clipboard` 权限） |
 /// | `clipboard.write` | `{text}` | 写剪贴板（需 `clipboard` 权限） |
+/// | `files.pick` | `{accept?, multiple?, encoding?}` | 打开系统文件选择器，返回 `{files: [{name, size, mime, text?/base64?}]}`；单文件 ≤ 8 MB，一次 ≤ 10 个（需 `files` 权限） |
+/// | `files.save` | `{name, text?/base64?, mime?}` | 打开系统「保存到」选择器写文件；用户取消返回 false（需 `files` 权限） |
 /// | `login.open` | `{url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?}` | 打开可见登录页；返回 `{cookies: {域名: cookie}, cookieHeader}`。`cookieUrls` 必须与登录地址同站；需 `login` 权限，打开前会弹窗确认 |
 /// | `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本。提示词由 App 本地转成当前 AI 提供商的请求（Key / 模型不出 App）；没配好 AI 或市场拓展没声明 `ai` 权限都直接报错 |
 /// | `ai.chatTools` | `{messages, tools?, maxTokens?}` | 多轮消息 + OpenAI 兼容 function calling；返回 `{text, toolCalls, usedTools, finishReason}`。提供商不支持 tools 时自动降级 |
@@ -79,8 +82,12 @@ class ExtBridge extends WebBridge {
 
   bool get _isWorkshop => extId == workshopExtId;
 
-  /// 内核 → 网页的下行通道（流式 AI 增量用）；页面关掉后为 null。
+  /// 内核 → 网页的下行通道（流式 AI 增量、主题切换用）；页面关掉后为 null。
   WebBridgeEventSink? _events;
+
+  /// 最近一次推给网页的主题 JSON：色板对象变了但实际值没变时不再发。
+  String _lastThemeJson = '';
+  bool _themeEmitScheduled = false;
 
   /// 网页页面栈深度变化时通知内核（系统返回键先回退栈内页面）。
   void Function(bool canGoBack)? _backGuard;
@@ -91,6 +98,28 @@ class ExtBridge extends WebBridge {
   @override
   void attachEventSink(WebBridgeEventSink? sink) {
     _events = sink;
+    SemColors.palette.removeListener(_onPaletteChanged);
+    if (sink == null) return;
+    // 页面启动时自己会取一次 theme；这里只记下基准，避免立刻重复推一遍
+    _lastThemeJson = jsonEncode(_theme());
+    SemColors.palette.addListener(_onPaletteChanged);
+  }
+
+  /// 主题 / 夜间模式切换：把完整色板推给网页（AntiUI 的 CSS 变量跟着刷新）。
+  /// 合并到微任务里，拖动外观滑块时不会一帧推好几次。
+  void _onPaletteChanged() {
+    if (_events == null || _themeEmitScheduled) return;
+    _themeEmitScheduled = true;
+    scheduleMicrotask(() {
+      _themeEmitScheduled = false;
+      final sink = _events;
+      if (sink == null) return;
+      final theme = _theme();
+      final json = jsonEncode(theme);
+      if (json == _lastThemeJson) return;
+      _lastThemeJson = json;
+      sink.emit('theme.change', theme);
+    });
   }
 
   @override
@@ -172,6 +201,11 @@ class ExtBridge extends WebBridge {
         final text = args is Map ? '${args['text'] ?? ''}' : '';
         await Clipboard.setData(ClipboardData(text: text));
         return true;
+      // 文件：只通过系统选择器拿 / 存用户明确选中的文件，不暴露任意路径
+      case 'files.pick':
+        return ExtFilesService.I.pick(args);
+      case 'files.save':
+        return ExtFilesService.I.save(args);
       // 通用登录页：用户可见地登录，只返回声明域名的 Cookie
       case 'login.open':
         return _loginOpen(args);
@@ -938,20 +972,63 @@ class ExtBridge extends WebBridge {
     return '${content.substring(0, 1200)}\n…（共 ${content.length} 字符）';
   }
 
-  /// 当前配色：拓展照着 App 的样子画，不用自己猜深浅色。
-  Map<String, Object?> _theme() => {
-        'isDark': SemColors.isDark,
-        'accent': _hex(SemColors.accent),
-        'accentSoft': _hex(SemColors.accentSoft),
-        'bg': _hex(SemColors.bg),
-        'card': _hex(SemColors.card),
-        'border': _hex(SemColors.border),
-        'textPrimary': _hex(SemColors.textPrimary),
-        'textSecondary': _hex(SemColors.textSecondary),
-        'textMuted': _hex(SemColors.textMuted),
-        'danger': _hex(SemColors.danger),
-        'success': _hex(SemColors.success),
-      };
+  /// 当前配色：把原生色板的**全部令牌**交给拓展，AntiUI 直接映射成 CSS 变量。
+  /// 主题插件 / 夜间模式变化时会再推一次 `theme.change`（见 [_onPaletteChanged]）。
+  Map<String, Object?> _theme() {
+    final p = SemColors.p;
+    final brightness = p.isDark ? Brightness.dark : Brightness.light;
+    final theme = PluginRegistry.I.theme;
+    return {
+      'isDark': p.isDark,
+      'themeId': theme.id,
+      'themeName': theme.name,
+      'bg': _hex(p.bg),
+      'card': _hex(p.card),
+      'cardElevated': _hex(p.cardElevated),
+      'navPill': _hex(p.navPill),
+      'menuBg': _hex(p.menuBg),
+      'border': _hex(p.border),
+      'borderStrong': _hex(p.borderStrong),
+      'inputFill': _hex(p.inputFill),
+      'stripe': _hex(p.stripe),
+      'thumb': _hex(p.thumb),
+      'overlay': _hex(p.overlay),
+      'shadow': _hex(p.shadow),
+      'textPrimary': _hex(p.textPrimary),
+      'textSecondary': _hex(p.textSecondary),
+      'textMuted': _hex(p.textMuted),
+      'accent': _hex(p.accent),
+      'accentSoft': _hex(p.accentSoft),
+      'accentStrong': _hex(p.accentStrong),
+      'gold': _hex(p.gold),
+      'goldSoft': _hex(p.goldSoft),
+      'warning': _hex(p.gold),
+      'warningSoft': _hex(p.goldSoft),
+      'success': _hex(p.success),
+      'successSoft': _hex(p.successSoft),
+      'danger': _hex(p.danger),
+      'dangerSoft': _hex(p.dangerSoft),
+      // 主按钮文字色：深色主题下强调色偏亮，用页面底色才够对比（与 FilledButton 一致）
+      'onAccent': _hex(p.isDark ? p.bg : Colors.white),
+      // 形状令牌与 buildAppTheme 保持一致，拓展不用猜圆角
+      'radiusCard': 16,
+      'radiusControl': 12,
+      'radiusButton': 16,
+      'radiusDialog': 24,
+      'radiusSheet': 24,
+      'radiusPill': 999,
+      // 场景光斑：玻璃主题才有，非玻璃主题是空数组
+      'wells': [
+        for (final w in theme.wells(brightness))
+          {
+            'x': w.center.x,
+            'y': w.center.y,
+            'radius': w.radius,
+            'color': _hex(w.color),
+          },
+      ],
+    };
+  }
 
   /// CSS 颜色：带透明度输出 `rgba()`（CSS 的 8 位 hex 是 RRGGBBAA，和 Android 的 ARGB
   /// 相反；玻璃主题深色卡的 card 就是半透明白，丢掉 alpha 会白成一片）。

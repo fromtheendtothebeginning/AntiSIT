@@ -19,10 +19,11 @@ class CordisPage {
 ///
 /// 页面结构：
 /// 1. `antiSIT` 垫片（网页第一个脚本就能用宿主通道）
-/// 2. Cordis 运行时（MIT，assets/cordis.min.js）
-/// 3. 引导脚本：建 Context、注册 `ui` / `storage` / `card` / `ai` / `notify` /
-///    `secrets` / `net` / `clipboard` / `login` / `background` / `permissions` /
-///    `app` / `workshop` 服务，再把 `main.js` 当 ES module 加载并 `ctx.plugin(plugin)`
+/// 2. AntiUI 组件（CSS + `window.AntiUI`，风格与 App 一致）
+/// 3. Cordis 运行时（MIT，assets/cordis.min.js）
+/// 4. 引导脚本：建 Context、注册 `ui` / `storage` / `card` / `ai` / `notify` /
+///    `secrets` / `net` / `clipboard` / `files` / `login` / `background` /
+///    `permissions` / `app` / `workshop` 服务，再把 `main.js` 当 ES module 加载并 `ctx.plugin(plugin)`
 ///
 /// 拓展插件就是一个标准 Cordis 插件：
 /// ```js
@@ -36,8 +37,12 @@ class CordisRuntime {
   CordisRuntime._();
 
   static const String _assetKey = 'packages/plugin_ext/assets/cordis.min.js';
+  static const String _uiCssKey = 'packages/plugin_ext/assets/anti_ui.css';
+  static const String _uiJsKey = 'packages/plugin_ext/assets/anti_ui.js';
 
   static String? _runtime;
+  static String? _uiCss;
+  static String? _uiJs;
 
   /// 读一次 Cordis bundle（约 31 KB），之后走内存缓存。
   static Future<String> loadRuntime() async {
@@ -46,6 +51,13 @@ class CordisRuntime {
     final text = await rootBundle.loadString(_assetKey);
     _runtime = text;
     return text;
+  }
+
+  /// AntiUI 组件（CSS + JS）：每个拓展页都注入，作者不用自己带一套样式。
+  static Future<({String css, String js})> loadUiKit() async {
+    final css = _uiCss ??= await rootBundle.loadString(_uiCssKey);
+    final js = _uiJs ??= await rootBundle.loadString(_uiJsKey);
+    return (css: css, js: js);
   }
 
   /// 生成页面。[allowNetwork] 为 false 时用 CSP 掐掉 fetch / 外链图片，
@@ -58,9 +70,12 @@ class CordisRuntime {
     required String appVersion,
   }) async {
     final runtime = await loadRuntime();
+    final ui = await loadUiKit();
     final html = _html(
       item: item,
       runtime: runtime,
+      uiCss: ui.css,
+      uiJs: ui.js,
       bootstrap: _bootstrap(
         item: item,
         mainJs: mainJs,
@@ -86,6 +101,7 @@ class CordisRuntime {
       'name': item.name,
       'permissions': item.permissions,
       'appVersion': appVersion,
+      'fromMarket': item.fromMarket,
     });
     return '''
 (function () {
@@ -110,6 +126,99 @@ class CordisRuntime {
     console.error('[Cordis]', e);
   }
   function call(method, args) { return window.antiSIT.call(method, args); }
+
+  // blob: URL 在页面内没有可读回的句柄，而市场拓展默认把网络连接全禁掉：
+  // 在拓展代码之前接管 createObjectURL，记下 URL → Blob，下载钩子直接取。
+  var BLOBS = {};
+  try {
+    var createObjectURL = URL.createObjectURL;
+    URL.createObjectURL = function (obj) {
+      var url = createObjectURL.call(URL, obj);
+      try { BLOBS[url] = obj; } catch (_) {}
+      return url;
+    };
+    var revokeObjectURL = URL.revokeObjectURL;
+    URL.revokeObjectURL = function (url) {
+      try { delete BLOBS[url]; } catch (_) {}
+      return revokeObjectURL.call(URL, url);
+    };
+  } catch (_) {}
+
+  function dataUrlBlob(url) {
+    var comma = url.indexOf(',');
+    if (comma < 0) return null;
+    var meta = url.slice(5, comma);
+    var body = url.slice(comma + 1);
+    var mime = meta.split(';')[0] || 'application/octet-stream';
+    try {
+      if (/;base64/i.test(meta)) {
+        var bin = atob(body);
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Blob([bytes], { type: mime });
+      }
+      return new Blob([decodeURIComponent(body)], { type: mime });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // 页面内生成的下载（blob: / data:）在 WebView 里没有原生下载入口：
+  // 拦下带 download 的链接，转成 ctx.files.save 交给系统「保存到」。
+  // http(s) 下载由内核的 DownloadManager 监听处理，这里不碰。
+  function installDownloadHook() {
+    var canSave = !META.fromMarket ||
+      (META.permissions || []).indexOf('files') >= 0;
+    if (!canSave || !window.AntiUI) return;
+    var EXT = {
+      'text/plain': '.txt', 'text/csv': '.csv', 'application/json': '.json',
+      'application/pdf': '.pdf', 'application/zip': '.zip',
+      'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif',
+      'image/webp': '.webp', 'image/svg+xml': '.svg',
+      'text/html': '.html', 'text/markdown': '.md',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx'
+    };
+    document.addEventListener('click', function (e) {
+      var node = e.target;
+      if (node && node.nodeType !== 1) node = node.parentElement;
+      var link = node && node.closest ? node.closest('a[download]') : null;
+      if (!link) return;
+      var href = link.getAttribute('href') || link.href || '';
+      var isBlob = href.indexOf('blob:') === 0;
+      if (!isBlob && href.indexOf('data:') !== 0) return;
+      e.preventDefault();
+      var name = link.getAttribute('download') || '下载';
+      var blob = isBlob ? BLOBS[href] : dataUrlBlob(href);
+      if (!blob) {
+        window.AntiUI.toast('无法读取下载内容');
+        return;
+      }
+      if (blob.size > 8 * 1024 * 1024) {
+        window.AntiUI.toast('文件太大（最多 8 MB），请改用其他方式导出');
+        return;
+      }
+      new Promise(function (ok, fail) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var result = String(reader.result || '');
+          ok({ b64: result.split(',')[1] || '', mime: blob.type || '' });
+        };
+        reader.onerror = fail;
+        reader.readAsDataURL(blob);
+      }).then(function (data) {
+        var fileName = name;
+        if (fileName.indexOf('.') < 0 && EXT[data.mime]) fileName += EXT[data.mime];
+        return call('files.save', { name: fileName, base64: data.b64, mime: data.mime })
+          .then(function (saved) {
+            if (saved) window.AntiUI.toast('已保存 ' + fileName);
+          });
+      }).catch(function (err) {
+        console.warn('[Cordis] 下载失败', err);
+        window.AntiUI.toast('保存失败：' + (err && (err.message || err)));
+      });
+    }, true);
+  }
 
   // 页面栈：拓展用 ctx.ui.push() 叠自己的子页面。栈非空时系统返回键先由
   // __antiSITBack 回退一层（宿主靠 ui.backDepth 知道该不该拦），栈空了才关整页。
@@ -137,16 +246,34 @@ class CordisRuntime {
       window.__antisitCtx = ctx;
 
       var theme = {};
+      var themeChanged = false;
+      // 主题 / 夜间模式切换：原生侧推完整色板，CSS 变量和 ctx.ui.theme 一起刷新。
+      try {
+        window.antiSIT.on('theme.change', function (next) {
+          themeChanged = true;
+          theme = next;
+          applyTheme(next);
+          try { ctx.ui.theme = next; } catch (_) {}
+        });
+      } catch (_) {}
       try { theme = await call('theme'); } catch (_) {}
+      // 取主题期间已经收到更新的推送：以推送为准，别用旧快照覆盖
+      if (!themeChanged) applyTheme(theme);
 
       class Ui extends Service {
         constructor(c) {
           super(c, 'ui');
           this.root = root || document.body;
-          this.theme = theme;
+          this.theme = window.__antisitTheme || theme;
+          // 统一组件（anti_ui.js 注入）：按钮 / 卡片 / 弹层 / 空态都在这里
+          this.kit = window.AntiUI || null;
         }
         toast(text) { return call('toast', { text: String(text) }); }
         close() { return call('close'); }
+        confirm(options) { return window.AntiUI ? window.AntiUI.confirm(options) : Promise.resolve(false); }
+        sheet(options) { return window.AntiUI ? window.AntiUI.sheet(options) : null; }
+        // 订阅主题变化；返回取消订阅函数。AntiUI 自己会跟 CSS 变量走，不用手动重画。
+        onThemeChange(fn) { return window.antiSIT.on('theme.change', fn); }
 
         /// 叠一层子页面：返回 { root, close }，往 root 里画自己的内容。
         /// [options.onPop] 在退回上一层后回调；系统返回键 / 左上角箭头会先退它。
@@ -159,6 +286,8 @@ class CordisRuntime {
           el.style.overflow = 'auto';
           el.style.boxSizing = 'border-box';
           el.style.background = 'var(--antisit-bg, #fff)';
+          el.style.backgroundImage = 'var(--antisit-wells, none)';
+          el.style.backgroundAttachment = 'fixed';
           el.style.zIndex = String(100 + pageStack.length);
           (this.root || document.body).appendChild(el);
           var entry = {
@@ -236,6 +365,13 @@ class CordisRuntime {
         constructor(c) { super(c, 'clipboard'); }
         read() { return call('clipboard.read'); }
         write(text) { return call('clipboard.write', { text: String(text) }); }
+      }
+      class Files extends Service {
+        constructor(c) { super(c, 'files'); }
+        // {accept?, multiple?, encoding?} → {files: [{name, size, mime, text?/base64?}]}
+        pick(options) { return call('files.pick', options || {}); }
+        // {name, text?/base64?, mime?} → true / false（用户取消）
+        save(options) { return call('files.save', options || {}); }
       }
       class Login extends Service {
         constructor(c) { super(c, 'login'); }
@@ -333,6 +469,7 @@ class CordisRuntime {
       await ctx.plugin(Secrets);
       await ctx.plugin(Net);
       await ctx.plugin(Clipboard);
+      await ctx.plugin(Files);
       await ctx.plugin(Login);
       await ctx.plugin(Background);
       await ctx.plugin(Permissions);
@@ -374,24 +511,78 @@ class CordisRuntime {
         var bl = Math.round((f.b * f.a + b.b * b.a * (1 - f.a)) / a);
         return 'rgb(' + r + ',' + g + ',' + bl + ')';
       }
-      var doc = document.documentElement;
-      if (theme.isDark) doc.classList.add('dark');
-      if (theme.bg) doc.style.setProperty('--antisit-bg', theme.bg);
-      if (theme.card) {
-        doc.style.setProperty('--antisit-card', theme.card);
-        doc.style.setProperty('--antisit-card-solid', over(theme.card, theme.bg));
+      // Flutter 的 GlassWell：center 是 -1..1 的对齐坐标，radius 是「短边」的倍数；
+      // CSS 用 vmin 对应短边，stops 0 → 62% 与 GlassBackground 一致。
+      function wellsCss(wells) {
+        if (!wells || !wells.length) return '';
+        var out = [];
+        for (var i = 0; i < wells.length; i++) {
+          var w = wells[i];
+          var x = Math.round((Number(w.x) + 1) * 50);
+          var y = Math.round((Number(w.y) + 1) * 50);
+          var r = Math.round(Number(w.radius) * 100);
+          out.push('radial-gradient(circle ' + r + 'vmin at ' + x + '% ' + y +
+            '%, ' + w.color + ', transparent 62%)');
+        }
+        return out.join(', ');
       }
-      if (theme.textPrimary) doc.style.setProperty('--antisit-fg', theme.textPrimary);
-      if (theme.textSecondary) doc.style.setProperty('--antisit-text-secondary', theme.textSecondary);
-      if (theme.textMuted) doc.style.setProperty('--antisit-text-muted', theme.textMuted);
-      if (theme.accent) doc.style.setProperty('--antisit-accent', theme.accent);
-      if (theme.accentSoft) doc.style.setProperty('--antisit-accent-soft', theme.accentSoft);
-      if (theme.border) doc.style.setProperty('--antisit-border', theme.border);
-      if (theme.danger) doc.style.setProperty('--antisit-danger', theme.danger);
-      if (theme.success) doc.style.setProperty('--antisit-success', theme.success);
-      doc.style.colorScheme = theme.isDark ? 'dark' : 'light';
-      document.body.style.background = theme.bg || '';
-      document.body.style.color = theme.textPrimary || '';
+      function px(v) {
+        return typeof v === 'number' ? v + 'px' : '';
+      }
+      // 完整色板 → CSS 变量；夜间模式同时切 .dark / color-scheme / 场景光斑。
+      function applyTheme(next) {
+        if (!next) return;
+        window.__antisitTheme = next;
+        var doc = document.documentElement;
+        function set(name, value) {
+          if (value) doc.style.setProperty(name, value);
+        }
+        set('--antisit-bg', next.bg);
+        set('--antisit-card', next.card);
+        if (next.card) set('--antisit-card-solid', over(next.card, next.bg));
+        set('--antisit-card-elevated', next.cardElevated);
+        set('--antisit-nav-pill', next.navPill);
+        set('--antisit-menu-bg', next.menuBg);
+        set('--antisit-border', next.border);
+        set('--antisit-border-strong', next.borderStrong);
+        set('--antisit-input-fill', next.inputFill);
+        set('--antisit-stripe', next.stripe);
+        set('--antisit-thumb', next.thumb);
+        set('--antisit-overlay', next.overlay);
+        set('--antisit-shadow', next.shadow);
+        set('--antisit-fg', next.textPrimary);
+        set('--antisit-text-secondary', next.textSecondary);
+        set('--antisit-text-muted', next.textMuted);
+        set('--antisit-accent', next.accent);
+        set('--antisit-accent-soft', next.accentSoft);
+        set('--antisit-accent-strong', next.accentStrong);
+        set('--antisit-gold', next.gold);
+        set('--antisit-gold-soft', next.goldSoft);
+        set('--antisit-warning', next.warning || next.gold);
+        set('--antisit-warning-soft', next.warningSoft || next.goldSoft);
+        set('--antisit-success', next.success);
+        set('--antisit-success-soft', next.successSoft);
+        set('--antisit-danger', next.danger);
+        set('--antisit-danger-soft', next.dangerSoft);
+        set('--antisit-on-accent', next.onAccent);
+        set('--antisit-radius-card', px(next.radiusCard));
+        set('--antisit-radius-control', px(next.radiusControl));
+        set('--antisit-radius-button', px(next.radiusButton));
+        set('--antisit-radius-dialog', px(next.radiusDialog));
+        set('--antisit-radius-sheet', px(next.radiusSheet));
+        set('--antisit-radius-pill', px(next.radiusPill));
+        set('--antisit-theme-id', next.themeId);
+        var wells = wellsCss(next.wells);
+        set('--antisit-wells', wells || 'none');
+        doc.classList.toggle('dark', !!next.isDark);
+        doc.style.colorScheme = next.isDark ? 'dark' : 'light';
+        document.body.style.backgroundColor = next.bg || '';
+        document.body.style.backgroundImage = wells || 'none';
+        document.body.style.backgroundAttachment = 'fixed';
+        document.body.style.color = next.textPrimary || '';
+      }
+
+      installDownloadHook();
 
       var blob = new Blob([decodeB64(MAIN_B64)], { type: 'text/javascript' });
       var url = URL.createObjectURL(blob);
@@ -423,6 +614,8 @@ class CordisRuntime {
   static String _html({
     required ExtensionItem item,
     required String runtime,
+    required String uiCss,
+    required String uiJs,
     required String bootstrap,
     required bool allowNetwork,
   }) {
@@ -434,6 +627,7 @@ class CordisRuntime {
             "img-src data:; font-src data:; connect-src 'none'; "
             "form-action 'none'; base-uri 'none'";
     String safeScript(String s) => s.replaceAll('</script', r'<\/script');
+    String safeStyle(String s) => s.replaceAll('</style', r'<\/style');
     return '''<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -448,11 +642,13 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
 .antisit-error{white-space:pre-wrap;word-break:break-word;margin:0;padding:16px;
   background:#2b1111;color:#ffb4b4;font:12px/1.6 ui-monospace,Consolas,monospace;}
 </style>
+<style>${safeStyle(uiCss)}</style>
 </head>
 <body>
 <div id="root"></div>
 <div id="boot">正在启动「${_escapeHtml(item.name)}」…</div>
 <script>${safeScript(kWebViewBridgeShim)}</script>
+<script>${safeScript(uiJs)}</script>
 <script>${safeScript(runtime)}</script>
 <script>${safeScript(bootstrap)}</script>
 </body>

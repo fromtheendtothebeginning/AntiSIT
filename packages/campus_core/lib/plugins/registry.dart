@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../widgets/common.dart';
+import '../widgets/flexible_grid.dart';
 import 'capability.dart';
 import 'json_theme.dart';
 import 'plugin.dart';
@@ -42,6 +43,7 @@ class PluginRegistry extends ChangeNotifier {
   static const String _kDisabled = 'plugin_disabled';
   static const String _kTheme = 'plugin_theme';
   static const String _kToolOrder = 'plugin_tool_order';
+  static const String _kToolSizes = 'plugin_tool_sizes';
 
   /// 「默认关闭」的插件里被用户**显式打开**过的 id：
   /// 默认关闭的插件只有出现在这里（且不在 [PluginRegistry._disabled]）才算启用。
@@ -72,6 +74,9 @@ class PluginRegistry extends ChangeNotifier {
 
   /// 用户排过的工具顺序（插件 id；没列到的按清单顺序排在后面）。
   final List<String> _toolOrder = <String>[];
+
+  /// 用户改过的工具卡片尺寸（插件 id → 网格占位）。没改过的就是默认的 2x3。
+  final Map<String, GridCardSize> _toolSizes = <String, GridCardSize>{};
   late String _themeId;
   bool loaded = false;
 
@@ -166,6 +171,68 @@ class PluginRegistry extends ChangeNotifier {
       ..addAll(alive);
     await _persist();
     notifyListeners();
+  }
+
+  /// 工具卡片的网格尺寸：没改过就是默认的 2x3（半屏宽 × 常规高）。
+  GridCardSize toolSize(String pluginId) =>
+      _toolSizes[pluginId] ?? GridCardSize.standard;
+
+  /// 是否有用户改过尺寸的工具卡片（排序页据此决定要不要露出「重置大小」）。
+  bool get hasCustomToolSizes => _toolSizes.isNotEmpty;
+
+  /// 保存某张工具卡片的尺寸。传 [GridCardSize.standard] = 恢复默认（不会多存一条）。
+  Future<void> setToolSize(String pluginId, GridCardSize size) async {
+    if (byId(pluginId) == null) return;
+    final next = Map<String, GridCardSize>.of(_toolSizes);
+    if (size == GridCardSize.standard) {
+      next.remove(pluginId);
+    } else {
+      next[pluginId] = size;
+    }
+    final same = next.length == _toolSizes.length &&
+        next.entries.every((e) => _toolSizes[e.key] == e.value);
+    if (same) return;
+    _toolSizes
+      ..clear()
+      ..addAll(next);
+    await _persistToolSizes();
+    notifyListeners();
+  }
+
+  /// 把所有工具卡片恢复到默认尺寸。
+  Future<void> resetToolSizes() async {
+    if (_toolSizes.isEmpty) return;
+    _toolSizes.clear();
+    await (await SharedPreferences.getInstance()).remove(_kToolSizes);
+    notifyListeners();
+  }
+
+  Future<void> _persistToolSizes() async {
+    final sp = await SharedPreferences.getInstance();
+    if (_toolSizes.isEmpty) {
+      await sp.remove(_kToolSizes);
+      return;
+    }
+    await sp.setString(_kToolSizes, jsonEncode({
+      for (final entry in _toolSizes.entries) entry.key: entry.value.key,
+    }));
+  }
+
+  /// 读尺寸表：坏数据 / 认不出的尺寸都按默认处理，不把整页带崩。
+  static Map<String, GridCardSize> _parseToolSizes(String? raw) {
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const {};
+      return {
+        for (final entry in decoded.entries)
+          if (entry.value is String)
+            '${entry.key}': GridCardSize.parse(entry.value),
+      };
+    } catch (e) {
+      debugPrint('[registry] 工具卡片尺寸解析失败已忽略：$e');
+      return const {};
+    }
   }
 
   /// 「我的 → 设置」里由插件贡献的条目（按 [FeaturePlugin.settingsOrder]）。
@@ -429,6 +496,13 @@ class PluginRegistry extends ChangeNotifier {
       ..clear()
       ..addAll((sp.getStringList(_kToolOrder) ?? const <String>[])
           .where((id) => byId(id) != null));
+    // 卡片尺寸：只留还装着的插件；认不出的尺寸在解析时已回落默认，别把默认再存回去
+    _toolSizes
+      ..clear()
+      ..addEntries(_parseToolSizes(sp.getString(_kToolSizes))
+          .entries
+          .where((e) =>
+              byId(e.key) != null && e.value != GridCardSize.standard));
     // 用户显式打开过的默认关闭插件：只留还装着且仍是默认关闭的
     _userEnabled
       ..clear()

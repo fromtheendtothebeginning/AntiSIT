@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import 'package:campus_core/campus_core.dart';
 
@@ -39,6 +42,12 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
   double _progress = 0; // 0 = 没在加载
   String? _error;
 
+  /// 网页下载交给 Android DownloadManager（见 `ExtWebViewFilesBridge.kt`）。
+  /// DownloadListener 是挂在原生 WebView 上的，每个页面装一次即可。
+  static const MethodChannel _webFilesChannel =
+      MethodChannel('antisit/webview_files');
+  bool _downloadListenerInstalled = false;
+
   /// 主框架当前地址（跨站导航后桥接能力要关掉，见 [bridgeAllowedOnPage]）。
   String? _currentUrl;
 
@@ -61,11 +70,15 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(SemColors.bg)
       ..setNavigationDelegate(NavigationDelegate(
         onProgress: (p) => mounted ? setState(() => _progress = p / 100) : null,
         onPageStarted: (url) => _currentUrl = url,
         onUrlChange: (change) => _currentUrl = change.url,
-        onPageFinished: (_) => _injectBridge(),
+        onPageFinished: (_) {
+          _injectBridge();
+          _installDownloadListener();
+        },
         onNavigationRequest: _onNavigationRequest,
         onWebResourceError: (e) {
           // 主文档失败才提示；子资源（图片等）失败不打扰
@@ -79,11 +92,28 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
       widget.bridge!.attachEventSink(this);
       widget.bridge!.attachBackGuard(_onBackGuard);
     }
+    unawaited(_configureFileChooser());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _installDownloadListener());
+    SemColors.palette.addListener(_onPaletteChanged);
     _load();
+  }
+
+  /// 主题 / 夜间模式切换：WebView 自身的底色也跟着换，页面切换时不会闪白。
+  void _onPaletteChanged() {
+    if (!mounted) return;
+    unawaited(() async {
+      try {
+        await _controller.setBackgroundColor(SemColors.bg);
+      } catch (_) {
+        // 旧内核 / 平台不支持时忽略
+      }
+    }());
   }
 
   @override
   void dispose() {
+    SemColors.palette.removeListener(_onPaletteChanged);
     widget.bridge?.attachEventSink(null);
     widget.bridge?.attachBackGuard(null);
     super.dispose();
@@ -152,6 +182,74 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
       ok = false;
     }
     if (!ok && mounted) setState(() => _error = '打不开这个链接：$url');
+  }
+
+  /// 网页里的 `<input type=file>`：Android 走系统文件选择器，选完把文件 URI 交回
+  /// WebView。上传兼容性只在这一层做，不给网页任何额外接口。
+  Future<void> _configureFileChooser() async {
+    final platform = _controller.platform;
+    if (platform is! AndroidWebViewController) return;
+    try {
+      await platform.setOnShowFileSelector(_onShowFileSelector);
+    } catch (_) {
+      // 旧内核没有这个回调：网页上传保持不可用，不影响浏览
+    }
+  }
+
+  Future<List<String>> _onShowFileSelector(FileSelectorParams params) async {
+    if (params.mode == FileSelectorMode.save) return const [];
+    final extensions = <String>{};
+    final mimeTypes = <String>{};
+    for (final raw in params.acceptTypes) {
+      final value = raw.trim().toLowerCase();
+      if (value.isEmpty) continue;
+      if (value.startsWith('.')) {
+        extensions.add(value.substring(1));
+      } else if (value.contains('/')) {
+        mimeTypes.add(value);
+      }
+    }
+    final groups = <XTypeGroup>[
+      if (extensions.isNotEmpty || mimeTypes.isNotEmpty)
+        XTypeGroup(
+          label: '文件',
+          extensions: extensions.isEmpty ? null : extensions.toList(),
+          mimeTypes: mimeTypes.isEmpty ? null : mimeTypes.toList(),
+        ),
+    ];
+    try {
+      final files = params.mode == FileSelectorMode.openMultiple
+          ? await openFiles(acceptedTypeGroups: groups)
+          : [if (await openFile(acceptedTypeGroups: groups) case final f?) f];
+      return [for (final f in files) _fileUri(f.path)];
+    } catch (_) {
+      // 用户取消 / 选择器不可用：回空列表，网页收到一次空的 change
+      return const [];
+    }
+  }
+
+  /// file_selector 给的是本地路径；WebView 的 file chooser 要 URI。
+  /// 已经带 scheme 的（content://）原样返回。
+  static String _fileUri(String path) {
+    final uri = Uri.tryParse(path);
+    return uri != null && uri.hasScheme ? path : Uri.file(path).toString();
+  }
+
+  /// 挂原生下载监听：点击下载链接时交给系统 DownloadManager（通知栏进度 +
+  /// 下载完成可点开），不在 WebView 里硬开一个二进制页面。
+  Future<void> _installDownloadListener() async {
+    if (_downloadListenerInstalled || !mounted) return;
+    final platform = _controller.platform;
+    if (platform is! AndroidWebViewController) return;
+    try {
+      final ok = await _webFilesChannel.invokeMethod<bool>(
+        'installDownloadListener',
+        {'id': platform.webViewIdentifier},
+      );
+      _downloadListenerInstalled = ok == true;
+    } catch (_) {
+      // 桌面 / iOS / 旧内核：保持默认行为
+    }
   }
 
   Future<void> _load() async {
