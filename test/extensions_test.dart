@@ -731,7 +731,18 @@ void main() {
       expect(
         find.byKey(const ValueKey<String>('card-size-bar')),
         findsOneWidget,
-        reason: '长按进入整理态，顶部出现尺寸条',
+        reason: '长按进入整理态，出现尺寸条',
+      );
+      // 尺寸条在页面下方（底栏上方），不是顶栏那块
+      final barTop = tester.getTopLeft(
+        find.byKey(const ValueKey<String>('card-size-bar')),
+      );
+      expect(
+        barTop.dy,
+        greaterThan(
+          tester.view.physicalSize.height / tester.view.devicePixelRatio / 2,
+        ),
+        reason: '尺寸条在页面下半部分',
       );
       await press.up();
       await tester.pumpAndSettle();

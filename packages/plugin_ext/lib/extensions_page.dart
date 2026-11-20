@@ -677,23 +677,29 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         ? _empty(context)
         : _grid(context, items, selectedId);
     final panels = <Widget>[
-      _editing && items.isNotEmpty
-          ? Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 2),
-                  child: CardSizeBar(
-                    size: selectedSize,
-                    onChanged: (size) {
-                      final id = selectedId;
-                      if (id != null) unawaited(_store.setSize(id, size));
-                    },
-                  ),
-                ),
-                Expanded(child: myPage),
-              ],
-            )
-          : myPage,
+      Column(
+        children: [
+          Expanded(child: myPage),
+          // 尺寸条放在页面下方、底栏上方：顶部那块地方留给标题和两个圆形按钮，
+          // 单手握持时拇指正好够得着（顶栏那排按钮要伸上去）。
+          if (_editing && items.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                14,
+                4,
+                14,
+                8 + MediaQuery.paddingOf(context).bottom,
+              ),
+              child: CardSizeBar(
+                size: selectedSize,
+                onChanged: (size) {
+                  final id = selectedId;
+                  if (id != null) unawaited(_store.setSize(id, size));
+                },
+              ),
+            ),
+        ],
+      ),
       if (market || _marketMounted) MarketView(onInstalled: _toast),
     ];
     return Scaffold(
@@ -929,12 +935,13 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         ),
       ),
       SliverPadding(
-        // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：最后一张卡也要能滚出底栏上方
+        // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：最后一张卡也要能滚出底栏上方。
+        // 整理态时尺寸条贴在底栏上方，那份留白交给它，别再重复叠一次。
         padding: EdgeInsets.fromLTRB(
           14,
           12,
           14,
-          24 + MediaQuery.paddingOf(context).bottom,
+          _editing ? 12 : 24 + MediaQuery.paddingOf(context).bottom,
         ),
         sliver: SliverToBoxAdapter(child: _addCard()),
       ),

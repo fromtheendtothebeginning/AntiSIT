@@ -24,6 +24,14 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.41.2',
+    date: '2026-11-20',
+    notes: [
+      '整理卡片时的尺寸切换条移到页面下方、导航栏上方：单手握持时拇指正好够得着，不用再伸到顶栏',
+      '顶部那块地方还给标题，整理态只保留右上角「完成」',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.41.1',
     date: '2026-11-20',
     notes: [

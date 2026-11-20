@@ -132,24 +132,14 @@ class _ToolsPageState extends State<ToolsPage> {
                     onTap: _editing ? () => _setEditing(false) : null,
                     child: Column(
                       children: [
-                        if (_editing)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-                            child: CardSizeBar(
-                              size: selectedSize,
-                              onChanged: (size) {
-                                final id = selectedId;
-                                if (id != null) {
-                                  PluginRegistry.I.setToolSize(id, size);
-                                }
-                              },
-                            ),
-                          ),
                         Expanded(
                           child: ListView(
-                            // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：底部多让出底栏这一截
+                            // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：底部多让出底栏这一截。
+                            // 整理态时尺寸条就贴在底栏上方，这份留白交给它，别再重复叠一次。
                             padding: EdgeInsets.only(
-                              bottom: 16 + MediaQuery.paddingOf(context).bottom,
+                              bottom: _editing
+                                  ? 12
+                                  : 16 + MediaQuery.paddingOf(context).bottom,
                             ),
                             children: [
                               FlexibleCardGrid(
@@ -185,6 +175,26 @@ class _ToolsPageState extends State<ToolsPage> {
                             ],
                           ),
                         ),
+                        // 尺寸条放在页面下方、底栏上方：顶部那块地方留给标题，
+                        // 单手握持时拇指正好够得着（顶栏那排按钮要伸上去）。
+                        if (_editing)
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              12,
+                              4,
+                              12,
+                              8 + MediaQuery.paddingOf(context).bottom,
+                            ),
+                            child: CardSizeBar(
+                              size: selectedSize,
+                              onChanged: (size) {
+                                final id = selectedId;
+                                if (id != null) {
+                                  PluginRegistry.I.setToolSize(id, size);
+                                }
+                              },
+                            ),
+                          ),
                       ],
                     ),
                   ),

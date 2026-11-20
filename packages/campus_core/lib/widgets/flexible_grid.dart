@@ -35,7 +35,7 @@ class GridCardSize {
   static const standard = GridCardSize(2, 3);
   static const tall = GridCardSize(2, 2);
 
-  /// 顶部尺寸按钮 / 手柄吸附到的四种设计尺寸（按「宽 × 高」的观感排）。
+  /// 尺寸条按钮 / 手柄吸附到的四种设计尺寸（按「宽 × 高」的观感排）。
   static const presets = <GridCardSize>[single, wide, standard, tall];
 
   /// 按「占几格」从小到大排：左右滑动换尺寸时按这个顺序一档一档走
@@ -96,7 +96,7 @@ class FlexibleGridItem {
       FlexibleGridItem(id: id, size: value, builder: builder);
 }
 
-/// ColorOS 风格的卡片尺寸切换条：选中卡片后，顶部一排四档尺寸的缩略预览按钮。
+/// ColorOS 风格的卡片尺寸切换条：选中卡片后，一排四档尺寸的缩略预览按钮。
 ///
 /// 按钮只画「卡片比例的小预览」不加长文字，点一下就把选中卡片换成那一档；
 /// 当前尺寸用强调色高亮，左边同时写出 `卡片大小 · 2×3`。
@@ -238,7 +238,7 @@ class _SizeOption extends StatelessWidget {
   }
 }
 
-/// 可整理（长按拖动换位 / 顶部尺寸按钮 / 拖右下角弧线连续缩放）的柔性宫格。
+/// 可整理（长按拖动换位 / 尺寸切换条 / 拖右下角弧线连续缩放）的柔性宫格。
 ///
 /// 排版：6 列基础网格 + 2D 首次适配装箱，卡片按传入顺序从左到右、从上到下找空位。
 /// 尺寸只有 [GridCardSize.presets] 四种设计档位（1x1 / 1x3 / 2x3 / 2x2，行×列）。
@@ -285,7 +285,7 @@ class FlexibleCardGrid extends StatefulWidget {
   /// 缩放落位后的新尺寸。仅在尺寸真的变了时回调。
   final void Function(String id, GridCardSize size) onSizeChanged;
 
-  /// 当前选中的卡片：顶部尺寸切换条作用于它，也只有它显示右下角缩放弧线。
+  /// 当前选中的卡片：尺寸切换条作用于它，也只有它显示右下角缩放弧线。
   /// 传 null 时（调用方还没选）退化成每张卡都显示弧线，保证不会没法操作。
   final String? selectedId;
 
@@ -1376,7 +1376,7 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
       // 冲突的根源就是这里原本的即时 pan。
       content = GestureDetector(
         behavior: HitTestBehavior.opaque,
-        // 整理态点卡片 = 选中它（顶部尺寸条作用于选中的这张，也可拖弧线改大小）
+        // 整理态点卡片 = 选中它（尺寸条作用于选中的这张，也可拖弧线改大小）
         onTap: () => widget.onSelected?.call(item.id),
         child: content,
       );
@@ -1411,7 +1411,7 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
         if (isResizing && _resizeBadgeFits)
           // 尺寸徽标浮在**右上角**：内容贴左上角排，左下角常被标题 / 副标题占满。
           // 卡片缩得很小时徽标会压住图标，所以只在够宽时才显示
-          //（目标大小由虚线框 + 顶部尺寸条表达，不缺这一处信息）。
+          //（目标大小由虚线框 + 尺寸条表达，不缺这一处信息）。
           Positioned(
             right: 6,
             top: 6,
