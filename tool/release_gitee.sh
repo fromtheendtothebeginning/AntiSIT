@@ -6,7 +6,11 @@
 #   GITEE_TOKEN  Gitee 私人令牌（https://gitee.com/profile/personal_access_tokens，勾选 projects）
 #                也可写到 ~/.gitee_token（一行，仅令牌），不必贴进命令行
 #   GITEE_REPO   可选，默认 ender123/AntiSIT
+#   GITEE_KEEP_VERSIONS  可选，保留最近几个版本的 APK 附件，默认 5
 # 前置：本机 SSH key 已加到 Gitee（git@gitee.com 可免密），当前版本 APK 已构建。
+#
+# 附件配额：Gitee 仓库的 Release 附件合计上限 1 GB，每个 APK 约 87 MB，十来个版本就满。
+# 所以上传前会自动跑一遍 tool/gitee_prune.py（按版本号保留最近 GITEE_KEEP_VERSIONS 个）。
 set -euo pipefail
 
 REPO="${GITEE_REPO:-ender123/AntiSIT}"
@@ -22,6 +26,8 @@ APK="build/app/outputs/flutter-apk/app-release.apk"
 TMP_DIR="build/gitee_release"
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
+# 清老附件会刷一屏日志：与发版信息混在一起很难看出到底成没成功，所以分两份日志。
+PRUNE_LOG="$TMP_DIR/prune.log"
 trap 'rm -rf "$TMP_DIR"' EXIT
 OUT_DIR="$TMP_DIR"
 OUT_NAME="AntiSIT-$VERSION.apk"
@@ -60,8 +66,8 @@ find_aapt() {
 }
 AAPT_BIN=$(find_aapt)
 if [ -n "$AAPT_BIN" ]; then
-  APK_CODE=$("$AAPT_BIN" dump badging "$APK" | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*//p")
-  WANT_CODE=$(sed -n 's/^version: *[0-9.]*+\([0-9]*\)//p' pubspec.yaml)
+  APK_CODE=$("$AAPT_BIN" dump badging "$APK" | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*/\1/p")
+  WANT_CODE=$(sed -n 's/^version: *[0-9.]*+\([0-9]*\)/\1/p' pubspec.yaml)
   if [ "$APK_CODE" != "$WANT_CODE" ]; then
     echo "APK versionCode=$APK_CODE 与 pubspec 构建号 $WANT_CODE 不一致：构建未完成或已过期，拒绝发版" >&2
     exit 1
@@ -74,10 +80,14 @@ cp "$APK" "$OUT"
 REL_JSON="$TMP_DIR/release.json"
 # Gitee 对「tag 还没有 Release」返回 200 + null（不是 404），不能只看 curl 退出码
 curl -fsS "$API/repos/$REPO/releases/tags/$TAG?access_token=$TOKEN" -o "$REL_JSON" || true
+# 解析 Release JSON 的两个 python 小片段都**必须显式 encoding='utf-8'**：
+# 中文 Windows 的默认编码是 cp936，而 Gitee 返回的 JSON 里含中文（name/body），
+# 不指定就是 UnicodeDecodeError → 解析成空 → 误判「Release 不存在」→ 重复创建
+# 拿到 400，整个发版卡死在这一步。
 rel_id() {
   python -c 'import json,sys
 try:
-    d = json.load(open(sys.argv[1]))
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception:
     d = None
 print(d.get("id", "") if isinstance(d, dict) else "")' "$REL_JSON"
@@ -112,9 +122,28 @@ fi
 [ -n "$REL_ID" ] || { echo "创建 Gitee Release 失败：" >&2; head -c 500 "$REL_JSON" >&2; echo >&2; exit 1; }
 
 # 5) 上传 APK 与校验文件（重跑时跳过同名附件，避免重复）
+#
+# 先清老版本：Gitee 仓库的** Release 附件总量上限 1 GB**，每个 APK 约 87 MB，
+# 十来个版本就满——满了之后 attach_files 会回 400「文件大小已超出仓库附件配额」，
+# 发版就卡在这一步。更新链路只分发最新版，老 APK 没人下载（源码都在 git tag 里），
+# 所以按版本号保留最近 KEEP_VERSIONS 个。清理失败不挡发版：配额还够时照样能传。
+KEEP_VERSIONS="${GITEE_KEEP_VERSIONS:-5}"
+if [ -f tool/gitee_prune.py ]; then
+  echo "清理过老的 Release 附件（保留最近 $KEEP_VERSIONS 个版本，日志见 $PRUNE_LOG）..."
+  # PYTHONIOENCODING：中文 Windows 上 Python 默认按 cp936 输出，而下面要 grep 的是
+  # UTF-8 中文关键词——不指定编码时 grep 一个字都匹配不上（表现成「清理静默无输出」）。
+  if PYTHONIOENCODING=utf-8 GITEE_TOKEN="$TOKEN" python tool/gitee_prune.py \
+    --repo "$REPO" --keep "$KEEP_VERSIONS" > "$PRUNE_LOG" 2>&1; then
+    # 只把「释放了多少」这类结论说一句，明细留在日志里
+    grep -E '待清理|已清理|没有需要清理' "$PRUNE_LOG" | tail -2 | sed 's/^/  /' || true
+  else
+    echo "  警告：清理老附件失败，继续尝试上传（明细见 $PRUNE_LOG）" >&2
+  fi
+fi
+
 EXISTING=$(python -c 'import json,sys
 try:
-    d = json.load(open(sys.argv[1]))
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception:
     d = None
 print("\n".join(a.get("name", "") for a in (d.get("assets", []) if isinstance(d, dict) else [])))' "$REL_JSON")
