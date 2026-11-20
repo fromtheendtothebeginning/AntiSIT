@@ -24,6 +24,15 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.41.5',
+    date: '2026-11-20',
+    notes: [
+      '修拓展登录「退出账号后又自动登录」：退出时会真正删掉学习通那些域的 Cookie（含 .chaoxing.com 这类父域与 /mooc2 等子路径），之前只删 host-only，父域登录态删不掉',
+      '登录页不再只看 Cookie 判成功：必须真的跳到登录成功页才自动完成，点「登录」不会被残留登录态直接判过',
+      '「截止提醒」拓展配套更新到 v1.4.1：退出后学习通卡片显示「已退出账号」，重新登录前先清一遍旧会话；万一没清干净会如实提示',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.41.4',
     date: '2026-11-20',
     notes: [

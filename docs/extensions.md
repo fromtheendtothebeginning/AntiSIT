@@ -160,8 +160,8 @@ export default {
 | `ctx.net` | `request({method?, url, headers?, body?, bodyBase64?})` | 原生 HTTPS 代理，不受 CORS 限制、可带 Cookie；需 `network` 权限 |
 | `ctx.clipboard` | `read()` / `write(text)` | 读写剪贴板；`read` 需 `clipboard` 权限并会弹窗确认 |
 | `ctx.files` | `pick({accept?, multiple?, encoding?})` / `save({name, text?, base64?, mime?})` | 读写用户通过系统文件选择器明确选中的文件；需 `files` 权限，单文件 ≤ 8 MB |
-| `ctx.login` | `open({url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?})` | 打开可见登录页；返回 `{cookies, cookieHeader}`；需 `login` 权限并会弹窗确认 |
-| | `clear({cookieUrls})` | 退出登录：删掉这些域在系统 CookieStore 里的 Cookie（只删自己的凭据的话，下次登录页仍是已登录状态）；需 `login` 权限 |
+| `ctx.login` | `open({url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?})` | 打开可见登录页；返回 `{cookies, cookieHeader}`；给了 `successUrlPrefix` 时必须真的跳进该前缀才自动完成（只看 Cookie 会被残留登录态误判） |需 `login` 权限并会弹窗确认 |
+| | `clear({cookieUrls})` | 退出登录：删掉这些域在系统 CookieStore 里的 Cookie（含 `Domain=` 父域与常见子路径），返回 `{ok}`——`ok=false` 表示没清干净，应提示用户清应用数据；需 `login` 权限 |
 | `ctx.background` | `keepAlive({enabled, title?, text?})` | 开启 / 关闭后台保活（前台服务 + 常驻通知）；需 `background` 权限并会弹窗确认 |
 | `ctx.card` | `setName(text)` / `setDesc(text)` / `setIcon(text)` | 改拓展列表卡片上的显示值 |
 | `ctx.ai` | `chat(prompt, {system, maxTokens})` | 走用户在「AI 设置」里配置的模型；Key 不出 App |
