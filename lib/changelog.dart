@@ -24,6 +24,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.41.7',
+    date: '2026-11-20',
+    notes: [
+      '修拓展「退出账号后点登录，页面转一会又自动登回原账号」：退出时除了删 Cookie，还会清掉 WebStorage（localStorage / IndexedDB）',
+      '学习通登录后会把「下次自动登录」写进 localStorage，只清 Cookie 时页面看着是登出的，脚本又把人送回去',
+      '修 Cookie 删除路径不匹配的问题：Chromium 只接受请求路径能对上 Path 属性的 Set-Cookie，之前用小路径去删 /mooc2 下的 Cookie 直接被丢弃',
+      '清完仍读得到就整份清空 CookieStore 兜底，并如实告诉拓展（{ok, scoped}），不再静默失败',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.41.6',
     date: '2026-11-20',
     notes: [
