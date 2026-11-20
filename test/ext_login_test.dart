@@ -39,5 +39,15 @@ void main() {
       );
       expect(header, '_uid=1; uf=new; fid=42');
     });
+
+    test('退出登录走 login.clear：删除这些域的 Cookie', () async {
+      // 桌面 / 测试环境没有 CookieManager：应报「只支持 Android」而不是静默成功，
+      // 免得拓展以为账号已经退出了。
+      if (ExtCookieBridge.supported) return;
+      expect(
+        () => ExtCookieBridge.remove(const ['https://chaoxing.com']),
+        throwsA(isA<UnsupportedError>()),
+      );
+    });
   });
 }

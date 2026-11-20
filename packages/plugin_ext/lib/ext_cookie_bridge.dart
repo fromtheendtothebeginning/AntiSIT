@@ -34,6 +34,14 @@ class ExtCookieBridge {
     await _channel.invokeMethod<bool>('clear');
   }
 
+  /// 只删这些域的 Cookie（`login.clear` 用）：登出后下次打开登录页才是未登录态。
+  static Future<void> remove(List<String> urls) async {
+    if (!supported) {
+      throw UnsupportedError('登录页目前只支持 Android');
+    }
+    await _channel.invokeMethod<bool>('remove', {'urls': urls});
+  }
+
   /// 把各域的 `a=1; b=2` 按 [order] 从宽到窄合并；同名后写覆盖先写。
   static String mergeHeaders(Map<String, String> byUrl, List<String> order) {
     final merged = <String, String>{};

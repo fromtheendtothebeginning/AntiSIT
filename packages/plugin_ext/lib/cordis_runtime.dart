@@ -376,6 +376,8 @@ class CordisRuntime {
       class Login extends Service {
         constructor(c) { super(c, 'login'); }
         open(options) { return call('login.open', options || {}); }
+        // 退出登录：清掉这些域在系统 CookieStore 里的 Cookie
+        clear(options) { return call('login.clear', options || {}); }
       }
       class Background extends Service {
         constructor(c) { super(c, 'background'); }

@@ -50,6 +50,7 @@ import 'workshop/workshop_store.dart';
 /// | `files.pick` | `{accept?, multiple?, encoding?}` | 打开系统文件选择器，返回 `{files: [{name, size, mime, text?/base64?}]}`；单文件 ≤ 8 MB，一次 ≤ 10 个（需 `files` 权限） |
 /// | `files.save` | `{name, text?/base64?, mime?}` | 打开系统「保存到」选择器写文件；用户取消返回 false（需 `files` 权限） |
 /// | `login.open` | `{url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?}` | 打开可见登录页；返回 `{cookies: {域名: cookie}, cookieHeader}`。`cookieUrls` 必须与登录地址同站；需 `login` 权限，打开前会弹窗确认 |
+/// | `login.clear` | `{cookieUrls}` | 退出登录：删掉这些域在系统 CookieStore 里的 Cookie（否则下次登录页仍是已登录）；需 `login` 权限 |
 /// | `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本。提示词由 App 本地转成当前 AI 提供商的请求（Key / 模型不出 App）；没配好 AI 或市场拓展没声明 `ai` 权限都直接报错 |
 /// | `ai.chatTools` | `{messages, tools?, maxTokens?}` | 多轮消息 + OpenAI 兼容 function calling；返回 `{text, toolCalls, usedTools, finishReason}`。提供商不支持 tools 时自动降级 |
 ///
@@ -209,6 +210,9 @@ class ExtBridge extends WebBridge {
       // 通用登录页：用户可见地登录，只返回声明域名的 Cookie
       case 'login.open':
         return _loginOpen(args);
+      // 退出登录：清掉 WebView CookieStore 里这些域的 Cookie（否则「重新登录」会一堆已登录态）
+      case 'login.clear':
+        return _loginClear(args);
       // 后台保活：前台服务 + 常驻通知（插件页自己的定时器继续跑）
       case 'background.keepAlive':
         return _backgroundKeepAlive(args);
@@ -249,6 +253,30 @@ class ExtBridge extends WebBridge {
     if (!allowed) {
       throw ArgumentError('用户没有允许这项操作（$capability）');
     }
+  }
+
+  /// 退出登录：把 [cookieUrls] 这些域的 Cookie 从系统 CookieStore 里删掉。
+  ///
+  /// WebView 共用同一个 CookieStore：用户在登录页登过学习通后，即使用拓展里的
+  /// 「清除」删了自己的加密凭据，下次打开登录页仍然是已登录状态（看起来像
+  /// 「退不出去」）。这里补一条真正的清理通道，由拓展在「退出账号」时调用。
+  Future<Object?> _loginClear(Object? args) async {
+    if (args is! Map) throw ArgumentError('login.clear 要带 {cookieUrls}');
+    if (!ExtCookieBridge.supported) {
+      throw ArgumentError('登录页目前只支持 Android');
+    }
+    final urls = <String>[];
+    final raw = args['cookieUrls'];
+    if (raw is List) {
+      for (final item in raw) {
+        final uri = ExtLoginPage.parseHttpsUrl('$item');
+        urls.add(uri.toString());
+      }
+    }
+    if (urls.isEmpty) throw ArgumentError('login.clear 要带至少一个 cookieUrls');
+    await _ensureConsent('login.open:${Uri.parse(urls.first).host}');
+    await ExtCookieBridge.remove(urls);
+    return true;
   }
 
   /// 打开一个可见的登录页，完成后只返回拓展声明的域名的 Cookie。

@@ -60,6 +60,7 @@ const Map<String, String> kMethodPermissions = {
   'clipboard.read': 'clipboard',
   'clipboard.write': 'clipboard',
   'login.open': 'login',
+  'login.clear': 'login',
   'background.keepAlive': 'background',
   'files.pick': 'files',
   'files.save': 'files',

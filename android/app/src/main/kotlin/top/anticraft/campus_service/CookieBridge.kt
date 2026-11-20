@@ -24,6 +24,24 @@ class CookieBridge(private val messenger: BinaryMessenger) {
                     }
                     result.success(out)
                 }
+                // 退出登录：只删这些域的 Cookie。WebView 与登录页共用同一个
+                // CookieStore，不清掉的话下次打登录页仍是已登录状态。
+                "remove" -> {
+                    val urls = call.argument<List<String>>("urls") ?: emptyList()
+                    val manager = CookieManager.getInstance()
+                    for (url in urls) {
+                        val cookies = manager.getCookie(url) ?: continue
+                        for (part in cookies.split(";")) {
+                            val name = part.substringBefore("=").trim()
+                            if (name.isEmpty()) continue
+                            manager.setCookie(url, "$name=; Max-Age=0; Path=/")
+                            // 部分站点 Cookie 只在子路径下：顺手把常见路径也清一遍
+                            manager.setCookie(url, "$name=; Max-Age=0; Path=/mooc2")
+                        }
+                    }
+                    manager.flush()
+                    result.success(true)
+                }
                 "clear" -> {
                     CookieManager.getInstance().removeAllCookies(null)
                     CookieManager.getInstance().flush()
