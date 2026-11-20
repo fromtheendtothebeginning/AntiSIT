@@ -24,6 +24,15 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.41.4',
+    date: '2026-11-20',
+    notes: [
+      '修「退出登录后又被自动登上」：手动退出会同时关掉「记住密码并自动重登」并删掉保存的密码，下次请求 401 不会拿旧密码登回去',
+      '主动退出时服务器模式的账号密码、直连模式的校园密码都会清掉；服务器地址、学号、学校档案与寝室都保留，重新登录不用重填',
+      '退出确认弹窗的说明改成实际行为',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.41.3',
     date: '2026-11-20',
     notes: [

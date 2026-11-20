@@ -163,9 +163,10 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (ctx) => AlertDialog(
         title: const Text('退出登录'),
         content: Text(direct
-            ? '将清除本机保存的校园密码并断开学校系统会话，返回浏览模式（不会进入登录页）；学校信息与学号保留，'
-                '再次查询时重新登录。'
-            : '将清除本机登录 token 并断开 VPN 隧道，返回浏览模式（不会进入登录页）；若开启了记住密码，下次登录可一键填入。'),
+            ? '将清除本机保存的校园密码并断开学校系统会话，返回浏览模式（不会进入登录页）；'
+                '学号 / 学校信息保留，再次查询时需要重新输入密码。'
+            : '将清除本机登录 token 与保存的密码，断开 VPN 隧道，返回浏览模式（不会进入登录页）；'
+                '「记住密码并自动重登」也会一起关掉，下次登录需要重新输入密码。'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('退出')),
@@ -174,10 +175,12 @@ class _ProfilePageState extends State<ProfilePage> {
     );
     if (ok != true) return;
     await ApiClient.I.disconnect();
+    // manual: 主动退出 —— 连「记住密码并自动重登」一起关掉，否则下次请求 401
+    // 时会拿加密存储里的旧密码自动登回去，用户看到的就是「退出了又自己登录」。
     if (direct) {
-      await AppState.I.clearDirectSession();
+      await AppState.I.clearDirectSession(manual: true);
     } else {
-      await AppState.I.clearSession(keepCreds: AppState.I.remember);
+      await AppState.I.clearSession(keepCreds: false, manual: true);
     }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

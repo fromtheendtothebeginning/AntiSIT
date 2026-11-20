@@ -441,11 +441,19 @@ class AppState extends ChangeNotifier {
   }
 
   /// 清除会话；[keepCreds] 为 true 时保留记住的账号密码。
-  Future<void> clearSession({bool keepCreds = true}) async {
+  ///
+  /// [manual] 为 true 表示「用户主动点了退出登录」：这是明确的要走信号，
+  /// 所以连「记住密码并自动重登」一起关掉——否则下次有请求 401 时，
+  /// [ApiClient] 会拿加密存储里的旧密码自动重登，用户会看到「退出了又自己登上」。
+  Future<void> clearSession({bool keepCreds = true, bool manual = false}) async {
     token = null;
     statusInfo = null;
     studentInfo = null;
-    if (!keepCreds) {
+    if (manual) {
+      // 主动退出：密码与自动重登都清掉（服务器地址 / 用户名仍保留，方便重新登录）
+      remember = false;
+      password = null;
+    } else if (!keepCreds) {
       username = null;
       password = null;
     }
@@ -456,9 +464,13 @@ class AppState extends ChangeNotifier {
   }
 
   /// 直连模式退出：清校园密码（保留学号/寝室/姓名便于再次登录）。
-  Future<void> clearDirectSession() async {
+  ///
+  /// [manual] 为 true（用户主动退出）时连「记住密码并自动重登」一起关掉：
+  /// 直连凭据里的密码就是自动登录用的那把钥匙，不清就会在下次查询时自己登回去。
+  Future<void> clearDirectSession({bool manual = false}) async {
     creds.password = '';
     creds.payPassword = '';
+    if (manual) remember = false;
     statusInfo = null;
     studentInfo = null;
     await ToolPageCache.clearAll();
