@@ -24,6 +24,15 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.41.6',
+    date: '2026-11-20',
+    notes: [
+      '修「拓展发了新版，市场里却一直看不到更新」：插件市场目录改为优先从自建镜像拉（推完立刻生效）',
+      '原因是 jsDelivr 对分支路径缓存 12 小时，而且目录与它的签名是两个独立缓存条目，发版后两者回收时间不一致时验签会失败，整份目录被丢弃',
+      '拉目录时也给签名带上时间戳，绕开边缘缓存；下拉刷新 / 点「重新拉市场目录」现在是真的重新拉',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.41.5',
     date: '2026-11-20',
     notes: [
