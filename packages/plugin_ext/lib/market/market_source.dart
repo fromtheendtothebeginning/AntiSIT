@@ -19,7 +19,14 @@ const Map<String, String> kMarketPublicKeys = {
 };
 
 /// 目录的镜像（依次尝试，谁先给出**验签通过**的目录就用谁）。
+///
+/// 自建镜像排第一：jsDelivr / raw.githubusercontent 对分支路径有长缓存，而且
+/// **`market.json` 与 `market.json.sig` 是两个互不相干的缓存条目**，发版后两者
+/// 回收时间不一致时会给出「新目录 + 旧签名」，验签必然失败——表现就是
+/// 「拓展发了新版，市场里却一直看不到」。自建镜像由 `tool/market_mirror.sh`
+/// 直接推送，推完立刻生效，国内访问也快。
 const List<String> kMarketMirrors = [
+  'https://anticraft.top/market/',
   // 国内可达性好，缓存也快
   'https://cdn.jsdelivr.net/gh/fromtheendtothebeginning/AntiSIT-market@main/',
   'https://raw.githubusercontent.com/fromtheendtothebeginning/AntiSIT-market/main/',
@@ -104,6 +111,12 @@ class MarketSource extends ChangeNotifier {
   /// 拉一份目录：镜像依次试 → 每个都**验签** → 存缓存；全挂了退回缓存（同样验签）。
   ///
   /// 已经拿到过就不重复拉（页面每次进来不该都打网络）；要强制刷新传 [force]。
+  ///
+  /// **每次都带缓存戳**：jsDelivr 对 `@main` 这类分支路径的 `s-maxage` 是 12 小时，
+  /// 新版本发出去后各 POP 回收时间不一（实测同一个 URL：curl 拿到新目录、Dart
+  /// 拿到 12 小时前的旧目录，于是市场里一直显示旧版本、用户看不到更新）。
+  /// 目录只有几 KB、一次会话拉一次，绕开边缘缓存换来「发了就能看到」是划算的。
+  /// 拓展包本身按版本号分路径，不受影响。
   Future<void> load({bool force = false}) async {
     if (status == MarketStatus.loading) return;
     if (ready && !force) return;
@@ -112,10 +125,11 @@ class MarketSource extends ChangeNotifier {
     error = '';
     notifyListeners();
 
+    final bust = '?t=${DateTime.now().millisecondsSinceEpoch}';
     final problems = <String>[];
     for (final base in await _mirrorOrder()) {
       try {
-        final catalog = await fetcher(Uri.parse('${base}market.json'));
+        final catalog = await fetcher(Uri.parse('${base}market.json$bust'));
         if (catalog.length > maxCatalogBytes) {
           problems.add('$base：目录太大（${(catalog.length / 1024 / 1024).toStringAsFixed(1)} MB）');
           continue;
@@ -126,7 +140,9 @@ class MarketSource extends ChangeNotifier {
           problems.add('$base：返回的不是目录（像网页或错误页，可能被反代挡了）');
           continue;
         }
-        final sig = utf8.decode(await fetcher(Uri.parse('${base}market.json.sig'))).trim();
+        final sig = utf8
+            .decode(await fetcher(Uri.parse('${base}market.json.sig$bust')))
+            .trim();
         final bad = await _verifyProblem(catalog, sig);
         if (bad != null) {
           problems.add('$base：$bad');

@@ -227,6 +227,37 @@ void main() {
       await MarketSource.I.load();
       expect(MarketSource.I.status, MarketStatus.failed);
     });
+
+    test('自建镜像排第一：CDN 的长缓存 + 目录与签名分开缓存会把新版本挡住', () {
+      // jsDelivr 对分支路径 s-maxage 12h，且 market.json 与 market.json.sig 是
+      // 两个独立缓存条目：发版后可能给出「新目录 + 旧签名」，验签必然失败。
+      // 实测就是这样「拓展发了新版，市场里一直看不到更新」。
+      expect(kMarketMirrors.first, 'https://anticraft.top/market/');
+      expect(kMarketMirrors, contains(contains('cdn.jsdelivr.net')));
+    });
+
+    test('每次拉目录都带缓存戳（否则边缘缓存会把新版本藏 12 小时）', () async {
+      final signer = await newSigner();
+      MarketSource.publicKeys = {'k-test': signer['pub']!};
+      final (catalog, sig, _) = await makeCatalog(signer: signer);
+
+      final seen = <Uri>[];
+      MarketSource.fetcher = (Uri url) async {
+        seen.add(url);
+        final path = Uri.decodeComponent(url.path);
+        if (path.endsWith('market.json')) return catalog;
+        if (path.endsWith('market.json.sig')) return utf8.encode(sig);
+        throw StateError('HTTP 404：$path');
+      };
+
+      await MarketSource.I.load(force: true);
+      expect(MarketSource.I.ready, isTrue);
+      expect(seen, isNotEmpty);
+      for (final uri in seen) {
+        expect(uri.queryParameters.containsKey('t'), isTrue,
+            reason: '目录与签名都要带时间戳：${uri.host}${uri.path}');
+      }
+    });
   });
 
   // ==================== 安装 / 更新 / 卸载 ====================
