@@ -161,6 +161,7 @@ export default {
 | `ctx.clipboard` | `read()` / `write(text)` | 读写剪贴板；`read` 需 `clipboard` 权限并会弹窗确认 |
 | `ctx.files` | `pick({accept?, multiple?, encoding?})` / `save({name, text?, base64?, mime?})` | 读写用户通过系统文件选择器明确选中的文件；需 `files` 权限，单文件 ≤ 8 MB |
 | `ctx.login` | `open({url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?})` | 打开可见登录页；返回 `{cookies, cookieHeader}`；需 `login` 权限并会弹窗确认 |
+| | `clear({cookieUrls})` | 退出登录：删掉这些域在系统 CookieStore 里的 Cookie（只删自己的凭据的话，下次登录页仍是已登录状态）；需 `login` 权限 |
 | `ctx.background` | `keepAlive({enabled, title?, text?})` | 开启 / 关闭后台保活（前台服务 + 常驻通知）；需 `background` 权限并会弹窗确认 |
 | `ctx.card` | `setName(text)` / `setDesc(text)` / `setIcon(text)` | 改拓展列表卡片上的显示值 |
 | `ctx.ai` | `chat(prompt, {system, maxTokens})` | 走用户在「AI 设置」里配置的模型；Key 不出 App |

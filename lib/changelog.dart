@@ -24,6 +24,14 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.41.3',
+    date: '2026-11-20',
+    notes: [
+      '拓展新增 ctx.login.clear 接口：退出登录时把系统 CookieStore 里那些域的 Cookie 一起删掉',
+      '修「截止提醒」这类拓展退不出账号的问题：之前只删了本地加密凭据，下次打开登录页仍是已登录状态',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.41.2',
     date: '2026-11-20',
     notes: [
