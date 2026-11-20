@@ -26,7 +26,13 @@ class ExtLoginPage extends StatefulWidget {
   final String startUrl;
   final List<String> cookieUrls;
 
-  /// 命中这个前缀 + [successCookie] 时自动完成；两个都不给就等用户点「完成」。
+  /// 自动完成的判定条件（**两个都满足**才算成功）：
+  /// * [successUrlPrefix]：已经跳到这个前缀（登录成功页）；
+  /// * [successCookie]：Cookie 里有这个键。
+  ///
+  /// 只给其中一个时按那个判；两个都不给就等用户点「完成」。
+  /// 前缀是硬门槛：还在登录页时，CookieStore 里可能留着上次的登录态，
+  /// 只按 Cookie 会自动「登录成功」，用户看到的就是「退出后又自己登上了」。
   final String? successUrlPrefix;
   final String? successCookie;
   final String? userAgent;
@@ -52,6 +58,19 @@ class ExtLoginPage extends StatefulWidget {
     final x = _registrable(a.toLowerCase());
     final y = _registrable(b.toLowerCase());
     return x.isNotEmpty && x == y;
+  }
+
+  /// 是否该自动完成登录（纯函数，方便单测）。
+  ///
+  /// [successUrlPrefix] 是硬门槛：还在登录页时一律不自动完成——CookieStore 里
+  /// 可能留着上次的登录态，只按 Cookie 判会让用户「点登录直接被判成功」。
+  static bool shouldAutoCapture({
+    required String url,
+    String? successUrlPrefix,
+  }) {
+    final prefix = successUrlPrefix;
+    if (prefix == null || prefix.isEmpty) return true;
+    return url.startsWith(prefix);
   }
 
   static const Set<String> _multiLabelSuffixes = {
@@ -121,14 +140,18 @@ class _ExtLoginPageState extends State<ExtLoginPage> {
       (widget.successUrlPrefix?.isNotEmpty ?? false) ||
       (widget.successCookie?.isNotEmpty ?? false);
 
+  /// 页面加载完成时尝试自动完成登录。
+  ///
+  /// 给了 `successUrlPrefix` 就**必须**已经跳到那个前缀才自动完成：
+  /// 只按 Cookie 判会在登录页刚打开时就命中（CookieStore 里还留着上次的
+  /// `_uid`），表现为「点登录直接跳成功、根本没让我登录」——用户看到的就是
+  /// 「退出后还自动登录」。
   Future<void> _tryCapture(String url) async {
     if (!_autoDetect || _captured || _capturing || !mounted) return;
-    final prefix = widget.successUrlPrefix;
-    final hasCookieRule = widget.successCookie?.isNotEmpty ?? false;
-    if (prefix != null &&
-        prefix.isNotEmpty &&
-        !url.startsWith(prefix) &&
-        !hasCookieRule) {
+    if (!ExtLoginPage.shouldAutoCapture(
+      url: url,
+      successUrlPrefix: widget.successUrlPrefix,
+    )) {
       return;
     }
     await _capture(auto: true);

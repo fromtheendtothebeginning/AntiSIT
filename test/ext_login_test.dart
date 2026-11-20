@@ -71,5 +71,31 @@ void main() {
           'd.example.com', 'example.com'],
       );
     });
+
+    test('还在登录页时，即使带着旧 Cookie 也不算登录成功', () {
+      // 这是「退出后又自己登上」的另一半根因：判定只看 Cookie 时，
+      // 登录页一打开就会被自动 capture（CookieStore 里还留着上次的 _uid）。
+      expect(
+        ExtLoginPage.shouldAutoCapture(
+          url: 'https://passport2.chaoxing.com/login?fid=',
+          successUrlPrefix: 'https://i.chaoxing.com',
+        ),
+        isFalse,
+        reason: '还在登录页：不能因为 Cookie 里残留 _uid 就判定登录成功',
+      );
+      expect(
+        ExtLoginPage.shouldAutoCapture(
+          url: 'https://i.chaoxing.com/base',
+          successUrlPrefix: 'https://i.chaoxing.com',
+        ),
+        isTrue,
+        reason: '已经跳到成功页：可以自动完成',
+      );
+      expect(
+        ExtLoginPage.shouldAutoCapture(url: 'https://i.chaoxing.com/base'),
+        isTrue,
+        reason: '没给前缀时不做门槛（调用方自己判断）',
+      );
+    });
   });
 }
