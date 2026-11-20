@@ -22,6 +22,7 @@ App 里也能更新：「我的 → 检查更新」查到新版本后，引导�
 - 仓库**不包含签名私钥**。发布构建从 `android/key.properties`（不进仓库，模板见 [android/key.properties.example](android/key.properties.example)）或环境变量读取密钥；缺配置时 release 构建会直接失败，不会产出可安装的包
 - 本地 `flutter run` / debug 构建用的是本机 debug 密钥，与发布版签名不同，两种渠道互相覆盖前需先卸载
 - **发版**：`pubspec.yaml` 升版本号 → 提交推送 → 打同名 tag（`git tag v1.0.4 && git push origin v1.0.4`），[release.yml](.github/workflows/release.yml) 会构建、校验签名指纹、发布 Release
+- **发布到 Gitee 与自建镜像**：[tool/release_gitee.sh](tool/release_gitee.sh)（推代码 + tag + Release + APK）与 [tool/upload_mirror.sh](tool/upload_mirror.sh)（`anticraft.top/apk` 直链 + `latest.json` 兜底更新源）。Gitee 仓库的 **Release 附件合计只有 1 GB**，每版 APK 约 87 MB，十来个版本就满——所以发版脚本会先跑 [tool/gitee_prune.py](tool/gitee_prune.py) 按版本号保留最近 5 个（`GITEE_KEEP_VERSIONS` 可调），更老的 APK 删掉（源码都在 git tag 里，更新链路只分发最新版）
 
 ### 发布签名
 
