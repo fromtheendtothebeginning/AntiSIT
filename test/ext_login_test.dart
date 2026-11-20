@@ -49,5 +49,27 @@ void main() {
         throwsA(isA<UnsupportedError>()),
       );
     });
+
+    test('父域候选：子域能退回主域（父域 Cookie 才是学习通的登录态）', () {
+      // CookieManager 删 `.chaoxing.com` 必须带 Domain=，候选要按长度递减排出来。
+      // 这里只验「可删域」这层纯逻辑，实际删除在 Android 侧。
+      expect(
+        ExtCookieBridge.domainCandidates('mooc1-api.chaoxing.com'),
+        ['mooc1-api.chaoxing.com', 'chaoxing.com'],
+      );
+      expect(
+        ExtCookieBridge.domainCandidates('passport2.chaoxing.com'),
+        ['passport2.chaoxing.com', 'chaoxing.com'],
+      );
+      expect(
+        ExtCookieBridge.domainCandidates('chaoxing.com'),
+        ['chaoxing.com'],
+      );
+      expect(
+        ExtCookieBridge.domainCandidates('a.b.c.d.example.com'),
+        ['a.b.c.d.example.com', 'b.c.d.example.com', 'c.d.example.com',
+          'd.example.com', 'example.com'],
+      );
+    });
   });
 }

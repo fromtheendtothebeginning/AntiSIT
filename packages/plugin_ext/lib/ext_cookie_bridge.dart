@@ -35,11 +35,13 @@ class ExtCookieBridge {
   }
 
   /// 只删这些域的 Cookie（`login.clear` 用）：登出后下次打开登录页才是未登录态。
-  static Future<void> remove(List<String> urls) async {
+  /// 返回 false 表示服务端 / WebView 里仍读得到 Cookie（没清干净）。
+  static Future<bool> remove(List<String> urls) async {
     if (!supported) {
       throw UnsupportedError('登录页目前只支持 Android');
     }
-    await _channel.invokeMethod<bool>('remove', {'urls': urls});
+    final ok = await _channel.invokeMethod<bool>('remove', {'urls': urls});
+    return ok ?? false;
   }
 
   /// 把各域的 `a=1; b=2` 按 [order] 从宽到窄合并；同名后写覆盖先写。
@@ -57,5 +59,24 @@ class ExtCookieBridge {
       }
     }
     return merged.entries.map((entry) => '${entry.key}=${entry.value}').join('; ');
+  }
+
+  /// 一个主机名可能要删的域，从最长到最短（至少保留两级）。
+  ///
+  /// 学习通的登录态大多是**父域 Cookie**（`Domain=.chaoxing.com`），
+  /// 删 `mooc1.chaoxing.com` 的 host-only Cookie 删不掉它——必须按父域逐个下发。
+  /// 原生侧 `CookieBridge.removeCookies` 用的就是这套候选（两边规则要一致）。
+  static List<String> domainCandidates(String host) {
+    final parts = host
+        .trim()
+        .toLowerCase()
+        .split('.')
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.length < 2) return [parts.join('.')];
+    return [
+      for (var i = 0; i <= parts.length - 2; i++)
+        parts.sublist(i).join('.'),
+    ];
   }
 }

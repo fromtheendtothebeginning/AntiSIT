@@ -50,7 +50,7 @@ import 'workshop/workshop_store.dart';
 /// | `files.pick` | `{accept?, multiple?, encoding?}` | 打开系统文件选择器，返回 `{files: [{name, size, mime, text?/base64?}]}`；单文件 ≤ 8 MB，一次 ≤ 10 个（需 `files` 权限） |
 /// | `files.save` | `{name, text?/base64?, mime?}` | 打开系统「保存到」选择器写文件；用户取消返回 false（需 `files` 权限） |
 /// | `login.open` | `{url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?}` | 打开可见登录页；返回 `{cookies: {域名: cookie}, cookieHeader}`。`cookieUrls` 必须与登录地址同站；需 `login` 权限，打开前会弹窗确认 |
-/// | `login.clear` | `{cookieUrls}` | 退出登录：删掉这些域在系统 CookieStore 里的 Cookie（否则下次登录页仍是已登录）；需 `login` 权限 |
+/// | `login.clear` | `{cookieUrls}` | 退出登录：删掉这些域在系统 CookieStore 里的 Cookie（含父域与常见子路径）；返回 `{ok}`，`ok=false` 表示没清干净；需 `login` 权限 |
 /// | `ai.chat` | `{prompt, system?, maxTokens?}` | 模型回答文本。提示词由 App 本地转成当前 AI 提供商的请求（Key / 模型不出 App）；没配好 AI 或市场拓展没声明 `ai` 权限都直接报错 |
 /// | `ai.chatTools` | `{messages, tools?, maxTokens?}` | 多轮消息 + OpenAI 兼容 function calling；返回 `{text, toolCalls, usedTools, finishReason}`。提供商不支持 tools 时自动降级 |
 ///
@@ -260,6 +260,9 @@ class ExtBridge extends WebBridge {
   /// WebView 共用同一个 CookieStore：用户在登录页登过学习通后，即使用拓展里的
   /// 「清除」删了自己的加密凭据，下次打开登录页仍然是已登录状态（看起来像
   /// 「退不出去」）。这里补一条真正的清理通道，由拓展在「退出账号」时调用。
+  ///
+  /// 返回 `{ok: bool}`：`ok=false` 表示清完后仍读得到 Cookie（父域 / 子路径没清干净），
+  /// 拓展应当如实告诉用户「可能没退干净」，而不是假装成功。
   Future<Object?> _loginClear(Object? args) async {
     if (args is! Map) throw ArgumentError('login.clear 要带 {cookieUrls}');
     if (!ExtCookieBridge.supported) {
@@ -275,8 +278,8 @@ class ExtBridge extends WebBridge {
     }
     if (urls.isEmpty) throw ArgumentError('login.clear 要带至少一个 cookieUrls');
     await _ensureConsent('login.open:${Uri.parse(urls.first).host}');
-    await ExtCookieBridge.remove(urls);
-    return true;
+    final ok = await ExtCookieBridge.remove(urls);
+    return {'ok': ok};
   }
 
   /// 打开一个可见的登录页，完成后只返回拓展声明的域名的 Cookie。
