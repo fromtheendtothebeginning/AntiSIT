@@ -35,13 +35,23 @@ class ExtCookieBridge {
   }
 
   /// 只删这些域的 Cookie（`login.clear` 用）：登出后下次打开登录页才是未登录态。
-  /// 返回 false 表示服务端 / WebView 里仍读得到 Cookie（没清干净）。
-  static Future<bool> remove(List<String> urls) async {
+  ///
+  /// 返回 `{ok, scoped}`：
+  /// * `ok` 为 false 表示清完仍读得到 Cookie；
+  /// * `scoped` 为 false 表示按域精确删没能清干净、**兜底把整个 CookieStore 清了**
+  ///   ——此时其它 WebView 的登录态也没了，拓展要如实告诉用户。
+  static Future<({bool ok, bool scoped})> remove(List<String> urls) async {
     if (!supported) {
       throw UnsupportedError('登录页目前只支持 Android');
     }
-    final ok = await _channel.invokeMethod<bool>('remove', {'urls': urls});
-    return ok ?? false;
+    final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
+      'remove',
+      {'urls': urls},
+    );
+    return (
+      ok: raw?['ok'] == true,
+      scoped: raw?['scoped'] != false,
+    );
   }
 
   /// 把各域的 `a=1; b=2` 按 [order] 从宽到窄合并；同名后写覆盖先写。

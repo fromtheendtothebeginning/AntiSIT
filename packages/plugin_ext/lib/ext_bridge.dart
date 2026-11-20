@@ -261,8 +261,11 @@ class ExtBridge extends WebBridge {
   /// 「清除」删了自己的加密凭据，下次打开登录页仍然是已登录状态（看起来像
   /// 「退不出去」）。这里补一条真正的清理通道，由拓展在「退出账号」时调用。
   ///
-  /// 返回 `{ok: bool}`：`ok=false` 表示清完后仍读得到 Cookie（父域 / 子路径没清干净），
-  /// 拓展应当如实告诉用户「可能没退干净」，而不是假装成功。
+  /// 返回 `{ok, scoped}`：
+  /// * `ok=false`：清完仍读得到 Cookie，拓展该提示用户去清应用数据；
+  /// * `scoped=false`：按域精确删没清干净，**兜底清了整个 CookieStore**
+  ///   （别的 WebView 登录态也没了）。宁可多清——「退出成功、一点登录又回到
+  ///   原账号」比多清一次难排查得多。
   Future<Object?> _loginClear(Object? args) async {
     if (args is! Map) throw ArgumentError('login.clear 要带 {cookieUrls}');
     if (!ExtCookieBridge.supported) {
@@ -278,8 +281,8 @@ class ExtBridge extends WebBridge {
     }
     if (urls.isEmpty) throw ArgumentError('login.clear 要带至少一个 cookieUrls');
     await _ensureConsent('login.open:${Uri.parse(urls.first).host}');
-    final ok = await ExtCookieBridge.remove(urls);
-    return {'ok': ok};
+    final outcome = await ExtCookieBridge.remove(urls);
+    return {'ok': outcome.ok, 'scoped': outcome.scoped};
   }
 
   /// 打开一个可见的登录页，完成后只返回拓展声明的域名的 Cookie。
