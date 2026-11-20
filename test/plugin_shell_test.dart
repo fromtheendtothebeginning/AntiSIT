@@ -157,9 +157,7 @@ void main() {
     );
     expect(find.textContaining('卡片大小'), findsOneWidget);
 
-    // 先竖向挪一点，让方向锁定在「换位置」上（横向会变成改尺寸）
-    await g.moveBy(const Offset(0, -30));
-    await tester.pump(const Duration(milliseconds: 30));
+    // 长按后不掉手继续拖到第二张上：只换位置
     await g.moveTo(tester.getCenter(find.text('工具乙')));
     await tester.pump(const Duration(milliseconds: 100));
     await g.up();
@@ -187,10 +185,10 @@ void main() {
     final before = tester.getSize(
       find.byKey(const ValueKey<String>('fgrid:timetable')),
     );
-    // 只往左拖一档（32px 就够）：2×3 往左按「大小顺序」缩一档 = 2×2 竖卡
+    // 往左拖 70：宽度 185 → 115，最近的是 2×2（120×128）
     await tester.drag(
       find.byKey(const ValueKey<String>('fgrid-handle:timetable')),
-      const Offset(-40, 0),
+      const Offset(-70, 0),
     );
     await tester.pumpAndSettle();
 

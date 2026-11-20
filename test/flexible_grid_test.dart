@@ -206,33 +206,68 @@ void main() {
     expect(state.editing, isTrue, reason: '松手后还在整理态，可以继续排');
   });
 
-  testWidgets('整理态里横向拖动 = 改尺寸（往右变大、往左变小），不挪位置', (tester) async {
+  testWidgets('整理态里长按拖动只换位（拖动与缩放不冲突）', (tester) async {
     final key = await pumpGrid(tester);
     final state = key.currentState!;
 
-    // 长按 a，然后纯横向往右滑：方向锁 = 改尺寸
-    final gesture = await tester.startGesture(tester.getCenter(card('a')));
+    // 先进入整理态
+    final press = await tester.startGesture(tester.getCenter(card('a')));
     await tester.pump(const Duration(milliseconds: 600));
-    await gesture.moveBy(const Offset(40, 0));
-    await tester.pump(const Duration(milliseconds: 40));
-    expect(state.order, ['a', 'b', 'c'], reason: '横向拖动不改顺序');
-    await gesture.up();
+    await press.up();
     await tester.pumpAndSettle();
-    // 2x3 已经是最大档，往右不再变
+    expect(state.editing, isTrue);
     expect(state.sizes['a'], GridCardSize.standard);
 
-    // 再往左滑：变小一档（按格数顺序 2x3 → 2x2）
-    final left = await tester.startGesture(tester.getCenter(card('a')));
+    // 整理态里长按 b（第二张）往左上拖到 a 那边
+    final drag = await tester.startGesture(tester.getCenter(card('b')));
     await tester.pump(const Duration(milliseconds: 600));
-    await left.moveBy(const Offset(-40, 0));
-    await tester.pump(const Duration(milliseconds: 40));
-    await left.up();
+    await drag.moveBy(const Offset(-260, -40));
+    await tester.pump(const Duration(milliseconds: 60));
+    await drag.up();
     await tester.pumpAndSettle();
-    expect(state.sizes['a'], GridCardSize.tall, reason: '往左下滑一档到 2×2');
-    expect(state.order, ['a', 'b', 'c'], reason: '顺序仍然不变');
+
+    expect(
+      state.sizes['b'],
+      GridCardSize.standard,
+      reason: '拖动只换位，尺寸不变',
+    );
+    expect(state.order, ['b', 'a', 'c'], reason: '拖到前面就换位');
+    expect(state.editing, isTrue, reason: '松手后留在整理态');
+    expect(state.selectedId, 'b', reason: '松手后选中的是被拖的那张');
+    expect(handle('b'), findsOneWidget, reason: '选中后出现缩放弧线');
   });
 
-  testWidgets('整理态里拖右下角弧线：按拖出来的宽高吸附到四档里最接近的', (tester) async {
+  testWidgets('拖动时悬浮卡片下方留出空位（占位框跟着手指）', (tester) async {
+    final key = await pumpGrid(tester);
+    final state = key.currentState!;
+
+    final gesture = await tester.startGesture(tester.getCenter(card('a')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveBy(const Offset(0, 60));
+    await tester.pump(const Duration(milliseconds: 60));
+
+    expect(
+      find.byKey(const ValueKey<String>('fgrid-slot')),
+      findsOneWidget,
+      reason: '拖开之后下方显示占位空位',
+    );
+    // 占位框就在指针下方（和悬浮卡片同一块格子）
+    final slot = tester.getRect(
+      find.byKey(const ValueKey<String>('fgrid-slot')),
+    );
+    expect(slot.height, closeTo(128, 0.5), reason: '空位大小跟卡片一致');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('fgrid-slot')),
+      findsNothing,
+      reason: '松手后空位收回、卡片落位',
+    );
+    expect(state.editing, isTrue);
+  });
+
+  testWidgets('整理态里拖右下角弧线：本体不动，背景按最近档位排斥邻居', (tester) async {
     final key = await pumpGrid(tester);
     final state = key.currentState!;
 
@@ -244,22 +279,78 @@ void main() {
     expect(state.editing, isTrue);
     expect(state.selectedId, 'a');
     expect(handle('a'), findsOneWidget);
+    expect(tester.getSize(card('a')), const Size(185, 128));
 
-    // 2x3（185×128）往左拖一档：按「大小顺序」缩小 → 2 行 2 列
-    await tester.drag(handle('a'), const Offset(-40, 0));
+    // 往左拖 20：本体跟着手指灵活变小（连续），同时出现「最近适配大小」的虚线框
+    final drag = await tester.startGesture(tester.getCenter(handle('a')));
+    await drag.moveBy(const Offset(-20, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      tester.getSize(card('a')).width,
+      lessThan(185),
+      reason: '本体跟着手指灵活缩放',
+    );
+    expect(
+      tester.getSize(card('a')).width,
+      greaterThan(120),
+      reason: '还没到下一档，说明是连续跟手而不是整档跳变',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('fgrid-slot')),
+      findsOneWidget,
+      reason: '起手就显示「最近适配大小」的虚线框',
+    );
+
+    await drag.moveBy(const Offset(-60, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    // 虚线框已经缩到 2×2 那一档（120×128）
+    final bg = tester.getRect(
+      find.byKey(const ValueKey<String>('fgrid-slot')),
+    );
+    expect(bg.width, closeTo(120, 0.5), reason: '虚线框 = 最近的 2×2 档');
+
+    // 内部标签位置不动：卡片本体左上角钉住，内容贴左上角排（不跟卡框左移）
+    final bodyTopLeft = tester.getTopLeft(card('a'));
+    expect(
+      bodyTopLeft,
+      const Offset(10, 10),
+      reason: '缩放时本体左上角钉住不动',
+    );
+    // 缩到 105 宽时，内容已经按装得下的最小档（1×1）排版
+    expect(
+      find.text('card-a-1x1'),
+      findsOneWidget,
+      reason: '内部排版跟着尺寸切换（图标 / 文字自由调整）',
+    );
+    final labelLeft = tester
+        .getTopLeft(
+          find.descendant(
+            of: card('a'),
+            matching: find.text('card-a-1x1'),
+          ),
+        )
+        .dx;
+    expect(
+      labelLeft,
+      lessThan(bodyTopLeft.dx + 20),
+      reason: '内部标签贴在左上角，没有跟着卡框居中漂移',
+    );
+
+    await drag.up();
     await tester.pumpAndSettle();
+
+    // 松手后本体整体落到 2×2
     expect(state.sizes['a'], GridCardSize.tall);
     expect(tester.getSize(card('a')), const Size(120, 128));
     expect(find.text('card-a-2x2'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fgrid-slot')),
+      findsNothing,
+      reason: '松手后背景收起',
+    );
 
-    // 2x2 再往左一档 → 1 行 3 列横条（大小顺序里比 2×2 再小一档）
-    await tester.drag(handle('a'), const Offset(-40, 0));
-    await tester.pumpAndSettle();
-    expect(state.sizes['a'], GridCardSize.wide);
-    expect(tester.getSize(card('a')), const Size(185, 59));
-
-    // 1x3 再往左一档 → 1 行 1 列的小方格
-    await tester.drag(handle('a'), const Offset(-40, 0));
+    // 2x2 再往左拖 65：宽度到 55 → 最近的是 1×1
+    await tester.drag(handle('a'), const Offset(-65, 0));
     await tester.pumpAndSettle();
     expect(state.sizes['a'], GridCardSize.single);
     expect(tester.getSize(card('a')), const Size(55, 59));
@@ -267,33 +358,21 @@ void main() {
     // 1x1 也保留角标：它是「拖一次就放大回去」的手势
     expect(handle('a'), findsOneWidget, reason: '1x1 也能拖角标放大');
 
-    // 1x1 往右一档 → 1x3，再往右 → 2x2，再往右 → 2x3
-    await tester.drag(handle('a'), const Offset(40, 0));
+    // 1x1 往右拖 130 → 宽度到 185，高度仍是 59 → 1×3 横条
+    await tester.drag(handle('a'), const Offset(130, 0));
     await tester.pumpAndSettle();
-    expect(state.sizes['a'], GridCardSize.wide, reason: '1x1 往右一档 = 1 行 3 列横条');
-    await tester.drag(handle('a'), const Offset(40, 0));
-    await tester.pumpAndSettle();
-    expect(state.sizes['a'], GridCardSize.tall, reason: '再往右一档 = 2×2');
-    await tester.drag(handle('a'), const Offset(40, 0));
+    expect(state.sizes['a'], GridCardSize.wide, reason: '1x1 往右拉宽 = 1 行 3 列横条');
+    expect(tester.getSize(card('a')), const Size(185, 59));
+
+    // 1x3 往下拖 70 → 高度到 128 → 2×3 默认卡
+    await tester.drag(handle('a'), const Offset(0, 70));
     await tester.pumpAndSettle();
     expect(
       state.sizes['a'],
       GridCardSize.standard,
-      reason: '再往右一档 = 2 行 3 列默认卡',
+      reason: '横条往下拉高 = 2 行 3 列默认卡',
     );
-    expect(handle('a'), findsOneWidget);
-
-    // 2x3 往上拖：竖向只改行数 → 1 行 3 列横条
-    await tester.drag(handle('a'), const Offset(0, -40));
-    await tester.pumpAndSettle();
-    expect(state.sizes['a'], GridCardSize.wide);
-    expect(tester.getSize(card('a')), const Size(185, 59));
-    expect(find.text('card-a-1x3'), findsOneWidget);
-
-    // 1x3 往下拖：回到 2 行
-    await tester.drag(handle('a'), const Offset(0, 40));
-    await tester.pumpAndSettle();
-    expect(state.sizes['a'], GridCardSize.standard);
+    expect(tester.getSize(card('a')), const Size(185, 128));
     expect(tester.takeException(), isNull, reason: '四档尺寸下内容都不能溢出');
   });
 

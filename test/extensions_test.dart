@@ -743,8 +743,8 @@ void main() {
 
       final handle = find.byKey(const ValueKey<String>('fgrid-handle:a'));
       expect(handle, findsOneWidget);
-      // 只往左拖一档（32px 就够）→ 2×3 按大小顺序缩一档 = 2×2 竖卡
-      await tester.drag(handle, const Offset(-40, 0));
+      // 往左拖 70：宽度 185 → 115，最近的是 2×2（120×128）
+      await tester.drag(handle, const Offset(-70, 0));
       await tester.pumpAndSettle();
 
       expect(ExtensionStore.I.sizeOf('a'), GridCardSize.tall);

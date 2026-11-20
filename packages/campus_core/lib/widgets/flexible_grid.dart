@@ -238,17 +238,21 @@ class _SizeOption extends StatelessWidget {
   }
 }
 
-/// 可整理（长按拖动换位 / 顶部尺寸按钮 / 拖右下角弧线 / 左右滑改大小）的柔性宫格。
+/// 可整理（长按拖动换位 / 顶部尺寸按钮 / 拖右下角弧线连续缩放）的柔性宫格。
 ///
 /// 排版：6 列基础网格 + 2D 首次适配装箱，卡片按传入顺序从左到右、从上到下找空位。
 /// 尺寸只有 [GridCardSize.presets] 四种设计档位（1x1 / 1x3 / 2x3 / 2x2，行×列）。
 ///
-/// 手势：
-/// * 普通状态：长按卡片 → 震动并立即进入整理状态、选中并跟手抬起。
-/// * 整理状态：**方向锁**——第一段位移以竖向为主 = 换位置；以横向为主 =
-///   **左右滑动直接改尺寸**（往右变大、往左变小，一档一档走）。
-///   另外还能拖选中卡片右下角的弧线细调；点卡片选中它；点别处退出整理。
-/// * 拖动到列表上下边缘时自动滚动，长列表也能把卡片拖到屏幕外。///
+/// **手势三段式，互不冲突**：
+/// 1. **长按 = 拖动**：无论在普通态还是整理态，按住卡片不放就一直处于可拖动状态，
+///    卡片悬浮跟手；它落点处的格子留成空位（占位框），下面和后面的卡片绕开它排，
+///    所以悬浮卡片**正下方永远是空的**。拖到列表上下边缘会自动滚动。
+/// 2. **松手 = 整理态**：松手后顺序落位，并进入整理态、选中这张卡（右下角出现缩放弧线）。
+/// 3. **整理态短点击卡片 = 选中它准备改大小**；**拖右下角弧线 = 连续缩放**——
+///    卡框跟手连续变大 / 变小，松手吸附到四档里最接近的那档。
+///
+/// 拖动与缩放彻底分开：拖动只换位置，缩放只改尺寸，两者不会在同一段手势里抢。
+///
 /// 状态全部由调用方持有（[editing] / [onEditingChanged] / [onOrderChanged] /
 /// [onSizeChanged]），落盘与启停规则都留在各页自己的 store 里；本组件只做排版与手势。
 class FlexibleCardGrid extends StatefulWidget {
@@ -304,8 +308,25 @@ class FlexibleCardGrid extends StatefulWidget {
   State<FlexibleCardGrid> createState() => _FlexibleCardGridState();
 }
 
-/// 一次拖动的方向锁：决定这一段手势是换位置还是换尺寸。
-enum _DragAxisKind { horizontal, vertical }
+/// 拖动时被「占住」的格位：悬浮卡片下方要腾出的那块空位。
+///
+/// 排版时先把这块标成已占用，其余卡片绕着它流式排布——于是在手指下面
+/// 始终是一个与卡片等大的洞，下面的卡片被推下去。
+class _Reserved {
+  const _Reserved({required this.row, required this.col, required this.size});
+
+  final int row;
+  final int col;
+  final GridCardSize size;
+
+  Rect rectIn(double colWidth, double unitHeight, double gap, EdgeInsets pad) =>
+      Rect.fromLTWH(
+        pad.left + col * (colWidth + gap),
+        pad.top + row * (unitHeight + gap),
+        size.columns * colWidth + (size.columns - 1) * gap,
+        size.rows * unitHeight + (size.rows - 1) * gap,
+      );
+}
 
 class _FlexibleCardGridState extends State<FlexibleCardGrid>
     with SingleTickerProviderStateMixin {
@@ -323,19 +344,11 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
   static const Curve _moveCurve = Curves.easeOutCubic;
 
   /// 拖出去多远才算「真的挪开」：低于这个距离时卡片还算在原位，
-  /// 邻居不让位、原格子的占位符也一直亮着。
+  /// 邻居不让位、占位框也留在起手处（避免轻轻一碰就整页重排）。
   static const double _moveAwayThreshold = 14;
 
-  /// 弧线手柄每跨一档要拖的像素：判定范围调大 = 这个数小，轻轻一拖就换档。
-  static const double _handleStep = 32;
-
-  /// 左右滑每跨一档要横移的像素。判定范围比「滑过一整个列宽」大得多
-  /// （列宽约 55~90dp），轻轻一划就能换档。
-  static const double _swipeStep = 40;
-
-  /// 左右滑的死区系数：位移不到 [_swipeStep] × 这个比例时完全不换档，
-  /// 免得手一动就跳档。
-  static const double _swipeDeadZone = 0.6;
+  /// 缩放起手的死区：按住弧线后位移小于它不缩放（防手抖）。
+  static const double _resizeDeadZone = 3;
 
   /// 整个排版区的 RenderBox：把手指的全局坐标换算成宫格坐标。
   final GlobalKey _stackKey = GlobalKey();
@@ -343,10 +356,10 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
   /// 最近的竖向滚动容器（工具栏 / 拓展页都在可滚动页面里，拖到边缘要自己滚）。
   ScrollPosition? _scrollPos;
 
-  /// 拖动中：卡片在手指下，松手才落位 / 才提交尺寸。
+  /// 拖动中：卡片悬在手指下，落点在它正下方留一块空位。
   _DragState? _drag;
 
-  /// 缩放中：手柄跟手，尺寸吸附到最近的设计档位。
+  /// 缩放中：手柄跟手，尺寸连续变化，松手吸附到最近档位。
   _ResizeState? _resize;
 
   /// 刚落位、还在等 store 回写的新顺序 / 新尺寸。
@@ -443,44 +456,146 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
     return items;
   }
 
-  /// 真正要画出来的顺序：基准顺序 → 缩放中的临时尺寸 → 拖动中的临时状态。
+  /// 真正参与排版的卡片（基准顺序 + 尚未回写的本地覆盖）。
   ///
-  /// * 竖向拖动但还没拖够距离：卡片留在原来的槽位（占位符留在原地）。
-  /// * 竖向拖开了：按计算出来的插入点让位。
-  /// * 横向拖动（改尺寸）：卡片留在原槽位，按**预览尺寸**重新排版，
-  ///   邻居实时让位；松手才提交。
+  /// **被拖动 / 正在缩放的那张都不在流里**：拖动时它悬在手指下，
+  /// 缩放着它本体定在原处，两者都只用一个「占位背景」参与排版，
+  /// 其余卡片被这块背景推开（[_reservedSlot]）。
   List<FlexibleGridItem> _displayItems() {
     var items = _baseItems();
-    final resize = _resize;
-    if (resize != null) {
-      final current = resize.current;
-      items = [
-        for (final item in items)
-          item.id == resize.itemId ? item.withSize(current) : item,
-      ];
-    }
     final drag = _drag;
     if (drag != null) {
-      final dragged = items.where((item) => item.id == drag.itemId).firstOrNull;
-      if (dragged != null) {
-        final horizontal = drag.axis == _DragAxisKind.horizontal;
-        final shown = horizontal && drag.previewSize != null
-            ? dragged.withSize(drag.previewSize!)
-            : dragged;
-        items = [
-          for (final item in items)
-            if (item.id != drag.itemId) item,
-        ];
-        final index =
-            (drag.movedAway &&
-                drag.axis == _DragAxisKind.vertical &&
-                !horizontal)
-            ? drag.insert
-            : drag.originIndex;
-        items.insert(index.clamp(0, items.length), shown);
-      }
+      items = [
+        for (final item in items)
+          if (item.id != drag.itemId) item,
+      ];
+    }
+    final resize = _resize;
+    if (resize != null) {
+      items = [
+        for (final item in items)
+          if (item.id != resize.itemId) item,
+      ];
     }
     return items;
+  }
+
+  /// 当前要占住的格位（悬浮卡片下方那块空位）。
+  ///
+  /// 位置由**落点下标**决定：按「其余卡片 + 被拖卡片插到该下标」重新排版，
+  /// 取被拖卡片落到的格子。于是空位与松手后的真实落点始终一致。
+  /// 还没拖开时占起手位（布局保持原样）。
+  _Reserved? _reservedSlot() {
+    final drag = _drag;
+    if (drag != null) {
+      final origin = _Reserved(
+        row: drag.originRow,
+        col: drag.originCol,
+        size: drag.size,
+      );
+      if (!drag.movedAway) return origin;
+      final drop = _dropPoint(drag);
+      if (drop == null) return origin;
+      return _slotForDrop(drag, drop);
+    }
+
+    // 缩放中：占住它自己的槽位，尺寸取「排斥用的尺寸」——
+    // 缩小时按最近的档位（邻居正常靠拢），放大时按最近的最大档位
+    // （先把地方占足，邻居提前让开，不会跟长大的卡片重叠）。
+    final resize = _resize;
+    if (resize != null) {
+      return _Reserved(
+        row: resize.originRow,
+        col: resize.originCol,
+        size: resize.reserve,
+      );
+    }
+    return null;
+  }
+
+  /// 缩放时「排斥用的尺寸」：
+  ///
+  /// * **缩小**（拖出来的尺寸比最近那档小）：用最近那档 —— 邻居按常规往里靠；
+  /// * **放大**（任一方向已经超出最近那档）：用**能装下当前尺寸的最小档位**，
+  ///   宁可多占一点，也不让邻居和正在长大的卡片重叠。
+  GridCardSize _reserveFor(Size px, GridCardSize start) {
+    final nearest = _nearestPreset(px);
+    final nearestPx = _presetPx(nearest);
+    final overflow =
+        px.width > nearestPx.width + 0.5 || px.height > nearestPx.height + 0.5;
+    if (!overflow) return nearest;
+
+    final candidates = [
+      for (final preset in GridCardSize.byArea)
+        if (_presetPx(preset).width >= px.width - 0.5 &&
+            _presetPx(preset).height >= px.height - 0.5)
+          preset,
+    ]..sort((a, b) => (a.rows * a.columns).compareTo(b.rows * b.columns));
+    return candidates.isEmpty ? nearest : candidates.first;
+  }
+
+  /// 某一档的像素尺寸（宽 × 高）。
+  Size _presetPx(GridCardSize size) {
+    final gap = widget.spacing;
+    return Size(
+      size.columns * _colWidth + (size.columns - 1) * gap,
+      size.rows * widget.unitHeight + (size.rows - 1) * gap,
+    );
+  }
+
+  /// 拖动的**落点**（宫格本地坐标 = 悬浮卡片的中心）。
+  ///
+  /// 不能用指尖坐标：手指按在卡片上的位置是随机的（左上、右下都常见），
+  /// 用指尖算「插到谁前面」会跟眼睛看到的悬浮卡片位置对不上。
+  /// 这里用卡片中心，插入判定和占位框都按它算，三者永远一致。
+  Offset? _dropPoint(_DragState drag) {
+    final local = _toLocal(drag.pointer);
+    if (local == null) return null;
+    final topLeft = local - drag.grab;
+    return topLeft + drag.sizePx.center(Offset.zero);
+  }
+
+  /// 把被拖卡片插到指针处的下标，重排一次，取它落到的格子。
+  _Reserved _slotForDrop(_DragState drag, Offset drop) {
+    final others = [
+      for (final item in _baseItems())
+        if (item.id != drag.itemId) item,
+    ];
+    final index = _dropIndexFor(drop, others).clamp(0, others.length);
+    final sequence = <FlexibleGridItem>[...others]
+      ..insert(index, drag.item);
+    final layout = _pack(sequence, _colWidth);
+    for (final placement in layout) {
+      if (placement.item.id == drag.itemId) {
+        return _Reserved(
+          row: placement.row,
+          col: placement.col,
+          size: drag.size,
+        );
+      }
+    }
+    return _Reserved(
+      row: drag.originRow,
+      col: drag.originCol,
+      size: drag.size,
+    );
+  }
+
+  /// 指针落在「除被拖卡片以外」的哪两张之间：按阅读顺序，先看是否在这一行
+  /// （落在卡片上下沿之间），同一行再按左右半边决定插在它前面还是后面。
+  int _dropIndexFor(Offset local, List<FlexibleGridItem> others) {
+    final layout = _pack(others, _colWidth);
+    for (var i = 0; i < layout.length; i++) {
+      final rect = layout[i].rect;
+      if (local.dy < rect.top) return i; // 在它上面 → 插到它前面
+      if (local.dy <= rect.bottom) {
+        // 同一行：在左半边就插到它前面，在右半边就继续往后看
+        if (local.dx < rect.center.dx) return i;
+        continue;
+      }
+      // 在它下面 → 继续往后
+    }
+    return layout.length;
   }
 
   // ==================== 排版 ====================
@@ -493,6 +608,70 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
       size.columns * colWidth + (size.columns - 1) * gap,
       size.rows * widget.unitHeight + (size.rows - 1) * gap,
     );
+  }
+
+  /// 插入落点：把被拖卡片的尺寸也占住，下面的卡片被推开。
+  ///
+  /// 与 [_pack] 相同的 2D 首次适配，只是**先占位**再排其余卡片：占位块周围
+  /// 的卡片会绕开它流动，于是悬浮卡片正下方始终是空的（这就是「下方腾出空位」）。
+  List<_Placement> _packReserved(
+    List<FlexibleGridItem> items,
+    _Reserved reserved,
+    double colWidth,
+  ) {
+    final occupied = <int, List<bool>>{};
+
+    void mark(int row, int col, GridCardSize size) {
+      // 夹住边界：占位块可能贴着右边缘（例如 4 列宽的卡在放大中途），
+      // 越界写数组会直接抛 RangeError。
+      final lastCol = math.min(_columns, col + size.columns);
+      final firstCol = math.max(0, col);
+      for (var r = math.max(0, row); r < row + size.rows; r++) {
+        final line = occupied.putIfAbsent(
+          r,
+          () => List<bool>.filled(_columns, false),
+        );
+        for (var c = firstCol; c < lastCol; c++) {
+          line[c] = true;
+        }
+      }
+    }
+
+    bool isFree(int row, int col, GridCardSize size) {
+      for (var r = row; r < row + size.rows; r++) {
+        final line = occupied[r];
+        if (line == null) continue;
+        for (var c = col; c < col + size.columns; c++) {
+          if (line[c]) return false;
+        }
+      }
+      return true;
+    }
+
+    mark(reserved.row, reserved.col, reserved.size);
+
+    final out = <_Placement>[];
+    for (final item in items) {
+      final size = item.size;
+      var placed = false;
+      for (var row = 0; !placed; row++) {
+        for (var col = 0; col + size.columns <= _columns; col++) {
+          if (!isFree(row, col, size)) continue;
+          mark(row, col, size);
+          out.add(
+            _Placement(
+              item: item,
+              row: row,
+              col: col,
+              rect: _rectFor(row, col, size, colWidth),
+            ),
+          );
+          placed = true;
+          break;
+        }
+      }
+    }
+    return out;
   }
 
   /// 2D 首次适配：按传入顺序逐张找最靠前的空位（6 列，卡片宽 1~3 列、高 1~2 行）。
@@ -588,8 +767,10 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
     final local = _toLocal(global);
     if (local == null) return;
     widget.onSelected?.call(item.id);
-    final baseItems = _baseItems();
-    final originIndex = baseItems.indexWhere((e) => e.id == item.id);
+    // 起手格位：用当前排版里这张卡的位置反推（它此刻一定在 placements 里）
+    final placement = _placements
+        .where((p) => p.item.id == item.id)
+        .firstOrNull;
     setState(() {
       _resize = null;
       _drag = _DragState(
@@ -600,128 +781,63 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
         grab: local - rect.topLeft,
         pointer: global,
         origin: rect,
-        originIndex: originIndex < 0 ? 0 : originIndex,
-        insert: _insertIndexFor(local, item.id),
+        originRow: placement?.row ?? 0,
+        originCol: placement?.col ?? 0,
       );
     });
     _syncEdgeScroll();
   }
 
-  void _startPanDrag(FlexibleGridItem item, Offset global) {
-    if (_drag != null || _resize != null) return;
-    final placement = _placements
-        .where((p) => p.item.id == item.id)
-        .firstOrNull;
-    if (placement == null) return;
-    _beginDrag(item, placement.rect, global);
-  }
-
-  /// 拖动的两种模式，按手指主导方向自动选（一次拖动只做一件事）：
+  /// 长按拖动 = **只换位置**。
   ///
-  /// * **竖向为主**：换位置（按阅读顺序算插入点，和以前一样）。
-  /// * **横向为主**：整理阶段左右滑动**优先改尺寸**，一档一档走
-  ///   （往右变大、往左变小）。
-  ///
-  /// 方向锁在第一次越过 [_moveAwayThreshold] 时定下，中途不切换——
-  /// 否则斜着拖会又挪位又换尺寸。阈值内什么都不做，
-  /// 正好和「拖够距离才让位」共用同一段距离。
+  /// 无论普通态还是整理态，只要手指不松就一直可拖：卡片悬在手指下，
+  /// 落点格位由 [_reservedSlot] 占住，其余卡片绕开它排（正下方始终是空的）。
+  /// 超过 [_moveAwayThreshold] 才把占位从起手位挪到落点，
+  /// 避免轻轻一碰就整页重排。
   void _updateDrag(Offset global) {
     final drag = _drag;
     if (drag == null) return;
-    final local = _toLocal(global);
-    if (local == null) return;
-    final raw = global - drag.startPointer;
-    final movedAway = raw.distance >= _moveAwayThreshold;
-
-    if (drag.axis == null && movedAway) {
-      drag.axis = raw.dx.abs() >= raw.dy.abs()
-          ? _DragAxisKind.horizontal
-          : _DragAxisKind.vertical;
-      drag.movedAway = true;
-      HapticFeedback.selectionClick();
-    }
-    if (drag.axis == null) {
-      // 还没拖开：卡片留在原位、占位符不动，只记指针（长按后的轻微抖动不算数）
-      setState(() => drag.pointer = global);
-      return;
-    }
-
-    if (drag.axis == _DragAxisKind.horizontal) {
-      _updateSwipeResize(drag, global, raw);
-      return;
-    }
-
-    final insert = _insertIndexFor(local, drag.itemId);
-    if (insert != drag.insert) HapticFeedback.selectionClick();
+    final movedAway = (global - drag.startPointer).distance >= _moveAwayThreshold;
+    if (movedAway == drag.movedAway && drag.pointer == global) return;
+    if (movedAway && !drag.movedAway) HapticFeedback.selectionClick();
     setState(() {
       drag.pointer = global;
-      drag.insert = insert;
       drag.movedAway = movedAway;
     });
     _syncEdgeScroll();
   }
 
-  /// 整理阶段「左右滑 = 改尺寸」：以起手尺寸为基准，横移每过一档的 2/3
-  /// （[_swipeDeadZone] 死区）就升 / 降一档。判定范围比「一整个列步长」宽，
-  /// 轻轻一划就能换档；死区让手指刚动时不会立刻跳。
-  ///
-  /// 档位是连续的（[_swipeSteps] 按位移算），划得快也不会漏档。
-  void _updateSwipeResize(_DragState drag, Offset global, Offset raw) {
-    final order = GridCardSize.byArea;
-    final startIndex = order.indexOf(drag.item.size);
-    if (startIndex < 0) return;
-
-    final steps = _swipeSteps(
-      raw.dx,
-    ).clamp(-startIndex, order.length - 1 - startIndex);
-    final nextSize = order[startIndex + steps];
-    if (steps == drag.steps && nextSize == drag.previewSize) {
-      setState(() => drag.pointer = global);
-      return;
-    }
-    if (nextSize != drag.previewSize) HapticFeedback.selectionClick();
-    setState(() {
-      drag.steps = steps;
-      drag.previewSize = nextSize;
-      drag.pointer = global;
-    });
-  }
-
-  /// 横移 `dx` 对应「升几档」：正 = 往右变大。
-  ///
-  /// 用「死区 + 每档 [_swipeStep]」的分段：第一档只要滑过 0.6 个 [_swipeStep]，
-  /// 之后每多滑一个 [_swipeStep] 再升一档，判定范围比一整列宽大得多。
-  int _swipeSteps(double dx) {
-    final a = dx.abs();
-    final dead = _swipeStep * _swipeDeadZone;
-    if (a < dead) return 0;
-    final mag = ((a - dead) / _swipeStep).floor() + 1;
-    return dx >= 0 ? mag : -mag;
-  }
-
+  /// 松手：顺序落位，并**停在整理态**选中这张卡（右下角出现缩放弧线，
+  /// 用户可以接着改大小）。点空白处才退出整理。
   void _endDrag() {
     final drag = _drag;
     if (drag == null) return;
     _stopEdgeScroll();
 
-    // 横向拖动 = 改尺寸：松手只提交尺寸，不参与顺序。
-    if (drag.axis == _DragAxisKind.horizontal) {
-      final size = drag.previewSize;
-      final changed = size != null && size != drag.item.size;
-      setState(() {
-        _drag = null;
-        if (changed) _pendingSizes[drag.itemId] = size;
-      });
-      if (changed) {
-        widget.onSizeChanged(drag.itemId, size);
-        HapticFeedback.lightImpact();
-      }
-      return;
-    }
-
-    final ordered = _displayItems();
-    final ids = [for (final item in ordered) item.id];
+    // 没拖开就松手 = 纯长按：**必须保持原顺序**。
+    // （按落点算下标会把它判到后面去，因为参照布局里已经没有它自己了。）
     final baseIds = [for (final item in _baseItems()) item.id];
+    final movedAway = drag.movedAway;
+    final local = movedAway ? _dropPoint(drag) : null;
+    final others = _displayItems(); // 已经不含被拖的那张
+    final insertAt = local == null
+        ? -1
+        : _dropIndexFor(
+            local,
+            _baseItems().where((i) => i.id != drag.itemId).toList(),
+          );
+    final ids = <String>[
+      if (insertAt < 0)
+        ...baseIds
+      else ...[
+        for (var i = 0; i < others.length; i++) ...[
+          if (i == insertAt) drag.itemId,
+          others[i].id,
+        ],
+        if (insertAt >= others.length) drag.itemId,
+      ],
+    ];
+
     final changed = !_sameOrder(ids, baseIds);
     setState(() {
       _drag = null;
@@ -731,6 +847,10 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
       widget.onOrderChanged(ids);
       HapticFeedback.lightImpact();
     }
+    // 松手即进入整理态并选中这张（尺寸条与缩放弧线都指向它）。
+    // 顺序：先进整理态再选中 —— 反过来会被页面的「进整理自动选第一张」覆盖掉。
+    if (!widget.editing) widget.onEditingChanged(true);
+    widget.onSelected?.call(drag.itemId);
   }
 
   void _cancelDrag() {
@@ -739,29 +859,7 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
     setState(() => _drag = null);
   }
 
-  /// 指针落在「除被拖卡片以外」的哪两张之间：按阅读顺序，先看是否在这一行
-  /// （落在卡片上下沿之间），同一行再按左右半边决定塞在它前面还是后面。
-  /// 参照布局用**不含被拖卡片**的那份（稳定、不会因为卡片跟着让位而自己抖）。
-  int _insertIndexFor(Offset local, String draggedId) {
-    final others = [
-      for (final item in _baseItems())
-        if (item.id != draggedId) item,
-    ];
-    final layout = _pack(others, _colWidth);
-    for (var i = 0; i < layout.length; i++) {
-      final rect = layout[i].rect;
-      if (local.dy < rect.top) return i; // 在它上面 → 插到它前面
-      if (local.dy <= rect.bottom) {
-        // 同一行：在左半边就插到它前面，在右半边就继续往后看
-        if (local.dx < rect.center.dx) return i;
-        continue;
-      }
-      // 在它下面 → 继续往后
-    }
-    return layout.length;
-  }
-
-  // ==================== 弧线缩放 ====================
+  // ==================== 弧线缩放（连续跟手 + 松手吸附） ====================
 
   void _startResize(FlexibleGridItem item, Offset global) {
     if (_drag != null || _resize != null) return;
@@ -775,103 +873,92 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
       _resize = _ResizeState(
         itemId: item.id,
         start: item.size,
-        current: item.size,
         startPx: placement.rect.size,
         startPointer: global,
+        originRow: placement.row,
+        originCol: placement.col,
       );
     });
     HapticFeedback.selectionClick();
   }
 
+  /// 跟手缩放：手指位移直接加到起手像素尺寸上，算出**最近档位背景**。
+  ///
+  /// 注意本体不动：这里只更新 [ _ResizeState.snapped ]（背景块大小），
+  /// 邻居按它让位；卡框本体钉在起手格位上，直到松手才整体落到新尺寸。
+  /// 这就是「调整大小优先级最高、滑动期间组件本体不动」。
   void _updateResize(Offset global) {
     final resize = _resize;
     if (resize == null) return;
     final delta = global - resize.startPointer;
-    final next = _nearestPreset(resize.start, delta);
-    if (next == resize.current) return;
-    HapticFeedback.selectionClick();
-    setState(() => resize.current = next);
+    if (!resize.started) {
+      if (delta.distance < _resizeDeadZone) return;
+      resize.started = true;
+    }
+    // 连续像素尺寸：宽高各自跟手，并夹在设计档位的范围内
+    final minW = _colWidth;
+    final maxW = 3 * _colWidth + 2 * widget.spacing;
+    final minH = widget.unitHeight;
+    final maxH = 2 * widget.unitHeight + widget.spacing;
+    final width = (resize.startPx.width + delta.dx).clamp(minW, maxW);
+    final height = (resize.startPx.height + delta.dy).clamp(minH, maxH);
+    final nextPx = Size(width, height);
+    final snapped = _nearestPreset(nextPx);
+    final reserve = _reserveFor(nextPx, resize.start);
+    if (nextPx == resize.currentPx &&
+        snapped == resize.snapped &&
+        reserve == resize.reserve) {
+      return;
+    }
+    if (snapped != resize.snapped) HapticFeedback.selectionClick();
+    setState(() {
+      resize.currentPx = nextPx;
+      resize.snapped = snapped;
+      resize.reserve = reserve;
+    });
   }
 
   void _endResize() {
     final resize = _resize;
     if (resize == null) return;
-    final changed = resize.current != resize.start;
+    final target = resize.snapped;
+    final changed = target != resize.start;
     setState(() {
       _resize = null;
-      if (changed) _pendingSizes[resize.itemId] = resize.current;
+      if (changed) _pendingSizes[resize.itemId] = target;
     });
     if (changed) {
-      widget.onSizeChanged(resize.itemId, resize.current);
+      widget.onSizeChanged(resize.itemId, target);
       HapticFeedback.lightImpact();
     }
   }
 
-  /// 手柄拖到的位移 → 该换到哪一档。
-  ///
-  /// 判定按**拖动方向**分档，每档只要拖够 [_handleStep]（32px）就换，
-  /// 判定范围比「拖到另一档的像素宽度」大得多；拖得越远跨得越多。
-  ///
-  /// * **横向为主**：沿着「大小顺序」（[GridCardSize.byArea]）逐档走——
-  ///   往右变大、往左变小。2×3 → 2×2 → 1×3 → 1×1 这样一路缩下去，
-  ///   不会出现「拖了没反应」。
-  /// * **竖向为主**：只改行数（2 行 ⇄ 1 行），列数不变。
-  GridCardSize _nearestPreset(GridCardSize start, Offset delta) {
-    final absX = delta.dx.abs();
-    final absY = delta.dy.abs();
-    final movedX = absX >= _handleStep;
-    final movedY = absY >= _handleStep;
-    // 只挪了一点点：保持原尺寸（防手抖）
-    if (!movedX && !movedY) return start;
-
-    final horizontalLead = movedX && (!movedY || absX >= absY);
-    if (horizontalLead) {
-      final order = GridCardSize.byArea;
-      final startIndex = order.indexOf(start);
-      if (startIndex < 0) return start;
-      // 拖了「几档」：至少 1 档，拖得远就多跨几档
-      final span = absX / _handleStep;
-      final steps = math.max(1, span.floor());
-      final target = (delta.dx >= 0 ? startIndex + steps : startIndex - steps)
-          .clamp(0, order.length - 1);
-      return order[target];
+  /// 连续尺寸 → 最接近的设计档位（按像素距离，宽高各自按列/行步长归一）。
+  GridCardSize _nearestPreset(Size px) {
+    final gap = widget.spacing;
+    final colStride = math.max(1.0, _colWidth + gap);
+    final rowStride = math.max(1.0, widget.unitHeight + gap);
+    var best = GridCardSize.presets.first;
+    var bestDistance = double.infinity;
+    for (final preset in GridCardSize.byArea) {
+      final w = preset.columns * _colWidth + (preset.columns - 1) * gap;
+      final h = preset.rows * widget.unitHeight + (preset.rows - 1) * gap;
+      final dx = (px.width - w) / colStride;
+      final dy = (px.height - h) / rowStride;
+      final d = dx * dx + dy * dy;
+      if (d < bestDistance) {
+        best = preset;
+        bestDistance = d;
+      }
     }
-
-    // 竖向：只改行数
-    final span = absY / _handleStep;
-    final steps = math.max(1, span.floor());
-    final rows = (delta.dy >= 0 ? start.rows + steps : start.rows - steps)
-        .clamp(1, 2);
-    return _presetWithRows(rows, start.columns, delta) ?? start;
-  }
-
-  /// 行数固定时挑一个设计档位：优先列数最接近 [cols]，同距离按拖动方向选边。
-  static GridCardSize? _presetWithRows(int rows, int cols, Offset delta) {
-    final candidates = [
-      for (final preset in GridCardSize.presets)
-        if (preset.rows == rows) preset,
-    ];
-    if (candidates.isEmpty) return null;
-    final target = cols.clamp(1, 3);
-    for (final preset in candidates) {
-      if (preset.columns == target) return preset;
-    }
-    candidates.sort((a, b) {
-      final da = (a.columns - target).abs();
-      final db = (b.columns - target).abs();
-      if (da != db) return da.compareTo(db);
-      return delta.dx >= 0
-          ? b.columns.compareTo(a.columns)
-          : a.columns.compareTo(b.columns);
-    });
-    return candidates.first;
+    return best;
   }
 
   // ==================== 拖动到边缘自动滚动 ====================
 
   void _syncEdgeScroll() {
     final drag = _drag;
-    if (drag == null || drag.axis == _DragAxisKind.horizontal) {
+    if (drag == null) {
       _stopEdgeScroll();
       return;
     }
@@ -933,13 +1020,9 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
     );
     if ((target - pos.pixels).abs() < 0.5) return;
     pos.jumpTo(target);
-    // 内容滚了：手指没动，但换算到宫格坐标系的位置变了——重新算落点并重画，
-    // 否则占位框停在原处、拖起来的卡片会被内容带走。
-    final local = _toLocal(drag.pointer);
-    if (local == null) return;
-    final insert = _insertIndexFor(local, drag.itemId);
-    if (insert != drag.insert) HapticFeedback.selectionClick();
-    setState(() => drag.insert = insert);
+    // 内容滚了：手指没动，但换算到宫格坐标系的位置变了——重画一次，
+    // 让占位块跟着指针下方的格子走。
+    setState(() {});
   }
 
   // ==================== 界面 ====================
@@ -958,58 +1041,60 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
         );
         _colWidth = colWidth;
         final display = _displayItems();
-        final placements = _pack(display, colWidth);
+        final reserved = _reservedSlot();
+        // 先把占位块占住，其余卡片绕着它排 —— 悬浮卡片正下方永远是空的。
+        final placements = reserved == null
+            ? _pack(display, colWidth)
+            : _packReserved(display, reserved, colWidth);
         _placements = placements;
-        final height = _gridHeight(placements);
         final drag = _drag;
         final resize = _resize;
 
+        // 占位框（悬浮卡片下方那块空位）也计入高度，否则拖到最下面会画不下。
+        var height = _gridHeight(placements);
+        if (reserved != null) {
+          final reservedRect = reserved.rectIn(
+            colWidth,
+            widget.unitHeight,
+            widget.spacing,
+            widget.padding,
+          );
+          height = math.max(height, reservedRect.bottom + widget.padding.bottom);
+        }
+        final reservedRect = reserved?.rectIn(
+          colWidth,
+          widget.unitHeight,
+          widget.spacing,
+          widget.padding,
+        );
+
         final cards = <Widget>[];
-        final draggedId = drag?.itemId;
-        final lifting = drag != null && drag.axis != _DragAxisKind.horizontal;
         final nextSizes = <String, Size>{
           for (final p in placements) p.item.id: p.rect.size,
         };
-        // 被拖起来的卡片最后画，免得被后画的邻居盖住
-        final ordered = [
-          for (final p in placements)
-            if (p.item.id != draggedId) p,
-          if (draggedId != null)
-            for (final p in placements)
-              if (p.item.id == draggedId) p,
-        ];
 
-        for (final placement in ordered) {
+        for (final placement in placements) {
           final item = placement.item;
-          final isDragged = item.id == draggedId && lifting;
-          final isResizing = item.id == resize?.itemId;
-          final rect = isDragged
-              ? _draggedRect(drag, placement) ?? placement.rect
-              : placement.rect;
-          // 卡框尺寸变了（换档）才播「跟随」动画：内容已经按目标尺寸排好，
-          // 框自己补间长 / 收，看着就是卡片跟着手势长大或收起。
+          // 卡框尺寸变了才播「跟随」动画（换档 / 邻居让位）。
           final previousSize = _lastSizes[item.id];
-          final sizeChanged = previousSize != null && previousSize != rect.size;
+          final sizeChanged =
+              previousSize != null && previousSize != placement.rect.size;
           cards.add(
             AnimatedPositioned(
               key: ValueKey<String>('fgrid:${item.id}'),
-              // 拖动 / 缩放跟手时不补间（会拖出橡皮筋的感觉）；
-              // 换尺寸走慢一点的减速曲线，邻居让位走短一点的过渡。
-              duration: isDragged || isResizing
-                  ? Duration.zero
-                  : (sizeChanged ? _sizeAnim : _moveAnim),
+              duration: sizeChanged ? _sizeAnim : _moveAnim,
               curve: sizeChanged ? _sizeCurve : _moveCurve,
-              left: rect.left,
-              top: rect.top,
-              width: rect.width,
-              height: rect.height,
+              left: placement.rect.left,
+              top: placement.rect.top,
+              width: placement.rect.width,
+              height: placement.rect.height,
               child: _framed(
-                rect: rect,
+                layoutSize: _layoutSizeFor(item, placement.rect.size),
                 child: _card(
                   context,
                   item: item,
-                  isDragged: isDragged,
-                  isResizing: isResizing,
+                  isDragged: false,
+                  isResizing: false,
                 ),
               ),
             ),
@@ -1017,12 +1102,72 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
         }
         _lastSizes = nextSizes;
 
-        // 原位置占位符：竖向拖动时卡片被抬起来，起手处的格子先留一个浅色印子；
-        // **拖够距离**（movedAway）才淡出。横向拖动是在原位改尺寸，不留占位符。
-        final placeholder =
-            drag == null || drag.axis == _DragAxisKind.horizontal
-            ? null
-            : drag.origin;
+        // 缩放中：本体跟着手指**灵活缩放**（连续像素尺寸），
+        // 虚线框画「最近的适配大小」，邻居按虚线框让位。
+        if (resize != null) {
+          final resizeItem = _itemById(resize.itemId);
+          final bodyRect = _resizeBodyRect(resize);
+          if (resizeItem != null && bodyRect != null) {
+            nextSizes[resizeItem.id] = bodyRect.size;
+            cards.add(
+              AnimatedPositioned(
+                key: ValueKey<String>('fgrid:${resizeItem.id}'),
+                duration: Duration.zero,
+                left: bodyRect.left,
+                top: bodyRect.top,
+                width: bodyRect.width,
+                height: bodyRect.height,
+                child: _framed(
+                  // 内容按「当前正好装得下的那一档」排版：图标、文字大小、
+                  // 省略行数都随手指实时切换，而不是把大排版裁掉一块。
+                  layoutSize: _presetPx(_layoutPresetFor(bodyRect.size)),
+                  // 贴左上角：缩放时图标与文字的绝对位置不动，只有卡框边界在动。
+                  anchorTopLeft: true,
+                  child: _card(
+                    context,
+                    item: resizeItem,
+                    isDragged: false,
+                    isResizing: true,
+                    layoutAs: _layoutPresetFor(bodyRect.size),
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+
+        // 被拖动的卡片不在 placements 里（它悬在手指下、不参与流式排版），
+        // 这里单独按手指位置画在最上层。
+        if (drag != null) {
+          final dragItem = _itemById(drag.itemId);
+          final dragRect = _draggedRect(drag);
+          if (dragItem != null && dragRect != null) {
+            nextSizes[dragItem.id] = dragRect.size;
+            cards.add(
+              AnimatedPositioned(
+                key: ValueKey<String>('fgrid:${dragItem.id}'),
+                duration: Duration.zero,
+                left: dragRect.left,
+                top: dragRect.top,
+                width: dragRect.width,
+                height: dragRect.height,
+                child: _framed(
+                  layoutSize: _layoutSizeFor(dragItem, dragRect.size),
+                  child: _card(
+                    context,
+                    item: dragItem,
+                    isDragged: true,
+                    isResizing: false,
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+
+        // 占位背景：拖动时 = 悬浮卡片的落点；缩放时 = 最近档位的大小。
+        // 两者都靠它把邻居推开。
+        final showSlot = reservedRect != null && _slotVisible;
 
         return GestureDetector(
           // 空白处点击：退出整理。卡片自己会吸收点击，不会误触
@@ -1045,24 +1190,13 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  if (placeholder != null)
+                  if (showSlot)
                     Positioned.fromRect(
-                      rect: placeholder,
+                      key: const ValueKey<String>('fgrid-slot'),
+                      rect: reservedRect,
                       child: IgnorePointer(
-                        child: AnimatedSlide(
-                          // 抬起来的时候占位符微微下沉（像卡片被从格子里拿起来）
-                          offset: drag!.movedAway
-                              ? const Offset(0, 0.04)
-                              : Offset.zero,
-                          duration: const Duration(milliseconds: 200),
-                          curve: Curves.easeOut,
-                          child: AnimatedOpacity(
-                            opacity: drag.movedAway ? 0 : 1,
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeOut,
-                            child: _placeholder(),
-                          ),
-                        ),
+                        // 缩放时用虚线框表示「松手后会变成这个大小」
+                        child: _placeholder(dashed: resize != null),
                       ),
                     ),
                   ...cards,
@@ -1075,25 +1209,103 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
     );
   }
 
-  /// 把卡片内容固定成**目标尺寸**再交给外面的补间卡框裁切。
+  /// 内容排版的基准尺寸：取卡片**当前档位的完整尺寸**，不跟着中间像素走。
+  ///
+  /// 缩放过程中卡框是连续变的，内容始终按某一档的完整尺寸排一次：
+  /// 这样不会按中间尺寸重排，也就不会出现 RenderFlex 溢出；
+  /// 至于用哪一档排版（图标 / 文字大小），由 [_layoutPresetFor] 决定。
+  Size _layoutSizeFor(FlexibleGridItem item, Size fallback) {
+    if (fallback.width > 0 && fallback.height > 0) return fallback;
+    final size = item.size;
+    return Size(
+      size.columns * _colWidth + (size.columns - 1) * widget.spacing,
+      size.rows * widget.unitHeight + (size.rows - 1) * widget.spacing,
+    );
+  }
+
+  /// 把卡片内容按**某一档的完整尺寸**排好，再交给会变形的卡框裁切。
   ///
   /// 直接用 AnimatedPositioned 时，子内容每帧都按「当前中间尺寸」重新排版：
   /// 放大过程里文字会先挤压再弹开，收缩过程中又会瞬间跳成小卡片排版。
-  /// 这里让内容一次按最终尺寸排好、居中放在会补间的卡框里，长出 / 收回都跟着框走。
-  Widget _framed({required Rect rect, required Widget child}) => ClipRRect(
+  ///
+  /// [anchorTopLeft] = false（默认）时内容居中：换档动画里卡框长开、内容居中缩放；
+  /// = true 时内容**贴左上角**：缩放跟手过程中，图标与文字的绝对位置不动，
+  /// 只有卡框边界在动——这正是「组件大小跟随手指、内部标签位置不动」。
+  Widget _framed({
+    required Size layoutSize,
+    required Widget child,
+    bool anchorTopLeft = false,
+  }) => ClipRRect(
     borderRadius: BorderRadius.circular(cardRadius),
     clipBehavior: Clip.hardEdge,
     child: OverflowBox(
-      alignment: Alignment.center,
-      minWidth: rect.width,
-      maxWidth: rect.width,
-      minHeight: rect.height,
-      maxHeight: rect.height,
+      alignment: anchorTopLeft ? Alignment.topLeft : Alignment.center,
+      minWidth: layoutSize.width,
+      maxWidth: layoutSize.width,
+      minHeight: layoutSize.height,
+      maxHeight: layoutSize.height,
       child: child,
     ),
   );
 
-  Rect? _draggedRect(_DragState? drag, _Placement placement) {
+  /// 中间尺寸下该用哪一档的**排版模式**（图标大小、标题几行、留白多少都由它决定）。
+  ///
+  /// 取「能完整装进当前像素尺寸的最大一档」：这样内容既按最近的大档位排版
+  /// （不会因为空间不够而 RenderFlex 溢出），又能在缩到一半时提前换成小档位
+  /// 的排版——表现就是「图标、文字跟着卡片大小自由调整」，
+  /// 而不是原来的大排版被裁掉一角。
+  GridCardSize _layoutPresetFor(Size px) {
+    var best = GridCardSize.presets.first;
+    var bestArea = -1;
+    for (final preset in GridCardSize.presets) {
+      final box = _presetPx(preset);
+      if (box.width > px.width + 0.5 || box.height > px.height + 0.5) continue;
+      final area = preset.rows * preset.columns;
+      if (area > bestArea) {
+        best = preset;
+        bestArea = area;
+      }
+    }
+    if (bestArea >= 0) return best;
+    // 比最小档还小（刚按下还没拖开）：用最小档排版，交给卡框裁切
+    return GridCardSize.single;
+  }
+
+  /// 缩放时卡片本体的位置与尺寸：**左上角钉在起手格位上，宽高跟着手指连续变**。
+  ///
+  /// 所以缩放期间看到的是「卡片本身在灵活地变大 / 变小」，
+  /// 虚线框才是「最近的适配大小」（松手后会落到那一档）。
+  Rect? _resizeBodyRect(_ResizeState resize) {
+    final origin = _rectFor(
+      resize.originRow,
+      resize.originCol,
+      resize.start,
+      _colWidth,
+    );
+    final px = resize.started ? resize.currentPx : resize.startPx;
+    return Rect.fromLTWH(origin.left, origin.top, px.width, px.height);
+  }
+
+  /// 缩放中的卡片还够不够宽，能容下右上角的尺寸徽标（约 46×22）。
+  /// 1×1 那种小格子放徽标会盖住图标，此时只靠虚线框表达目标大小。
+  bool get _resizeBadgeFits {
+    final resize = _resize;
+    if (resize == null) return false;
+    final px = resize.started ? resize.currentPx : resize.startPx;
+    return px.width >= 110 && px.height >= 50;
+  }
+
+  /// 占位背景现在要不要显示：
+  /// * 拖动中 —— 拖开之后（movedAway）才显出来；
+  /// * 缩放中 —— 从手指离开死区起一直显示（这一块就是「最近的组件大小」）。
+  bool get _slotVisible {
+    final resize = _resize;
+    if (resize != null) return resize.started;
+    final drag = _drag;
+    return drag != null && drag.movedAway;
+  }
+
+  Rect? _draggedRect(_DragState? drag) {
     if (drag == null) return null;
     final local = _toLocal(drag.pointer);
     if (local == null) return null;
@@ -1105,8 +1317,15 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
     required FlexibleGridItem item,
     required bool isDragged,
     required bool isResizing,
+    GridCardSize? layoutAs,
   }) {
-    Widget content = item.builder(context, item.size, widget.editing);
+    // 缩放过程中按「最近能装下的那一档」排版：图标大小、标题行数、留白
+    // 都跟着当前大小切换，而不是把大排版硬裁掉一块。
+    Widget content = item.builder(
+      context,
+      layoutAs ?? item.size,
+      widget.editing,
+    );
 
     if (isDragged) {
       content = IgnorePointer(
@@ -1127,23 +1346,39 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           ),
         ),
       );
-    } else if (widget.editing) {
-      // 整理态里不用再等长按：按下直接拖；空白点击交给外层退出。
-      // 把 touchSlop 调小，卡片拖动会先于列表滚动接受手势——否则竖着拖卡片
-      // 会输给列表的竖向滚动（它的阈值只有 18，而 pan 默认要 36），变成滚页面。
-      content = _eagerGestures(
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          // 从按下的那一点算起：整理态里一拖就跟手，不会先丢掉手势识别前的那段位移
-          dragStartBehavior: DragStartBehavior.down,
-          // 整理态点卡片 = 选中它（顶部尺寸条作用于选中的这张）
-          onTap: () => widget.onSelected?.call(item.id),
-          onPanStart: (details) => _startPanDrag(item, details.globalPosition),
-          onPanUpdate: (details) => _updateDrag(details.globalPosition),
-          onPanEnd: (_) => _endDrag(),
-          onPanCancel: _cancelDrag,
-          child: content,
+    } else if (isResizing) {
+      // 缩放中：卡片抬起一点点（阴影 + 轻微放大），跟手但不再挂拖动识别器，
+      // 保证这段手势只改尺寸、绝不换位置。
+      content = IgnorePointer(
+        child: Transform.scale(
+          scale: 1.02,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(cardRadius),
+              boxShadow: [
+                BoxShadow(
+                  color: SemColors.accent.withValues(alpha: 0.18),
+                  blurRadius: 18,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: content,
+          ),
         ),
+      );
+    } else if (widget.editing) {
+      // 整理态里卡片本体**只响应点击（选中）**，不再一按下就跟手拖动。
+      //
+      // 拖动统一由外层那个长按识别器负责：按住不放 → 抬起跟手拖动；
+      // 短点 → 选中，之后拖右下角弧线改大小。
+      // 这样「左右滑动」不会把卡片拖走，跟「调整大小」彻底分开——
+      // 冲突的根源就是这里原本的即时 pan。
+      content = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // 整理态点卡片 = 选中它（顶部尺寸条作用于选中的这张，也可拖弧线改大小）
+        onTap: () => widget.onSelected?.call(item.id),
+        child: content,
       );
     }
 
@@ -1173,12 +1408,18 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
             !isDragged &&
             (widget.selectedId == null || selected))
           Positioned(right: 0, bottom: 0, child: _resizeHandle(item)),
-        if (isResizing)
+        if (isResizing && _resizeBadgeFits)
+          // 尺寸徽标浮在**右上角**：内容贴左上角排，左下角常被标题 / 副标题占满。
+          // 卡片缩得很小时徽标会压住图标，所以只在够宽时才显示
+          //（目标大小由虚线框 + 顶部尺寸条表达，不缺这一处信息）。
           Positioned(
-            left: 6,
-            bottom: 6,
+            right: 6,
+            top: 6,
             child: IgnorePointer(
-              child: Capsule(item.size.label, color: SemColors.accent),
+              child: Capsule(
+                _resize?.label ?? item.size.label,
+                color: SemColors.accent,
+              ),
             ),
           ),
       ],
@@ -1235,17 +1476,71 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
     );
   }
 
-  /// 原地占位符：卡片被抬起来后留在它原来的格子里，拖开之后淡出。
-  Widget _placeholder() => DecoratedBox(
-    decoration: BoxDecoration(
-      color: SemColors.accent.withValues(alpha: 0.07),
-      borderRadius: BorderRadius.circular(cardRadius),
-      border: Border.all(
-        color: SemColors.accent.withValues(alpha: 0.4),
-        width: 1.3,
+  /// 占位背景的装饰：
+  /// * 拖动时 = 实心浅色块（卡片抬起后留下的落点）；
+  /// * 缩放时 = **虚线框**（表示「松手后会变成这个大小」，不是卡片本体）。
+  Widget _placeholder({bool dashed = false}) {
+    if (!dashed) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: SemColors.accent.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(cardRadius),
+          border: Border.all(
+            color: SemColors.accent.withValues(alpha: 0.4),
+            width: 1.3,
+          ),
+        ),
+      );
+    }
+    return CustomPaint(
+      painter: _DashedBoxPainter(
+        color: SemColors.accent.withValues(alpha: 0.55),
+        fill: SemColors.accent.withValues(alpha: 0.05),
+        radius: cardRadius,
       ),
-    ),
-  );
+    );
+  }
+}
+
+/// 虚线圆角框：缩放时用它画「松手后会变成这个大小」的背景。
+class _DashedBoxPainter extends CustomPainter {
+  const _DashedBoxPainter({
+    required this.color,
+    required this.fill,
+    required this.radius,
+  });
+
+  final Color color;
+  final Color fill;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(0.8);
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+    canvas.drawRRect(rrect, Paint()..color = fill);
+
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6;
+
+    // 沿圆角矩形周长画虚线：每段 dash 后空 gap。
+    const dash = 6.0;
+    const gap = 4.0;
+    for (final metric in (Path()..addRRect(rrect)).computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final next = math.min(distance + dash, metric.length);
+        canvas.drawPath(metric.extractPath(distance, next), stroke);
+        distance = next + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBoxPainter old) =>
+      old.color != color || old.fill != fill || old.radius != radius;
 }
 
 /// ColorOS 风格的右下角「白弧」缩放角标：贴着卡片圆角的两道圆弧。
@@ -1315,13 +1610,13 @@ class _DragState {
     required this.grab,
     required this.pointer,
     required this.origin,
-    required this.originIndex,
-    required this.insert,
+    required this.originRow,
+    required this.originCol,
   }) : startPointer = pointer;
 
   final String itemId;
 
-  /// 起拖时的卡片（含尺寸与顺序位置）：横向滑改尺寸时以它的尺寸为基准。
+  /// 起拖时的卡片（含尺寸与顺序位置）。
   final FlexibleGridItem item;
 
   final GridCardSize size;
@@ -1330,25 +1625,18 @@ class _DragState {
   /// 手指相对卡片左上角的偏移（宫格本地坐标）：跟手时保持起手点不变。
   final Offset grab;
 
-  /// 起拖时卡片在网格里的矩形 / 它在顺序里的下标：原地按住时按这两个还原布局。
+  /// 起拖时卡片在网格里的矩形 / 起手格位：还没拖开时占住这里，布局保持原样。
   final Rect origin;
-  final int originIndex;
+  final int originRow;
+  final int originCol;
 
   /// 起拖时的指针位置：用来判断「拖出去多远才算真的挪开」。
   final Offset startPointer;
 
   Offset pointer;
-  int insert;
 
-  /// 方向锁：一次拖动只做一件事（换位置 / 换尺寸），由第一段位移的
-  /// 主导轴向决定，中途不再切换。
-  _DragAxisKind? axis;
-
-  /// 横向滑的连续档位（正 = 往右变大）与预览尺寸。
-  int steps = 0;
-  GridCardSize? previewSize;
-
-  /// 已经拖开（超过 [_moveAwayThreshold]）：邻居才让位、占位符才淡出。
+  /// 已经拖开（超过 [_moveAwayThreshold]）：才真正把占位挪到落点。
+  /// 之前只是「抬起来」，布局不动，避免轻轻一碰就整页重排。
   bool movedAway = false;
 }
 
@@ -1356,14 +1644,38 @@ class _ResizeState {
   _ResizeState({
     required this.itemId,
     required this.start,
-    required this.current,
     required this.startPx,
     required this.startPointer,
-  });
+    required this.originRow,
+    required this.originCol,
+  })  : currentPx = startPx,
+        snapped = start,
+        reserve = start;
 
   final String itemId;
+
+  /// 起手档位与起手像素尺寸（连续缩放以它为基准）。
   final GridCardSize start;
-  GridCardSize current;
   final Size startPx;
+
+  /// 起手格位：缩放时占住这里（本体不动）。
+  final int originRow;
+  final int originCol;
+
   final Offset startPointer;
+
+  /// 跟手的连续像素尺寸（只用来算档位，不直接画出）。
+  Size currentPx;
+
+  /// 最接近的设计档位：虚线背景按它画、松手提交它。
+  GridCardSize snapped;
+
+  /// 排斥用的尺寸：缩小时 = [snapped]，放大时 = 能装下当前尺寸的档位。
+  GridCardSize reserve;
+
+  /// 是否已经拖过死区（防手抖）。
+  bool started = false;
+
+  /// 尺寸标签（松手后会落到的档位）。
+  String get label => snapped.label;
 }
