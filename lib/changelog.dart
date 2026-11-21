@@ -24,6 +24,15 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.45.0',
+    date: '2026-11-21',
+    notes: [
+      '拖右下角改卡片大小时，虚线框只标「松手后多大」；跟着手指走的是卡片本体，虚线永远压在最下层',
+      '邻居卡片让位改成平滑动画（不少于 0.2 秒），不再瞬移',
+      '动画播放期间尺寸又变时，从当前位置接着走并保留动量，不会跳回起点重播',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.44.0',
     date: '2026-11-21',
     notes: [
