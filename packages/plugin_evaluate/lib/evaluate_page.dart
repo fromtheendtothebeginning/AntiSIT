@@ -30,7 +30,13 @@ class _EvaluatePageState extends State<EvaluatePage> {
   late EvaluateSession _session;
   late EvaluateApi _api;
 
+  /// 还没有任何内容可显示（首屏转圈）。**有缓存时不再置 true**，
+  /// 否则整页 loading 会把刚读出来的缓存盖住。
   bool _booting = true;
+
+  /// 正在联网刷新（顶部刷新条转圈；页面继续显示缓存）。
+  bool _refreshing = false;
+
   String? _error;
   String _log = '';
 
@@ -82,14 +88,12 @@ class _EvaluatePageState extends State<EvaluatePage> {
     setState(() {
       // 已经有缓存时不整页转圈，只让顶部刷新条转（避免闪空态）
       _booting = _targets.isEmpty;
+      _refreshing = true;
       _error = null;
       _refreshFailed = false;
     });
     if (AppState.I.demo) {
-      setState(() {
-        _booting = false;
-        _error = '演示模式没有真实教务数据';
-      });
+      setState(() => _fail('演示模式没有真实教务数据'));
       return;
     }
     // 服务器模式：先要到校园隧道代理，否则设备根本到不了教务
@@ -98,11 +102,8 @@ class _EvaluatePageState extends State<EvaluatePage> {
       _serverProxyUrl = await _resolveProxy();
       if (!mounted) return;
       if (_serverProxyUrl.isEmpty) {
-        setState(() {
-          _booting = false;
-          _error = '服务器模式要经校园隧道访问教务：先到「我的 → 校园服务」连接校园网，'
-              '或切到直连模式再进来';
-        });
+        setState(() => _fail('服务器模式要经校园隧道访问教务：先到「我的 → 校园服务」连接校园网，'
+            '或切到直连模式再进来'));
         return;
       }
     }
@@ -126,9 +127,25 @@ class _EvaluatePageState extends State<EvaluatePage> {
     _session.adopt(web);
   }
 
+  /// 刷新失败时的统一收尾：**有缓存就不切错误页**，只在顶部刷新条上提示。
+  ///
+  /// 否则网络一断，用户明明有上次的列表可看，却被一个错误页挡住。
+  void _fail(String message) {
+    _booting = false;
+    _refreshing = false;
+    if (_targets.isEmpty) {
+      _error = message;
+    } else {
+      _refreshFailed = true;
+    }
+  }
+
   Future<void> _loadTargets() async {
     setState(() {
-      _booting = true;
+      // 关键：只有「手上什么都没有」才整页转圈。有缓存就继续显示缓存，
+      // 让顶部刷新条表达「正在刷新」，两者同时存在。
+      _booting = _targets.isEmpty;
+      _refreshing = true;
       _error = null;
     });
     try {
@@ -152,29 +169,15 @@ class _EvaluatePageState extends State<EvaluatePage> {
         _targets = targets;
         _summary = summary;
         _booting = false;
+        _refreshing = false;
         _fromCache = false;
       });
     } on EvaluateError catch (e) {
       if (!mounted) return;
-      setState(() {
-        _booting = false;
-        // 有缓存就保留旧列表，只在顶部提示这次刷新失败
-        if (_targets.isEmpty) {
-          _error = e.message;
-        } else {
-          _refreshFailed = true;
-        }
-      });
+      setState(() => _fail(e.message));
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _booting = false;
-        if (_targets.isEmpty) {
-          _error = e is ApiError ? e.message : e.toString();
-        } else {
-          _refreshFailed = true;
-        }
-      });
+      setState(() => _fail(e is ApiError ? e.message : e.toString()));
     }
   }
 
@@ -460,7 +463,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
         children: [
           // 与其它工具页一致的刷新条：转圈时继续展示旧数据，失败也只在这里提示
           ToolRefreshBar(
-            refreshing: _booting,
+            refreshing: _refreshing,
             fromCache: _fromCache,
             failed: _refreshFailed,
             onRefresh: _loadTargets,

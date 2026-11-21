@@ -1194,33 +1194,39 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
 
     if (narrow) {
-      // 2x1 竖条：**窄而高**。图标在顶、名称竖着两行；更多按钮压在右上角，
-      // 简介放不下就不放（信息密度交给 2x3）。
+      // 2x1 竖条：卡面只有 55dp 宽、内容区约 40dp，放不下「图标 + 三点」并排。
+      // 所以三点按钮做成**右上角浮层**（允许轻微压住图标块的边），
+      // 图标保持在左上、名称贴底两行；这样三点不会被卡片裁掉。
       return AppCard(
         bottomGap: 0,
         radius: 16,
-        padding: const EdgeInsets.fromLTRB(9, 8, 6, 10),
+        padding: const EdgeInsets.fromLTRB(8, 8, 5, 8),
         onTap: editing ? null : () => _open(e),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _iconWithStatus(e, size: 18, padding: 6, dot: true),
+                _iconWithStatus(e, size: 16, padding: 5, dot: true),
                 const Spacer(),
-                _moreButton(e, size: 20, iconSize: 13),
+                Text(
+                  e.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
+                    height: 1.2,
+                  ),
+                ),
               ],
             ),
-            const Spacer(),
-            Text(
-              e.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-                height: 1.2,
-              ),
+            // 浮层去掉位，不再挤占那一行的宽度
+            Positioned(
+              top: -3,
+              right: -3,
+              child: _moreButton(e, size: 18, iconSize: 12),
             ),
           ],
         ),

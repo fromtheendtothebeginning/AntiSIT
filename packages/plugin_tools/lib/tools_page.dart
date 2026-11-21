@@ -300,23 +300,23 @@ class _ToolsPageState extends State<ToolsPage> {
     }
 
     if (narrow) {
-      // 2x1 竖条：**窄而高**。图标在上、标题竖着排两行，副标题放不下就不放——
-      // 这一档主要是「一眼认出 + 点得动」，信息密度交给 2x3。
+      // 2x1 竖条：卡面只有 55dp 宽、内容区约 40dp。图标块要够小（20+2×6=32），
+      // 标题按 11.5 号竖排两行，副标题放不下就不放——信息密度交给 2x3。
       return AppCard(
         bottomGap: 0,
         radius: 16,
-        padding: const EdgeInsets.fromLTRB(9, 10, 9, 10),
+        padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
         onTap: editing ? null : open,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding: const EdgeInsets.all(7),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: tool.color.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(9),
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(tool.icon, color: tool.color, size: 20),
+              child: Icon(tool.icon, color: tool.color, size: 18),
             ),
             const Spacer(),
             Text(
@@ -325,7 +325,7 @@ class _ToolsPageState extends State<ToolsPage> {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
-                fontSize: 12.5,
+                fontSize: 11.5,
                 height: 1.2,
               ),
             ),

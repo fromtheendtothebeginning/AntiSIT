@@ -1267,16 +1267,22 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  if (showSlot)
+                  // 拖动时：占位块压在卡片**下面**（它只是给邻居让位的「洞」）。
+                  if (showSlot && resize == null)
                     Positioned.fromRect(
                       key: const ValueKey<String>('fgrid-slot'),
                       rect: reservedRect,
-                      child: IgnorePointer(
-                        // 缩放时用虚线框表示「松手后会变成这个大小」
-                        child: _placeholder(dashed: resize != null),
-                      ),
+                      child: IgnorePointer(child: _placeholder()),
                     ),
                   ...cards,
+                  // 缩放时：目标大小的虚线框必须压在卡片**上面**——本体是跟手的
+                  // 连续尺寸，可能比目标框大也可能小，放下面就被挡死了。
+                  if (showSlot && resize != null)
+                    Positioned.fromRect(
+                      key: const ValueKey<String>('fgrid-slot'),
+                      rect: reservedRect,
+                      child: IgnorePointer(child: _placeholder(dashed: true)),
+                    ),
                 ],
               ),
             ),
@@ -1571,55 +1577,101 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
         ),
       );
     }
+    // 缩放时的目标是「一眼看出松手会变成多大」：虚线要够粗、底色要够实，
+    // 光晕让它在浅色 / 深色卡面上都浮起来。
     return CustomPaint(
       painter: _DashedBoxPainter(
-        color: SemColors.accent.withValues(alpha: 0.55),
-        fill: SemColors.accent.withValues(alpha: 0.05),
+        color: SemColors.accent.withValues(alpha: 0.95),
+        fill: SemColors.accent.withValues(alpha: 0.18),
+        glow: SemColors.accent.withValues(alpha: 0.35),
         radius: cardRadius,
+        dash: 9,
+        gap: 5,
+        strokeWidth: 2.6,
       ),
     );
   }
 }
 
 /// 虚线圆角框：缩放时用它画「松手后会变成这个大小」的背景。
+///
+/// 它是缩放过程中**唯一**能表达「目标尺寸」的东西（卡片本体是跟手的连续尺寸），
+/// 所以要画得够显眼：粗虚线 + 半透明填充 + 外发光，浅色和深色卡面上都能一眼看到。
 class _DashedBoxPainter extends CustomPainter {
   const _DashedBoxPainter({
     required this.color,
     required this.fill,
     required this.radius,
+    this.glow = const Color(0x00000000),
+    this.dash = 9,
+    this.gap = 5,
+    this.strokeWidth = 2.6,
   });
 
   final Color color;
   final Color fill;
+
+  /// 外发光（画两遍：先粗淡的一层当光晕，再画实线）。
+  final Color glow;
   final double radius;
+  final double dash;
+  final double gap;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = (Offset.zero & size).deflate(0.8);
+    final inset = strokeWidth / 2 + 1;
+    final rect = (Offset.zero & size).deflate(inset);
     final rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+
+    // 底色：让「松手后会占多大」这一块明显地浮起来
     canvas.drawRRect(rrect, Paint()..color = fill);
+
+    final path = Path()..addRRect(rrect);
+    final metrics = path.computeMetrics().toList();
+
+    // 光晕：同一条路径画粗一点、淡一点
+    if (glow.a > 0) {
+      final halo = Paint()
+        ..color = glow
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth * 2.6
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      for (final metric in metrics) {
+        _dashPath(canvas, metric, halo);
+      }
+    }
 
     final stroke = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+    for (final metric in metrics) {
+      _dashPath(canvas, metric, stroke);
+    }
+  }
 
-    // 沿圆角矩形周长画虚线：每段 dash 后空 gap。
-    const dash = 6.0;
-    const gap = 4.0;
-    for (final metric in (Path()..addRRect(rrect)).computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        final next = math.min(distance + dash, metric.length);
-        canvas.drawPath(metric.extractPath(distance, next), stroke);
-        distance = next + gap;
-      }
+  // PathMetric 属于 dart:ui，这里不显式标类型（避免额外 import），交给推断
+  void _dashPath(Canvas canvas, dynamic metric, Paint paint) {
+    var distance = 0.0;
+    while (distance < metric.length) {
+      final next = math.min(distance + dash, metric.length);
+      canvas.drawPath(metric.extractPath(distance, next), paint);
+      distance = next + gap;
     }
   }
 
   @override
   bool shouldRepaint(covariant _DashedBoxPainter old) =>
-      old.color != color || old.fill != fill || old.radius != radius;
+      old.color != color ||
+      old.fill != fill ||
+      old.glow != glow ||
+      old.radius != radius ||
+      old.dash != dash ||
+      old.gap != gap ||
+      old.strokeWidth != strokeWidth;
 }
 
 /// ColorOS 风格的右下角「白弧」缩放角标：贴着卡片圆角的两道圆弧。
