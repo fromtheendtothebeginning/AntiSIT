@@ -15,6 +15,7 @@ library;
 const Set<String> kSensitivePermissions = {
   'storage',
   'network',
+  'campus_net',
   'ai',
   'notification',
   'secrets',
@@ -28,6 +29,7 @@ const Set<String> kSensitivePermissions = {
 const Map<String, String> kPermissionLabels = {
   'storage': '在本机保存数据（记设置、记历史）',
   'network': '运行时联网',
+  'campus_net': '访问校内明文 http 站点（实验系统 / 报告系统这类内网地址）',
   'ai': '调用 AI 对话（用你配置的模型与 API Key，可能产生费用）',
   'notification': '给你发通知（可定时提醒，App 没打开也能收到）',
   'secrets': '保存登录凭据 / Cookie（系统加密存储，按拓展隔离）',
@@ -57,6 +59,7 @@ const Map<String, String> kMethodPermissions = {
   'secrets.set': 'secrets',
   'secrets.remove': 'secrets',
   'net.request': 'network',
+  'net.campus': 'campus_net',
   'clipboard.read': 'clipboard',
   'clipboard.write': 'clipboard',
   'login.open': 'login',

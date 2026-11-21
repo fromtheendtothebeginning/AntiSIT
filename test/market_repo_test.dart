@@ -71,8 +71,14 @@ void main() {
     final entries = parseCatalog(signer);
     final byId = {for (final e in entries) e.id: e};
 
-    expect(byId.keys,
-        containsAll(['sit.game-2048', 'sit.game-minesweeper', 'sit.deadline-reminder']));
+    expect(
+        byId.keys,
+        containsAll([
+          'sit.game-2048',
+          'sit.game-minesweeper',
+          'sit.deadline-reminder',
+          'sit.experiment-reminder',
+        ]));
     expect(byId['sit.game-2048']!.permissions, contains('storage'), reason: '最高分要落盘');
     expect(byId['sit.game-minesweeper']!.permissions, isEmpty,
         reason: '扫雷不存数据不联网，正好当「零权限插件」的样例');
@@ -86,7 +92,14 @@ void main() {
           'login',
           'background',
         ]),
-        reason: '截止提醒：存条目、发通知、同步学习通、登录、后台刷新');
+        reason: '学习通截止提醒：存条目、发通知、同步学习通、登录、后台刷新');
+    expect(
+        byId['sit.experiment-reminder']!.permissions,
+        containsAll(['storage', 'notification', 'secrets', 'campus_net']),
+        reason: '大物实验提醒：存条目、发通知、加密凭据、校内明文 http');
+    expect(byId['sit.experiment-reminder']!.needsNewerApp('1.43.0'), isTrue,
+        reason: '大物实验提醒依赖 1.44.0 的 net.campus 通道');
+    expect(byId['sit.experiment-reminder']!.needsNewerApp('1.44.0'), isFalse);
     expect(byId['sit.game-2048']!.needsNewerApp('1.24.0'), isTrue, reason: '要求 1.25.0 以上的 App');
     expect(byId['sit.game-2048']!.needsNewerApp('1.25.0'), isFalse);
     expect(byId['sit.deadline-reminder']!.needsNewerApp('1.37.9'), isTrue,
@@ -150,9 +163,9 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: Scaffold(body: MarketView())));
     await tester.pumpAndSettle();
 
-    for (final name in ['2048', '扫雷', '截止提醒']) {
+    for (final name in ['2048', '扫雷', '学习通截止提醒', 'SIT大物实验提醒']) {
       expect(find.text(name), findsOneWidget, reason: '真实目录里的「$name」画出来了');
     }
-    expect(find.text('安装'), findsNWidgets(3), reason: '三条都还没装');
+    expect(find.text('安装'), findsNWidgets(4), reason: '四条都还没装');
   }, skip: skip != null);
 }

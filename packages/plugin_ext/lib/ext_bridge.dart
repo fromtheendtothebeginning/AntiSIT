@@ -45,6 +45,7 @@ import 'workshop/workshop_store.dart';
 /// | `secrets.set` | `{key, value}` | 写加密凭据；值只按拓展 id 隔离 |
 /// | `secrets.remove` | `{key}` | 删除一条加密凭据 |
 /// | `net.request` | `{method?, url, headers?, body?, bodyBase64?}` | 原生 HTTPS 代理（不受 CORS 限制，可带 Cookie 头）；返回 `{status, url, headers, setCookies, text, truncated, bytes}`。只允许 https，拒绝内网地址；每个新域名（含重定向）首次访问会弹窗确认 |
+/// | `net.campus` | 同上 + `proxy?` | 校内**明文 http** 通道：只允许 http、目标可以是内网，常见于只有 `http://10.x` 的教学站点；`proxy` 填校园隧道代理（`http://host:port`）时不要求设备自己在校园网；不跟随重定向；需 `campus_net` 权限 |
 /// | `clipboard.read` | — | 读剪贴板文本；首次 / 未记住时弹窗确认（需 `clipboard` 权限） |
 /// | `clipboard.write` | `{text}` | 写剪贴板（需 `clipboard` 权限） |
 /// | `files.pick` | `{accept?, multiple?, encoding?}` | 打开系统文件选择器，返回 `{files: [{name, size, mime, text?/base64?}]}`；单文件 ≤ 8 MB，一次 ≤ 10 个（需 `files` 权限） |
@@ -193,6 +194,20 @@ class ExtBridge extends WebBridge {
           Map<String, Object?>.from(args),
           onHost: (host) => _ensureConsent('net.host:$host'),
         );
+      // 校内明文 http：教学站点多是 http://10.x / 210.x，默认通道一律拒
+      case 'net.campus':
+        if (args is! Map) throw ArgumentError('net.campus 要带 {url}');
+        final campusArgs = Map<String, Object?>.from(args);
+        // 拓展不填 proxy 时，服务器模式自动用 App 已连上的校园隧道：
+        // 用户不用自己去「我的 → 校园服务」抄一个 host:port 填进插件里。
+        if ('${campusArgs['proxy'] ?? ''}'.trim().isEmpty) {
+          final proxy = await _campusProxyUrl();
+          if (proxy.isNotEmpty) campusArgs['proxy'] = proxy;
+        }
+        return ExtNetService.I.campusRequest(
+          campusArgs,
+          onHost: (host) => _ensureConsent('net.host:$host'),
+        );
       // 剪贴板：读要逐次授权，写只要求静态 clipboard 权限
       case 'clipboard.read':
         await _ensureConsent('clipboard.read');
@@ -238,6 +253,21 @@ class ExtBridge extends WebBridge {
     if (need == null) return;
     if (!it.permissions.contains(need)) {
       throw ArgumentError('这条拓展没有声明「${kPermissionLabels[need] ?? need}」权限（$need），接口已拒');
+    }
+  }
+
+  /// 服务器模式下的校园隧道代理（`http://host:port`）；直连 / 演示 / 没连上都返回空串。
+  ///
+  /// 只用于 [case 'net.campus']：拓展打的是校内明文 http，设备在外网时必须经隧道。
+  /// 这里吞掉所有异常——隧道没连好不该让拓展收到一条看不懂的报错，它自己会显示
+  /// 「连不上校内站点」。
+  Future<String> _campusProxyUrl() async {
+    try {
+      final state = AppState.I;
+      if (state.demo || state.direct) return '';
+      return await ApiClient.I.serverWebProxy();
+    } catch (_) {
+      return '';
     }
   }
 

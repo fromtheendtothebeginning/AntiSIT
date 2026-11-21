@@ -360,6 +360,8 @@ class CordisRuntime {
       class Net extends Service {
         constructor(c) { super(c, 'net'); }
         request(options) { return call('net.request', options || {}); }
+        // 校内明文 http：market 包要在 ext.json 里声明 campus_net
+        campus(options) { return call('net.campus', options || {}); }
       }
       class Clipboard extends Service {
         constructor(c) { super(c, 'clipboard'); }

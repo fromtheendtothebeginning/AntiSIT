@@ -158,6 +158,7 @@ export default {
 | `ctx.storage` | `get(key)` / `set(key, value)` / `remove(key)` | 按拓展 id 隔离的本地存储，返回 Promise |
 | `ctx.secrets` | `get(key)` / `set(key, value)` / `remove(key)` | 加密凭据（Keystore / Keychain），按拓展隔离；需 `secrets` 权限 |
 | `ctx.net` | `request({method?, url, headers?, body?, bodyBase64?})` | 原生 HTTPS 代理，不受 CORS 限制、可带 Cookie；需 `network` 权限 |
+| | `campus({method?, url, headers?, body?, proxy?})` | 校内**明文 http** 通道：只允许 http、目标可以是内网（仍拒本机 / 回环 / CGNAT），`proxy` 填校园隧道代理 `http://host:port` 时设备不必在校园网；不跟随重定向；需 `campus_net` 权限 |
 | `ctx.clipboard` | `read()` / `write(text)` | 读写剪贴板；`read` 需 `clipboard` 权限并会弹窗确认 |
 | `ctx.files` | `pick({accept?, multiple?, encoding?})` / `save({name, text?, base64?, mime?})` | 读写用户通过系统文件选择器明确选中的文件；需 `files` 权限，单文件 ≤ 8 MB |
 | `ctx.login` | `open({url, cookieUrls, title?, successUrlPrefix?, successCookie?, userAgent?})` | 打开可见登录页；返回 `{cookies, cookieHeader}`；给了 `successUrlPrefix` 时必须真的跳进该前缀才自动完成（只看 Cookie 会被残留登录态误判） |需 `login` 权限并会弹窗确认 |
@@ -372,6 +373,7 @@ const full = await ctx.ai.chatToolsStream({
 |---|---|
 | `storage` | 在本机保存数据（记设置、记历史）；不声明就调用 `ctx.storage` → Promise reject |
 | `network` | 运行时联网。**市场装的拓展默认禁网**（CSP `connect-src 'none'`），声明后才放开 `https:` |
+| `campus_net` | 访问校内**明文 http** 站点（`net.campus`）：实验系统、报告系统这类只有 `http://10.x` / `http://210.x` 的内网地址 |
 | `ai` | 调用 AI（`ctx.ai.*`，走用户的模型与 Key，可能产生费用）；不声明就拒 |
 | `notification` | 给你发通知（即时 / 定时，App 没开也能收到）；不声明就调用 `ctx.notify.*` → Promise reject |
 | `secrets` | 在本机保存 Cookie / Token 这类登录凭据（系统加密存储，按拓展隔离）；不声明就调用 `ctx.secrets.*` → Promise reject |
@@ -404,6 +406,25 @@ const full = await ctx.ai.chatToolsStream({
 * **逐域授权**：每个新域名（含重定向）第一次访问会弹窗，文案由 App 生成；
   允许 / 拒绝会按「拓展 + 域名」记住，可在拓展菜单「运行时授权」里全部撤销；
 * 需要 `network` 权限；`secrets.*` 需要 `secrets` 权限；`clipboard.*` 需要 `clipboard` 权限。
+
+`net.campus` 是给**校内明文站点**单开的通道（需求来自大物实验报告系统这类只有
+`http://210.35.x.x:8003` 且没有证书的系统）：
+
+```js
+const res = await ctx.net.campus({
+  method: 'POST',
+  url: 'http://210.35.98.35:8003/Login/RemoteUserLogin',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8' },
+  body: 'userId=...&userPass=...',
+  proxy: 'http://anticraft.top:10004', // 可选：服务器模式下的校园隧道代理
+});
+```
+
+* 只允许 `http`（校内站点没有证书），目标可以是内网地址，但**本机 / 回环 / 链路本地 /
+  CGNAT 仍然拒绝**，避免把手机当跳板；
+* 不跟随重定向：一次请求一次响应，302 交给拓展自己判断（登录态失效常见于 302 到登录页）；
+* 头过滤、2 MB 上限、30 秒超时与 `net.request` 相同；`proxy` 只接受 `http://host:port`；
+* 和 `net.request` 一样逐域授权：每个新域名第一次访问会弹窗。
 
 ### 剪贴板
 

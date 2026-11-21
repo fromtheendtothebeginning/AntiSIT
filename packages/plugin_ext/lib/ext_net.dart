@@ -6,10 +6,20 @@
 ///
 /// 这是通用能力，不包含任何学校专用逻辑；App 不解析响应，只把文本回给拓展。
 /// 安全约束：
-/// * 只允许 https；
+/// * 默认只允许 https；
 /// * 拒绝 localhost / 内网 / 链路本地 / 保留地址（防 SSRF）；
 /// * 过滤 Host / Content-Length / Connection 这类由底层接管的头；
 /// * 响应最多 2 MB，超时 30 秒。
+///
+/// **例外：`campus` 接口**（`net.campus`，需 `campus_net` 权限）。校内不少教学站点
+/// 只有 `http://10.x` / `http://210.x` 这种明文内网地址，上面的默认约束把它们全挡住了，
+/// 所以单开一条通道：
+/// * 只允许 http（校内站点没有证书，https 直接连不上）；
+/// * 目标可以落在内网，但仍拒绝本机 / 回环 / 链路本地 / CGNAT（防把手机当跳板）；
+/// * 可选 `proxy`：把请求交给校园隧道代理（`http://host:port`，服务器模式下由
+///   隧道容器提供），设备自己不在校园网时也能连上；
+/// * 不跟随重定向（每条请求由拓展显式发起，避免被 302 带去别处）；
+/// * 响应上限同样是 2 MB。
 library;
 
 import 'dart:async';
@@ -106,6 +116,274 @@ class ExtNetService {
     } finally {
       client.close(force: true);
     }
+  }
+
+  /// 校内明文通道：`net.campus`。
+  ///
+  /// 与 [request] 的区别只有三处（其余头过滤、体积上限、超时都相同）：
+  /// 1. 只允许 `http`——校内教学站点没有证书，https 连不上；
+  /// 2. 目标**可以**是内网地址，但本机 / 回环 / 链路本地 / CGNAT 仍然拒绝；
+  /// 3. 可带 [proxyUrl]（校园隧道代理），设备不在校园网时也能到达。
+  ///
+  /// 不跟随重定向：调用方在哪一跳停下自己决定，避免 302 把请求带去别的主机。
+  Future<Map<String, Object?>> campusRequest(
+    Map<String, Object?> args, {
+    Future<void> Function(String host)? onHost,
+  }) async {
+    final method = '${args['method'] ?? 'GET'}'.toUpperCase();
+    if (!_methods.contains(method)) {
+      throw ExtNetException('不支持的方法：$method');
+    }
+    final headers = sanitizeHeaders(args['headers']);
+    headers.putIfAbsent(HttpHeaders.userAgentHeader, () => 'AntiSIT-Ext/1.0');
+    final body = _bodyBytes(args);
+
+    final uri = await validateCampusUrl('${args['url'] ?? ''}');
+    await onHost?.call(uri.host);
+
+    final proxyUrl = '${args['proxy'] ?? ''}'.trim();
+    final asBase64 = '${args['responseEncoding'] ?? ''}'.trim() == 'base64';
+    if (proxyUrl.isEmpty) {
+      return _campusDirect(method, uri, headers, body, asBase64: asBase64);
+    }
+    return _campusViaProxy(proxyUrl, method, uri, headers, body, asBase64: asBase64);
+  }
+
+  /// 直连：设备自己在校园网里时走这条。
+  Future<Map<String, Object?>> _campusDirect(
+    String method,
+    Uri uri,
+    Map<String, String> headers,
+    Uint8List? body, {
+    bool asBase64 = false,
+  }) async {
+    final client = HttpClient()..connectionTimeout = timeout;
+    try {
+      final request = await client.openUrl(method, uri).timeout(timeout);
+      request.followRedirects = false;
+      headers.forEach(request.headers.set);
+      if (body != null && method != 'GET' && method != 'HEAD') {
+        request.contentLength = body.length;
+        request.add(body);
+      }
+      final response = await request.close().timeout(timeout);
+      final setCookies = <String>[
+        ...?response.headers[HttpHeaders.setCookieHeader],
+      ];
+      return await _readResponse(response, uri, setCookies, asBase64: asBase64);
+    } on TimeoutException {
+      throw const ExtNetException('请求超时');
+    } on SocketException catch (e) {
+      throw ExtNetException('连接失败：${e.message}');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 经校园隧道代理：手写 HTTP/1.1（隧道代理只认绝对 URI 的明文转发）。
+  Future<Map<String, Object?>> _campusViaProxy(
+    String proxyUrl,
+    String method,
+    Uri uri,
+    Map<String, String> headers,
+    Uint8List? body, {
+    bool asBase64 = false,
+  }) async {
+    final proxy = parseProxyUrl(proxyUrl);
+    if (proxy == null) {
+      throw ExtNetException('隧道代理地址不对：$proxyUrl');
+    }
+    Socket socket;
+    try {
+      socket = await Socket.connect(proxy.host, proxy.port, timeout: timeout);
+    } on SocketException catch (e) {
+      throw ExtNetException('连不上隧道代理 ${proxy.host}：${e.message}');
+    }
+    try {
+      socket.add(utf8.encode(buildProxyHead(
+        method: method,
+        uri: uri,
+        headers: headers,
+        contentLength:
+            body != null && method != 'GET' && method != 'HEAD' ? body.length : null,
+      )));
+      if (body != null && method != 'GET' && method != 'HEAD') socket.add(body);
+      await socket.flush();
+
+      final chunks = <int>[];
+      await for (final chunk in socket) {
+        chunks.addAll(chunk);
+        if (chunks.length > maxBodyBytes + 64 * 1024) break;
+      }
+      return parseProxyResponse(Uint8List.fromList(chunks), uri, asBase64: asBase64);
+    } on TimeoutException {
+      throw const ExtNetException('请求超时');
+    } on SocketException catch (e) {
+      throw ExtNetException('隧道代理连接中断：${e.message}');
+    } finally {
+      socket.destroy();
+    }
+  }
+
+  /// 拼一份经 HTTP 代理的请求头。**必须用 absolute-form**
+  /// （`POST http://host:port/path HTTP/1.1`）：写成路径形式会被代理直接回 400。
+  @visibleForTesting
+  static String buildProxyHead({
+    required String method,
+    required Uri uri,
+    required Map<String, String> headers,
+    int? contentLength,
+  }) {
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    final target = uri.hasQuery ? '$path?${uri.query}' : path;
+    final lines = <String>[
+      '$method ${uri.scheme}://${uri.host}:${uri.port}$target HTTP/1.1',
+      'Host: ${uri.host}:${uri.port}',
+      ...headers.entries.map((e) => '${e.key}: ${e.value}'),
+      'Connection: close',
+      if (contentLength != null) 'Content-Length: $contentLength',
+    ];
+    return '${lines.join('\r\n')}\r\n\r\n';
+  }
+
+  /// 解析代理回给我们的原始 HTTP 响应（没有 chunked 的隧道代理都是这种）。
+  @visibleForTesting
+  static Map<String, Object?> parseProxyResponse(
+    Uint8List bytes,
+    Uri uri, {
+    bool asBase64 = false,
+  }) {
+    final split = _indexOfHeaderEnd(bytes);
+    if (split < 0) throw const ExtNetException('代理没有返回完整的 HTTP 响应');
+    final head = utf8.decode(bytes.sublist(0, split), allowMalformed: true);
+    final headLines = head.split('\r\n');
+    final status = int.tryParse(
+          RegExp(r'HTTP/1\.[01] (\d{3})').firstMatch(headLines.first)?.group(1) ?? '',
+        ) ??
+        0;
+    if (status == 0) {
+      throw ExtNetException('代理返回了看不懂的响应：${headLines.first}');
+    }
+    final respHeaders = <String, String>{};
+    final setCookies = <String>[];
+    for (final line in headLines.skip(1)) {
+      final at = line.indexOf(':');
+      if (at <= 0) continue;
+      final name = line.substring(0, at).trim();
+      final value = line.substring(at + 1).trim();
+      if (name.toLowerCase() == 'set-cookie') {
+        setCookies.add(value);
+      } else {
+        respHeaders[name] = respHeaders.containsKey(name)
+            ? '${respHeaders[name]}, $value'
+            : value;
+      }
+    }
+    var payload = bytes.sublist(split + 4);
+    final truncated = payload.length > maxBodyBytes;
+    if (truncated) payload = payload.sublist(0, maxBodyBytes);
+    return {
+      'status': status,
+      'url': uri.toString(),
+      'headers': respHeaders,
+      'setCookies': setCookies,
+      'text': asBase64
+          ? base64Encode(payload)
+          : utf8.decode(payload, allowMalformed: true),
+      'truncated': truncated,
+      'bytes': payload.length,
+    };
+  }
+
+  static int _indexOfHeaderEnd(Uint8List bytes) {
+    for (var i = 3; i < bytes.length; i++) {
+      if (bytes[i - 3] == 13 &&
+          bytes[i - 2] == 10 &&
+          bytes[i - 1] == 13 &&
+          bytes[i] == 10) {
+        return i - 3;
+      }
+    }
+    return -1;
+  }
+
+  /// 解析 `http://host:port` / `host:port`；解析不出来返回 null。
+  @visibleForTesting
+  static ({String host, int port})? parseProxyUrl(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return null;
+    s = s.replaceFirst(RegExp(r'^https?://', caseSensitive: false), '');
+    s = s.split('/').first.replaceAll(RegExp(r'/+$'), '');
+    final colon = s.lastIndexOf(':');
+    if (colon <= 0) return null;
+    final host = s.substring(0, colon).trim();
+    final port = int.tryParse(s.substring(colon + 1).trim()) ?? 0;
+    if (host.isEmpty || port <= 0 || port > 65535) return null;
+    return (host: host, port: port);
+  }
+
+  /// 校内地址：只允许 http，且主机解析出来不能是本机 / 回环 / 链路本地 / CGNAT。
+  Future<Uri> validateCampusUrl(String raw) async {
+    final uri = Uri.tryParse(raw.trim());
+    if (uri == null || uri.host.isEmpty) {
+      throw const ExtNetException('url 不是合法网址');
+    }
+    if (uri.scheme != 'http') {
+      throw const ExtNetException('校内通道只接受 http（校内站点没有证书）');
+    }
+    if (uri.userInfo.isNotEmpty) {
+      throw const ExtNetException('url 里不要带账号密码');
+    }
+    final host = uri.host.toLowerCase();
+    if (host == 'localhost' ||
+        host.endsWith('.localhost') ||
+        host.endsWith('.local') ||
+        host == 'metadata.google.internal') {
+      throw const ExtNetException('不允许访问本机 / 内网地址');
+    }
+    List<InternetAddress> addresses;
+    try {
+      addresses = await InternetAddress.lookup(host)
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw const ExtNetException('域名解析超时');
+    } on SocketException {
+      throw const ExtNetException('域名解析失败');
+    }
+    if (addresses.isEmpty) {
+      throw const ExtNetException('域名解析失败');
+    }
+    for (final address in addresses) {
+      if (isLoopbackOrLinkLocal(address)) {
+        throw const ExtNetException('不允许访问本机 / 回环 / 链路本地地址');
+      }
+    }
+    return uri;
+  }
+
+  /// 校内通道仍然拒绝的那几类地址：本机、回环、链路本地、CGNAT、组播。
+  @visibleForTesting
+  static bool isLoopbackOrLinkLocal(InternetAddress address) {
+    final bytes = address.rawAddress;
+    if (bytes.length == 16) {
+      if (bytes.take(15).every((b) => b == 0) && bytes[15] == 1) return true;
+      if ((bytes[0] & 0xfe) == 0xfc) return true;
+      if (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) return true;
+      if (bytes.take(10).every((b) => b == 0) &&
+          bytes[10] == 0xff &&
+          bytes[11] == 0xff) {
+        return isLoopbackOrLinkLocal(InternetAddress.fromRawAddress(
+          Uint8List.fromList(bytes.sublist(12)),
+        ));
+      }
+      return false;
+    }
+    if (bytes.length != 4) return true;
+    final a = bytes[0], c = bytes[1];
+    if (a == 0 || a == 127 || a >= 224) return true;
+    if (a == 169 && c == 254) return true;
+    if (a == 100 && c >= 64 && c <= 127) return true;
+    return false;
   }
 
   /// 只允许 https，并拒绝指向本机 / 内网的地址。重定向后的地址会再校验一次。
@@ -217,7 +495,11 @@ class ExtNetService {
   }
 
   static Future<Map<String, Object?>> _readResponse(
-      HttpClientResponse response, Uri uri, List<String> setCookies) async {
+      HttpClientResponse response,
+      Uri uri,
+      List<String> setCookies, {
+      bool asBase64 = false,
+    }) async {
     final headers = <String, String>{};
     response.headers.forEach((name, values) {
       headers[name] = values.join(', ');
@@ -237,7 +519,10 @@ class ExtNetService {
       'url': uri.toString(),
       'headers': headers,
       'setCookies': setCookies,
-      'text': utf8.decode(bytes, allowMalformed: true),
+      // 验证码图片这类二进制内容用 base64 回传（text 在 UTF-8 下会变成乱码）
+      'text': asBase64
+          ? base64Encode(bytes)
+          : utf8.decode(bytes, allowMalformed: true),
       'truncated': truncated,
       'bytes': bytes.length,
     };

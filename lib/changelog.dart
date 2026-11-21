@@ -24,6 +24,17 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.44.0',
+    date: '2026-11-21',
+    notes: [
+      '新增「校内明文 http」拓展通道（net.campus）：实验系统这类只有 http://10.x 内网地址的站点也能从拓展里访问',
+      '这条通道在服务器模式下自动接上校园隧道代理，设备不一定要在校园网里；本机 / 回环 / CGNAT 仍然拒绝',
+      '新权限 campus_net 会在安装/权限页里写明用途，逐域仍然要你点一次允许',
+      '市场新增「SIT大物实验提醒」：大物实验报告未提交一目了然，带开始 / 截止时间与倒计时、到点通知',
+      '原「截止提醒」改名「学习通截止提醒」，两个插件互不依赖',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.43.0',
     date: '2026-11-21',
     notes: [
