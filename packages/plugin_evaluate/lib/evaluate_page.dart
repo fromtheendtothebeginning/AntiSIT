@@ -19,6 +19,8 @@ import 'evaluate_views.dart';
 /// 会话没了就去「连接设置」重新登录一次，回来这里照样能用。
 ///
 /// 提交是不可撤销的写操作，所有提交都要经过二次确认；保存可以重复覆盖。
+/// 「全部提交」交的是**已保存的那套分**（页面不再另设分数），
+/// 所以只有每一条都保存过时才可用——见 [canSubmitAll]。
 class EvaluatePage extends StatefulWidget {
   const EvaluatePage({super.key});
 
@@ -187,8 +189,10 @@ class _EvaluatePageState extends State<EvaluatePage> {
     ));
   }
 
-  /// 批量操作的默认分数：取本机记住的最近一条分数（原来打多少就还是多少），
+  /// 「全部打分」的默认分数：取本机记住的最近一条分数（原来打多少就还是多少），
   /// 一条都没有才回到 95 分。
+  ///
+  /// 「全部提交」不用它——那个按钮交的是已保存的分，页面不再另设分数。
   Future<double> _defaultBatchScore(List<EvalTarget> targets) async {
     for (final t in targets) {
       final saved = await EvaluationLocalScores.read(t);
@@ -244,7 +248,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
                   ),
                 ],
               ),
-              Text('提交仍需你逐条确认——提交之后不能修改。',
+              Text('保存好之后，「全部提交」交的就是这套分——不会另设分数。',
                   style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted)),
             ],
           ),
@@ -279,58 +283,35 @@ class _EvaluatePageState extends State<EvaluatePage> {
     }
   }
 
+  /// 「全部提交」：交的是**已经保存好的那套分**，这里不再给分数。
+  ///
+  /// 前提是每一条都保存过（[canSubmitAll]），按钮只有在这种时候才亮；
+  /// 万一还是进来了（缓存/列表刚好变了），先挡回去并说清是哪一条没保存。
   Future<void> _submitAll() async {
-    final pending = _targets.where((t) => !t.submitted).toList();
-    if (pending.isEmpty) {
-      showErr(context, '本轮没有可提交的条目', title: '无需操作');
+    if (!canSubmitAll(_targets)) {
+      _tellNotSaved();
       return;
     }
-    var score = await _defaultBatchScore(pending);
-    if (!mounted) return;
+    final count = _targets.where((t) => !t.submitted).length;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('提交全部评教？'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('将对 ${pending.length} 条评教按下面的分数提交。',
-                  style: const TextStyle(fontSize: 13, height: 1.7)),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: Slider(
-                      value: score,
-                      min: 0,
-                      max: 100,
-                      divisions: 20,
-                      label: score.toInt().toString(),
-                      onChanged: (v) => setLocal(() => score = v),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 40,
-                    child: Text(score.toInt().toString(),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: SemColors.accent)),
-                  ),
-                ],
-              ),
-              Text('提交之后不能修改，也不能撤销。评教是匿名的：教师看不到具体打分。',
-                  style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.danger)),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再想想')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认提交')),
+      builder: (ctx) => AlertDialog(
+        title: const Text('提交全部评教？'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('把已保存的 $count 条评教原样提交（分数是你保存时打的那套）。',
+                style: const TextStyle(fontSize: 13, height: 1.7)),
+            const SizedBox(height: 8),
+            const Text('提交之后不能修改，也不能撤销。评教是匿名的：教师看不到你的具体打分。',
+                style: TextStyle(fontSize: 11.5, height: 1.6)),
           ],
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再想想')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认提交')),
+        ],
       ),
     );
     if (confirmed != true) return;
@@ -339,7 +320,6 @@ class _EvaluatePageState extends State<EvaluatePage> {
       final result = await submitAllTargets(
         api: _api,
         targets: _targets,
-        score: score,
         onProgress: (m) {
           if (mounted) setState(() => _log = '正在提交 $m');
         },
@@ -357,7 +337,42 @@ class _EvaluatePageState extends State<EvaluatePage> {
     }
   }
 
+  /// 「还不能全部提交」的统一提示：点明是哪几条还没保存。
+  void _tellNotSaved() {
+    final missing = _targets.where((t) => !t.submitted && !t.saved).toList();
+    if (missing.isEmpty) {
+      showErr(context, '本轮没有可提交的条目（都已提交）', title: '无需操作');
+      return;
+    }
+    final names = missing.take(3).map((t) => t.teacher).join('、');
+    final more = missing.length > 3 ? ' 等 ${missing.length} 条' : '';
+    showErr(
+      context,
+      '还有 ${missing.length} 条没保存（$names$more）。全部提交交的是已保存的内容，'
+      '先把它们保存好，按钮才会亮。',
+      title: '还不能全部提交',
+    );
+  }
+
   Future<void> _showBatchResult(BatchResult result, {required bool submitted}) async {
+    // 失败与「回了成功但复查没变」分开列，后者不是没做，只是没确认
+    final problems = [
+      ...result.failures,
+      for (final u in result.unconfirmed) '$u（教务回了成功，但复查没看到变化）',
+    ];
+    final String headline;
+    if (!result.checked) {
+      headline = '已发出 ${result.done} 条，但复查时没连上教务：'
+          '请下拉刷新列表确认状态，别当成没提交又点一次。';
+    } else if (submitted) {
+      headline = problems.isEmpty
+          ? '全部提交完成，列表里可以看到状态变成「已提交」。'
+          : '已提交 ${result.done} 条，还有 ${problems.length} 条没成功。';
+    } else {
+      headline = problems.isEmpty
+          ? '全部保存成功，现在可以点「全部提交」了。'
+          : '已保存 ${result.done} 条，还有 ${problems.length} 条没成功。';
+    }
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -372,13 +387,20 @@ class _EvaluatePageState extends State<EvaluatePage> {
                 child: Text('已提交的 ${result.skipped} 条已跳过。',
                     style: const TextStyle(fontSize: 12.5, height: 1.6)),
               ),
-            if (result.failures.isEmpty)
-              Text(submitted ? '全部提交完成，列表里可以看到状态变成「已提交」。' : '全部保存成功，点开每一条确认无误后提交。')
+            if (problems.isEmpty)
+              Text(headline, style: const TextStyle(fontSize: 12.5, height: 1.6))
             else
               Flexible(
                 child: SingleChildScrollView(
-                  child: Text(result.failures.join('\n\n'),
-                      style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(headline, style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                      const SizedBox(height: 8),
+                      Text(problems.join('\n\n'),
+                          style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                    ],
+                  ),
                 ),
               ),
           ],

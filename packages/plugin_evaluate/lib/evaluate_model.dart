@@ -115,6 +115,17 @@ class EvalTarget {
   }
 }
 
+/// 还有多少条「未评」：它们不挡住打分，但会挡住「全部提交」。
+int notSavedCount(List<EvalTarget> targets) =>
+    targets.where((t) => !t.submitted && !t.saved).length;
+
+/// 「全部提交」能不能按：**本轮每一条都保存过（或已提交）**，且还有没交的条目。
+///
+/// 这是整个批量提交的前提——提交发出去的是**已保存的那套分**，页面不再另设分数，
+/// 所以只要有哪怕一条没保存，就没有内容可交；全都交完了也就没什么可点的。
+bool canSubmitAll(List<EvalTarget> targets) =>
+    targets.any((t) => !t.submitted) && notSavedCount(targets) == 0;
+
 /// 评价情况汇总。
 class EvalSummary {
   const EvalSummary({this.pending = 0, this.saved = 0, this.submitted = 0});

@@ -43,11 +43,71 @@ void main() {
           className: '',
         ),
       ],
-      score: 95,
     );
     expect(result.done, 0);
     expect(result.skipped, 1);
     expect(result.ok, isTrue);
+  });
+
+  test('还有没保存的条目时，不认为可以「全部提交」', () {
+    const saved = EvalTarget(
+      jxbId: 'J1',
+      kchId: 'K1',
+      jghId: 'G1',
+      sfcjlrjs: '1',
+      tjzt: '0',
+      course: '离散数学',
+      teacher: '马秀莹',
+      className: '',
+    );
+    const fresh = EvalTarget(
+      jxbId: 'J2',
+      kchId: 'K2',
+      jghId: 'G2',
+      sfcjlrjs: '1',
+      tjzt: '-1',
+      course: '大学物理',
+      teacher: '张三',
+      className: '',
+    );
+    const done = EvalTarget(
+      jxbId: 'J3',
+      kchId: 'K3',
+      jghId: 'G3',
+      sfcjlrjs: '1',
+      tjzt: '1',
+      course: '体育',
+      teacher: '李四',
+      className: '',
+    );
+
+    expect(canSubmitAll(const [saved, done]), isTrue);
+    expect(canSubmitAll(const [saved]), isTrue);
+    expect(canSubmitAll(const [done]), isFalse, reason: '都已提交，没有可交的条目');
+    expect(canSubmitAll(const []), isFalse);
+    expect(canSubmitAll(const [saved, fresh]), isFalse, reason: '还有一条没保存');
+    expect(canSubmitAll(const [fresh]), isFalse);
+    expect(notSavedCount(const [saved, fresh, done]), 1);
+  });
+
+  test('全部提交遇到没保存的条目会挡下来，不临时补一套分', () async {
+    final result = await submitAllTargets(
+      api: EvaluateApi(session: EvaluateSession(fallbackBase: 'https://jwxt.invalid')),
+      targets: const [
+        EvalTarget(
+          jxbId: 'J',
+          kchId: 'K',
+          jghId: 'G',
+          sfcjlrjs: '1',
+          tjzt: '-1',
+          course: '大学物理',
+          teacher: '张三',
+          className: '',
+        ),
+      ],
+    );
+    expect(result.done, 0);
+    expect(result.failures.single, contains('还没保存过'));
   });
 
   test('一键打分把统一分数摊到全部指标（按各自范围吸附）', () {
@@ -108,14 +168,15 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: EvaluateListView(
-          summary: const EvalSummary(pending: 1, saved: 0, submitted: 0),
+          summary: const EvalSummary(pending: 0, saved: 1, submitted: 0),
           targets: const [
+            // 已保存：两条按钮都该是可用的
             EvalTarget(
               jxbId: 'J',
               kchId: 'K',
               jghId: 'G',
               sfcjlrjs: '1',
-              tjzt: '-1',
+              tjzt: '0',
               course: '离散数学',
               teacher: '马秀莹',
               className: '2602121',
@@ -153,4 +214,74 @@ void main() {
     await tester.pumpAndSettle();
     expect(submitted, 1);
   });
+
+  testWidgets('还有没保存的条目时「全部提交」不可用，保存齐了才亮', (tester) async {
+    var submitted = 0;
+    const target = EvalTarget(
+      jxbId: 'J',
+      kchId: 'K',
+      jghId: 'G',
+      sfcjlrjs: '1',
+      tjzt: '0', // 已保存
+      course: '离散数学',
+      teacher: '马秀莹',
+      className: '2602121',
+    );
+    const fresh = EvalTarget(
+      jxbId: 'J2',
+      kchId: 'K2',
+      jghId: 'G2',
+      sfcjlrjs: '1',
+      tjzt: '-1', // 未评
+      course: '大学物理',
+      teacher: '张三',
+      className: '2602121',
+    );
+
+    Future<void> pump(List<EvalTarget> targets) => tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+            body: EvaluateListView(
+              summary: const EvalSummary(pending: 1, saved: 1, submitted: 0),
+              targets: targets,
+              onFillAll: () async {},
+              onSubmitAll: () async {
+                submitted++;
+              },
+            ),
+          ),
+        ));
+
+    // FilledButton.tonalIcon 返回的是 FilledButton 的子类，byType 匹配不到，按文案找
+    FilledButton submitButton() => tester.widget<FilledButton>(find.ancestor(
+          of: find.text('全部提交'),
+          matching: find.byWidgetPredicate((w) => w is FilledButton),
+        ));
+
+    await pump(const [target, fresh]);
+    await tester.pumpAndSettle();
+    expect(submitButton().onPressed, isNull, reason: '还有一条没保存，不能提交');
+    expect(find.textContaining('还有 1 条没保存'), findsOneWidget);
+
+    await pump(const [target, fresh].map(_saved).toList());
+    await tester.pumpAndSettle();
+    expect(submitButton().onPressed, isNotNull, reason: '都保存过了，按钮亮起');
+    expect(find.textContaining('没保存'), findsNothing);
+    expect(find.text('全部打分'), findsOneWidget);
+
+    await tester.tap(find.text('全部提交'));
+    await tester.pumpAndSettle();
+    expect(submitted, 1);
+  });
 }
+
+/// 把一条改写成「已保存」。
+EvalTarget _saved(EvalTarget t) => EvalTarget(
+      jxbId: t.jxbId,
+      kchId: t.kchId,
+      jghId: t.jghId,
+      sfcjlrjs: t.sfcjlrjs,
+      tjzt: '0',
+      course: t.course,
+      teacher: t.teacher,
+      className: t.className,
+    );

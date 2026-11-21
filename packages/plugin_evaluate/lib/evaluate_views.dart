@@ -58,7 +58,10 @@ class EvaluateSummaryCard extends StatelessWidget {
           Text(
             s.allDone
                 ? '本轮已全部提交，感谢参与评教。'
-                : '共 ${s.total} 门次；点「全部打分」可以一次给所有老师同分并保存，点开每一条还能单独调。',
+                : (s.pending == 0
+                    ? '共 ${s.total} 门次；都已保存，点「全部提交」把保存的内容交上去。'
+                    : '共 ${s.total} 门次；点「全部打分」可以一次给所有老师同分并保存，'
+                        '点开每一条还能单独调。全部保存后才能「全部提交」。'),
             style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted),
           ),
         ],
@@ -147,6 +150,9 @@ class EvaluateTargetCard extends StatelessWidget {
 ///
 /// 两个按钮用**同一种按钮形式**（FilledButton.tonal），不加粗、不突出其中一个——
 /// 一个是「打分」一个是「提交」，重要性交给文案与后续确认去表达。
+///
+/// 「全部提交」不是「统一打分再提交」：它交的是**已经保存好的那套分**，
+/// 所以只有每一条都保存过（或已提交）时才可用，否则置灰并说明差几条。
 class EvaluateListView extends StatelessWidget {
   const EvaluateListView({
     super.key,
@@ -182,23 +188,42 @@ class EvaluateListView extends StatelessWidget {
         if (onFillAll != null && onSubmitAll != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    onPressed: targets.isEmpty ? null : onFillAll,
-                    icon: const Icon(Icons.bolt_outlined, size: 18),
-                    label: const Text('全部打分'),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: targets.isEmpty ? null : onFillAll,
+                        icon: const Icon(Icons.bolt_outlined, size: 18),
+                        label: const Text('全部打分'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        // 「全部提交」只管提交**已保存**的内容，没有另设分数的余地：
+                        // 所以只有每一条都保存过（或已提交）时才亮起来
+                        onPressed: canSubmitAll(targets) ? onSubmitAll : null,
+                        icon: Icon(canSubmitAll(targets)
+                            ? Icons.done_all_rounded
+                            : Icons.lock_outline_rounded,
+                            size: 18),
+                        label: const Text('全部提交'),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    onPressed: targets.isEmpty ? null : onSubmitAll,
-                    icon: const Icon(Icons.done_all_rounded, size: 18),
-                    label: const Text('全部提交'),
+                if (notSavedCount(targets) > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      '还有 ${notSavedCount(targets)} 条没保存：'
+                      '「全部提交」交的是已保存的内容，都保存好（可以点「全部打分」）之后按钮才会亮。',
+                      style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
