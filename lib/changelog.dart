@@ -24,6 +24,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.42.1',
+    date: '2026-11-21',
+    notes: [
+      '学生评教加本地缓存：进去先显示上次的待评列表与分数，后台再刷新；刷新失败也保留旧数据',
+      '保存后不再自动退出，留在评分页可以接着调；只有「提交」（不可撤销）才退回列表',
+      '打分记在本机一份：再次打开就是上次那套分，统一分数滑条也停在那，不会又跳回 95；换账号自动失效',
+      '「全部打分」的默认分改用上次打过的分数',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.42.0',
     date: '2026-11-21',
     notes: [
