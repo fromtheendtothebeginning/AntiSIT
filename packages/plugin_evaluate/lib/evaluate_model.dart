@@ -66,6 +66,25 @@ class EvalTarget {
         if (title.trim().isNotEmpty) title,
       ].join(' · ');
 
+  /// 落本地缓存用（字段名与教务返回保持一致，便于一份解析逻辑吃两种来源）。
+  Map<String, dynamic> toJson() => {
+        'jxb_id': jxbId,
+        'kch_id': kchId,
+        'jgh_id': jghId,
+        'sfcjlrjs': sfcjlrjs,
+        'tjzt': tjzt,
+        'kcmc': course,
+        'jzgmc': teacher,
+        'jxbmc': className,
+        'jgmc': college,
+        'zcmc': title,
+        'sksj': time,
+        'jxdd': place,
+        'xsdm': xsdm,
+        'xnm': xnm,
+        'xqm': xqm,
+      };
+
   static EvalTarget? tryParse(Object? raw) {
     if (raw is! Map) return null;
     String s(String k) => (raw[k] ?? '').toString().trim();
@@ -106,6 +125,18 @@ class EvalSummary {
 
   int get total => pending + saved + submitted;
   bool get allDone => pending == 0 && total > 0;
+
+  Map<String, dynamic> toJson() =>
+      {'wpgs': pending, 'bcgs': saved, 'tjgs': submitted};
+
+  static EvalSummary fromJson(Object? raw) {
+    if (raw is! Map) return const EvalSummary();
+    return EvalSummary(
+      pending: asInt(raw['wpgs']) ?? 0,
+      saved: asInt(raw['bcgs']) ?? 0,
+      submitted: asInt(raw['tjgs']) ?? 0,
+    );
+  }
 }
 
 /// 一条二级指标（一道题）。
@@ -362,6 +393,24 @@ class EvalForm {
     if (raw == null) return null;
     return double.tryParse(raw.trim());
   }
+}
+
+/// 打开一条评教时的初始分数，优先级：**本机上次打的分** > 页面回填的分 > [fallback]。
+///
+/// 为什么本机那份排第一：教务对「已保存」的评教不会把分数回填进表单（实测 value 为空），
+/// 只有本机留的那份能让用户接着上次的分数改。
+Map<String, double> initialScoresFor(
+  EvalForm form, {
+  Map<String, double>? local,
+  double fallback = 95,
+}) {
+  final base = form.initialScores(fallback: fallback);
+  if (local == null || local.isEmpty) return base;
+  for (final item in form.items) {
+    final v = local[item.id];
+    if (v != null) base[item.id] = item.snap(v);
+  }
+  return base;
 }
 
 /// 把统一分数摊到所有指标上（按各自范围吸附）。

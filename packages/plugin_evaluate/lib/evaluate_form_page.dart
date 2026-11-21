@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:campus_core/campus_core.dart';
 
 import 'evaluate_api.dart';
+import 'evaluate_cache.dart';
 import 'evaluate_model.dart';
 
 /// 单个老师的评分页：一列题 + 一条「统一分数」滑条 + 保存 / 提交。
@@ -65,13 +66,18 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
     });
     try {
       final form = await widget.api.fetchForm(widget.target);
+      // 本机记下的「上次我打的分」优先级最高：教务对已保存的评教不回填具体分数，
+      // 只有本机这份能让用户接着上次的分数改。
+      final local = await EvaluationLocalScores.read(widget.target);
       if (!mounted) return;
       setState(() {
         _form = form;
         _loading = false;
-        // 已保存过的条目先显示上次的分；没保存过的默认给满分档，避免一进来十道题全空
         if (_scores.isEmpty) {
-          _scores.addAll(form.initialScores(fallback: _uniform));
+          final base = initialScoresFor(form, local: local, fallback: _uniform);
+          _scores.addAll(base);
+          // 统一分数滑条也落到「当前这套分的代表值」，别再固定显示 95
+          if (base.isNotEmpty) _uniform = base.values.first;
         }
       });
     } on EvaluateError catch (e) {
@@ -134,6 +140,8 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
       final text = submit
           ? await widget.api.submitForm(form, _scores, comment: _comment.text.trim())
           : await widget.api.saveForm(form, _scores, comment: _comment.text.trim());
+      // 本地也留一份：下次打开（或从缓存进来）默认显示这套分数
+      await EvaluationLocalScores.write(widget.target, _scores);
       // 返回值不可信：以列表 / 汇总为准再核一遍
       final verdict = await _verify(submit: submit);
       if (!mounted) return;
@@ -158,7 +166,16 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
         ),
       );
       await widget.onChanged();
-      if (mounted && verdict.ok) Navigator.of(context).maybePop();
+      if (!mounted) return;
+      if (verdict.ok) {
+        // 保存/提交完成后**留在本页**：用户常要接着改下一项或核对；
+        // 只有「提交」不可逆，才顺手退回列表（列表会显示已提交）。
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(submit ? '已提交，这条不能再改了' : '已保存，可以继续调整'),
+          duration: const Duration(seconds: 2),
+        ));
+        if (submit) Navigator.of(context).maybePop();
+      }
     } on EvaluateError catch (e) {
       if (mounted) showErr(context, e, title: '操作失败');
     } catch (e) {

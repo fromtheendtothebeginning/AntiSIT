@@ -6,6 +6,7 @@ import 'package:campus_core/campus_core.dart';
 
 import 'evaluate_api.dart';
 import 'evaluate_batch.dart';
+import 'evaluate_cache.dart';
 import 'evaluate_model.dart';
 import 'evaluate_form_page.dart';
 import 'evaluate_session.dart';
@@ -32,6 +33,10 @@ class _EvaluatePageState extends State<EvaluatePage> {
   bool _booting = true;
   String? _error;
   String _log = '';
+
+  /// 当前展示的是本机缓存 / 本次刷新失败（顶部刷新条用，与其它工具页一致）。
+  bool _fromCache = false;
+  bool _refreshFailed = false;
   List<EvalTarget> _targets = const [];
   EvalSummary _summary = const EvalSummary();
 
@@ -40,7 +45,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
     super.initState();
     _session = EvaluateSession(fallbackBase: AppState.I.school.jwxtBase);
     _api = _buildApi();
-    unawaited(_boot());
+    unawaited(_restore());
   }
 
   EvaluateApi _buildApi() => EvaluateApi(
@@ -56,10 +61,29 @@ class _EvaluatePageState extends State<EvaluatePage> {
   /// 服务器模式要用的校园隧道代理（http://host:port）；直连模式恒为空。
   String _serverProxyUrl = '';
 
+  /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否联网拉新。
+  /// 与成绩 / 二课等工具页同一套行为：有缓存时不闪空态，失败也保留旧数据。
+  Future<void> _restore() async {
+    final cached = await EvaluationCache.read();
+    if (!mounted) return;
+    if (cached != null) {
+      setState(() {
+        _targets = cached.targets;
+        _summary = cached.summary;
+        _booting = false;
+        _fromCache = true;
+      });
+    }
+    if (!AppState.I.autoRefreshTools && cached != null) return;
+    await _boot();
+  }
+
   Future<void> _boot() async {
     setState(() {
-      _booting = true;
+      // 已经有缓存时不整页转圈，只让顶部刷新条转（避免闪空态）
+      _booting = _targets.isEmpty;
       _error = null;
+      _refreshFailed = false;
     });
     if (AppState.I.demo) {
       setState(() {
@@ -122,23 +146,34 @@ class _EvaluatePageState extends State<EvaluatePage> {
       await _api.acknowledgeNotice();
       final targets = await _api.fetchTargets();
       final summary = await _api.fetchSummary();
+      await EvaluationCache.write(targets, summary);
       if (!mounted) return;
       setState(() {
         _targets = targets;
         _summary = summary;
         _booting = false;
+        _fromCache = false;
       });
     } on EvaluateError catch (e) {
       if (!mounted) return;
       setState(() {
         _booting = false;
-        _error = e.message;
+        // 有缓存就保留旧列表，只在顶部提示这次刷新失败
+        if (_targets.isEmpty) {
+          _error = e.message;
+        } else {
+          _refreshFailed = true;
+        }
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _booting = false;
-        _error = e is ApiError ? e.message : e.toString();
+        if (_targets.isEmpty) {
+          _error = e is ApiError ? e.message : e.toString();
+        } else {
+          _refreshFailed = true;
+        }
       });
     }
   }
@@ -149,13 +184,28 @@ class _EvaluatePageState extends State<EvaluatePage> {
     ));
   }
 
+  /// 批量操作的默认分数：取本机记住的最近一条分数（原来打多少就还是多少），
+  /// 一条都没有才回到 95 分。
+  Future<double> _defaultBatchScore(List<EvalTarget> targets) async {
+    for (final t in targets) {
+      final saved = await EvaluationLocalScores.read(t);
+      if (saved == null || saved.isEmpty) continue;
+      final values = saved.values.toList();
+      values.sort();
+      return values[values.length ~/ 2]; // 取中位数：逐项微调过的分数用它更贴近原样
+    }
+    return 95;
+  }
+
   Future<void> _fillAllTargets() async {
     final pending = _targets.where((t) => !t.submitted).toList();
     if (pending.isEmpty) {
       showErr(context, '本轮没有可打分的条目（都已提交）', title: '无需操作');
       return;
     }
-    var score = 95.0;
+    // 默认分：优先用本机记下的上次分数（同一条已保存/已提交的评教），没有才是 95
+    var score = await _defaultBatchScore(pending);
+    if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -232,7 +282,8 @@ class _EvaluatePageState extends State<EvaluatePage> {
       showErr(context, '本轮没有可提交的条目', title: '无需操作');
       return;
     }
-    var score = 95.0;
+    var score = await _defaultBatchScore(pending);
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -405,13 +456,26 @@ class _EvaluatePageState extends State<EvaluatePage> {
         ),
       );
 
-  Widget _listView() => EvaluateListView(
-        targets: _targets,
-        summary: _summary,
-        connectionLabel: AppState.I.direct ? '直连' : '校园隧道',
-        onTapTarget: _openTarget,
-        onRefresh: _loadTargets,
-        onFillAll: _fillAllTargets,
-        onSubmitAll: _submitAll,
+  Widget _listView() => Column(
+        children: [
+          // 与其它工具页一致的刷新条：转圈时继续展示旧数据，失败也只在这里提示
+          ToolRefreshBar(
+            refreshing: _booting,
+            fromCache: _fromCache,
+            failed: _refreshFailed,
+            onRefresh: _loadTargets,
+          ),
+          Expanded(
+            child: EvaluateListView(
+              targets: _targets,
+              summary: _summary,
+              connectionLabel: AppState.I.direct ? '直连' : '校园隧道',
+              onTapTarget: _openTarget,
+              onRefresh: _loadTargets,
+              onFillAll: _fillAllTargets,
+              onSubmitAll: _submitAll,
+            ),
+          ),
+        ],
       );
 }

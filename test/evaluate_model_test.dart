@@ -226,6 +226,33 @@ void main() {
     });
   });
 
+  group('打开评教时的初始分数', () {
+    EvalForm form() => EvalForm.tryParse(_fixture())!;
+
+    test('本机有记录：优先用本机那份（教务不回填时也能接着上次改）', () {
+      final base = initialScoresFor(form(), local: {'ITEM_A1': 80});
+      expect(base['ITEM_A1'], 80);
+      expect(base['ITEM_A2'], 95, reason: '本机没记的题用兜底分');
+    });
+
+    test('本机记录优先于页面回填的分', () {
+      // fixture 里 ITEM_A1 的 value="88"（页面回填）
+      final base = initialScoresFor(form(), local: {'ITEM_A1': 70});
+      expect(base['ITEM_A1'], 70);
+    });
+
+    test('没有本机记录：用页面回填；也没有则用兜底分', () {
+      final withSaved = initialScoresFor(form(), fallback: 90);
+      expect(withSaved['ITEM_A1'], 88, reason: '页面回填的 88 优先于兜底');
+      expect(withSaved['ITEM_A2'], 90);
+    });
+
+    test('本机的分超出该题范围时按题吸附', () {
+      final html = _fixture().replaceAll('data-zdfz="100"', 'data-zdfz="20"');
+      final base = initialScoresFor(EvalForm.tryParse(html)!, local: {'ITEM_A1': 95});
+      expect(base['ITEM_A1'], 20);
+    });
+  });
   group('校园隧道代理地址', () {
     test('http://host:port 与裸 host:port 都能解析', () {
       final a = parseHttpProxy('http://anticraft.top:10004');
