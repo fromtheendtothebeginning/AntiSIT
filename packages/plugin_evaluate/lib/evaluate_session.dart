@@ -1,31 +1,31 @@
-import 'dart:async';
-import 'dart:convert';
-
-import 'package:shared_preferences/shared_preferences.dart';
-
 import 'package:campus_core/campus_core.dart';
 
-/// 教务评教会话：Cookie 罐 + 登录中间态（csrftoken / 加密后的密码）。
+/// 评教用的教务会话：**直接复用 App 已有的教务登录态**，自己不再登录。
 ///
-/// Cookie 存在 [SecureStore]（Android Keystore / iOS Keychain）——
-/// 会话在有效期内等价于登录态（能提交评教），不能落明文。
+/// 与成绩 / 课表 / 考试等教务功能走同一条路（[ApiClient.jwxtWebSession]）：
+/// * 直连模式：本机已登录的教务 Cookie；
+/// * 服务器模式：服务器代连校园网时已登录的教务 Cookie + 它给的教务域名。
+///
+/// 评教的读取与写入都能用这份 Cookie 直接打通，用户不用再输一次账号密码。
 class EvaluateSession {
-  EvaluateSession({this.persistKey = _defaultKey});
+  EvaluateSession({this.fallbackBase = ''});
 
-  static const String _defaultKey = 'evaluate_jwxt_cookies_v1';
+  /// 学校档案里的教务地址（服务器没给域名时用它）。
+  final String fallbackBase;
 
-  final String persistKey;
-
-  /// 主机 → (cookie 名 → 值)。
+  /// 主机 → （cookie 名 → 值）。
   final Map<String, Map<String, String>> _jar = {};
 
-  /// 登录中间态（只在一次登录流程内有效，不持久化）。
-  String? csrf;
-  String? studentId;
-  String? encPassword;
+  /// 服务器返回的教务根地址；空 = 用 [fallbackBase]。
+  String serverBase = '';
 
   bool get hasCookies => _jar.values.any((m) => m.isNotEmpty);
-  int get cookieCount => _jar.values.fold(0, (a, m) => a + m.length);
+
+  /// 教务根地址（不带尾斜杠）。
+  String get base {
+    final raw = serverBase.trim().isNotEmpty ? serverBase.trim() : fallbackBase.trim();
+    return raw.replaceAll(RegExp(r'/+$'), '');
+  }
 
   String cookieHeader(String host) {
     final parts = <String>[];
@@ -37,10 +37,18 @@ class EvaluateSession {
     return parts.join('; ');
   }
 
-  /// 吸收响应里的 Set-Cookie（按 Domain 属性归罐）。
+  /// 把 [ApiClient.jwxtWebSession] 给的会话灌进来（Cookie 归属到教务域名）。
+  void adopt(JwxtWebSession session) {
+    _jar.clear();
+    serverBase = session.base;
+    final host = Uri.tryParse(base)?.host ?? '';
+    if (host.isEmpty || session.cookies.isEmpty) return;
+    _jar[host] = Map<String, String>.from(session.cookies);
+  }
+
+  /// 吸收响应里的 Set-Cookie（教务会在部分接口上续期会话）。
   void absorbCookies(String host, List<String> setCookies) {
     if (setCookies.isEmpty) return;
-    var changed = false;
     for (final line in setCookies) {
       final seg = line.split(';');
       if (seg.isEmpty) continue;
@@ -58,45 +66,6 @@ class EvaluateSession {
       }
       if (domain.isEmpty) domain = host;
       (_jar[domain] ??= <String, String>{})[name] = value;
-      changed = true;
     }
-    if (changed) unawaitedPersist();
   }
-
-  Future<void> load() async {
-    try {
-      final sp = await SharedPreferences.getInstance();
-      final raw = await SecureStore.I.read(persistKey);
-      await sp.remove(persistKey); // 清掉旧版本可能留下的明文
-      if (raw == null || raw.isEmpty) return;
-      final obj = jsonDecode(raw);
-      if (obj is Map) {
-        obj.forEach((host, cookies) {
-          if (cookies is Map) {
-            _jar[host.toString()] = {
-              for (final e in cookies.entries) e.key.toString(): e.value.toString(),
-            };
-          }
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> persist() => SecureStore.I.write(persistKey, jsonEncode(_jar));
-
-  /// 吸收 Cookie 后异步落盘（不阻塞请求）。
-  void unawaitedPersist() {
-    unawaited(persist().catchError((Object _) {}));
-  }
-
-  Future<void> clear() async {
-    _jar.clear();
-    csrf = null;
-    studentId = null;
-    encPassword = null;
-    await SecureStore.I.remove(persistKey);
-  }
-
-  /// 给测试 / 调试看：不含值，只报有哪些主机。
-  List<String> get hosts => _jar.keys.toList();
 }

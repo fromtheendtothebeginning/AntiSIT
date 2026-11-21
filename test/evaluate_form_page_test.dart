@@ -1,31 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:campus_core/campus_core.dart';
-import 'package:plugin_evaluate/evaluate_batch.dart';
 import 'package:plugin_evaluate/plugin_evaluate.dart';
 
-/// 评分页的界面要素：统一分数滑条 / 预设档位 / 一键给全部老师打分 / 提交前二次确认。
+/// 评分页的界面要素与批量打分的口径。
 /// 网络层被替身挡住（页面在 initState 里就要取表单），这里只看「界面该有的东西在不在」。
 void main() {
-  testWidgets('设置页只显示连接方式与账号，不再要求填代理', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: EvaluateSettingsPage()));
-    await tester.pumpAndSettle();
-
-    expect(find.text('连接方式'), findsOneWidget);
-    expect(find.textContaining('直连模式') , findsWidgets);
-    expect(find.text('教务账号'), findsOneWidget);
-    expect(find.text('保存'), findsOneWidget);
-    // 代理地址 / 端口这类输入不该再出现
-    expect(find.text('地址'), findsNothing);
-    expect(find.text('端口'), findsNothing);
-    expect(find.text('校园代理（SOCKS5）'), findsNothing);
-  });
   test('批量打分遇到已提交的条目会跳过（不覆盖已提交评教）', () async {
     final result = await fillAllTargets(
-      api: EvaluateApi(
-        base: 'https://jwxt.invalid',
-        session: EvaluateSession(persistKey: 'batch_test'),
-      ),
+      api: EvaluateApi(session: EvaluateSession(fallbackBase: 'https://jwxt.invalid')),
       targets: const [
         EvalTarget(
           jxbId: 'J',
@@ -48,10 +30,7 @@ void main() {
 
   test('批量提交同样跳过已提交的条目', () async {
     final result = await submitAllTargets(
-      api: EvaluateApi(
-        base: 'https://jwxt.invalid',
-        session: EvaluateSession(persistKey: 'batch_submit_test'),
-      ),
+      api: EvaluateApi(session: EvaluateSession(fallbackBase: 'https://jwxt.invalid')),
       targets: const [
         EvalTarget(
           jxbId: 'J',
@@ -72,7 +51,7 @@ void main() {
   });
 
   test('一键打分把统一分数摊到全部指标（按各自范围吸附）', () {
-    final form = EvalForm(
+    const form = EvalForm(
       jxbId: 'J',
       kchId: 'K',
       jghId: 'G',
@@ -80,7 +59,7 @@ void main() {
       ztpjbl: '100',
       jszdpjbl: '0',
       xykzpjbl: '0',
-      models: const [
+      models: [
         EvalModel(
           id: 'M',
           name: '模板',
@@ -121,5 +100,57 @@ void main() {
     expect(scores['A'], 95);
     expect(scores['B'], 20, reason: '超出该指标上限时夹到 20');
     expect(form.total(scores), closeTo(1 * 1 * 95 + 1 * 1 * 20, 1e-6));
+  });
+
+  testWidgets('列表页两个批量按钮用同一种按钮形式', (tester) async {
+    var filled = 0;
+    var submitted = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: EvaluateListView(
+          summary: const EvalSummary(pending: 1, saved: 0, submitted: 0),
+          targets: const [
+            EvalTarget(
+              jxbId: 'J',
+              kchId: 'K',
+              jghId: 'G',
+              sfcjlrjs: '1',
+              tjzt: '-1',
+              course: '离散数学',
+              teacher: '马秀莹',
+              className: '2602121',
+            ),
+          ],
+          onFillAll: () async {
+            filled++;
+          },
+          onSubmitAll: () async {
+            submitted++;
+          },
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('全部打分'), findsOneWidget);
+    expect(find.text('全部提交'), findsOneWidget);
+
+    // 两个按钮必须是同一种组件（用户要求：统一按钮形式，不突出其中一个）
+    final buttons = tester
+        .widgetList<Widget>(find.byWidgetPredicate((w) => w is FilledButton))
+        .toList();
+    expect(buttons, hasLength(2));
+    expect(buttons[0].runtimeType, buttons[1].runtimeType);
+    for (final b in buttons) {
+      expect((b as FilledButton).onPressed, isNotNull);
+    }
+
+    await tester.tap(find.text('全部打分'));
+    await tester.pumpAndSettle();
+    expect(filled, 1);
+
+    await tester.tap(find.text('全部提交'));
+    await tester.pumpAndSettle();
+    expect(submitted, 1);
   });
 }

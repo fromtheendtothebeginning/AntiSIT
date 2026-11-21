@@ -8,5 +8,4 @@ export 'evaluate_model.dart';
 export 'evaluate_page.dart';
 export 'evaluate_plugin.dart';
 export 'evaluate_session.dart';
-export 'evaluate_settings.dart';
-export 'evaluate_settings_page.dart';
+export 'evaluate_views.dart';

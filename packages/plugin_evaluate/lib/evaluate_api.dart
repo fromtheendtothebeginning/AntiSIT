@@ -8,28 +8,23 @@ import 'package:campus_core/campus_core.dart';
 import 'evaluate_model.dart';
 import 'evaluate_session.dart';
 
-/// 教务评教（正方 9.0 `xspjgl` / 功能码 `N401605`）的完整客户端。
+/// 教务评教（正方 9.0 `xspjgl` / 功能码 `N401605`）的客户端。
 ///
-/// **不走 WebView**：App 自己登录教务、拿列表与评分表单、把分数写回去。
+/// **连接方式与其它教务功能完全一致**：不信不过 [EvaluateSession] 里那份
+/// 「[ApiClient.jwxtWebSession] 给的教务会话」——直连模式是本机已登录的 Cookie，
+/// 服务器模式是服务器代连时的 Cookie + 它给的教务域名。评教不单独登录、
+/// 不单独配置代理，用户在任何教务功能里登录过，这里直接用。
 ///
-/// 连校园内网按 App 当前模式二选一（[proxyUrl]）：
-/// * 直连模式：空 → 直接连教务（设备在校园网 / 校内 VPN 内时可用）；
-/// * 服务器模式：服务器给的校园隧道 HTTP 代理 → 打 CONNECT 建隧道再 TLS。
-///
-/// TLS 走 [startNoSniTls]（教务那台 Tengine 对带 SNI 的 Dart 握手直接 reset）。
-/// 因为要自己控制握手，这里实现了一个极小的 HTTP/1.1 客户端而不是用 HttpClient。
+/// 唯一特殊之处在传输层：教务那台 Tengine 对带 SNI 的 Dart/BoringSSL 握手直接 reset，
+/// 所以自己实现了一个极小的 HTTP/1.1 客户端，走 [startNoSniTls]（见 [socks5]/[tunnel]）。
 class EvaluateApi {
   EvaluateApi({
-    required this.base,
     required this.session,
     this.proxyUrl = '',
     this.onLog,
   });
 
-  /// 教务根地址，如 https://jwxt.sit.edu.cn 。
-  final String base;
-
-  /// 会话（Cookie 罐 + 持久化键）。
+  /// 已就绪的教务会话（Cookie + 域名）。
   final EvaluateSession session;
 
   /// 服务器模式给的校园隧道 HTTP 代理（`http://host:port`）；空 = 直连。
@@ -39,66 +34,14 @@ class EvaluateApi {
 
   static const String _gnmkdm = 'N401605';
 
+  String get base => session.base.replaceAll(RegExp(r'/+$'), '');
+
   String get _jwglxt => base + '/jwglxt';
 
   String get _listReferer =>
       _jwglxt + '/xspjgl/xspj_cxXspjIndex.html?doType=details&gnmkdm=' + _gnmkdm + '&layout=default';
 
   void _log(String line) => onLog?.call(line);
-
-  // ==================== 登录 ====================
-
-  /// 准备一次账密登录：返回验证码图片字节。
-  Future<Uint8List> prepareLogin(String studentId, String password) async {
-    final page = await _request('GET', _jwglxt + '/xtgl/login_slogin.html');
-    if (page.status != 200) {
-      throw EvaluateError.rpc(page.status, page.text, hint: '教务登录页打不开');
-    }
-    final m = RegExp('name="csrftoken"[^>]*value="([^"]*)"').firstMatch(page.text);
-    final csrf = m == null ? '' : m.group(1)!;
-    if (csrf.isEmpty) throw const EvaluateError('教务登录页里找不到 csrftoken，可能改版了');
-
-    final keyResp = await _request(
-        'GET', _jwglxt + '/xtgl/login_getPublicKey.html?time=' + _ms().toString());
-    final key = keyResp.json;
-    if (key is! Map || key['modulus'] == null || key['exponent'] == null) {
-      throw const EvaluateError('教务公钥获取失败：确认校园代理已连上');
-    }
-    session.csrf = csrf;
-    session.studentId = studentId;
-    session.encPassword = rsaEncryptPkcs1(
-        password, key['modulus'].toString(), key['exponent'].toString());
-
-    final captcha =
-        await _request('GET', _jwglxt + '/kaptcha?time=' + _ms().toString());
-    return captcha.bytes;
-  }
-
-  /// 提交验证码完成登录。
-  Future<void> completeLogin(String captcha) async {
-    final enc = session.encPassword;
-    if (enc == null) throw const EvaluateError('登录会话已过期，请重新输入验证码');
-    final resp = await _request(
-      'POST',
-      _jwglxt + '/xtgl/login_slogin.html?time=' + _ms().toString(),
-      form: {
-        'yhm': session.studentId ?? '',
-        'mm': enc,
-        'yzm': captcha.trim(),
-        'csrftoken': session.csrf ?? '',
-        'language': 'zh_CN',
-      },
-      followRedirect: false,
-    );
-    session.encPassword = null;
-    if (resp.status == 302) {
-      // 302 指回登录页是**成功**的正常形态（学校把 ticket 换成会话后回跳）
-      await session.persist();
-      return;
-    }
-    final tip = _loginTip(resp.text);
-    throw EvaluateError(tip.isEmpty ? '教务登录未通过（HTTP ' + resp.status.toString() + '）' : tip);
-  }
 
   /// 会话是否还活着。
   ///
@@ -123,7 +66,7 @@ class EvaluateApi {
     throw EvaluateError.rpc(r.status, t, hint: '登录状态失效，请重新登录');
   }
 
-  // ==================== 待评列表 ====================
+  // ==================== 待评列表 ====================  // ==================== 待评列表 ====================
 
   Future<List<EvalTarget>> fetchTargets() async {
     final r = await _request(
@@ -357,20 +300,6 @@ class EvaluateApi {
       throw EvaluateError.rpc(901, resp.text, hint: '登录已失效，请重新登录');
     }
     return resp;
-  }
-
-  /// 学校登录页上的失败文案（跳过隐藏骨架与脚本注释，取可见的 tips）。
-  static String _loginTip(String html) {
-    final cleaned = html
-        .replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ')
-        .replaceAll(RegExp(r'<script\b.*?</script>', dotAll: true), ' ')
-        .replaceAll(RegExp(r'<style\b.*?</style>', dotAll: true), ' ');
-    for (final m in RegExp('<p[^>]*id="tips"[^>]*>(.*?)</p>', dotAll: true)
-        .allMatches(cleaned)) {
-      final t = m.group(1)!.replaceAll(RegExp('<[^>]+>'), '').trim();
-      if (t.isNotEmpty) return t;
-    }
-    return '';
   }
 
   static int _ms() => DateTime.now().millisecondsSinceEpoch;
