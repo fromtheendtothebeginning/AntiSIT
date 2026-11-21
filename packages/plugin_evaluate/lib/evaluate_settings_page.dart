@@ -4,10 +4,10 @@ import 'package:campus_core/campus_core.dart';
 
 import 'evaluate_settings.dart';
 
-/// 评教设置：校园代理（SOCKS5）与账号。
+/// 评教设置：当前连接方式 + 可选的自填账号。
 ///
-/// 代理凭据是本机内部使用的，**不写进仓库、也不随构建分发**：这里填一次就存进
-/// 加密存储（Android Keystore / iOS Keychain）。
+/// **不再有代理设置**：直连模式自己连校园网，服务器模式走服务器给的校园隧道，
+/// 两种情况都按 App 当前模式自动选，用户不用填任何地址。
 class EvaluateSettingsPage extends StatefulWidget {
   const EvaluateSettingsPage({super.key});
 
@@ -16,51 +16,29 @@ class EvaluateSettingsPage extends StatefulWidget {
 }
 
 class _EvaluateSettingsPageState extends State<EvaluateSettingsPage> {
-  final _host = TextEditingController();
-  final _port = TextEditingController();
-  final _user = TextEditingController();
-  final _pass = TextEditingController();
   final _studentId = TextEditingController();
   final _password = TextEditingController();
   bool _saving = false;
-  bool _obscure = true;
 
   @override
   void initState() {
     super.initState();
     final s = EvaluateSettings.I;
-    _host.text = s.proxy.host;
-    _port.text = s.proxy.port > 0 ? s.proxy.port.toString() : '';
-    _user.text = s.proxy.username;
-    _pass.text = s.proxy.password;
     _studentId.text = s.studentId;
     _password.text = s.password;
   }
 
   @override
   void dispose() {
-    for (final c in [_host, _port, _user, _pass, _studentId, _password]) {
-      c.dispose();
-    }
+    _studentId.dispose();
+    _password.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    final host = _host.text.trim();
-    final port = int.tryParse(_port.text.trim()) ?? 0;
-    if (host.isEmpty || port <= 0) {
-      showErr(context, '校园代理地址和端口都要填（形如 代理域名:端口）', title: '填错了');
-      return;
-    }
     setState(() => _saving = true);
     try {
       await EvaluateSettings.I.save(
-        proxy: SocksProxy(
-          host: host,
-          port: port,
-          username: _user.text.trim(),
-          password: _pass.text,
-        ),
         studentId: _studentId.text,
         password: _password.text,
       );
@@ -76,6 +54,8 @@ class _EvaluateSettingsPageState extends State<EvaluateSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final s = EvaluateSettings.I;
+    final conn = s.connectivity();
+    final st = AppState.I;
     return Scaffold(
       appBar: AppBar(title: const Text('评教设置')),
       body: ListView(
@@ -85,41 +65,24 @@ class _EvaluateSettingsPageState extends State<EvaluateSettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('校园代理（SOCKS5）',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    const Text('连接方式',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    Capsule(st.direct ? '直连' : '服务器模式', color: SemColors.accent),
+                  ],
+                ),
                 const SizedBox(height: 10),
-                GlassField(
-                  label: '地址',
-                  controller: _host,
-                  hintText: '校内代理域名或 IP',
-                  prefixIcon: const Icon(Icons.dns_outlined, size: 18),
+                Text(conn.reason,
+                    style: TextStyle(fontSize: 12.5, height: 1.7, color: SemColors.textSecondary)),
+                const SizedBox(height: 6),
+                Text(
+                  st.direct
+                      ? '直连模式：App 用本机凭据直接访问教务，需要设备在校园网 / 校内 VPN 内。'
+                      : '服务器模式：经服务器已连好的校园隧道访问教务，不用设备在校园网内。',
+                  style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted),
                 ),
-                const SizedBox(height: 12),
-                GlassField(
-                  label: '端口',
-                  controller: _port,
-                  keyboardType: TextInputType.number,
-                  hintText: '例如 10003',
-                ),
-                const SizedBox(height: 12),
-                GlassField(
-                  label: '账号（代理要求认证时填）',
-                  controller: _user,
-                  prefixIcon: const Icon(Icons.person_outline, size: 18),
-                ),
-                const SizedBox(height: 12),
-                GlassField(
-                  label: '密码',
-                  controller: _pass,
-                  obscureText: _obscure,
-                  suffixIcon: IconButton(
-                    icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 18),
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text('代理只存在本机的加密存储里，不会写进仓库或随 App 分发。',
-                    style: TextStyle(fontSize: 11, height: 1.6, color: SemColors.textMuted)),
               ],
             ),
           ),
@@ -149,7 +112,7 @@ class _EvaluateSettingsPageState extends State<EvaluateSettingsPage> {
             ),
           ),
           PageNotes(lines: const [
-            '教务系统只能在学校内网访问，校外必须经校园代理；代理不通时评教页会直接提示。',
+            '教务系统只能在学校内网访问：直连模式靠设备自己在校园网 / 校内 VPN，服务器模式靠服务器的校园隧道。',
             '这里不保存任何分数：评教记录只在教务系统里。',
           ]),
         ],
@@ -162,7 +125,7 @@ class _EvaluateSettingsPageState extends State<EvaluateSettingsPage> {
             child: _saving
                 ? const SizedBox(
                     width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('保存设置'),
+                : const Text('保存'),
           ),
         ),
       ),

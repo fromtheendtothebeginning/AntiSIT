@@ -31,7 +31,7 @@ export 'direct/mock_campus_server.dart';
 export 'direct/mock_captcha.dart';
 export 'direct/school.dart';
 export 'direct/sm4.dart';
-export 'direct/socks5.dart';
+export 'direct/tunnel.dart';
 export 'direct/xg.dart';
 export 'host.dart';
 export 'json_num.dart';

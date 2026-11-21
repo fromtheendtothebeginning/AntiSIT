@@ -12,6 +12,7 @@ import 'evaluate_form_page.dart';
 import 'evaluate_session.dart';
 import 'evaluate_settings.dart';
 import 'evaluate_settings_page.dart';
+import 'evaluate_views.dart';
 
 /// 学生评教：**原生界面**（不再内嵌网页）。
 ///
@@ -46,12 +47,26 @@ class _EvaluatePageState extends State<EvaluatePage> {
   EvaluateApi _buildApi() => EvaluateApi(
         base: AppState.I.school.jwxtBase.replaceAll(RegExp(r'/+$'), ''),
         session: _session,
-        proxy: EvaluateSettings.I.proxy,
+        // 直连模式这里为空（设备自己在校园网里）；服务器模式要经服务器给的校园隧道
+        proxyUrl: AppState.I.direct ? '' : _serverProxyUrl,
         onLog: (line) {
           if (!mounted) return;
           setState(() => _log = line);
         },
       );
+
+  /// 服务器模式要用的校园隧道代理（http://host:port）；直连模式恒为空。
+  String _serverProxyUrl = '';
+
+  Future<String> _resolveProxy() async {
+    if (AppState.I.direct || AppState.I.demo) return '';
+    try {
+      return await ApiClient.I.serverWebProxy();
+    } catch (e) {
+      debugPrint('[学生评教] 取校园隧道代理失败：' + e.toString());
+      return '';
+    }
+  }
 
   Future<void> _boot() async {
     setState(() {
@@ -67,14 +82,29 @@ class _EvaluatePageState extends State<EvaluatePage> {
       });
       return;
     }
-    _api = _buildApi();
-    if (!EvaluateSettings.I.proxy.isConfigured) {
+    final conn = EvaluateSettings.I.connectivity();
+    if (!conn.ok) {
       setState(() {
         _booting = false;
-        _error = '还没配置校园代理：到「评教设置」里填上校内代理地址后再进来';
+        _error = conn.reason;
       });
       return;
     }
+    if (!AppState.I.direct) {
+      // 服务器模式：先要到校园隧道代理，否则设备根本到不了教务
+      setState(() => _log = '正在连接校园隧道…');
+      _serverProxyUrl = await _resolveProxy();
+      if (!mounted) return;
+      if (_serverProxyUrl.isEmpty) {
+        setState(() {
+          _booting = false;
+          _error = '服务器模式需要校园隧道才能打开教务：先到「我的 → 校园服务」连接校园网，'
+              '或切到直连模式再进来';
+        });
+        return;
+      }
+    }
+    _api = _buildApi();
     await _session.load();
     await _loadTargets();
   }
@@ -388,8 +418,6 @@ class _EvaluatePageState extends State<EvaluatePage> {
       builder: (_) => EvaluateFormPage(
         api: _api,
         target: target,
-        targets: _targets,
-        index: index,
         onChanged: _loadTargets,
       ),
     ));
@@ -407,11 +435,6 @@ class _EvaluatePageState extends State<EvaluatePage> {
             tooltip: '评教设置',
           ),
           IconButton(
-            onPressed: _booting || _targets.isEmpty ? null : _fillAllTargets,
-            icon: const Icon(Icons.bolt_rounded),
-            tooltip: '一键给全部老师打分',
-          ),
-          IconButton(
             onPressed: _booting ? null : _loadTargets,
             icon: const Icon(Icons.refresh_rounded),
             tooltip: '刷新',
@@ -421,13 +444,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
       body: _booting
           ? _loadingView()
           : (_error != null ? _errorView(_error!) : _listView()),
-      floatingActionButton: _targets.isEmpty || _booting
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _submitAll,
-              icon: const Icon(Icons.done_all_rounded),
-              label: const Text('全部提交'),
-            ),
+
     );
   }
 
@@ -438,7 +455,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
             const SizedBox(
                 width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.4)),
             const SizedBox(height: 14),
-            Text('正在经校园代理读取评教列表…',
+            Text('正在读取评教列表…',
                 style: TextStyle(fontSize: 12.5, color: SemColors.textMuted)),
             if (_log.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -468,138 +485,13 @@ class _EvaluatePageState extends State<EvaluatePage> {
         ),
       );
 
-  Widget _listView() => RefreshIndicator(
+  Widget _listView() => EvaluateListView(
+        targets: _targets,
+        summary: _summary,
+        connectionLabel: AppState.I.direct ? '直连' : '校园隧道',
+        onTapTarget: _openTarget,
         onRefresh: _loadTargets,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-          children: [
-            _summaryCard(),
-            const SizedBox(height: 4),
-            for (var i = 0; i < _targets.length; i++) _targetCard(_targets[i], i),
-            if (_targets.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 48),
-                child: Text('没有待评的教学班（本轮评教可能还没开始，或已全部完成）',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12.5, color: SemColors.textMuted)),
-              ),
-          ],
-        ),
+        onFillAll: _fillAllTargets,
+        onSubmitAll: _submitAll,
       );
-
-  Widget _summaryCard() {
-    final s = _summary;
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text('本轮评教',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: SemColors.textPrimary)),
-              const Spacer(),
-              Capsule('代理 ' + EvaluateSettings.I.proxy.endpoint,
-                  color: SemColors.accent),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              BigStat(
-                  label: '未评',
-                  value: s.pending.toString(),
-                  color: s.pending > 0 ? SemColors.danger : SemColors.textPrimary),
-              const SizedBox(width: 20),
-              BigStat(
-                  label: '已保存', value: s.saved.toString(), color: SemColors.accent),
-              const SizedBox(width: 20),
-              BigStat(
-                  label: '已提交',
-                  value: s.submitted.toString(),
-                  color: s.submitted > 0 ? SemColors.success : SemColors.textPrimary),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            s.allDone
-                ? '本轮已全部提交，感谢参与评教。'
-                : '共 ' +
-                    s.total.toString() +
-                    ' 门次；点开每一条即可打分，也可以在评分页里一键给全部老师同分。',
-            style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _targetCard(EvalTarget t, int index) {
-    final color = t.submitted
-        ? SemColors.success
-        : (t.saved ? SemColors.accent : SemColors.danger);
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: SemColors.border),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () => _openTarget(t, index),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(t.course,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: SemColors.textPrimary)),
-                        ),
-                        const SizedBox(width: 8),
-                        Capsule(t.statusLabel, color: color),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(t.teacher,
-                        style: TextStyle(fontSize: 13, color: SemColors.textSecondary)),
-                    if (t.subtitle.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(t.subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                      ),
-                    if (t.time.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(t.time,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                      ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, size: 18, color: SemColors.textMuted),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

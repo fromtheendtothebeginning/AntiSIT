@@ -10,17 +10,19 @@ import 'evaluate_session.dart';
 
 /// 教务评教（正方 9.0 `xspjgl` / 功能码 `N401605`）的完整客户端。
 ///
-/// **不走 WebView**：App 自己经校园代理登录教务、拿列表与评分表单、把分数写回去。
+/// **不走 WebView**：App 自己登录教务、拿列表与评分表单、把分数写回去。
 ///
-/// 网络层有两个非标准点（都来自学校那台 Tengine）：
-/// * 必须经 SOCKS5 校园代理才能连到教务（校外不可达）；
-/// * TLS 握手不能带 SNI，否则服务端直接 reset——见 [startNoSniTls]。
-/// 所以这里自己实现了一个极小的 HTTP/1.1 客户端，而不是用 HttpClient。
+/// 连校园内网按 App 当前模式二选一（[proxyUrl]）：
+/// * 直连模式：空 → 直接连教务（设备在校园网 / 校内 VPN 内时可用）；
+/// * 服务器模式：服务器给的校园隧道 HTTP 代理 → 打 CONNECT 建隧道再 TLS。
+///
+/// TLS 走 [startNoSniTls]（教务那台 Tengine 对带 SNI 的 Dart 握手直接 reset）。
+/// 因为要自己控制握手，这里实现了一个极小的 HTTP/1.1 客户端而不是用 HttpClient。
 class EvaluateApi {
   EvaluateApi({
     required this.base,
     required this.session,
-    required this.proxy,
+    this.proxyUrl = '',
     this.onLog,
   });
 
@@ -30,8 +32,8 @@ class EvaluateApi {
   /// 会话（Cookie 罐 + 持久化键）。
   final EvaluateSession session;
 
-  /// 校园代理；未配置时直连（校园网内可用）。
-  final SocksProxy proxy;
+  /// 服务器模式给的校园隧道 HTTP 代理（`http://host:port`）；空 = 直连。
+  final String proxyUrl;
 
   final void Function(String line)? onLog;
 
@@ -306,7 +308,9 @@ class EvaluateApi {
   }) async {
     final host = uri.host;
     final port = uri.port == 0 ? (uri.scheme == 'https' ? 443 : 80) : uri.port;
-    final socket = await openTunnel(proxy, host, port);
+    final socket = proxyUrl.trim().isEmpty
+        ? await connectDirect(host, port)
+        : await connectViaProxy(proxyUrl, host, port);
     Socket channel;
     if (uri.scheme == 'https') {
       final tls = await startNoSniTls(socket);

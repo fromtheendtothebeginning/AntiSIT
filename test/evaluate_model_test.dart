@@ -227,39 +227,29 @@ void main() {
     });
   });
 
-  group('校园代理地址解析', () {
-    test('host:port', () {
-      final p = SocksProxy.parse('proxy.example.edu:10003');
-      expect(p.host, 'proxy.example.edu');
-      expect(p.port, 10003);
-      expect(p.hasAuth, isFalse);
+  group('校园隧道代理地址', () {
+    test('http://host:port 与裸 host:port 都能解析', () {
+      final a = parseHttpProxy('http://anticraft.top:10004');
+      expect(a, isNotNull);
+      expect(a!.host, 'anticraft.top');
+      expect(a.port, 10004);
+      final b = parseHttpProxy('10.0.0.2:10004');
+      expect(b!.host, '10.0.0.2');
+      expect(b.port, 10004);
     });
 
-    test('带 scheme 与账号', () {
-      final p = SocksProxy.parse('socks5://u:p%40ss@1.2.3.4:1080');
-      expect(p.host, '1.2.3.4');
-      expect(p.port, 1080);
-      expect(p.username, 'u');
-      expect(p.password, 'p@ss');
+    test('带路径 / 带凭据 / 多余斜杠都不影响', () {
+      final a = parseHttpProxy('http://u:p@proxy.internal:8080/');
+      expect(a!.host, 'proxy.internal');
+      expect(a.port, 8080);
     });
 
-    test('只给主机时默认 1080；空串 = 未配置', () {
-      expect(SocksProxy.parse('only.host').port, 1080);
-      expect(SocksProxy.parse('').isConfigured, isFalse);
-      expect(SocksProxy.parse('   ').isConfigured, isFalse);
-    });
-
-    test('endpoint 不含凭据（可以打日志 / 显示）', () {
-      final p = SocksProxy.parse('socks5://user:secret@h:1');
-      expect(p.endpoint, 'h:1');
-      expect(p.endpoint, isNot(contains('secret')));
-    });
-
-    test('JSON 往返', () {
-      const p = SocksProxy(host: 'h', port: 9, username: 'u', password: 'p');
-      final back = SocksProxy.fromJson(jsonDecode(jsonEncode(p.toJson())) as Map<String, dynamic>);
-      expect(back, p);
-      expect(SocksProxy.fromJson(null).isConfigured, isFalse);
+    test('空串、缺端口、端口非数字 → null（调用方据此给引导）', () {
+      expect(parseHttpProxy(''), isNull);
+      expect(parseHttpProxy('   '), isNull);
+      expect(parseHttpProxy('hostonly'), isNull);
+      expect(parseHttpProxy('host:abc'), isNull);
+      expect(parseHttpProxy(':8080'), isNull);
     });
   });
 }

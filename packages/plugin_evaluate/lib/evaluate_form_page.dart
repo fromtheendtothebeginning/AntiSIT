@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:campus_core/campus_core.dart';
 
 import 'evaluate_api.dart';
-import 'evaluate_batch.dart';
 import 'evaluate_model.dart';
 
 /// 单个老师的评分页：一列题 + 一条「统一分数」滑条 + 保存 / 提交。
@@ -19,17 +18,13 @@ class EvaluateFormPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.target,
-    required this.targets,
-    required this.index,
     required this.onChanged,
   });
 
   final EvaluateApi api;
   final EvalTarget target;
 
-  /// 本轮全部待评条目：用于「一键给全部老师同分」。
-  final List<EvalTarget> targets;
-  final int index;
+
   final Future<void> Function() onChanged;
 
   @override
@@ -94,7 +89,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
     }
   }
 
-  void _applyUniform(double value, {bool sync = false}) {
+  void _applyUniform(double value) {
     final form = _form;
     if (form == null) return;
     setState(() {
@@ -218,102 +213,13 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
         ),
       );
 
-  /// 一键给本轮**全部老师**打同一分：逐个取表单、按同一分数填好并保存（不提交）。
-  ///
-  /// 只保存不提交是刻意的：提交不可撤销，交给用户逐条确认。
-  Future<void> _fillAll() async {
-    final score = _uniform;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('一键给全部老师打分'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('把 ' + score.toInt().toString() + ' 分写进本轮全部 ' +
-                widget.targets.where((t) => !t.submitted).length.toString() + ' 位老师的每一道题，并**保存**（不提交）。',
-                style: const TextStyle(fontSize: 13, height: 1.7)),
-            const SizedBox(height: 10),
-            Text('提交仍需你逐条确认——提交后不能改。',
-                style: TextStyle(fontSize: 12, height: 1.6, color: SemColors.textMuted)),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('开始')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    setState(() => _busy = true);
-    final result = await fillAllTargets(
-      api: widget.api,
-      targets: widget.targets,
-      score: score,
-      onProgress: (m) {
-        if (mounted) setState(() => _log = '正在处理 ' + m);
-      },
-    );
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _log = '';
-    });
-    await widget.onChanged();
-    if (!mounted) return;
-    await _showBatchResult(result);
-    if (mounted) Navigator.of(context).maybePop();
-  }
-
-  Future<void> _showBatchResult(BatchResult result) async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('已保存 ' + result.done.toString() + ' 条'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (result.skipped > 0)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text('已提交的 ' + result.skipped.toString() + ' 条已跳过。',
-                    style: const TextStyle(fontSize: 12.5, height: 1.6)),
-              ),
-            if (result.failures.isEmpty)
-              const Text('全部保存成功，回到列表逐条确认提交即可。')
-            else
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Text(result.failures.join('\n\n'),
-                      style: const TextStyle(fontSize: 12.5, height: 1.6)),
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
-        ],
-      ),
-    );
-    if (mounted) Navigator.of(context).maybePop();
-  }
-
   @override
   Widget build(BuildContext context) {
     final form = _form;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.target.course, overflow: TextOverflow.ellipsis),
-        actions: [
-          if (form != null)
-            IconButton(
-              onPressed: _busy ? null : _fillAll,
-              icon: const Icon(Icons.bolt_rounded),
-              tooltip: '一键给全部老师同分',
-            ),
-        ],
+
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

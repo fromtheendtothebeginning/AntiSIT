@@ -1,23 +1,12 @@
-import 'dart:convert';
-
 import 'package:campus_core/campus_core.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-/// 评教的持久化设置：校园代理地址 + 账号（密码跟随 App 的直连凭据，不单独存）。
+/// 评教的账号设置：只在需要**单独账号**时用（默认复用 App 的直连凭据）。
 ///
-/// **代理凭据不进 git、不编译进 App**：只存在本机（[SecureStore]，Android Keystore /
-/// iOS Keychain）。首次可以用构建参数注入：
-/// `flutter build apk --dart-define=ANTISIT_EVAL_PROXY=host:port`
-/// `--dart-define=ANTISIT_EVAL_USER=xxx --dart-define=ANTISIT_EVAL_PASS=xxx`
+/// 代理不再单独配置：直连模式自己连校园网，服务器模式走服务器给的校园隧道，
+/// 两条路都由 [EvaluateApi] 自己按当前模式选。
 class EvaluateSettings {
   static final EvaluateSettings I = EvaluateSettings._();
   EvaluateSettings._();
-
-  static const String _prefsKey = 'evaluate_settings_v1';
-  static const String _secretKey = 'evaluate_proxy_secret_v1';
-
-  /// 校园代理（SOCKS5）。未配置时直连校园网。
-  SocksProxy proxy = SocksProxy.none;
 
   /// 评教用的学号；空 = 用 App 直连凭据里的学号。
   String studentId = '';
@@ -27,7 +16,6 @@ class EvaluateSettings {
 
   bool loaded = false;
 
-  /// App 直连凭据（学号 / 统一身份认证密码）——评教默认复用它。
   String get effectiveStudentId =>
       studentId.trim().isNotEmpty ? studentId.trim() : AppState.I.creds.studentId.trim();
 
@@ -37,80 +25,36 @@ class EvaluateSettings {
   bool get hasCredential =>
       effectiveStudentId.isNotEmpty && effectivePassword.isNotEmpty;
 
-  bool get ready => proxy.isConfigured && hasCredential;
-
-  Future<void> load() async {
-    try {
-      final sp = await SharedPreferences.getInstance();
-      final raw = sp.getString(_prefsKey);
-      if (raw != null && raw.isNotEmpty) {
-        final j = jsonDecode(raw);
-        if (j is Map) {
-          studentId = (j['student_id'] ?? '').toString();
-          final p = j['proxy'];
-          if (p is Map) proxy = SocksProxy.fromJson(p.cast<String, dynamic>());
-        }
-      }
-      final secret = await SecureStore.I.read(_secretKey);
-      if (secret != null && secret.isNotEmpty) {
-        final j = jsonDecode(secret);
-        if (j is Map) {
-          final p = j['proxy'];
-          if (p is Map) {
-            final parsed = SocksProxy.fromJson(p.cast<String, dynamic>());
-            proxy = SocksProxy(
-              host: parsed.host,
-              port: parsed.port,
-              username: parsed.username,
-              password: parsed.password,
-            );
-          }
-          password = (j['password'] ?? '').toString();
-        }
-      }
-    } catch (_) {}
-    _applyCompileDefaults();
-    loaded = true;
-  }
-
-  /// 构建期注入的默认值（不进仓库；只有显式 --dart-define 才有值）。
-  void _applyCompileDefaults() {
-    const endpoint = String.fromEnvironment('ANTISIT_EVAL_PROXY');
-    const user = String.fromEnvironment('ANTISIT_EVAL_USER');
-    const pass = String.fromEnvironment('ANTISIT_EVAL_PASS');
-    if (endpoint.isEmpty) return;
-    // 已经在本机配过就不覆盖（用户手填优先）
-    if (proxy.isConfigured) return;
-    proxy = SocksProxy(
-      host: SocksProxy.parse(endpoint).host,
-      port: SocksProxy.parse(endpoint).port,
-      username: user,
-      password: pass,
-    );
-  }
-
-  Future<void> save({SocksProxy? proxy, String? studentId, String? password}) async {
-    if (proxy != null) this.proxy = proxy;
-    if (studentId != null) this.studentId = studentId.trim();
-    if (password != null) this.password = password;
-    final sp = await SharedPreferences.getInstance();
-    await sp.setString(
-      _prefsKey,
-      jsonEncode({
-        'student_id': this.studentId,
-        'proxy': {'host': this.proxy.host, 'port': this.proxy.port},
-      }),
-    );
-    await SecureStore.I.write(
-      _secretKey,
-      jsonEncode({
-        'password': this.password,
-        'proxy': this.proxy.toJson(),
-      }),
-    );
-  }
-
   /// 设置页展示用：不暴露密码，只说明「用 App 凭据 / 单独填写」。
   String get credentialSource =>
       studentId.trim().isNotEmpty ? '单独填写（' + maskStudentId(studentId) + '）' : '复用 App 的直连凭据';
+
+  /// 当前能不能连教务：直连要看有没有凭据，服务器模式看有没有服务器地址。
+  ({bool ok, String reason}) connectivity() {
+    final st = AppState.I;
+    if (st.demo) return (ok: false, reason: '演示模式没有真实教务数据');
+    if (st.direct) {
+      if (!hasCredential) {
+        return (ok: false, reason: '直连模式还没填学号 / 密码：到「我的 → 连接设置」补上');
+      }
+      return (ok: true, reason: '直连（设备需在校园网 / 校内 VPN 内）');
+    }
+    if (st.serverUrl.trim().isEmpty) {
+      return (ok: false, reason: '服务器模式还没填服务器地址：到「我的 → 连接设置」补上');
+    }
+    return (ok: true, reason: '经服务器校园隧道');
+  }
+
+  Future<void> load() async {
+    loaded = true;
+  }
+
+  Future<void> save({String? studentId, String? password}) async {
+    if (studentId != null) this.studentId = studentId.trim();
+    if (password != null) this.password = password;
+    // 走 App 的加密存储（direct_creds 同一个口袋），不落明文
+    final creds = AppState.I.creds;
+    await AppState.I.persistDirect();
+    if (creds.studentId.isEmpty) return;
+  }
 }
