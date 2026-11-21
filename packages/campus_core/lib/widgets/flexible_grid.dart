@@ -1159,7 +1159,12 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           cards.add(
             AnimatedPositioned(
               key: ValueKey<String>('fgrid:${item.id}'),
-              duration: sizeChanged ? _sizeAnim : _moveAnim,
+              // 缩放过程中**不做动画**：邻居要立刻让到目标框外面去。
+              // 之前按 520ms 的换尺寸动画慢慢挪，本体（跟手的连续尺寸）
+              // 已经把位置占了，看着就是「邻居压在正在缩放的卡片上」。
+              duration: resize != null
+                  ? Duration.zero
+                  : (sizeChanged ? _sizeAnim : _moveAnim),
               curve: sizeChanged ? _sizeCurve : _moveCurve,
               left: placement.rect.left,
               top: placement.rect.top,
@@ -1267,22 +1272,17 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // 拖动时：占位块压在卡片**下面**（它只是给邻居让位的「洞」）。
-                  if (showSlot && resize == null)
+                  // 占位 / 目标框**永远压在最下层**：它只是「松手后会占多大」的提示，
+                  // 主角是跟着手指走的卡片本体，两者绝不能抢。
+                  if (showSlot)
                     Positioned.fromRect(
                       key: const ValueKey<String>('fgrid-slot'),
                       rect: reservedRect,
-                      child: IgnorePointer(child: _placeholder()),
+                      child: IgnorePointer(
+                        child: _placeholder(dashed: resize != null),
+                      ),
                     ),
                   ...cards,
-                  // 缩放时：目标大小的虚线框必须压在卡片**上面**——本体是跟手的
-                  // 连续尺寸，可能比目标框大也可能小，放下面就被挡死了。
-                  if (showSlot && resize != null)
-                    Positioned.fromRect(
-                      key: const ValueKey<String>('fgrid-slot'),
-                      rect: reservedRect,
-                      child: IgnorePointer(child: _placeholder(dashed: true)),
-                    ),
                 ],
               ),
             ),
