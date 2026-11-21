@@ -24,6 +24,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.45.2',
+    date: '2026-11-21',
+    notes: [
+      '「学生评教」的全部提交改成提交已保存的内容：不再重新设一次分数，点它就是交你保存时打的那套',
+      '每一条都保存过之后「全部提交」才会亮，还差几条会直接写在按钮下面，不用点进去试',
+      '修：应用内更新每升一版都留一个 80MB 的安装包，反复更新后手机空间被吃掉不少',
+      '现在装完自动删，App 启动时也会清掉上一版遗留的那份；「我的 → 配置 → 更新安装包」能看到占用并手动清理',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.45.1',
     date: '2026-11-21',
     notes: [
