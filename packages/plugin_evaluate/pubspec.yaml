@@ -1,7 +1,7 @@
 name: plugin_evaluate
-description: "AntiSIT 插件包：学生评教助手（教务评教页里一键同分 / 逐项滑块调分）"
+description: "AntiSIT 插件包：学生评教（原生界面，直连教务协议，一键给全部老师打分）"
 publish_to: 'none'
-version: 0.1.0
+version: 0.2.0
 
 environment:
   sdk: ^3.9.2
@@ -14,3 +14,6 @@ dependencies:
     sdk: flutter
   campus_core:
     path: ../campus_core
+  # 解析评教表单 HTML（指标 / 权重 / 隐藏字段都在 DOM 上）
+  html: ^0.15.6
+  shared_preferences: ^2.5.5

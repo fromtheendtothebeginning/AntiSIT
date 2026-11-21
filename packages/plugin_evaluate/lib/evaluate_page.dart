@@ -1,21 +1,24 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'evaluate_api.dart';
+import 'evaluate_batch.dart';
 import 'evaluate_model.dart';
-import 'evaluate_panel.dart';
-import 'evaluate_script.dart';
+import 'evaluate_form_page.dart';
+import 'evaluate_session.dart';
+import 'evaluate_settings.dart';
+import 'evaluate_settings_page.dart';
 
-/// 学生评教助手：内嵌教务评教页（正方 `xspjgl` 评价详情页），页面加载完成后注入脚本，
-/// 把页面上的每个评分项映射到面板里的一条滑块。
+/// 学生评教：**原生界面**（不再内嵌网页）。
 ///
-/// 两档用法：
-/// * **一键同分** —— 面板顶部一条滑块，一个分数打到这一页所有评分项；
-/// * **逐项调分** —— 每项一条滑块，只改那一项。
+/// 流程：校园代理 → 教务登录（复用已存 Cookie，必要时输验证码）→ 待评列表
+/// → 逐个老师打开评分表（可一键给全部老师同分）→ 保存 / 提交。
 ///
-/// 只改页面上的分值控件，**提交仍在网页里自己点**：评教一旦提交不可撤，App 不代提交。
+/// 提交是不可撤销的写操作，所有提交都要经过二次确认；保存可以重复覆盖。
 class EvaluatePage extends StatefulWidget {
   const EvaluatePage({super.key});
 
@@ -24,322 +27,579 @@ class EvaluatePage extends StatefulWidget {
 }
 
 class _EvaluatePageState extends State<EvaluatePage> {
-  WebViewHost? _host;
+  final EvaluateSession _session = EvaluateSession();
+  late EvaluateApi _api;
 
-  /// 内核没启用 / 平台不支持时的说明（此时没有网页可看）。
-  String? _unsupported;
-
-  /// 面板状态：识别到的评分项 + 是否在等页面回执。面板是弹出的模态页，靠它保持同步。
-  final ValueNotifier<EvaluatePanelState> _panel =
-      ValueNotifier<EvaluatePanelState>(const EvaluatePanelState(items: []));
-
-  String get _jwxtBase => AppState.I.school.jwxtBase;
+  bool _booting = true;
+  String? _error;
+  String _log = '';
+  List<EvalTarget> _targets = const [];
+  EvalSummary _summary = const EvalSummary();
 
   @override
   void initState() {
     super.initState();
+    _api = _buildApi();
     unawaited(_boot());
   }
 
-  /// 起页：先拿 App 自己**已经登录**的教务会话，写进内嵌 WebView，评教页打开就是
-  /// 登录后的样子——用户不用再在内嵌浏览器里登一次。
-  ///
-  /// * 直连模式：会话在本机（[CampusDirect.jwxtCookies]），网页直接访问教务域名；
-  /// * 服务器模式：会话在服务器，手机在外网到不了教务——先向服务器要它的教务 Cookie，
-  ///   再把 WebView 代理指向该账号校园隧道容器的 HTTP 代理，网页经隧道打开。
-  ///
-  /// 拿不到（没配凭据 / 登录被取消）就退回「网页里手动登录」，不因为登录态拿不到
-  /// 就让整页不可用；但服务器模式下连隧道代理都没有时，网页在外网根本打不开，直接给引导。
-  Future<void> _boot() async {
-    final cap = PluginRegistry.I.capability<WebViewCapability>(PluginIds.webview);
-    if (cap == null) {
-      if (mounted) {
-        setState(() => _unsupported =
-            '评教助手要跑在 WebView 内核上：到「我的 → 插件管理」里把「WebView 内核」打开');
-      }
-      return;
-    }
-    if (!cap.available) {
-      if (mounted) {
-        setState(() => _unsupported = '当前平台不支持内嵌网页：评教助手只在 Android / iOS 上可用');
-      }
-      return;
-    }
-    final direct = AppState.I.direct && !AppState.I.demo;
-    var base = _jwxtBase;
-    var cookies = const <String, String>{};
-    var proxy = '';
-    // 直连模式没填教务域名时不必去登录（会白弹一次验证码）；服务器模式的域名由服务器给出。
-    if (!direct || evalUrlFor(base).isNotEmpty) {
-      try {
-        final session = await ApiClient.I.jwxtWebSession();
-        cookies = session.cookies;
-        if (session.base.isNotEmpty) base = session.base;
-      } catch (e) {
-        // 教务登录没成（取消验证码 / 没填凭据 / 服务器未更新）：网页里自己登一次
-        debugPrint('[学生评教] 复用教务会话失败，改网页内登录：$e');
-      }
-    }
-    if (!direct) {
-      try {
-        proxy = await ApiClient.I.serverWebProxy();
-      } catch (e) {
-        debugPrint('[学生评教] 取校园隧道代理失败：$e');
-      }
-    }
-    if (!mounted) return;
-    final url = evalUrlFor(base);
-    // 服务器模式没有隧道代理时网页在外网打不开：不建一个注定失败的 WebView
-    final usable = url.isNotEmpty && (direct || proxy.isNotEmpty);
-    final host = usable
-        ? cap.host(
-            url: url,
-            channel: kEvaluateChannel,
-            cookies: cookies,
-            proxy: proxy,
-            onMessage: _onMessage,
-            onPageReady: _onPageReady,
-          )
-        : null;
-    setState(() {
-      _host = host;
-      if (url.isEmpty) {
-        _unsupported = direct
-            ? '学校档案里没有填教务域名：到「我的 → 连接设置」里补上后再进来'
-            : '服务器没有返回教务域名：确认服务器的校园服务已配置，或到「我的 → 连接设置」补上教务域名';
-      } else if (!direct && proxy.isEmpty) {
-        _unsupported = '服务器模式要经校园隧道打开评教页，但隧道还没就绪：'
-            '先到「我的 → 校园服务」连接校园网，或切到直连模式再进来';
-      } else if (host == null) {
-        _unsupported = '当前平台不支持内嵌网页：评教助手只在 Android / iOS 上可用';
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _host?.dispose();
-    _panel.dispose();
-    super.dispose();
-  }
-
-  /// 每次主文档加载完成：重新注入脚本再扫一遍。换页（点进某一门课 / 登录回来）之后
-  /// 旧的脚本随上下文一起没了，不重注入就永远扫不到东西。
-  void _onPageReady(WebViewHost host) {
-    unawaited(() async {
-      await host.run(evaluateInjectorJs(channel: kEvaluateChannel));
-      await host.run(kEvaluateScanCall);
-    }());
-  }
-
-  void _onMessage(WebViewHost host, String message) {
-    final scan = parseEvalMessage(message);
-    if (scan != null) {
-      _panel.value = EvaluatePanelState(
-        items: scan.items,
-        hint: scan.hint,
-        login: scan.login,
+  EvaluateApi _buildApi() => EvaluateApi(
+        base: AppState.I.school.jwxtBase.replaceAll(RegExp(r'/+$'), ''),
+        session: _session,
+        proxy: EvaluateSettings.I.proxy,
+        onLog: (line) {
+          if (!mounted) return;
+          setState(() => _log = line);
+        },
       );
+
+  Future<void> _boot() async {
+    setState(() {
+      _booting = true;
+      _error = null;
+    });
+    await EvaluateSettings.I.load();
+    if (!mounted) return;
+    if (!EvaluateSettings.I.loaded) {
+      setState(() {
+        _booting = false;
+        _error = '设置没有加载成功，请重新进入';
+      });
       return;
     }
-    // 改分回执：页面可能把分数就近取档（单选组只有 10/8/6 这种），以回执为准刷新
-    final applied = parseEvalApplied(message);
-    if (applied.isEmpty) return;
-    final items = [
-      for (final item in _panel.value.items)
-        applied.containsKey(item.index) ? item.copyWith(value: applied[item.index]) : item,
-    ];
-    _panel.value = _panel.value.copyWith(items: items, busy: false);
-  }
-
-  /// 连续拖动时的合并在途请求：拖动一帧几十次 runJavaScript 会把通道堵住（页面越复杂越
-  /// 明显），所以「最多一次在途」——上一次还没回来就只记最新值，回来后再补发一次。
-  double? _queuedAll;
-  bool _pushingAll = false;
-  final Map<int, double> _queuedOne = {};
-  bool _pushingOne = false;
-
-  /// 统一分数：拖动中每一帧都会调到这里（**不置 busy**，否则滑块会在拖动途中被禁用），
-  /// 页面回执只用来校准显示，不阻塞接下来的拖动。
-  Future<void> _applyAll(double value) async {
-    final host = _host;
-    if (host == null || _panel.value.items.isEmpty) return;
-    if (_pushingAll) {
-      _queuedAll = value;
+    _api = _buildApi();
+    if (!EvaluateSettings.I.proxy.isConfigured) {
+      setState(() {
+        _booting = false;
+        _error = '还没配置校园代理：到「评教设置」里填上校内代理地址后再进来';
+      });
       return;
     }
-    _pushingAll = true;
+    await _session.load();
+    await _loadTargets();
+  }
+
+  Future<void> _loadTargets() async {
+    setState(() {
+      _booting = true;
+      _error = null;
+    });
     try {
-      var v = value;
-      while (true) {
-        await host.run(evaluateApplyAllCall(v));
-        final next = _queuedAll;
-        _queuedAll = null;
-        if (next == null) break;
-        v = next;
+      if (_session.hasCookies && await _api.checkSession()) {
+        await _api.acknowledgeNotice();
+      } else {
+        await _ensureLogin();
+        await _api.acknowledgeNotice();
       }
-    } finally {
-      _pushingAll = false;
+      final targets = await _api.fetchTargets();
+      final summary = await _api.fetchSummary();
+      if (!mounted) return;
+      setState(() {
+        _targets = targets;
+        _summary = summary;
+        _booting = false;
+      });
+    } on EvaluateError catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _booting = false;
+        _error = e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _booting = false;
+        _error = e.toString();
+      });
     }
   }
 
-  /// 逐项分数：同样一拖就下发；同一项只保留最新的那个分值，避免积压一串无用的写值。
-  Future<void> _applyOne(EvalItem item, double value) async {
-    final host = _host;
-    if (host == null) return;
-    _queuedOne[item.index] = value;
-    if (_pushingOne) return;
-    _pushingOne = true;
-    try {
-      while (_queuedOne.isNotEmpty) {
-        final index = _queuedOne.keys.first;
-        final v = _queuedOne.remove(index)!;
-        await host.run(evaluateApplyOneCall(index, v));
-      }
-    } finally {
-      _pushingOne = false;
+  /// 走一次验证码登录（验证码弹窗复用直连模式的 [CaptchaDialog]）。
+  Future<void> _ensureLogin() async {
+    final settings = EvaluateSettings.I;
+    if (!settings.hasCredential) {
+      throw const EvaluateError('没有可用的学号 / 密码：到「评教设置」里填，或在「连接设置」里填 App 直连凭据');
     }
+    String? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final image = await _api.prepareLogin(settings.effectiveStudentId, settings.effectivePassword);
+      final text = await _askCaptcha(image, lastError);
+      if (text == null) throw const EvaluateError('已取消验证码输入');
+      try {
+        await _api.completeLogin(text);
+        return;
+      } on EvaluateError catch (e) {
+        lastError = e.message;
+        if (!lastError.contains('验证码')) rethrow;
+      }
+    }
+    throw EvaluateError('教务登录失败：' + (lastError ?? '请稍后重试'));
   }
 
-  Future<void> _rescan() async {
-    final host = _host;
-    if (host == null) return;
-    _panel.value = _panel.value.copyWith(busy: true);
-    await host.run(evaluateInjectorJs(channel: kEvaluateChannel));
-    await host.run(kEvaluateScanCall);
-    if (mounted) _panel.value = _panel.value.copyWith(busy: false);
+  Future<String?> _askCaptcha(Uint8List image, String? error) {
+    final ctx = navKey.currentContext;
+    if (ctx == null) throw const EvaluateError('当前界面无法弹出验证码输入框');
+    return showDialog<String>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => CaptchaDialog(
+        image: image,
+        hint: '教务系统验证码',
+        error: error,
+        onRefresh: () => _api.prepareLogin(
+            EvaluateSettings.I.effectiveStudentId, EvaluateSettings.I.effectivePassword),
+      ),
+    );
   }
 
-  /// 面板判断出当前是登录页：直接把网页导到教务登录页（cookie 由 WebView 自己存着，
-  /// 登完再「回到评教页」即可）。
-  Future<void> _goLogin() async {
-    await _host?.load(evalLoginUrlFor(_jwxtBase));
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => const EvaluateSettingsPage(),
+    ));
+    if (!mounted) return;
+    await EvaluateSettings.I.load();
+    _api = _buildApi();
+    await _loadTargets();
   }
 
-  Future<void> _backToEvaluate() async {
-    final host = _host;
-    if (host == null) return;
-    _panel.value = const EvaluatePanelState(items: []);
-    await host.load(evalUrlFor(_jwxtBase));
-  }
-
-  void _openPanel() {
-    // 打开面板时顺手扫一遍：评教页的评分表单常常是「已阅读」之后由页面用 AJAX 拉出来的，
-    // 那一刻没有页面加载完成事件，只靠 onPageReady 会扫到一张空说明页。
-    if (_panel.value.items.isEmpty && !_panel.value.busy) unawaited(_rescan());
-    showModalBottomSheet<void>(
+  /// 一键给本轮**全部老师**打同一分并保存（不提交：提交不可撤销，留给逐条确认）。
+  Future<void> _fillAllTargets() async {
+    final pending = _targets.where((t) => !t.submitted).toList();
+    if (pending.isEmpty) {
+      showErr(context, '本轮没有可打分的条目（都已提交）', title: '无需操作');
+      return;
+    }
+    var score = 95.0;
+    final ok = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: SemColors.menuBg,
-      builder: (sheetContext) => SizedBox(
-        height: MediaQuery.sizeOf(sheetContext).height * 0.62,
-        child: ValueListenableBuilder<EvaluatePanelState>(
-          valueListenable: _panel,
-          builder: (_, state, __) => EvaluatePanel(
-            state: state,
-            onApplyAll: _applyAll,
-            onApplyOne: _applyOne,
-            onRescan: _rescan,
-            onLogin: _goLogin,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('一键给全部老师打分'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('把分数写进 ' + pending.length.toString() + ' 位老师的每一道题，并保存（不提交）。',
+                  style: const TextStyle(fontSize: 13, height: 1.7)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: score,
+                      min: 0,
+                      max: 100,
+                      divisions: 20,
+                      label: score.toInt().toString(),
+                      onChanged: (v) => setLocal(() => score = v),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 40,
+                    child: Text(score.toInt().toString(),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: SemColors.accent)),
+                  ),
+                ],
+              ),
+              Text('提交仍需你逐条确认——提交之后不能修改。',
+                  style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted)),
+            ],
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('开始')),
+          ],
         ),
       ),
     );
+    if (ok != true) return;
+    setState(() => _booting = true);
+    try {
+      final result = await fillAllTargets(
+        api: _api,
+        targets: _targets,
+        score: score,
+        onProgress: (m) {
+          if (mounted) setState(() => _log = '正在处理 ' + m);
+        },
+      );
+      await _loadTargets();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('已保存 ' + result.done.toString() + ' 条'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (result.skipped > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('已提交的 ' + result.skipped.toString() + ' 条已跳过。',
+                      style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                ),
+              if (result.failures.isEmpty)
+                const Text('全部保存成功，点开每一条确认无误后提交。')
+              else
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Text(result.failures.join('\n\n'),
+                        style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+          ],
+        ),
+      );
+    } on EvaluateError catch (e) {
+      if (mounted) {
+        setState(() => _booting = false);
+        showErr(context, e, title: '一键打分失败');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _booting = false);
+        showErr(context, e, title: '一键打分失败');
+      }
+    } finally {
+      if (mounted && _booting) setState(() => _booting = false);
+    }
+  }
+
+  /// 全部提交：连续把本轮所有「未提交」条目提交掉。
+  ///
+  /// 提交不可撤销，所以这里要**两次**确认，并且把「会提交多少条」写清楚；
+  /// 每条都用**同一个分数**重新打分后提交（学校提交时必须带上打分明细）。
+  Future<void> _submitAll() async {
+    final pending = _targets.where((t) => !t.submitted).toList();
+    if (pending.isEmpty) {
+      showErr(context, '本轮没有可提交的条目', title: '无需操作');
+      return;
+    }
+    var score = 95.0;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('提交全部评教？'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('将对 ' + pending.length.toString() + ' 条评教按下面的分数提交。',
+                  style: const TextStyle(fontSize: 13, height: 1.7)),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: score,
+                      min: 0,
+                      max: 100,
+                      divisions: 20,
+                      label: score.toInt().toString(),
+                      onChanged: (v) => setLocal(() => score = v),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 40,
+                    child: Text(score.toInt().toString(),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: SemColors.accent)),
+                  ),
+                ],
+              ),
+              Text('提交之后不能修改，也不能撤销。评教是匿名的：教师看不到具体打分。',
+                  style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.danger)),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再想想')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认提交')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _booting = true);
+    try {
+      final result = await submitAllTargets(
+        api: _api,
+        targets: _targets,
+        score: score,
+        onProgress: (m) {
+          if (mounted) setState(() => _log = '正在提交 ' + m);
+        },
+      );
+      await _loadTargets();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('已提交 ' + result.done.toString() + ' 条'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (result.failures.isEmpty)
+                const Text('全部提交完成，刷新列表可以看到状态变成「已提交」。')
+              else
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Text(result.failures.join('\n\n'),
+                        style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+          ],
+        ),
+      );
+    } on EvaluateError catch (e) {
+      if (mounted) {
+        setState(() => _booting = false);
+        showErr(context, e, title: '批量提交失败');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _booting = false);
+        showErr(context, e, title: '批量提交失败');
+      }
+    } finally {
+      if (mounted && _booting) setState(() => _booting = false);
+    }
+  }
+
+  void _openTarget(EvalTarget target, int index) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => EvaluateFormPage(
+        api: _api,
+        target: target,
+        targets: _targets,
+        index: index,
+        onChanged: _loadTargets,
+      ),
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
-    final host = _host;
-    final unsupported = _unsupported;
     return Scaffold(
       appBar: AppBar(
         title: const Text('学生评教'),
         actions: [
-          if (host != null)
-            IconButton(
-              onPressed: _backToEvaluate,
-              icon: const Icon(Icons.replay_rounded),
-              tooltip: '回到评教页',
-            ),
-          if (host != null)
-            IconButton(
-              onPressed: () => host.reload(),
-              icon: const Icon(Icons.refresh),
-              tooltip: '刷新网页',
-            ),
+          IconButton(
+            onPressed: _openSettings,
+            icon: const Icon(Icons.tune),
+            tooltip: '评教设置',
+          ),
+          IconButton(
+            onPressed: _booting || _targets.isEmpty ? null : _fillAllTargets,
+            icon: const Icon(Icons.bolt_rounded),
+            tooltip: '一键给全部老师打分',
+          ),
+          IconButton(
+            onPressed: _booting ? null : _loadTargets,
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: '刷新',
+          ),
         ],
       ),
-      body: unsupported != null
-          ? _notice(unsupported)
-          : (host == null ? _booting() : _webBody(host)),
-      floatingActionButton: host == null
+      body: _booting
+          ? _loadingView()
+          : (_error != null ? _errorView(_error!) : _listView()),
+      floatingActionButton: _targets.isEmpty || _booting
           ? null
           : FloatingActionButton.extended(
-              onPressed: _openPanel,
-              icon: const Icon(Icons.tune),
-              label: const Text('评分助手'),
+              onPressed: _submitAll,
+              icon: const Icon(Icons.done_all_rounded),
+              label: const Text('全部提交'),
             ),
     );
   }
 
-  Widget _webBody(WebViewHost host) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ValueListenableBuilder<String?>(
-            valueListenable: host.error,
-            builder: (_, error, __) =>
-                error == null ? const SizedBox.shrink() : _errorBar(error),
-          ),
-          ValueListenableBuilder<double>(
-            valueListenable: host.progress,
-            builder: (_, progress, __) => progress > 0 && progress < 1
-                ? LinearProgressIndicator(value: progress, minHeight: 2)
-                : const SizedBox.shrink(),
-          ),
-          Expanded(child: host.view),
-        ],
-      );
-
-  Widget _errorBar(String error) => Material(
-        color: SemColors.dangerSoft,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Text('网页加载失败：$error',
-              style: TextStyle(fontSize: 12, height: 1.5, color: SemColors.danger)),
-        ),
-      );
-
-  /// 起页中：正在复用教务会话（可能要先过一次验证码登录），先给个转圈。
-  Widget _booting() => Center(
+  Widget _loadingView() => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.4),
-            ),
-            const SizedBox(height: 12),
-            Text('正在准备教务会话…',
+                width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.4)),
+            const SizedBox(height: 14),
+            Text('正在经校园代理读取评教列表…',
                 style: TextStyle(fontSize: 12.5, color: SemColors.textMuted)),
+            if (_log.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(_log, style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+            ],
           ],
         ),
       );
 
-  Widget _notice(String text) => Center(
-        child: Padding(
+  Widget _errorView(String message) => Center(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.tune, size: 40, color: SemColors.textMuted),
+              Icon(Icons.cloud_off_outlined, size: 44, color: SemColors.textMuted),
               const SizedBox(height: 14),
-              Text(text,
+              Text(message,
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, height: 1.7, color: SemColors.textSecondary)),
+              const SizedBox(height: 18),
+              FilledButton(onPressed: _loadTargets, child: const Text('重试')),
+              const SizedBox(height: 8),
+              OutlinedButton(onPressed: _openSettings, child: const Text('评教设置')),
             ],
           ),
         ),
       );
+
+  Widget _listView() => RefreshIndicator(
+        onRefresh: _loadTargets,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+          children: [
+            _summaryCard(),
+            const SizedBox(height: 4),
+            for (var i = 0; i < _targets.length; i++) _targetCard(_targets[i], i),
+            if (_targets.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 48),
+                child: Text('没有待评的教学班（本轮评教可能还没开始，或已全部完成）',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12.5, color: SemColors.textMuted)),
+              ),
+          ],
+        ),
+      );
+
+  Widget _summaryCard() {
+    final s = _summary;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('本轮评教',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: SemColors.textPrimary)),
+              const Spacer(),
+              Capsule('代理 ' + EvaluateSettings.I.proxy.endpoint,
+                  color: SemColors.accent),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              BigStat(
+                  label: '未评',
+                  value: s.pending.toString(),
+                  color: s.pending > 0 ? SemColors.danger : SemColors.textPrimary),
+              const SizedBox(width: 20),
+              BigStat(
+                  label: '已保存', value: s.saved.toString(), color: SemColors.accent),
+              const SizedBox(width: 20),
+              BigStat(
+                  label: '已提交',
+                  value: s.submitted.toString(),
+                  color: s.submitted > 0 ? SemColors.success : SemColors.textPrimary),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            s.allDone
+                ? '本轮已全部提交，感谢参与评教。'
+                : '共 ' +
+                    s.total.toString() +
+                    ' 门次；点开每一条即可打分，也可以在评分页里一键给全部老师同分。',
+            style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _targetCard(EvalTarget t, int index) {
+    final color = t.submitted
+        ? SemColors.success
+        : (t.saved ? SemColors.accent : SemColors.danger);
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: SemColors.border),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _openTarget(t, index),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(t.course,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: SemColors.textPrimary)),
+                        ),
+                        const SizedBox(width: 8),
+                        Capsule(t.statusLabel, color: color),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(t.teacher,
+                        style: TextStyle(fontSize: 13, color: SemColors.textSecondary)),
+                    if (t.subtitle.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(t.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                      ),
+                    if (t.time.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(t.time,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                      ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 18, color: SemColors.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -1,197 +1,265 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_evaluate/plugin_evaluate.dart';
 
-/// 评教助手的纯逻辑：网页消息解析、分值吸附、评教页地址。
-/// 真机连教务才能验页面 DOM，这里钉住「页面发了什么 → App 怎么理解」这一层。
+/// 评教的协议层：解析评分表单、拼提交参数、列表解析、代理解析。
+/// 真机连教务要校园代理 + 账号，这里钉住「页面/JSON 给了什么 → App 怎么理解」。
+String _fixture() => File('test/fixtures/eval_display_theory.html').readAsStringSync();
+
 void main() {
-  group('扫描结果解析', () {
-    test('items 消息 → 评分项（标签 / 当前分 / 离散档位）', () {
-      final scan = parseEvalMessage(jsonEncode({
-        't': 'items',
-        'login': false,
-        'page': {'title': '学生评教'},
-        'items': [
-          {
-            'index': 0,
-            'label': '教学态度认真',
-            'kind': 'radio',
-            'value': 5,
-            'min': 1,
-            'max': 5,
-            'step': 1,
-            'values': [1, 2, 3, 4, 5],
-          },
-          {
-            'index': 1,
-            'label': '内容充实',
-            'kind': 'range',
-            'value': 80,
-            'min': 0,
-            'max': 100,
-            'step': 10,
-            'values': <double>[],
-          },
-        ],
-      }));
+  group('评分表单解析', () {
+    test('理论类模板：身份字段、模板、一级/二级指标与权重', () {
+      final form = EvalForm.tryParse(_fixture());
+      expect(form, isNotNull);
+      // 提交要用表单里的 jgh_id，而不是列表里那个 256 位串
+      expect(form!.jghId, 'FORM_JGH_ID_001');
+      expect(form.jxbId, '55982D546A5F463EE065E2219BB20201');
+      expect(form.kchId, 'S1230125');
+      expect(form.xsdm, '01');
+      expect(form.ztpjbl, '100');
+      expect(form.commentMax, 500);
 
-      expect(scan, isNotNull);
-      expect(scan!.items, hasLength(2));
-      expect(scan.login, isFalse);
-      expect(scan.items.first.label, '教学态度认真');
-      expect(scan.items.first.discrete, isTrue);
-      expect(scan.items.first.value, 5);
-      expect(scan.items[1].discrete, isFalse, reason: '滑块没有离散档位');
-      expect(scan.items[1].max, 100);
+      expect(form.models, hasLength(1));
+      final model = form.models.single;
+      expect(model.id, 'MODEL_ID_001');
+      expect(model.groups, hasLength(2));
+      expect(model.groups.first.title, '一、目标明确度');
+      expect(model.groups.first.weight, closeTo(0.4, 1e-9));
+      expect(model.groups.first.items, hasLength(2));
+      expect(form.count, 3);
+      expect(form.requiredCount, 3);
     });
 
-    test('没有分值范围的项被跳过；标签空时退化成序号', () {
-      final scan = parseEvalMessage(jsonEncode({
-        't': 'items',
-        'items': [
-          {'index': 0, 'label': '', 'kind': 'radio', 'value': 3, 'min': 1, 'max': 5},
-          {'index': 1, 'label': '坏数据', 'kind': 'radio', 'value': 3},
-        ],
-      }));
-      expect(scan!.items, hasLength(1));
-      expect(scan.items.single.title, '第 1 项');
+    test('题干去掉必填星号、题号与「（100分）」', () {
+      final form = EvalForm.tryParse(_fixture())!;
+      final first = form.items.first;
+      expect(first.text, startsWith('通过教师的授课'));
+      expect(first.text, isNot(contains('*')));
+      expect(first.text, isNot(contains('100分')));
+      expect(first.min, 0);
+      expect(first.max, 100);
+      expect(first.gradeCodeId, 'GRADE_CODE');
+      expect(first.templateCodeId, 'TPL_CODE');
+      expect(first.required, isTrue);
     });
 
-    test('一个都没识别到：提示带上候选控件计数，并区分是否登录页', () {
-      final scan = parseEvalMessage(jsonEncode({
-        't': 'none',
-        'login': true,
-        'counts': {'radio': 12, 'range': 0, 'slider': 2, 'select': 0},
-      }));
-      expect(scan, isNotNull);
-      expect(scan!.items, isEmpty);
-      expect(scan.login, isTrue);
-      expect(scan.hint, contains('没识别到评分项'));
-      expect(scan.hint, contains('单选组 12 个'));
-      expect(scan.hint, contains('页面滑块 2 个'));
+    test('加权总分按一级权重 × 二级权重 × 分数算', () {
+      final form = EvalForm.tryParse(_fixture())!;
+      final scores = {
+        'ITEM_A1': 100.0,
+        'ITEM_A2': 80.0,
+        'ITEM_B1': 90.0,
+      };
+      // 0.4*(1*100 + .6*80) + 0.6*(1*90) = 0.4*148 + 54 = 113.2
+      expect(form.total(scores), closeTo(113.2, 1e-6));
     });
 
-    test('一个都没识别到：把页面输入控件的形态一起带出来（排查改版）', () {
-      final scan = parseEvalMessage(jsonEncode({
-        't': 'none',
-        'login': false,
-        'counts': {'text': 0, 'radio': 0},
-        'samples': [
-          {'tag': 'input', 'type': 'text', 'placeholder': '打分范围:0-100'},
-        ],
-      }));
-      expect(scan!.hint, contains('一个候选控件都没找到'));
-      expect(scan.hint, contains('input/text'));
-      expect(scan.hint, contains('打分范围:0-100'));
+    test('已保存过的条目：页面回填的分数被读出来，打开时直接显示上次的分', () {
+      final form = EvalForm.tryParse(_fixture())!;
+      final saved = form.savedScores;
+      expect(saved['ITEM_A1'], 88, reason: 'value="88" 应该被读出来');
+      expect(saved.containsKey('ITEM_A2'), isFalse, reason: '没保存过的题不应凭空有分');
+      final init = form.initialScores(fallback: 95);
+      expect(init['ITEM_A1'], 88);
+      expect(init['ITEM_A2'], 95, reason: '没存过的用兜底满分档');
     });
 
-    test('评分输入框（正方 9.0 的「打分范围:0-100」文本框）也当评分项', () {
-      final scan = parseEvalMessage(jsonEncode({
-        't': 'items',
-        'items': [
-          {
-            'index': 0,
-            'label': '课程教学过程融入了价值塑造和情感教育的内容',
-            'kind': 'text',
-            'value': 0,
-            'min': 0,
-            'max': 100,
-            'step': 1,
-            'values': <double>[],
-          },
-        ],
-      }));
-      expect(scan!.items.single.discrete, isFalse);
-      expect(scan.items.single.max, 100);
-      expect(scan.items.single.snap(87), 87);
-      expect(scan.items.single.snap(140), 100);
+    test('全部题都有已保存分时，初始分数就是上次那套', () {
+      var html = _fixture();
+      html = html.replaceAll('value=""', 'value="70"');
+      html = html.replaceAll('value="88"', 'value="70"');
+      final form = EvalForm.tryParse(html)!;
+      expect(form.savedScores.length, form.count);
+      expect(form.initialScores().values.every((v) => v == 70), isTrue);
     });
 
-    test('别的消息不当成扫描结果（应用回执走 parseEvalApplied）', () {
-      expect(parseEvalMessage('{"t":"applied","values":{"0":5}}'), isNull);
-      expect(parseEvalMessage('不是 JSON'), isNull);
+    test('不是评分页（没有 xspj-body）时返回 null', () {
+      expect(EvalForm.tryParse('<html><body>无功能权限</body></html>'), isNull);
     });
 
-    test('applied 回执：下标 → 页面真实分值（离散项会被就近取档）', () {
-      final applied = parseEvalApplied('{"t":"applied","values":{"0":5,"2":3}}');
-      expect(applied, {0: 5.0, 2: 3.0});
-      expect(parseEvalApplied('{"t":"items"}'), isEmpty);
+    test('指标分值范围照页面读，不写死 0-100', () {
+      final html = _fixture().replaceAll('data-zdfz="100"', 'data-zdfz="20"');
+      final form = EvalForm.tryParse(html)!;
+      expect(form.items.first.max, 20);
     });
   });
 
-  group('分值吸附', () {
-    const discrete = EvalItem(
-      index: 0,
-      label: '教学态度',
-      kind: 'radio',
-      value: 5,
-      min: 1,
-      max: 5,
-      values: [1, 2, 3, 4, 5],
-    );
-    const stepped = EvalItem(
-      index: 1,
-      label: '内容',
-      kind: 'range',
-      value: 60,
-      min: 50,
-      max: 100,
-      step: 10,
-    );
+  group('提交参数', () {
+    EvalForm form() => EvalForm.tryParse(_fixture())!;
 
-    test('离散项吸到最近的合法分值', () {
-      expect(discrete.snap(4.4), 4);
-      expect(discrete.snap(4.6), 5);
-      expect(discrete.snap(100), 5);
-      expect(discrete.snap(-3), 1);
-    });
-
-    test('连续项夹进范围并按步长对齐', () {
-      expect(stepped.snap(63), 60);
-      expect(stepped.snap(66), 70);
-      expect(stepped.snap(1000), 100);
-      expect(stepped.snap(0), 50);
-    });
-
-    test('非数字回落到当前分', () {
-      expect(discrete.snap(double.nan), 5);
-    });
-
-    test('整数步长吸附成整数：Slider 换算出的浮点尾巴要抹掉', () {
-      const text = EvalItem(
-        index: 3,
-        label: '百分制打分',
-        kind: 'text',
-        value: 0,
-        min: 0,
-        max: 100,
+    test('保存：tjzt=0，每个指标带齐四个字段', () {
+      final fields = buildSubmitFields(
+        form(),
+        {'ITEM_A1': 95, 'ITEM_A2': 95, 'ITEM_B1': 95},
+        submit: false,
       );
-      expect(text.snap(55.00000000000001), 55);
-      expect(text.snap(54.99999999999999), 55);
-      expect(text.snap(0.4), 0);
-      expect(text.snap(99.6), 100);
+      expect(fields['tjzt'], '0');
+      expect(fields['sfbhmgc'], '0');
+      expect(fields['jgh_id'], 'FORM_JGH_ID_001');
+      expect(fields['modelList[0].pjmbmcb_id'], 'MODEL_ID_001');
+      expect(fields['modelList[0].pjzt'], '1');
+      expect(fields['modelList[0].xspjList[0].pjzbxm_id'], 'GROUP_A');
+      expect(fields['modelList[0].xspjList[0].childXspjList[0].pjzbxm_id'], 'ITEM_A1');
+      expect(fields['modelList[0].xspjList[0].childXspjList[0].pfdjdmb_id'], 'GRADE_CODE');
+      expect(fields['modelList[0].xspjList[0].childXspjList[0].zsmbmcb_id'], 'TPL_CODE');
+      expect(fields['modelList[0].xspjList[0].childXspjList[0].pjf'], '95');
+      expect(fields['modelList[0].xspjList[1].pjzbxm_id'], 'GROUP_B');
+      expect(fields['modelList[0].xspjList[1].childXspjList[0].pjf'], '95');
     });
-  });
 
-  group('评教页地址', () {
-    test('默认 SIT 教务：按学校档案拼，不写死域名', () {
+    test('提交：tjzt=1', () {
+      final fields = buildSubmitFields(
+        form(),
+        {'ITEM_A1': 90, 'ITEM_A2': 90, 'ITEM_B1': 90},
+        submit: true,
+      );
+      expect(fields['tjzt'], '1');
+    });
+
+    test('少打一项必填分直接拒绝，绝不发半截数据', () {
       expect(
-        evalUrlFor('https://jwxt.sit.edu.cn'),
-        'https://jwxt.sit.edu.cn/jwglxt'
-        '/xspjgl/xspj_cxXspjIndex.html?doType=details&gnmkdm=N401605&layout=default',
+        () => buildSubmitFields(form(), {'ITEM_A1': 90}, submit: true),
+        throwsA(isA<EvaluateError>()),
       );
     });
 
-    test('末尾斜杠不会拼出双斜杠；换学校自动换域名', () {
-      expect(evalUrlFor('https://jw.example.edu/'), contains('jw.example.edu/jwglxt/xspjgl'));
-      expect(evalLoginUrlFor('https://jw.example.edu'),
-          'https://jw.example.edu/jwglxt/xtgl/login_slogin.html');
+    test('分数是整数，不许出现 95.0000000000001', () {
+      final fields = buildSubmitFields(
+        form(),
+        {'ITEM_A1': 95.00000000000001, 'ITEM_A2': 94.6, 'ITEM_B1': 80.4},
+        submit: true,
+      );
+      expect(fields['modelList[0].xspjList[0].childXspjList[0].pjf'], '95');
+      expect(fields['modelList[0].xspjList[0].childXspjList[1].pjf'], '94.6');
+      expect(fields['modelList[0].xspjList[1].childXspjList[0].pjf'], '80.4');
     });
 
-    test('学校档案没填教务域名时返回空串（界面提示去配置）', () {
-      expect(evalUrlFor(''), isEmpty);
-      expect(evalLoginUrlFor('   '), isEmpty);
+    test('评语先做一次百分号编码（页面 JS 的那次 encodeURIComponent）', () {
+      final fields = buildSubmitFields(
+        form(),
+        {'ITEM_A1': 90, 'ITEM_A2': 90, 'ITEM_B1': 90},
+        submit: true,
+        comment: '讲得好 继续',
+      );
+      expect(fields['modelList[0].py'], Uri.encodeComponent('讲得好 继续'));
+    });
+
+    test('表单编码：键里的方括号也要转义', () {
+      final body = EvaluateApi.encodeForm({'a[0].b': 'x y'});
+      expect(body, contains('a%5B0%5D.b='));
+      expect(body, contains('x%20y'));
+    });
+  });
+
+  group('待评列表解析', () {
+    test('正常条目 → EvalTarget（教师 / 课程 / 状态）', () {
+      final t = EvalTarget.tryParse({
+        'jxb_id': 'JXB1',
+        'kch_id': 'KCH1',
+        'jgh_id': 'JGH1',
+        'sfcjlrjs': '1',
+        'tjzt': '-1',
+        'kcmc': '离散数学',
+        'jzgmc': '马秀莹',
+        'jxbmc': '2602121',
+        'jgmc': '计算机学院',
+        'sksj': '星期一第3-4节{1-12周}',
+        'xsdm': '01',
+      });
+      expect(t, isNotNull);
+      expect(t!.course, '离散数学');
+      expect(t.teacher, '马秀莹');
+      expect(t.pending, isTrue);
+      expect(t.statusLabel, '未评');
+      expect(t.id, 'JXB1|JGH1');
+    });
+
+    test('超星尔雅那类缺 sksj / jxdd / zcmc 的条目也要能解析', () {
+      final t = EvalTarget.tryParse({
+        'jxb_id': 'JXB2',
+        'kch_id': 'KCH2',
+        'jgh_id': 'JGH2',
+        'tjzt': '0',
+        'kcmc': '艺术美学',
+        'jzgmc': '超星尔雅',
+      });
+      expect(t, isNotNull);
+      expect(t!.time, isEmpty);
+      expect(t.saved, isTrue);
+      expect(t.statusLabel, '已保存');
+    });
+
+    test('缺 jxb_id / jgh_id 的脏数据直接跳过', () {
+      expect(EvalTarget.tryParse({'kch_id': 'K', 'kcmc': 'x', 'jzgmc': 'y'}), isNull);
+      expect(EvalTarget.tryParse(null), isNull);
+      expect(EvalTarget.tryParse(<String, dynamic>{}), isNull);
+    });
+
+    test('已提交条目的状态文案', () {
+      final t = EvalTarget.tryParse({
+        'jxb_id': 'J',
+        'kch_id': 'K',
+        'jgh_id': 'G',
+        'tjzt': '1',
+        'kcmc': '课',
+        'jzgmc': '师',
+      })!;
+      expect(t.submitted, isTrue);
+      expect(t.statusLabel, '已提交');
+    });
+  });
+
+  group('一键打分', () {
+    test('统一分数摊到全部指标上，各自吸附到合法范围', () {
+      final form = EvalForm.tryParse(_fixture())!;
+      final scores = presetScores(form, 88);
+      expect(scores, hasLength(3));
+      expect(scores.values.every((v) => v == 88), isTrue);
+    });
+
+    test('超出范围的分数被夹住', () {
+      final form = EvalForm.tryParse(_fixture())!;
+      expect(presetScores(form, 999).values.every((v) => v == 100), isTrue);
+      expect(presetScores(form, -5).values.every((v) => v == 0), isTrue);
+    });
+  });
+
+  group('校园代理地址解析', () {
+    test('host:port', () {
+      final p = SocksProxy.parse('proxy.example.edu:10003');
+      expect(p.host, 'proxy.example.edu');
+      expect(p.port, 10003);
+      expect(p.hasAuth, isFalse);
+    });
+
+    test('带 scheme 与账号', () {
+      final p = SocksProxy.parse('socks5://u:p%40ss@1.2.3.4:1080');
+      expect(p.host, '1.2.3.4');
+      expect(p.port, 1080);
+      expect(p.username, 'u');
+      expect(p.password, 'p@ss');
+    });
+
+    test('只给主机时默认 1080；空串 = 未配置', () {
+      expect(SocksProxy.parse('only.host').port, 1080);
+      expect(SocksProxy.parse('').isConfigured, isFalse);
+      expect(SocksProxy.parse('   ').isConfigured, isFalse);
+    });
+
+    test('endpoint 不含凭据（可以打日志 / 显示）', () {
+      final p = SocksProxy.parse('socks5://user:secret@h:1');
+      expect(p.endpoint, 'h:1');
+      expect(p.endpoint, isNot(contains('secret')));
+    });
+
+    test('JSON 往返', () {
+      const p = SocksProxy(host: 'h', port: 9, username: 'u', password: 'p');
+      final back = SocksProxy.fromJson(jsonDecode(jsonEncode(p.toJson())) as Map<String, dynamic>);
+      expect(back, p);
+      expect(SocksProxy.fromJson(null).isConfigured, isFalse);
     });
   });
 }

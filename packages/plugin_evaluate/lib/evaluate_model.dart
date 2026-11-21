@@ -1,228 +1,373 @@
-import 'dart:convert';
+import 'package:campus_core/campus_core.dart';
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html_parser;
 
-/// 评教页里识别到的一个评分项（页面上的一个「评价指标」）。
-///
-/// 分值语义有两种：**离散**（单选组 / 下拉，[values] 是页面给的那些分值，如 5/4/3/2/1）
-/// 与**连续**（滑块，[min]..[max] 按 [step] 走）。[index] 是页面脚本里的下标——
-/// 应用分数时回传它，所以标签取不到也不影响打分。
+/// 待评的一条：一位教师 × 一个教学班。
+class EvalTarget {
+  const EvalTarget({
+    required this.jxbId,
+    required this.kchId,
+    required this.jghId,
+    required this.sfcjlrjs,
+    required this.tjzt,
+    required this.course,
+    required this.teacher,
+    required this.className,
+    this.college = '',
+    this.title = '',
+    this.time = '',
+    this.place = '',
+    this.xsdm = '01',
+    this.xnm = '',
+    this.xqm = '',
+  });
+
+  /// 教学班 ID（提交与取表单都要）。
+  final String jxbId;
+
+  /// 课程号 ID。
+  final String kchId;
+
+  /// 教师 ID：**必须用当次列表返回的这个**（每次查询都变）。
+  final String jghId;
+
+  /// 「是否参加录入教师评分」：原样回传。
+  final String sfcjlrjs;
+
+  /// -1 未评 / 0 已保存 / 1 已提交。
+  final String tjzt;
+
+  final String course;
+  final String teacher;
+  final String className;
+  final String college;
+  final String title;
+  final String time;
+  final String place;
+
+  /// 学时类型：01 理论 / 02 实验 / 04 设计（决定用哪套指标模板）。
+  final String xsdm;
+  final String xnm;
+  final String xqm;
+
+  bool get submitted => tjzt == '1';
+  bool get saved => tjzt == '0';
+  bool get pending => tjzt == '-1';
+
+  /// 状态胶囊：未评 / 已保存 / 已提交。
+  String get statusLabel => submitted ? '已提交' : (saved ? '已保存' : '未评');
+
+  /// 同一教学班可能有多位老师：用教学班 + 教师 ID 做稳定键。
+  String get id => jxbId + '|' + jghId;
+
+  String get subtitle => [
+        if (className.trim().isNotEmpty) className,
+        if (college.trim().isNotEmpty) college,
+        if (title.trim().isNotEmpty) title,
+      ].join(' · ');
+
+  static EvalTarget? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    String s(String k) => (raw[k] ?? '').toString().trim();
+    final jxbId = s('jxb_id');
+    final kchId = s('kch_id');
+    final jghId = s('jgh_id');
+    if (jxbId.isEmpty || kchId.isEmpty || jghId.isEmpty) return null;
+    final course = s('kcmc');
+    final teacher = s('jzgmc');
+    if (course.isEmpty && teacher.isEmpty) return null;
+    return EvalTarget(
+      jxbId: jxbId,
+      kchId: kchId,
+      jghId: jghId,
+      sfcjlrjs: s('sfcjlrjs'),
+      tjzt: s('tjzt').isEmpty ? '-1' : s('tjzt'),
+      course: course,
+      teacher: teacher,
+      className: s('jxbmc'),
+      college: s('jgmc'),
+      title: s('zcmc'),
+      time: s('sksj'),
+      place: s('jxdd'),
+      xsdm: s('xsdm').isEmpty ? '01' : s('xsdm'),
+      xnm: s('xnm'),
+      xqm: s('xqm'),
+    );
+  }
+}
+
+/// 评价情况汇总。
+class EvalSummary {
+  const EvalSummary({this.pending = 0, this.saved = 0, this.submitted = 0});
+
+  final int pending;
+  final int saved;
+  final int submitted;
+
+  int get total => pending + saved + submitted;
+  bool get allDone => pending == 0 && total > 0;
+}
+
+/// 一条二级指标（一道题）。
 class EvalItem {
   const EvalItem({
-    required this.index,
-    required this.label,
-    required this.kind,
-    required this.value,
+    required this.id,
+    required this.text,
+    required this.required,
     required this.min,
     required this.max,
-    this.step = 1,
-    this.values = const [],
+    required this.gradeCodeId,
+    required this.templateCodeId,
+    this.weight = 1,
+    this.savedValue,
   });
 
-  final int index;
+  /// 指标 ID（`data-pjzbxm_id`）。
+  final String id;
 
-  /// 指标名（页面上取到的文本；取不到就是空串，界面上退化成「第 N 项」）。
-  final String label;
+  /// 题干。
+  final String text;
+  final bool required;
 
-  /// `radio` / `range` / `slider` / `select`：只用于界面说明，不参与逻辑。
-  final String kind;
-
-  /// 页面当前分值。
-  final double value;
+  /// 分值范围（本项目实测都是 0–100）。
   final double min;
   final double max;
-  final double step;
 
-  /// 可选分值（离散项）；空 = 连续滑块。
-  final List<double> values;
+  /// 评分等级代码 ID（原样回传）。
+  final String gradeCodeId;
 
-  bool get discrete => values.length > 1;
+  /// 真实模板名称表 ID（原样回传）。
+  final String templateCodeId;
 
-  /// 界面标题：没取到指标名时给个序号，别显示空白行。
-  String get title => label.trim().isNotEmpty ? label : '第 ${index + 1} 项';
+  /// 二级权重（用于算总分预览）。
+  final double weight;
 
-  /// 把 [raw] 收进本项的合法取值：离散项吸附到最近的合法分值，连续项夹进 [min,max]
-  /// 并按 [step] 对齐——统一分数是「一项一分值」，页面允许多少就落在最近的那档。
+  /// 页面回填的已保存分数（没保存过就是 null）：
+  /// 打开一条「已保存」的评教时界面先显示上次打的分，而不是重新从满分开始。
+  final double? savedValue;
+
+  /// 界面上显示的序号由列表位置决定，这里只给题干。
+  String get title => text.trim().isEmpty ? '未命名指标' : text.trim();
+
+  /// 把任意分数吸附进合法范围（整数步长）。
   double snap(double raw) {
-    if (!raw.isFinite) return value;
-    if (discrete) {
-      var best = values.first;
-      var bestGap = (best - raw).abs();
-      for (final v in values.skip(1)) {
-        final gap = (v - raw).abs();
-        if (gap < bestGap) {
-          best = v;
-          bestGap = gap;
-        }
-      }
-      return best;
-    }
-    var v = raw < min ? min : (raw > max ? max : raw);
-    if (step > 0) {
-      final steps = ((v - min) / step).round();
-      v = min + steps * step;
-    }
-    // 整数步长（百分制 0-100）落成整数：55.00000000000001 这种浮点尾巴不能漏进页面输入框
-    if (step >= 1 && step == step.roundToDouble()) v = v.roundToDouble();
+    if (!raw.isFinite) return min;
+    var v = raw.clamp(min, max);
+    if ((max - min) >= 1) v = v.roundToDouble();
     return v.clamp(min, max);
   }
-
-  EvalItem copyWith({double? value}) => EvalItem(
-        index: index,
-        label: label,
-        kind: kind,
-        value: value ?? this.value,
-        min: min,
-        max: max,
-        step: step,
-        values: values,
-      );
-
-  /// 从页面脚本发来的一项解析；结构不对（没有分值范围）就返回 null 跳过它。
-  static EvalItem? tryParse(Object? raw) {
-    if (raw is! Map) return null;
-    double? asDouble(Object? v) {
-      if (v is num) return v.toDouble();
-      return double.tryParse('$v'.trim());
-    }
-
-    final min = asDouble(raw['min']);
-    final max = asDouble(raw['max']);
-    if (min == null || max == null || max <= min) return null;
-    final kind = '${raw['kind'] ?? 'radio'}';
-    final value = (asDouble(raw['value']) ?? min).clamp(min, max);
-    final stepRaw = asDouble(raw['step']);
-    final values = <double>[
-      for (final v in (raw['values'] is List ? raw['values'] as List : const <Object?>[]))
-        if (asDouble(v) case final d?) d,
-    ]..sort();
-    final index = raw['index'] is num
-        ? (raw['index'] as num).toInt()
-        : int.tryParse('${raw['index']}') ?? -1;
-    if (index < 0) return null;
-    return EvalItem(
-      index: index,
-      label: '${raw['label'] ?? ''}'.trim(),
-      kind: kind,
-      value: value,
-      min: min,
-      max: max,
-      step: (stepRaw == null || stepRaw <= 0) ? 1 : stepRaw,
-      values: values,
-    );
-  }
 }
 
-/// 一次扫描的结果：识别到的评分项，以及「一个都没认出来」时的说明。
-class EvalScan {
-  const EvalScan({required this.items, this.hint = '', this.login = false});
-
-  final List<EvalItem> items;
-
-  /// 没识别到时的提示（含页面上的候选控件计数，方便判断是改版还是没登录）。
-  final String hint;
-
-  /// 当前页面看着像教务登录页（需要先登录）。
-  final bool login;
-
-  bool get isEmpty => items.isEmpty;
-}
-
-/// 解析网页脚本发来的消息；不是「扫描结果」类消息就返回 null（应用回执见
-/// [parseEvalApplied]）。
-EvalScan? parseEvalMessage(String raw) {
-  final Object? j = _decode(raw);
-  if (j is! Map) return null;
-  final type = '${j['t'] ?? ''}';
-  if (type == 'none') {
-    return EvalScan(
-      items: const [],
-      hint: _noneHint(j['counts'], j['samples']),
-      login: j['login'] == true,
-    );
-  }
-  if (type != 'items') return null;
-  final list = j['items'];
-  if (list is! List) return null;
-  final items = <EvalItem>[
-    for (final it in list)
-      if (EvalItem.tryParse(it) case final item?) item,
-  ];
-  if (items.isEmpty) {
-    return EvalScan(items: const [], hint: '页面里没有可用的评分项', login: j['login'] == true);
-  }
-  return EvalScan(items: items, login: j['login'] == true);
-}
-
-/// 「已应用」回执：页面吸附之后每一项的真实分值（项下标 → 分值）。
-/// 统一分数打到单选组上时，页面可能就近取档，所以要以回执为准刷新界面。
-Map<int, double> parseEvalApplied(String raw) {
-  final Object? j = _decode(raw);
-  if (j is! Map || '${j['t'] ?? ''}' != 'applied') return const {};
-  final values = j['values'];
-  if (values is! Map) return const {};
-  final out = <int, double>{};
-  values.forEach((k, v) {
-    final index = int.tryParse('$k');
-    final d = v is num ? v.toDouble() : double.tryParse('$v');
-    if (index != null && d != null) out[index] = d;
+/// 一个一级指标（分组）。
+class EvalGroup {
+  const EvalGroup({
+    required this.id,
+    required this.title,
+    required this.weight,
+    required this.items,
   });
-  return out;
+
+  final String id;
+  final String title;
+  final double weight;
+  final List<EvalItem> items;
 }
 
-Object? _decode(String raw) {
-  try {
-    return jsonDecode(raw);
-  } catch (_) {
-    return null;
-  }
+/// 一套评价模板（理论类 / 实践类）。
+class EvalModel {
+  const EvalModel({
+    required this.id,
+    required this.name,
+    required this.pjdxdm,
+    required this.fxzgf,
+    required this.savedId,
+    required this.groups,
+  });
+
+  final String id;
+  final String name;
+  final String pjdxdm;
+  final String fxzgf;
+
+  /// 已保存过的那次评价批次 ID；首次为空串。
+  final String savedId;
+
+  final List<EvalGroup> groups;
+
+  Iterable<EvalItem> get items => groups.expand((g) => g.items);
 }
 
-String _noneHint(Object? counts, Object? samples) {
-  final c = counts is Map ? counts : const {};
-  int n(String key) {
-    final v = c[key];
-    if (v is num) return v.toInt();
-    return int.tryParse('$v') ?? 0;
-  }
+/// 一节课的评教表单。
+class EvalForm {
+  const EvalForm({
+    required this.jxbId,
+    required this.kchId,
+    required this.jghId,
+    required this.xsdm,
+    required this.ztpjbl,
+    required this.jszdpjbl,
+    required this.xykzpjbl,
+    required this.models,
+    this.commentMax = 500,
+  });
 
-  final parts = <String>[
-    if (n('text') > 0) '评分输入框 ${n('text')} 个',
-    if (n('radio') > 0) '单选组 ${n('radio')} 个',
-    if (n('range') > 0) '滑块 ${n('range')} 个',
-    if (n('slider') > 0) '页面滑块 ${n('slider')} 个',
-    if (n('select') > 0) '下拉 ${n('select')} 个',
-  ];
-  final seen = parts.isEmpty ? '一个候选控件都没找到' : '只找到 ${parts.join(' / ')}';
-  // 采样：页面上实际有哪些输入控件（改版时一眼看出它变成了什么形态）
-  final shapes = <String>[];
-  if (samples is List) {
-    for (final s in samples.take(3)) {
-      if (s is! Map) continue;
-      final tag = '${s['tag'] ?? ''}'.trim();
-      final type = '${s['type'] ?? ''}'.trim();
-      final hint = '${s['placeholder'] ?? ''}'.trim();
-      final label = [tag, if (type.isNotEmpty) type].join('/');
-      if (label.isEmpty) continue;
-      shapes.add(hint.isEmpty ? label : '$label（$hint）');
+  final String jxbId;
+  final String kchId;
+
+  /// **表单里的** jgh_id（与列表里那个 256 位串不同，提交要用这个）。
+  final String jghId;
+
+  final String xsdm;
+  final String ztpjbl;
+  final String jszdpjbl;
+  final String xykzpjbl;
+  final List<EvalModel> models;
+  final int commentMax;
+
+  Iterable<EvalItem> get items => models.expand((m) => m.items);
+  int get count => items.length;
+  int get requiredCount => items.where((i) => i.required).length;
+
+  /// 页面回填的已保存分数（没保存过的题不在里面）。
+  Map<String, double> get savedScores => {
+        for (final item in items)
+          if (item.savedValue != null) item.id: item.snap(item.savedValue!),
+      };
+
+  /// 打开表单时的初始分数：**逐题**优先用已保存分，没有的题给兜底分（默认满分档）。
+  Map<String, double> initialScores({double fallback = 95}) {
+    final saved = savedScores;
+    final base = presetScores(this, fallback);
+    for (final e in saved.entries) {
+      base[e.key] = e.value;
     }
+    return base;
   }
-  final detail = shapes.isEmpty ? '' : '；页面输入控件：${shapes.join('、')}';
-  return '没识别到评分项（$seen，评教页可能改版了$detail）';
+
+  /// 加权总分（复算学校前端 calculatePmbPjzf 的公式）。
+  double total(Map<String, double> scores) {
+    var sum = 0.0;
+    for (final m in models) {
+      for (final g in m.groups) {
+        for (final item in g.items) {
+          final v = scores[item.id];
+          if (v == null) continue;
+          sum += g.weight * item.weight * v;
+        }
+      }
+    }
+    return sum;
+  }
+
+  /// 解析 [xspj_cxXspjDisplay.html] 的页面结构。
+  static EvalForm? tryParse(String html) {
+    final doc = html_parser.parse(html);
+    final body = doc.querySelector('div.xspj-body');
+    if (body == null) return null;
+    String attr(dom.Element e, String name) => (e.attributes[name] ?? '').trim();
+
+    final panels = doc.querySelectorAll('div.panel-pjdx');
+    final models = <EvalModel>[];
+    for (final panel in panels) {
+      final modelId = attr(panel, 'data-pjmbmcb_id');
+      if (modelId.isEmpty) continue;
+      final groups = <EvalGroup>[];
+      for (final table in panel.querySelectorAll('table.table-xspj')) {
+        final groupId = attr(table, 'data-pjzbxm_id');
+        final weight = _num(attr(table, 'data-qzz')) ?? 1;
+        final items = <EvalItem>[];
+        for (final tr in table.querySelectorAll('tr.tr-xspj')) {
+          final input = tr.querySelector('input.input-pjf');
+          final id = attr(tr, 'data-pjzbxm_id');
+          if (id.isEmpty) continue;
+          items.add(EvalItem(
+            id: id,
+            text: _questionText(tr),
+            required: attr(tr, 'data-sfbt') == '1',
+            min: _num(input == null ? null : attr(input, 'data-zxfz')) ?? 0,
+            max: _num(input == null ? null : attr(input, 'data-zdfz')) ?? 100,
+            gradeCodeId: attr(tr, 'data-pfdjdmb_id'),
+            templateCodeId: attr(tr, 'data-zsmbmcb_id'),
+            weight: _num(input == null ? null : attr(input, 'data-ejqz')) ??
+                _num(attr(tr, 'data-qzz')) ??
+                1,
+            savedValue: _num(input == null ? null : attr(input, 'value')),
+          ));
+        }
+        if (items.isEmpty) continue;
+        groups.add(EvalGroup(
+          id: groupId,
+          title: _groupTitle(table),
+          weight: weight,
+          items: items,
+        ));
+      }
+      if (groups.isEmpty) continue;
+      models.add(EvalModel(
+        id: modelId,
+        name: attr(panel, 'data-pjmbmc'),
+        pjdxdm: attr(panel, 'data-pjdxdm'),
+        fxzgf: attr(panel, 'data-fxzgf'),
+        savedId: attr(panel, 'data-xspfb_id'),
+        groups: groups,
+      ));
+    }
+    if (models.isEmpty) return null;
+
+    final commentEl = doc.querySelector('#xspjpyzskz');
+    final rawMax = commentEl == null ? null : commentEl.attributes['value'];
+    final commentMax = (_num(rawMax) ?? 500).toInt();
+    return EvalForm(
+      jxbId: attr(body, 'data-jxb_id'),
+      kchId: attr(body, 'data-kch_id'),
+      jghId: attr(body, 'data-jgh_id'),
+      xsdm: attr(body, 'data-xsdm'),
+      ztpjbl: attr(body, 'data-ztpjbl'),
+      jszdpjbl: attr(body, 'data-jszdpjbl'),
+      xykzpjbl: attr(body, 'data-xykzpjbl'),
+      models: models,
+      commentMax: commentMax <= 0 ? 500 : commentMax,
+    );
+  }
+
+  /// 题干：`tr` 里第一个 `td` 的文本，去掉必填星号与「（100分）」尾巴。
+  static String _questionText(dom.Element tr) {
+    final td = tr.querySelector('td');
+    var t = (td == null ? '' : td.text).replaceAll(RegExp(r'\s+'), ' ').trim();
+    t = t.replaceFirst(RegExp(r'^\*\s*'), '');
+    // 页面把题号写在题干里（「1、「1.」「(1)」），界面上另有编号，去掉免得出现「1. 1、…」
+    t = t.replaceFirst(RegExp(r'^\d+\s*[、.．)）]\s*'), '');
+    t = t.replaceFirst(RegExp(r'\s*[（(]\s*\d+\s*分\s*[）)]\s*$'), '');
+    return t;
+  }
+
+  /// 一级指标名：表格前面那个 `blockquote p`。
+  static String _groupTitle(dom.Element table) {
+    var node = table.previousElementSibling;
+    var guard = 0;
+    while (node != null && guard++ < 4) {
+      final p = node.querySelector('p');
+      if (p != null) {
+        final t = p.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+        if (t.isNotEmpty) return t;
+      }
+      final own = node.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (own.isNotEmpty) return own;
+      node = node.previousElementSibling;
+    }
+    return '';
+  }
+
+  static double? _num(String? raw) {
+    if (raw == null) return null;
+    return double.tryParse(raw.trim());
+  }
 }
 
-/// 评教「评价详情」页在教务域名下的相对路径（正方 N401605）。
-const String kEvaluatePath =
-    '/xspjgl/xspj_cxXspjIndex.html?doType=details&gnmkdm=N401605&layout=default';
+/// 把统一分数摊到所有指标上（按各自范围吸附）。
+Map<String, double> presetScores(EvalForm form, double score) => {
+      for (final item in form.items) item.id: item.snap(score),
+    };
 
-/// 评教页地址：按学校档案里的教务域名拼，换学校自动换域名（默认就是 SIT 教务）。
-String evalUrlFor(String jwxtBase) {
-  final base = jwxtBase.trim().replaceAll(RegExp(r'/+$'), '');
-  if (base.isEmpty) return '';
-  return '$base/jwglxt$kEvaluatePath';
-}
-
-/// 教务登录页（评教页被踢回登录时，从这里登进去再回来）。
-String evalLoginUrlFor(String jwxtBase) {
-  final base = jwxtBase.trim().replaceAll(RegExp(r'/+$'), '');
-  if (base.isEmpty) return '';
-  return '$base/jwglxt/xtgl/login_slogin.html';
-}
+/// 学号打码（与服务器模式 status 的口径一致），设置页展示用。
+String maskEvalStudentId(String sid) => maskStudentId(sid);

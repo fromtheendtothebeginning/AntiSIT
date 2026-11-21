@@ -4,11 +4,10 @@ import 'package:campus_core/campus_core.dart';
 
 import 'evaluate_page.dart';
 
-/// 学生评教助手：教务评教页（正方 `xspjgl`）里一键同分 / 逐项滑块调分。
+/// 学生评教（原生界面）：App 自己经校园代理连教务，逐位老师打分。
 ///
-/// * **依赖 WebView 内核**（[dependencies]）：评教页是嵌在 App 里的网页，内核被停用
-///   （或当前平台不支持）时工具卡片直接不出现——没有网页可填，留着入口只会点进去报错。
-/// * **只改分、不代提交**：填完分仍在网页里自己点「提交」，评教一旦提交不可撤。
+/// 与旧版（内嵌 WebView）的区别：**不再嵌套网页**，所有交互都在 App 里完成；
+/// 协议细节见 [EvaluateApi]。
 class EvaluatePlugin extends FeaturePlugin {
   const EvaluatePlugin();
 
@@ -19,23 +18,18 @@ class EvaluatePlugin extends FeaturePlugin {
   @override
   String get name => '学生评教';
   @override
-  String get description => '评教助手：一键给所有评分项打同一分，或逐项用滑块调分';
-  @override
-  List<String> get dependencies => const [PluginIds.webview];
+  String get description => '原生评教：一键给全部老师同分，逐条确认提交（不再内嵌网页）';
 
   @override
   List<PluginTool> tools(PluginRegistry registry) {
-    // 演示模式是本地假数据：评教要真教务页，这里不出现入口
+    // 演示模式是本地假数据：评教要真教务，这里不出现入口
     if (AppState.I.demo) return const [];
-    // 内核没启用 / 平台不支持：没有可填的网页，卡片不出现
-    final cap = registry.capability<WebViewCapability>(PluginIds.webview);
-    if (cap == null || !cap.available) return const [];
     return [
       PluginTool(
         icon: Icons.rate_review_outlined,
         color: Colors.indigo,
         title: '学生评教',
-        subtitle: () => '一键同分 / 逐项调分（滑块）',
+        subtitle: () => '一键打分 / 逐条提交',
         open: () => const EvaluatePage(),
       ),
     ];
