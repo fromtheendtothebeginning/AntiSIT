@@ -1192,9 +1192,10 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
                 snap: true,
                 duration: _sizeAnim,
                 child: _framed(
-                  // 内容按「当前正好装得下的那一档」排版：图标、文字大小、
-                  // 省略行数都随手指实时切换，而不是把大排版裁掉一块。
-                  layoutSize: _presetPx(_layoutPresetFor(bodyRect.size)),
+                  // 卡面必须**铺满跟手框**：之前用档位尺寸（2x1 只有 55 宽）排版，
+                  // 拖到 105 宽时右半边是空的，整张卡看着就暗淡、像被裁了一半。
+                  // 这里按当前像素尺寸铺满，内部再按 layoutAs 用对应的档位排版。
+                  layoutSize: bodyRect.size,
                   // 贴左上角：缩放时图标与文字的绝对位置不动，只有卡框边界在动。
                   anchorTopLeft: true,
                   child: _card(
@@ -1401,18 +1402,30 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
       widget.editing,
     );
 
+    // 抬起中的卡片（拖动 / 缩放）要垫一层**实底**：
+    // 卡片本身是白 55% 的半透明玻璃，直接压在虚线填充上会被染色，
+    // 看上去比周围邻居暗一档。垫上「卡片色合成到页面底色」的实底后就与邻居同色，
+    // 再配一圈更重的阴影，读起来是「被拎起来了」而不是「变暗了」。
+    final liftedBacking = Color.alphaBlend(SemColors.card, SemColors.bg);
     if (isDragged) {
       content = IgnorePointer(
         child: Transform.scale(
-          scale: 1.03,
+          scale: 1.04,
           child: DecoratedBox(
             decoration: BoxDecoration(
+              color: liftedBacking,
               borderRadius: BorderRadius.circular(cardRadius),
               boxShadow: [
                 BoxShadow(
-                  color: SemColors.accent.withValues(alpha: 0.22),
-                  blurRadius: 24,
+                  color: SemColors.shadow,
+                  blurRadius: 28,
                   spreadRadius: 2,
+                  offset: const Offset(0, 10),
+                ),
+                BoxShadow(
+                  color: SemColors.accent.withValues(alpha: 0.28),
+                  blurRadius: 22,
+                  spreadRadius: 1,
                 ),
               ],
             ),
@@ -1425,13 +1438,20 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
       // 保证这段手势只改尺寸、绝不换位置。
       content = IgnorePointer(
         child: Transform.scale(
-          scale: 1.02,
+          scale: 1.03,
           child: DecoratedBox(
             decoration: BoxDecoration(
+              color: liftedBacking,
               borderRadius: BorderRadius.circular(cardRadius),
               boxShadow: [
                 BoxShadow(
-                  color: SemColors.accent.withValues(alpha: 0.18),
+                  color: SemColors.shadow,
+                  blurRadius: 24,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 8),
+                ),
+                BoxShadow(
+                  color: SemColors.accent.withValues(alpha: 0.24),
                   blurRadius: 18,
                   spreadRadius: 1,
                 ),
@@ -1568,17 +1588,18 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
         ),
       );
     }
-    // 缩放时的目标是「一眼看出松手会变成多大」：虚线要够粗、底色要够实，
-    // 光晕让它在浅色 / 深色卡面上都浮起来。
+    // 缩放时的目标框靠**描边**表达，不靠填充：卡片本身是白 55% 的半透明玻璃，
+    // 底下压一层明显的蓝填充会把它染色，看起来就比邻居「暗淡」。
+    // 所以填充压到 6%（只用来勾出区域轮廓），信号交给加粗的虚线 + 外发光。
     return CustomPaint(
       painter: _DashedBoxPainter(
-        color: SemColors.accent.withValues(alpha: 0.95),
-        fill: SemColors.accent.withValues(alpha: 0.18),
-        glow: SemColors.accent.withValues(alpha: 0.35),
+        color: SemColors.accent.withValues(alpha: 1),
+        fill: SemColors.accent.withValues(alpha: 0.06),
+        glow: SemColors.accent.withValues(alpha: 0.45),
         radius: cardRadius,
-        dash: 9,
-        gap: 5,
-        strokeWidth: 2.6,
+        dash: 10,
+        gap: 6,
+        strokeWidth: 3,
       ),
     );
   }
@@ -1680,13 +1701,15 @@ class _SlotMotionState extends State<_SlotMotion>
     _controller.forward(from: 0);
   }
 
-  /// 顺着上一段速度接着冲用 easeOutCubic；被拉回来 / 拐弯用 easeInOutCubic。
-  Curve _curveFor(Offset velocity, Offset from, Offset to) {
-    final move = to - from;
-    if (move.distance < 0.5 || velocity.distance < 4) return Curves.easeOutCubic;
-    final dot = velocity.dx * move.dx + velocity.dy * move.dy;
-    return dot >= 0 ? Curves.easeOutCubic : Curves.easeInOutCubic;
-  }
+  /// 曲线：**一律 easeInOutCubic**（慢-快-慢）。
+  ///
+  /// 原来「顺着冲」用 easeOutCubic 是错的：它在 520ms 里前 60ms 就走完 39%，
+  /// 肉眼看就是「一瞬间跳过去」，完全看不出动画。easeInOutCubic 把位移摊满
+  /// 整个时长，起手慢、收尾慢，才读得出「邻居滑过去」这件事。
+  ///
+  /// 动量没有丢：[_from] 取的是当前位置（差项起步），中途改目标不会回跳；
+  /// 速度信息仍然用 [velocity] 记录，反向时收尾更软（见 [_effective]）。
+  Curve _curveFor(Offset velocity, Offset from, Offset to) => Curves.easeInOutCubic;
 
   /// 曲线在 t 处的斜率（两段差分近似），只用来推算瞬时速度。
   double _slope(Curve curve, double t) {
