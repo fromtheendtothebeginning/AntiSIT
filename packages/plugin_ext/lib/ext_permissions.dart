@@ -69,6 +69,20 @@ const Map<String, String> kMethodPermissions = {
   'files.save': 'files',
 };
 
+/// 服务名 → 需要的权限：给「源码体检」用（拓展工坊自检、市场 `check` 共用）。
+///
+/// 只收**一个服务对应一个权限**的：`net` 有 `network` 与 `campus_net` 两种、`files`
+/// 在两边各有自己的文案，所以不在这张表里（各自单独查）。
+const Map<String, String> kServicePermissions = {
+  'storage': 'storage',
+  'secrets': 'secrets',
+  'notify': 'notification',
+  'clipboard': 'clipboard',
+  'login': 'login',
+  'background': 'background',
+  'ai': 'ai',
+};
+
 /// 敏感权限的中文说明列表（市场页 / 安装弹窗 / 详情页共用）。
 List<String> describeSensitivePermissions(Iterable<String> permissions) => [
       for (final p in kSensitivePermissions)

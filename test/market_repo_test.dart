@@ -66,6 +66,43 @@ void main() {
     }
   }, skip: skip);
 
+  test('真实产物：源码里用到的敏感服务，条目都声明了对应权限', () async {
+    // 权限门（ExtBridge._checkPermission）只看条目上的 permissions：漏一条，
+    // 那次调用就整条 reject 回网页。「大物实验提醒」v1.0.0 漏了 background，
+    // 手机上点「开启后台刷新」只会弹一句 Invalid argument(s)。这里拿 App 自己
+    // 的权限表反过来查真实目录，跨仓库才不会各说各话。
+    final catalog = File('${repo.path}/market.json').readAsBytesSync();
+    final tmp = Directory.systemTemp.createTempSync('market_repo_perm');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final problems = <String>[];
+
+    for (final e in parseCatalog(catalog)) {
+      if (!e.isCordis) continue;
+      final bytes = File('${repo.path}/${e.zip}').readAsBytesSync();
+      final bundle = extractBundle(bytes: bytes, dir: '${tmp.path}/${e.id}');
+      final code = File(bundle.entry).readAsStringSync();
+      // 反向查：代码里真调了哪个服务，就必须有对应权限。`ctx.net` 有两条通道
+      // （net.request 要 network、net.campus 要 campus_net），按调用的方法名分辨。
+      for (final entry in kServicePermissions.entries) {
+        final service = entry.key;
+        final perm = entry.value;
+        if (e.permissions.contains(perm)) continue;
+        if (RegExp('\\bctx\\.${service}\\b').hasMatch(code)) {
+          problems.add('${e.id}：用了 ctx.$service，但目录里没声明 $perm');
+        }
+      }
+      if (RegExp(r'\bctx\.net\.request\b').hasMatch(code) &&
+          !e.permissions.contains('network')) {
+        problems.add('${e.id}：用了 ctx.net.request，但目录里没声明 network');
+      }
+      if (RegExp(r'\bctx\.net\.campus\b').hasMatch(code) &&
+          !e.permissions.contains('campus_net')) {
+        problems.add('${e.id}：用了 ctx.net.campus，但目录里没声明 campus_net');
+      }
+    }
+    expect(problems, isEmpty, reason: problems.join('；'));
+  }, skip: skip);
+
   test('真实条目能在市场页里列出来（名称 / 版本 / 权限都对）', () async {
     final signer = File('${repo.path}/market.json').readAsBytesSync();
     final entries = parseCatalog(signer);
@@ -95,8 +132,9 @@ void main() {
         reason: '学习通截止提醒：存条目、发通知、同步学习通、登录、后台刷新');
     expect(
         byId['sit.experiment-reminder']!.permissions,
-        containsAll(['storage', 'notification', 'secrets', 'campus_net']),
-        reason: '大物实验提醒：存条目、发通知、加密凭据、校内明文 http');
+        containsAll(['storage', 'notification', 'secrets', 'campus_net', 'background']),
+        reason: '大物实验提醒：存条目、发通知、加密凭据、校内明文 http、后台刷新'
+            '（v1.0.0 漏了 background，手机上「开启后台刷新」直接被权限门拒掉）');
     expect(byId['sit.experiment-reminder']!.needsNewerApp('1.43.0'), isTrue,
         reason: '大物实验提醒依赖 1.44.0 的 net.campus 通道');
     expect(byId['sit.experiment-reminder']!.needsNewerApp('1.44.0'), isFalse);

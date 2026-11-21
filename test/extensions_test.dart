@@ -1628,6 +1628,32 @@ void main() {
       expect(check['ok'], isTrue);
     });
 
+    testWidgets('自检：用了 ctx.background 但清单没声明 background → 报出来', (tester) async {
+      // 真实事故的回归：清单漏权限时 App 的权限门会拒绝调用，插件只表现成
+      // 「点开启后台刷新弹一条 Invalid argument(s)」。自检要提前说清楚。
+      final draft = await workshop.create(name: '后台刷新');
+      final ws = await bridge(tester, ExtBridge.workshopExtId);
+      // 直接走 store 写盘：workshop.write 每次都要弹原生确认，这里测的是自检本身
+      final main = await workshop.readFileVersioned(draft.id, 'main.js');
+      await workshop.writeFile(draft.id, 'main.js',
+          'export default { apply(ctx) { ctx.background.keepAlive({ enabled: true }); } }',
+          expectedVersion: main.version);
+
+      var check = await ws.call('workshop.validate', {'draftId': draft.id}) as Map;
+      expect(check['ok'], isFalse);
+      expect((check['problems'] as List).join('\n'), contains('background'));
+
+      // 清单里补上就通过
+      final manifest = await workshop.readFileVersioned(draft.id, 'ext.json');
+      final raw = jsonDecode(manifest.content) as Map<String, Object?>;
+      raw['permissions'] = ['background'];
+      await workshop.writeFile(draft.id, 'ext.json',
+          '${const JsonEncoder.withIndent('  ').convert(raw)}\n',
+          expectedVersion: manifest.version);
+      check = await ws.call('workshop.validate', {'draftId': draft.id}) as Map;
+      expect(check['ok'], isTrue, reason: '${check['problems']}');
+    });
+
     testWidgets('写文件前弹原生确认；确认后才落盘', (tester) async {
       final draft = await workshop.create(name: '喝水记录');
       final ws = await bridge(tester, ExtBridge.workshopExtId);

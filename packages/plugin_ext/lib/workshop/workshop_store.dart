@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../cordis_bundle.dart';
 import '../extension_item.dart';
 import '../extension_store.dart';
+import '../ext_permissions.dart';
 
 /// 拓展工坊的一个草稿。
 class WorkshopDraft {
@@ -696,6 +697,14 @@ class WorkshopStore {
           RegExp(r'\bctx\.files\b|\bantiSIT\.call\(\s*[\x27"]files\.')
               .hasMatch(code)) {
         out.add('代码里用了 ctx.files，但 ext.json 没声明 files 权限（市场包会被拒）');
+      }
+      // 其它敏感服务同理：App 的权限门只在「市场来源」的拓展上生效，没声明就
+      // reject 回网页，插件表现成「这块功能点了没反应」或弹一条作者看不懂的报错。
+      for (final entry in kServicePermissions.entries) {
+        if (draft.manifest.permissions.contains(entry.value)) continue;
+        if (!RegExp('\\bctx\\.${entry.key}\\b').hasMatch(code)) continue;
+        out.add('代码里用了 ctx.${entry.key}，但 ext.json 没声明 ${entry.value} 权限'
+            '（市场装的拓展调用它会被 App 拒绝）');
       }
       if (RegExp(r"""<script[^>]+src\s*=\s*["']https?://""", caseSensitive: false)
           .hasMatch(code)) {

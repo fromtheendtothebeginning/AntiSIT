@@ -385,6 +385,12 @@ const full = await ctx.ai.chatToolsStream({
 用户自己填网址 / 自己导入的压缩包不受这条限制——来源是他自己选的。
 权限门是**防误用**，不是沙箱；App 的用户数据（学号、课表、成绩、凭据）不在接口里。
 
+没声明的调用不会「少一半功能」而是**整次 reject**：网页侧收到的是
+`Invalid argument(s): 这条拓展没有声明「在后台保持运行…」权限（background），接口已拒`，
+插件要自己 `catch` 掉并提示，否则用户只会看到一句看不懂的英文。打包前用
+`dart run tool/market_tool.dart check` 自检能提前撞上这一类；拓展工坊里保存草稿时
+「自检」也会查同一张表（`ctx.storage / secrets / notify / clipboard / login / background / ai`）。
+
 ### 凭据与原生 HTTPS 代理
 
 学校系统的接口通常要带登录态，而网页直接 `fetch` 既受 CORS 限制、也不能设置 `Cookie` 头。
