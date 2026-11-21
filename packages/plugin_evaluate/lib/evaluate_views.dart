@@ -58,9 +58,7 @@ class EvaluateSummaryCard extends StatelessWidget {
           Text(
             s.allDone
                 ? '本轮已全部提交，感谢参与评教。'
-                : '共 ' +
-                    s.total.toString() +
-                    ' 门次；点「全部打分」可以一次给所有老师同分并保存，点开每一条还能单独调。',
+                : '共 ${s.total} 门次；点「全部打分」可以一次给所有老师同分并保存，点开每一条还能单独调。',
             style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted),
           ),
         ],

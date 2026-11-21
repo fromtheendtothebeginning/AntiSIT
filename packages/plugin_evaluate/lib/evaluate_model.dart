@@ -58,7 +58,7 @@ class EvalTarget {
   String get statusLabel => submitted ? '已提交' : (saved ? '已保存' : '未评');
 
   /// 同一教学班可能有多位老师：用教学班 + 教师 ID 做稳定键。
-  String get id => jxbId + '|' + jghId;
+  String get id => '$jxbId|$jghId';
 
   String get subtitle => [
         if (className.trim().isNotEmpty) className,

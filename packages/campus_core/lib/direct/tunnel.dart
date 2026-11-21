@@ -24,9 +24,9 @@ Future<Socket> connectDirect(String host, int port,
   try {
     return await Socket.connect(host, port, timeout: timeout);
   } on SocketException catch (e) {
-    throw TunnelException('连不上 ' + host + '：' + e.message);
+    throw TunnelException('连不上 $host：${e.message}');
   } on TimeoutException {
-    throw TunnelException('连不上 ' + host + '：连接超时');
+    throw TunnelException('连不上 $host：连接超时');
   }
 }
 
@@ -58,15 +58,13 @@ Future<Socket> connectViaProxy(
 }) async {
   final proxy = parseHttpProxy(proxyUrl);
   if (proxy == null) {
-    throw TunnelException('代理地址不对：' + proxyUrl);
+    throw TunnelException('代理地址不对：$proxyUrl');
   }
   final socket = await connectDirect(proxy.host, proxy.port, timeout: timeout);
   try {
-    final target = targetHost + ':' + targetPort.toString();
+    final target = '$targetHost:$targetPort';
     socket.add(utf8.encode(
-      'CONNECT ' + target + ' HTTP/1.1\r\n' +
-          'Host: ' + target + '\r\n' +
-          'Connection: keep-alive\r\n\r\n',
+      'CONNECT $target HTTP/1.1\r\nHost: $target\r\nConnection: keep-alive\r\n\r\n',
     ));
     await socket.flush();
     final head = await readUntilHeaderEnd(socket, timeout: timeout);
@@ -75,16 +73,16 @@ Future<Socket> connectViaProxy(
     final status = m == null ? 0 : int.parse(m.group(1)!);
     if (status < 200 || status >= 300) {
       socket.destroy();
-      throw TunnelException('代理拒绝连接 ' + targetHost + '（HTTP ' + status.toString() + '）');
+      throw TunnelException('代理拒绝连接 $targetHost（HTTP $status）');
     }
     return socket;
   } catch (e) {
     socket.destroy();
     if (e is TunnelException) rethrow;
     if (e is TimeoutException) {
-      throw TunnelException('代理 ' + proxyUrl + ' 建隧道超时');
+      throw TunnelException('代理 $proxyUrl 建隧道超时');
     }
-    throw TunnelException('经代理建隧道失败：' + e.toString());
+    throw TunnelException('经代理建隧道失败：$e');
   }
 }
 
@@ -107,7 +105,7 @@ Future<String> readUntilHeaderEnd(Socket socket,
       }
     },
     onError: (Object e, StackTrace st) {
-      if (!done.isCompleted) done.completeError(TunnelException('代理连接中断：' + e.toString()));
+      if (!done.isCompleted) done.completeError(TunnelException('代理连接中断：$e'));
     },
     onDone: () {
       if (!done.isCompleted) done.completeError(const TunnelException('代理提前关闭了连接'));
@@ -156,7 +154,7 @@ Future<SecureSocket> startNoSniTls(
     throw const TunnelException('校园网站点握手超时（隧道很慢，或学校站点在维护）');
   } on HandshakeException catch (e) {
     socket.destroy();
-    throw TunnelException('校园网站点握手失败：' + e.message);
+    throw TunnelException('校园网站点握手失败：${e.message}');
   }
 }
 

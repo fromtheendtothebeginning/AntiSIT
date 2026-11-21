@@ -91,7 +91,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
     try {
       return await ApiClient.I.serverWebProxy();
     } catch (e) {
-      debugPrint('[学生评教] 取校园隧道代理失败：' + e.toString());
+      debugPrint('[学生评教] 取校园隧道代理失败：$e');
       return '';
     }
   }
@@ -165,7 +165,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('把分数写进 ' + pending.length.toString() + ' 位老师的每一道题，并保存（不提交）。',
+              Text('把分数写进 ${pending.length} 位老师的每一道题，并保存（不提交）。',
                   style: const TextStyle(fontSize: 13, height: 1.7)),
               const SizedBox(height: 12),
               Row(
@@ -210,7 +210,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
         targets: _targets,
         score: score,
         onProgress: (m) {
-          if (mounted) setState(() => _log = '正在处理 ' + m);
+          if (mounted) setState(() => _log = '正在处理 $m');
         },
       );
       await _loadTargets();
@@ -242,7 +242,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('将对 ' + pending.length.toString() + ' 条评教按下面的分数提交。',
+              Text('将对 ${pending.length} 条评教按下面的分数提交。',
                   style: const TextStyle(fontSize: 13, height: 1.7)),
               const SizedBox(height: 10),
               Row(
@@ -287,7 +287,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
         targets: _targets,
         score: score,
         onProgress: (m) {
-          if (mounted) setState(() => _log = '正在提交 ' + m);
+          if (mounted) setState(() => _log = '正在提交 $m');
         },
       );
       await _loadTargets();
@@ -307,7 +307,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text((submitted ? '已提交 ' : '已保存 ') + result.done.toString() + ' 条'),
+        title: Text('${submitted ? '已提交 ' : '已保存 '}${result.done} 条'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,7 +315,7 @@ class _EvaluatePageState extends State<EvaluatePage> {
             if (result.skipped > 0)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text('已提交的 ' + result.skipped.toString() + ' 条已跳过。',
+                child: Text('已提交的 ${result.skipped} 条已跳过。',
                     style: const TextStyle(fontSize: 12.5, height: 1.6)),
               ),
             if (result.failures.isEmpty)

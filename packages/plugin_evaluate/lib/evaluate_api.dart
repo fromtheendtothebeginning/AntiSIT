@@ -36,10 +36,10 @@ class EvaluateApi {
 
   String get base => session.base.replaceAll(RegExp(r'/+$'), '');
 
-  String get _jwglxt => base + '/jwglxt';
+  String get _jwglxt => '$base/jwglxt';
 
   String get _listReferer =>
-      _jwglxt + '/xspjgl/xspj_cxXspjIndex.html?doType=details&gnmkdm=' + _gnmkdm + '&layout=default';
+      '$_jwglxt/xspjgl/xspj_cxXspjIndex.html?doType=details&gnmkdm=$_gnmkdm&layout=default';
 
   void _log(String line) => onLog?.call(line);
 
@@ -50,7 +50,7 @@ class EvaluateApi {
   Future<bool> checkSession() async {
     try {
       final r = await _request('GET',
-          _jwglxt + '/xspjgl/xspj_cxXspjIndex.html?doType=details&gnmkdm=N999999&layout=default');
+          '$_jwglxt/xspjgl/xspj_cxXspjIndex.html?doType=details&gnmkdm=N999999&layout=default');
       final m = RegExp('id="sessionUserKey"[^>]*value="([^"]*)"').firstMatch(r.text);
       return m != null && m.group(1)!.trim().isNotEmpty;
     } catch (_) {
@@ -60,7 +60,7 @@ class EvaluateApi {
 
   /// 已阅读须知（零门槛端点，返回 "1" 才算成功；顺便当健康探针）。
   Future<void> acknowledgeNotice() async {
-    final r = await _request('POST', _jwglxt + '/xtgl/rzgl_cxAddRdrz.html', form: const {});
+    final r = await _request('POST', '$_jwglxt/xtgl/rzgl_cxAddRdrz.html', form: const {});
     final t = r.text.trim();
     if (t == '"1"' || r.json == 1 || r.json == '1') return;
     throw EvaluateError.rpc(r.status, t, hint: '登录状态失效，请重新登录');
@@ -71,7 +71,7 @@ class EvaluateApi {
   Future<List<EvalTarget>> fetchTargets() async {
     final r = await _request(
       'POST',
-      _jwglxt + '/xspjgl/xspj_cxXspjIndex.html?doType=query&gnmkdm=' + _gnmkdm,
+      '$_jwglxt/xspjgl/xspj_cxXspjIndex.html?doType=query&gnmkdm=$_gnmkdm',
       form: const {
         'queryModel.showCount': '200',
         'queryModel.currentPage': '1',
@@ -93,7 +93,7 @@ class EvaluateApi {
 
   /// 评价情况汇总：待评 / 已保存 / 已提交。
   Future<EvalSummary> fetchSummary() async {
-    final r = await _request('POST', _jwglxt + '/xspjgl/xspj_cxXspjqk.html',
+    final r = await _request('POST', '$_jwglxt/xspjgl/xspj_cxXspjqk.html',
         form: const {}, ajax: true);
     final j = r.json;
     if (j is! Map) return const EvalSummary();
@@ -119,9 +119,9 @@ class EvaluateApi {
     };
     final r = await _request(
       'GET',
-      _jwglxt + '/xspjgl/xspj_cxXspjDisplay.html?' + Uri(queryParameters: query).query,
+      '$_jwglxt/xspjgl/xspj_cxXspjDisplay.html?${Uri(queryParameters: query).query}',
       ajax: true,
-      referer: _listReferer + '&offDetails=1',
+      referer: '$_listReferer&offDetails=1',
     );
     if (r.status == 911) {
       throw const EvaluateError('请求被教务拒绝（911）：请重新登录后再试');
@@ -157,7 +157,7 @@ class EvaluateApi {
     final fields = buildSubmitFields(form, scores, comment: comment, submit: submit);
     final r = await _request(
       'POST',
-      _jwglxt + '/xspjgl/xspj_' + (submit ? 'tj' : 'bc') + 'Xspj.html',
+      '$_jwglxt/xspjgl/xspj_${submit ? 'tj' : 'bc'}Xspj.html',
       form: fields,
       ajax: true,
       referer: _listReferer,
@@ -260,7 +260,7 @@ class EvaluateApi {
       final cert = tls.peerCertificate;
       if (cert != null && !verifyHost(cert, host)) {
         tls.destroy();
-        throw EvaluateError('代理后面的证书不属于 ' + host + '：连接可能被劫持，已中止');
+        throw EvaluateError('代理后面的证书不属于 $host：连接可能被劫持，已中止');
       }
       channel = tls;
     } else {
@@ -268,10 +268,10 @@ class EvaluateApi {
     }
 
     final path = uri.path.isEmpty ? '/' : uri.path;
-    final query = uri.hasQuery ? '?' + uri.query : '';
+    final query = uri.hasQuery ? '?${uri.query}' : '';
     final headers = <String>[
-      method + ' ' + path + query + ' HTTP/1.1',
-      'Host: ' + host,
+      '$method $path$query HTTP/1.1',
+      'Host: $host',
       'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
           '(KHTML, like Gecko) Chrome/120.0 Safari/537.36 AntiSIT-Eval',
       'Accept: */*',
@@ -279,15 +279,15 @@ class EvaluateApi {
       'Accept-Encoding: identity',
       'Connection: close',
       if (ajax) 'X-Requested-With: XMLHttpRequest',
-      if (referer != null) 'Referer: ' + referer,
+      if (referer != null) 'Referer: $referer',
       if (body != null)
         'Content-Type: application/x-www-form-urlencoded;charset=utf-8',
     ];
     final cookie = session.cookieHeader(host);
-    if (cookie.isNotEmpty) headers.add('Cookie: ' + cookie);
+    if (cookie.isNotEmpty) headers.add('Cookie: $cookie');
     final bodyBytes = body == null ? null : utf8.encode(body);
-    if (bodyBytes != null) headers.add('Content-Length: ' + bodyBytes.length.toString());
-    channel.add(utf8.encode(headers.join('\r\n') + '\r\n\r\n'));
+    if (bodyBytes != null) headers.add('Content-Length: ${bodyBytes.length}');
+    channel.add(utf8.encode('${headers.join('\r\n')}\r\n\r\n'));
     if (bodyBytes != null) channel.add(bodyBytes);
     await channel.flush();
 
@@ -295,15 +295,12 @@ class EvaluateApi {
     channel.destroy();
     final resp = _Resp.parse(Uint8List.fromList(bytes));
     session.absorbCookies(host, resp.setCookies);
-    _log(method + ' ' + path + ' → ' + resp.status.toString() + ' ' + bytes.length.toString() + 'B');
+    _log('$method $path → ${resp.status} ${bytes.length}B');
     if (resp.status == 901) {
       throw EvaluateError.rpc(901, resp.text, hint: '登录已失效，请重新登录');
     }
     return resp;
   }
-
-  static int _ms() => DateTime.now().millisecondsSinceEpoch;
-
 
   /// 服务端返回的 "保存成功！" 是 JSON 字符串：拆掉引号与转义。
   static String _unwrapJsonString(String raw) {
@@ -320,7 +317,7 @@ class EvaluateApi {
   static String encodeForm(Map<String, String> fields) {
     final parts = <String>[];
     fields.forEach((k, v) {
-      parts.add(_pct(k) + '=' + _pct(v));
+      parts.add('${_pct(k)}=${_pct(v)}');
     });
     return parts.join('&');
   }
@@ -424,7 +421,7 @@ Map<String, String> buildSubmitFields(
   ];
   if (missing.isNotEmpty) {
     throw EvaluateError(
-        '还有 ' + missing.length.toString() + ' 项指标没打分，无法' + (submit ? '提交' : '保存'));
+        '还有 ${missing.length} 项指标没打分，无法${submit ? '提交' : '保存'}');
   }
   final fields = <String, String>{
     'ztpjbl': form.ztpjbl,
@@ -440,33 +437,33 @@ Map<String, String> buildSubmitFields(
   };
   for (var i = 0; i < form.models.length; i++) {
     final m = form.models[i];
-    final p = 'modelList[' + i.toString() + ']';
-    fields[p + '.pjmbmcb_id'] = m.id;
-    fields[p + '.pjmbmc'] = m.name;
-    fields[p + '.pjdxdm'] = m.pjdxdm;
-    fields[p + '.fxzgf'] = m.fxzgf;
+    final p = 'modelList[$i]';
+    fields['$p.pjmbmcb_id'] = m.id;
+    fields['$p.pjmbmc'] = m.name;
+    fields['$p.pjdxdm'] = m.pjdxdm;
+    fields['$p.fxzgf'] = m.fxzgf;
     // 评语在页面 JS 里先 encodeURIComponent 一次，再由 \$.param 编码第二次
-    fields[p + '.py'] = comment.isEmpty ? '' : Uri.encodeComponent(comment);
-    fields[p + '.xspfb_id'] = m.savedId;
-    fields[p + '.sfbhmgc'] = '0';
+    fields['$p.py'] = comment.isEmpty ? '' : Uri.encodeComponent(comment);
+    fields['$p.xspfb_id'] = m.savedId;
+    fields['$p.sfbhmgc'] = '0';
     var complete = true;
     for (var j = 0; j < m.groups.length; j++) {
       final g = m.groups[j];
-      final gp = p + '.xspjList[' + j.toString() + ']';
-      fields[gp + '.pjzbxm_id'] = g.id;
+      final gp = '$p.xspjList[$j]';
+      fields['$gp.pjzbxm_id'] = g.id;
       for (var k = 0; k < g.items.length; k++) {
         final child = g.items[k];
         final score = scores[child.id];
         if (child.required && score == null) complete = false;
         if (score == null) continue;
-        final c = gp + '.childXspjList[' + k.toString() + ']';
-        fields[c + '.pjzbxm_id'] = child.id;
-        fields[c + '.pfdjdmb_id'] = child.gradeCodeId;
-        fields[c + '.zsmbmcb_id'] = child.templateCodeId;
-        fields[c + '.pjf'] = fmtScore(score);
+        final c = '$gp.childXspjList[$k]';
+        fields['$c.pjzbxm_id'] = child.id;
+        fields['$c.pfdjdmb_id'] = child.gradeCodeId;
+        fields['$c.zsmbmcb_id'] = child.templateCodeId;
+        fields['$c.pjf'] = fmtScore(score);
       }
     }
-    fields[p + '.pjzt'] = complete ? '1' : '0';
+    fields['$p.pjzt'] = complete ? '1' : '0';
   }
   return fields;
 }
@@ -491,19 +488,19 @@ class EvaluateError implements Exception {
 
   factory EvaluateError.rpc(int status, String body, {String hint = ''}) {
     var text = body.trim();
-    if (text.length > 400) text = text.substring(0, 400) + '…';
+    if (text.length > 400) text = '${text.substring(0, 400)}…';
     if (text.contains('无功能权限')) {
       return EvaluateError(hint.isEmpty ? '登录状态失效，请重新登录' : hint, code: status);
     }
     if (text.isEmpty) {
-      return EvaluateError('教务返回 HTTP ' + status.toString(), code: status);
+      return EvaluateError('教务返回 HTTP $status', code: status);
     }
     final plain = text
         .replaceAll(RegExp('<[^>]+>'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     return EvaluateError(
-      hint.isEmpty ? '教务返回 HTTP ' + status.toString() + '：' + plain : hint,
+      hint.isEmpty ? '教务返回 HTTP $status：$plain' : hint,
       code: status,
     );
   }

@@ -30,8 +30,8 @@ class EvaluateSession {
   String cookieHeader(String host) {
     final parts = <String>[];
     _jar.forEach((domain, cookies) {
-      if (host == domain || host.endsWith('.' + domain)) {
-        cookies.forEach((k, v) => parts.add(k + '=' + v));
+      if (host == domain || host.endsWith('.$domain')) {
+        cookies.forEach((k, v) => parts.add('$k=$v'));
       }
     });
     return parts.join('; ');

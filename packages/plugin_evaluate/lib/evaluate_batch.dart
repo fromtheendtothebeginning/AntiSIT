@@ -35,13 +35,13 @@ Future<BatchResult> submitAllTargets({
       skipped++;
       continue;
     }
-    onProgress?.call(t.teacher + ' · ' + t.course);
+    onProgress?.call('${t.teacher} · ${t.course}');
     try {
       final form = await api.fetchForm(t);
       await api.submitForm(form, presetScores(form, score));
       done++;
     } catch (e) {
-      failures.add(t.teacher + '（' + t.course + '）：' + e.toString());
+      failures.add('${t.teacher}（${t.course}）：$e');
     }
   }
   return BatchResult(done: done, skipped: skipped, failures: failures);
@@ -65,13 +65,13 @@ Future<BatchResult> fillAllTargets({
       skipped++;
       continue;
     }
-    onProgress?.call(t.teacher + ' · ' + t.course);
+    onProgress?.call('${t.teacher} · ${t.course}');
     try {
       final form = await api.fetchForm(t);
       await api.saveForm(form, presetScores(form, score));
       done++;
     } catch (e) {
-      failures.add(t.teacher + '（' + t.course + '）：' + e.toString());
+      failures.add('${t.teacher}（${t.course}）：$e');
     }
   }
   return BatchResult(done: done, skipped: skipped, failures: failures);

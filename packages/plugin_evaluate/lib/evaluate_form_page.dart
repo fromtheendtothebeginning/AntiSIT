@@ -35,7 +35,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
   EvalForm? _form;
   bool _loading = true;
   String? _error;
-  String _log = '';
+  final String _log = '';
 
   /// 指标 ID → 分数。
   final Map<String, double> _scores = {};
@@ -115,10 +115,8 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
     if (_scores.length < form.requiredCount) {
       showErr(
           context,
-          '还有 ' +
-              (form.requiredCount - _filled).toString() +
-              ' 项必填指标没打分',
-          title: '不能' + (submit ? '提交' : '保存'));
+          '还有 ${form.requiredCount - _filled} 项必填指标没打分',
+          title: '不能${submit ? '提交' : '保存'}');
       return;
     }
     if (submit) {
@@ -183,11 +181,11 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
       return (
         ok: ok,
         detail: ok
-            ? '复查通过：教务显示「' + now.statusLabel + '」'
-            : '教务返回值像成功，但复查显示仍是「' + now.statusLabel + '」——数据可能被服务端丢弃，请稍后再试或联系教务',
+            ? '复查通过：教务显示「${now.statusLabel}」'
+            : '教务返回值像成功，但复查显示仍是「${now.statusLabel}」——数据可能被服务端丢弃，请稍后再试或联系教务',
       );
     } catch (e) {
-      return (ok: false, detail: '复查失败：' + e.toString());
+      return (ok: false, detail: '复查失败：$e');
     }
   }
 
@@ -199,7 +197,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(widget.target.teacher + ' · ' + widget.target.course,
+              Text('${widget.target.teacher} · ${widget.target.course}',
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
               const SizedBox(height: 10),
               const Text('提交后不能修改，也不可撤销。评教是匿名：教师看不到你的具体打分。',
@@ -284,7 +282,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                             widget.target.course +
                                 (widget.target.className.isEmpty
                                     ? ''
-                                    : ' · ' + widget.target.className),
+                                    : ' · ${widget.target.className}'),
                             style: TextStyle(fontSize: 12, color: SemColors.textMuted),
                           ),
                         ],
@@ -325,7 +323,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                   children: [
                     for (final v in const [100.0, 95.0, 90.0, 80.0, 60.0])
                       ActionChip(
-                        label: Text(v.toInt().toString() + ' 分',
+                        label: Text('${v.toInt()} 分',
                             style: const TextStyle(fontSize: 11.5)),
                         onPressed: _busy ? null : () => _applyUniform(v),
                       ),
@@ -333,11 +331,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '总分预览：' + _total.toStringAsFixed(2) + ' / 100　已填 ' +
-                      _filled.toString() +
-                      ' / ' +
-                      form.count.toString() +
-                      ' 项',
+                  '总分预览：${_total.toStringAsFixed(2)} / 100　已填 $_filled / ${form.count} 项',
                   style: TextStyle(fontSize: 11.5, color: SemColors.textMuted),
                 ),
               ],
@@ -348,7 +342,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
               _groupCard(form.models[gi], form.models[gi].groups[g]),
           AppCard(
             child: GlassField(
-              label: '评语（选填，' + form.commentMax.toString() + ' 字以内）',
+              label: '评语（选填，${form.commentMax} 字以内）',
               controller: _comment,
               maxLines: 4,
               hintText: '可以写下对本课程的建议',
@@ -394,7 +388,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
             children: [
               Expanded(
                 child: Text(
-                  number.toString() + '. ' + item.title,
+                  '$number. ${item.title}',
                   style: TextStyle(
                       fontSize: 12.5, height: 1.45, color: SemColors.textSecondary),
                 ),
