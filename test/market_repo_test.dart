@@ -87,7 +87,7 @@ void main() {
         final service = entry.key;
         final perm = entry.value;
         if (e.permissions.contains(perm)) continue;
-        if (RegExp('\\bctx\\.${service}\\b').hasMatch(code)) {
+        if (RegExp('\\bctx\\.$service\\b').hasMatch(code)) {
           problems.add('${e.id}：用了 ctx.$service，但目录里没声明 $perm');
         }
       }
