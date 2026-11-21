@@ -24,6 +24,15 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.45.1',
+    date: '2026-11-21',
+    notes: [
+      '修：缩到一半时卡片右半边是空的（卡面没铺满跟手框），看着像变暗 / 被裁掉',
+      '修：跟手卡片被下面的虚线填充染色，比邻居暗一档；现在垫了实底，抬起时更亮也更明显',
+      '修：邻居让位动画的曲线用错（前 60ms 就走完 39%），看着还是瞬移；现在慢-快-慢铺满全程',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.45.0',
     date: '2026-11-21',
     notes: [
