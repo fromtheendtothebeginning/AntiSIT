@@ -410,15 +410,15 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
   static const int _columns = 6;
   static const double _maxEdgeScrollSpeed = 900; // px/s
 
-  /// 换尺寸的过渡：比换位慢、走「先快后极慢」的减速曲线，
-  /// 卡片像被轻轻推着长开 / 收回（ColorOS 改小组件尺寸的那种手感）。
-  /// 480ms 是「明显能看清过程」的长度，再短就显得像直接跳过去。
+  /// 换尺寸的过渡时长：比换位慢一点，卡片像被轻轻推着长开 / 收回
+  ///（ColorOS 改小组件尺寸的那种手感）。
+  ///
+  /// 曲线不写在这里：实际用哪条由 [_SlotMotion] 按「上一段的速度方向」挑
+  /// （同向接着冲 / 反向先收速度），这样才能在动画中途改目标时保持动量。
   static const Duration _sizeAnim = Duration(milliseconds: 520);
-  static const Curve _sizeCurve = Cubic(0.12, 0.68, 0.06, 1.0);
 
   /// 只是换位置的过渡（邻居让位）：短一点，避免整页跟着「飘」。
   static const Duration _moveAnim = Duration(milliseconds: 300);
-  static const Curve _moveCurve = Curves.easeOutCubic;
 
   /// 拖出去多远才算「真的挪开」：低于这个距离时卡片还算在原位，
   /// 邻居不让位、占位框也留在起手处（避免轻轻一碰就整页重排）。
@@ -1157,19 +1157,12 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           final sizeChanged =
               previousSize != null && previousSize != placement.rect.size;
           cards.add(
-            AnimatedPositioned(
+            _SlotMotion(
               key: ValueKey<String>('fgrid:${item.id}'),
-              // 缩放过程中**不做动画**：邻居要立刻让到目标框外面去。
-              // 之前按 520ms 的换尺寸动画慢慢挪，本体（跟手的连续尺寸）
-              // 已经把位置占了，看着就是「邻居压在正在缩放的卡片上」。
-              duration: resize != null
-                  ? Duration.zero
-                  : (sizeChanged ? _sizeAnim : _moveAnim),
-              curve: sizeChanged ? _sizeCurve : _moveCurve,
-              left: placement.rect.left,
-              top: placement.rect.top,
-              width: placement.rect.width,
-              height: placement.rect.height,
+              target: placement.rect,
+              // 换尺寸走慢一点、纯换位快一点；中途目标再变只换目标，
+              // 动画带着当前速度继续（见 [_SlotMotion]）。
+              duration: sizeChanged ? _sizeAnim : _moveAnim,
               child: _framed(
                 layoutSize: _layoutSizeFor(item, placement.rect.size),
                 child: _card(
@@ -1192,13 +1185,12 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           if (resizeItem != null && bodyRect != null) {
             nextSizes[resizeItem.id] = bodyRect.size;
             cards.add(
-              AnimatedPositioned(
+              _SlotMotion(
                 key: ValueKey<String>('fgrid:${resizeItem.id}'),
-                duration: Duration.zero,
-                left: bodyRect.left,
-                top: bodyRect.top,
-                width: bodyRect.width,
-                height: bodyRect.height,
+                target: bodyRect,
+                // 跟手：直接贴住目标，不播动画
+                snap: true,
+                duration: _sizeAnim,
                 child: _framed(
                   // 内容按「当前正好装得下的那一档」排版：图标、文字大小、
                   // 省略行数都随手指实时切换，而不是把大排版裁掉一块。
@@ -1226,13 +1218,12 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           if (dragItem != null && dragRect != null) {
             nextSizes[dragItem.id] = dragRect.size;
             cards.add(
-              AnimatedPositioned(
+              _SlotMotion(
                 key: ValueKey<String>('fgrid:${dragItem.id}'),
-                duration: Duration.zero,
-                left: dragRect.left,
-                top: dragRect.top,
-                width: dragRect.width,
-                height: dragRect.height,
+                target: dragRect,
+                // 跟手：直接贴住目标，不播动画
+                snap: true,
+                duration: _moveAnim,
                 child: _framed(
                   layoutSize: _layoutSizeFor(dragItem, dragRect.size),
                   child: _card(
@@ -1262,7 +1253,7 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           onLongPressCancel: _onLongPressCancel,
           child: AnimatedSize(
             duration: _sizeAnim,
-            curve: _sizeCurve,
+            curve: Curves.easeOutCubic,
             alignment: Alignment.topCenter,
             clipBehavior: Clip.none,
             child: SizedBox(
@@ -1593,6 +1584,147 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
   }
 }
 
+/// 一张卡片的「位置 + 尺寸」动画壳：
+///
+/// 目标 rect 变了就从**当前所在位置**继续走，而不是跳回起点重播——
+/// 这是「播放期间又改变时按差项调整到新形态（保持动量）」。
+///
+/// 三个要点：
+/// 1. **最短 0.2 秒**：时长夹到不小于 200ms；
+/// 2. **差项起步**：新目标到来时起点 = 此刻屏幕上的位置，视觉连续、不跳；
+/// 3. **动量**：用上一段的瞬时速度判断这次是「顺着冲」还是「被拉回来」，
+///    同向用 easeOutCubic（接着冲）、反向用 easeInOutCubic（先收速度再走）。
+class _SlotMotion extends StatefulWidget {
+  const _SlotMotion({
+    super.key,
+    required this.target,
+    required this.duration,
+    required this.child,
+    this.snap = false,
+  });
+
+  /// 这一帧排版算出来的目标矩形。
+  final Rect target;
+
+  /// true = 直接贴住目标不做动画（跟着手指走的本体用）。
+  ///
+  /// 它同时也是「类型统一」用的：跟手卡片和普通卡片都是 [_SlotMotion]，
+  /// 只是 snap 不同——元素就不会在两者之间被销毁重建（否则 pan 手势会断）。
+  final bool snap;
+
+  /// 一次完整变化的时长（调用方给：换位 300ms / 换尺寸 520ms）。
+  final Duration duration;
+
+  final Widget child;
+
+  /// 允许的最短动画时长（要求：不小于 0.2 秒）。
+  static const Duration minDuration = Duration(milliseconds: 200);
+
+  @override
+  State<_SlotMotion> createState() => _SlotMotionState();
+}
+
+class _SlotMotionState extends State<_SlotMotion>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: _effective(widget.duration));
+
+  /// 这一次变化的起点 / 终点。
+  ///
+  /// ⚠️ 必须在 initState 里赋值，不能用 `late ... = widget.target` 的惰性初始化：
+  /// 那样 `_to` 会在**第一次被读到时**才求值（也就是 didUpdateWidget 里），
+  /// 拿到的是新目标，比较永远相等 → 动画一次都不播（踩过）。
+  late Rect _from;
+  late Rect _to;
+
+  @override
+  void initState() {
+    super.initState();
+    _from = widget.target;
+    _to = widget.target;
+  }
+
+  /// 上一段的瞬时速度（px/s）：下一次选曲线时用作动量。
+  Offset _velocity = Offset.zero;
+
+  Duration _effective(Duration d) =>
+      d < _SlotMotion.minDuration ? _SlotMotion.minDuration : d;
+
+  @override
+  void didUpdateWidget(covariant _SlotMotion oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.target == _to) return;
+    if (widget.snap) {
+      _controller.stop();
+      _from = widget.target;
+      _to = widget.target;
+      _velocity = Offset.zero;
+      _controller.value = 1;
+      return;
+    }
+    // 差项：从「此刻屏幕上在哪」接着走，不回到上一段起点
+    final current = _rectAt(_controller.value);
+    final dt = _effective(widget.duration).inMicroseconds / 1000000;
+    final slope = _slope(_curveFor(_velocity, current.center, widget.target.center),
+        _controller.value);
+    _velocity = (current.center - _from.center) * (slope / dt);
+    _from = current;
+    _to = widget.target;
+    if ((_to.center - _from.center).distance < 0.5 &&
+        (_to.size.width - _from.size.width).abs() < 0.5 &&
+        (_to.size.height - _from.size.height).abs() < 0.5) {
+      _controller.value = 1;
+      return;
+    }
+    _controller.duration = _effective(widget.duration);
+    _controller.forward(from: 0);
+  }
+
+  /// 顺着上一段速度接着冲用 easeOutCubic；被拉回来 / 拐弯用 easeInOutCubic。
+  Curve _curveFor(Offset velocity, Offset from, Offset to) {
+    final move = to - from;
+    if (move.distance < 0.5 || velocity.distance < 4) return Curves.easeOutCubic;
+    final dot = velocity.dx * move.dx + velocity.dy * move.dy;
+    return dot >= 0 ? Curves.easeOutCubic : Curves.easeInOutCubic;
+  }
+
+  /// 曲线在 t 处的斜率（两段差分近似），只用来推算瞬时速度。
+  double _slope(Curve curve, double t) {
+    const h = 0.02;
+    final a = (t - h).clamp(0.0, 1.0);
+    final b = (t + h).clamp(0.0, 1.0);
+    if (b <= a) return 0;
+    return (curve.transform(b) - curve.transform(a)) / (b - a);
+  }
+
+  Rect _rectAt(double t) {
+    if (t <= 0) return _from;
+    if (t >= 1) return _to;
+    final curve = _curveFor(_velocity, _from.center, _to.center);
+    return Rect.lerp(_from, _to, curve.transform(t)) ?? _to;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      // child 不参与每帧重建：只有外面那层 Positioned 在动
+      child: widget.child,
+      builder: (context, child) {
+        final rect = widget.snap || _controller.value >= 1
+            ? _to
+            : _rectAt(_controller.value);
+        return Positioned.fromRect(rect: rect, child: child!);
+      },
+    );
+  }
+}
 /// 虚线圆角框：缩放时用它画「松手后会变成这个大小」的背景。
 ///
 /// 它是缩放过程中**唯一**能表达「目标尺寸」的东西（卡片本体是跟手的连续尺寸），
