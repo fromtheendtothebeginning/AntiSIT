@@ -338,6 +338,93 @@ void main() {
     });
   });
 
+  group('安装包缓存清理', () {
+    /// 造几个历史安装包（每版 80MB 那种），模拟用了几次更新之后的缓存目录。
+    Future<List<File>> seedCache(int count) async {
+      final dir = Directory('${tmp.path}/update')..createSync(recursive: true);
+      return [
+        for (var i = 0; i < count; i++)
+          File('${dir.path}/AntiSIT-1.2$i.0.apk')..writeAsBytesSync(List.filled(16, i)),
+      ];
+    }
+
+    test('缓存目录里的安装包加起来多大', () async {
+      await seedCache(3);
+      expect(await UpdateDownloader.cachedBytes(), 48);
+    });
+
+    test('清理：删掉全部安装包并报出释放的字节数', () async {
+      final files = await seedCache(3);
+      final freed = await UpdateDownloader.I.purgeCache();
+      expect(freed, 48);
+      for (final f in files) {
+        expect(f.existsSync(), isFalse, reason: '每升一版留下的安装包都该清掉');
+      }
+      expect(await UpdateDownloader.cachedBytes(), 0);
+    });
+
+    test('清理会把就绪状态一并收掉（文件没了，别再显示「安装」）', () async {
+      final files = await seedCache(1);
+      UpdateDownloader.I.readyPath = files.single.path;
+      UpdateDownloader.I.status = 'ready';
+
+      await UpdateDownloader.I.purgeCache();
+
+      expect(UpdateDownloader.I.readyPath, isNull);
+      expect(UpdateDownloader.I.status, 'idle');
+    });
+
+    test('keepReady：还等着装的那份留住，其余清掉', () async {
+      final files = await seedCache(2);
+      final keep = files.last;
+      UpdateDownloader.I.readyPath = keep.path;
+      UpdateDownloader.I.status = 'ready';
+
+      final freed = await UpdateDownloader.I.purgeCache(keepReady: true);
+
+      expect(freed, 16);
+      expect(keep.existsSync(), isTrue, reason: '点「重试安装」还要用它');
+      expect(files.first.existsSync(), isFalse);
+      expect(UpdateDownloader.I.readyPath, keep.path);
+    });
+
+    test('装完（native 报告 success）自动把安装包删掉', () async {
+      final files = await seedCache(1);
+      UpdateDownloader.I.readyPath = files.single.path;
+      UpdateDownloader.I.status = 'ready';
+
+      await emitInstallResult({'status': 'success', 'code': 0});
+      // purgeCache 是异步的：等它把文件删完再断言
+      for (var i = 0; i < 100 && files.single.existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      expect(files.single.existsSync(), isFalse, reason: '装完就没有保留的必要');
+      expect(UpdateDownloader.I.readyPath, isNull);
+    });
+
+    test('启动清扫：空闲时清掉上一版留下的安装包', () async {
+      final files = await seedCache(2);
+      await UpdateDownloader.I.sweepCache();
+      for (final f in files) {
+        expect(f.existsSync(), isFalse);
+      }
+    });
+
+    test('启动清扫：正在下载 / 待安装时不动文件', () async {
+      final files = await seedCache(2);
+      UpdateDownloader.I.readyPath = files.first.path;
+      UpdateDownloader.I.status = 'ready';
+
+      await UpdateDownloader.I.sweepCache();
+
+      for (final f in files) {
+        expect(f.existsSync(), isTrue, reason: '这一刻还要用它装，不能清');
+      }
+      expect(UpdateDownloader.I.readyPath, files.first.path);
+    });
+  });
+
   group('安装结果回传（native → Dart）', () {
     test('系统要求确认：提示已调起确认页，状态仍是 ready', () async {
       UpdateDownloader.I.readyPath = '/tmp/AntiSIT-1.28.7.apk';

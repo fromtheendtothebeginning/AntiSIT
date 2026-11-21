@@ -2,13 +2,50 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import '../update_download.dart';
+
 /// 「配置」页：刷新行为与需要长期调整的偏好（二课达标线由插件贡献到这里）。
 ///
 /// 「我的 → 设置」里只留一个入口；插件停用 / 删掉时它贡献的条目自动消失。
-class ConfigPage extends StatelessWidget {
+class ConfigPage extends StatefulWidget {
   const ConfigPage({super.key});
 
+  @override
+  State<ConfigPage> createState() => _ConfigPageState();
+}
+
+class _ConfigPageState extends State<ConfigPage> {
   static const _intervals = <int>[5, 10, 15, 20, 30];
+
+  /// 应用内更新下载留下的安装包占了多大（null = 还在算）。
+  int? _apkBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadApkBytes();
+  }
+
+  Future<void> _loadApkBytes() async {
+    final bytes = await UpdateDownloader.cachedBytes();
+    if (mounted) setState(() => _apkBytes = bytes);
+  }
+
+  /// 「清理更新安装包」：每升一版都会在缓存里留一个 80MB 上下的 APK，装完之后
+  /// 它在手机上没有任何用处，攒几次就能占掉几个 G。
+  Future<void> _purgeApks() async {
+    final wasBusy = UpdateDownloader.I.busy;
+    final freed = await UpdateDownloader.I.purgeCache();
+    await _loadApkBytes();
+    if (!mounted) return;
+    final text = wasBusy
+        ? '已取消下载并清理'
+        : (freed <= 0 ? '没有需要清理的安装包' : '已清理 ${formatBytes(freed)}');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(text),
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
 
   Future<void> _pickInterval(BuildContext context) async {
     final picked = await showModalBottomSheet<int>(
@@ -87,6 +124,24 @@ class ConfigPage extends StatelessWidget {
                     ),
                     // 二课达标线等长期偏好由各插件贡献（停用插件则自动消失）
                     ...PluginRegistry.I.configTiles(context),
+                    // 应用内更新每升一版都会在缓存里留一个 80MB 上下的 APK，
+                    // 装完就没用；这里给个能看到大小、能一键清掉的地方。
+                    ListTile(
+                      leading: const Icon(Icons.cleaning_services_outlined),
+                      title: const Text('更新安装包'),
+                      subtitle: Text(
+                        _apkBytes == null
+                            ? '正在统计…'
+                            : (_apkBytes! <= 0
+                                ? '没有残留的安装包'
+                                : '占用 ${formatBytes(_apkBytes!)}，装完就不用留了'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: TextButton(
+                        onPressed: (_apkBytes ?? 0) <= 0 ? null : _purgeApks,
+                        child: const Text('清理'),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -95,6 +150,7 @@ class ConfigPage extends StatelessWidget {
                 lines: [
                   '工具页会保留上一次成功拉取的数据：进入页面先显示本地缓存，新数据到达后自动替换。',
                   '关闭自动刷新后，数据只在点页面顶部的刷新按钮时更新；退出登录会清空这些缓存。',
+                  '应用内更新的安装包只用来装一次：装完后 App 会自己删掉，也可以在这里手动清理。',
                 ],
               ),
             ],

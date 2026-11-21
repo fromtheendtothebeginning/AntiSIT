@@ -158,3 +158,9 @@ for f in "$OUT" "$OUT.sha256"; do
 done
 
 echo "Gitee Release: https://gitee.com/$REPO/releases/tag/$TAG"
+
+# 6) 清本机 build/ 下堆积的旧安装包：每版都留 80MB+，不清能攒到几个 G。
+#    只留最新几个（含刚发的这版），失败不影响发版结果。
+if [ -f tool/prune_apks.sh ]; then
+  bash tool/prune_apks.sh "${APK_KEEP_VERSIONS:-3}" || true
+fi

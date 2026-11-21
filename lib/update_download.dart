@@ -78,6 +78,78 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   File? _partial;
   int _notified = 0;
 
+  /// 更新包缓存目录（`<缓存目录>/update`）：每个版本都下到这里。
+  static Future<Directory> cacheDir() async {
+    final base = await (debugSaveDir?.call() ?? getTemporaryDirectory());
+    final dir = Directory('${base.path}/update');
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  /// 缓存里所有安装包加起来多大（字节）。
+  static Future<int> cachedBytes() async {
+    var sum = 0;
+    try {
+      final dir = await cacheDir();
+      await for (final e in dir.list(followLinks: false)) {
+        if (e is! File) continue;
+        if (!e.path.toLowerCase().endsWith('.apk')) continue;
+        try {
+          sum += await e.length();
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return sum;
+  }
+
+  /// 删掉下载过的安装包，返回释放的字节数。
+  ///
+  /// 每升一版这里都会留一个 80MB 上下的 APK，以前装完从不清理，缓存目录能一直涨。
+  /// [keepReady] 为 true 时保留还等着安装的那一份（点「重试安装」还要用），
+  /// 启动清扫与「清理更新安装包」传 false：装完 / 装不了都不需要它了。
+  Future<int> purgeCache({bool keepReady = false}) async {
+    if (busy) await cancel(); // 正在下的那半截先收掉，否则删不掉（句柄还开着）
+    if (keepReady && readyPath == null) return 0;
+    final keep = keepReady ? readyPath : null;
+    var freed = 0;
+    final removedReady = <String>[];
+    try {
+      final dir = await cacheDir();
+      await for (final e in dir.list(followLinks: false)) {
+        if (e is! File) continue;
+        if (keep != null && e.path.replaceAll('\\', '/') == keep.replaceAll('\\', '/')) {
+          continue;
+        }
+        try {
+          freed += await e.length();
+          await e.delete();
+          removedReady.add(e.path);
+        } catch (_) {}
+      }
+    } catch (_) {}
+    final ready = readyPath;
+    // 比较时统一分隔符：Windows 上 dir.list() 给的是反斜杠路径，readyPath 可能来自
+    // 调用方手写（测试、或 native 回传），别因为斜杠方向不同就漏判「这份已被删掉」。
+    String normal(String path) => path.replaceAll('\\', '/');
+    final removed = removedReady.map(normal).toSet();
+    if (ready != null && removed.contains(normal(ready)) && !File(ready).existsSync()) {
+      readyPath = null;
+      if (status == 'ready' || status == 'error') status = 'idle';
+      notifyListeners();
+    }
+    return freed;
+  }
+
+  /// 启动时清扫：把上次留下的安装包删掉。
+  ///
+  /// 典型场景：下载完成、拉到安装器、用户在系统确认页装完后回到 App（或直接重开），
+  /// 那份 80MB 的 APK 就一直躺在缓存里，每次更新都多一份。这里只在**空闲**时清扫——
+  /// 正在下载 / 就绪待装的那一轮交给 [purgeCache] 之外的分支处理，不能动它的文件。
+  Future<void> sweepCache() async {
+    if (busy || readyPath != null) return;
+    await purgeCache();
+  }
+
   /// 下载 [info] 的 APK → 校验 sha256 → 校验包名/签名 → 自动拉起安装器。
   Future<void> start(UpdateInfo info) async {
     final apk = info.apkUrl;
@@ -107,9 +179,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     http.Client? client;
     IOSink? sink;
     try {
-      final base = await (debugSaveDir?.call() ?? getTemporaryDirectory());
-      final dir = Directory('${base.path}/update');
-      await dir.create(recursive: true);
+      final dir = await cacheDir();
       // 版本号来自更新源 JSON，不能直接拼进文件名（防 `../` 之类越界）；
       // 正常版本号（1.26.0 / 1.14.0-rc1）原样保留，测试也依赖这个命名。
       final safeVersion = info.version.replaceAll(RegExp(r'[^0-9A-Za-z._-]'), '_');
@@ -229,6 +299,10 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
         break;
       case 'success':
         installNote = '安装完成，打开新版本即可';
+        // 装完就没用了：留着的 80MB 安装包每升一版多一份，缓存目录会一直涨。
+        // 原生安装是异步的、确认页还可能让本进程被杀，所以这里删失败也无所谓——
+        // 启动时的 [sweepCache] 还会扫一遍。
+        unawaited(purgeCache());
         break;
       case 'failed':
         // 只改文案与主按钮，readyPath 留着：重试安装不用重新下载
@@ -357,6 +431,16 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     if (s.contains('404')) return '下载地址已失效（404）';
     return '下载失败：$s';
   }
+}
+
+/// 字节数 → 人话（缓存占用、清理结果这些地方用）。
+String formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  final kb = bytes / 1024;
+  if (kb < 1024) return '${kb.toStringAsFixed(0)} KB';
+  final mb = kb / 1024;
+  if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+  return '${(mb / 1024).toStringAsFixed(2)} GB';
 }
 
 /// [UpdateDownloader.cancel] 中止下载时抛给 start() 的退出信号

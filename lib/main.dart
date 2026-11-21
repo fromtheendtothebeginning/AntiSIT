@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:campus_core/campus_core.dart';
 import 'pages/home_page.dart';
+import 'update_download.dart';
 import 'pages/plugin_manager_page.dart';
 import 'plugins/bootstrap.dart';
 
@@ -597,6 +598,9 @@ class _BootPageState extends State<BootPage> {
     await TimetableStore.instance.load();
     // 各启用插件的初始化：AI 配置、上课提醒排期、调试用的本地模拟校园服务
     await PluginRegistry.I.initAll();
+    // 上次更新下载的安装包装完就没用了（80MB 一份，每升一版留一个）：
+    // 启动时顺手清掉，别让缓存目录一直涨。放最后、且不等它——清扫不该拖慢首屏。
+    unawaited(UpdateDownloader.I.sweepCache());
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
   }
