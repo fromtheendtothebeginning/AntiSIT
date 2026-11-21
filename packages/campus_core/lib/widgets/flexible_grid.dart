@@ -10,10 +10,15 @@ import 'theme_palette.dart';
 
 /// 卡片在 6 列基础网格上的占位：**行数 × 列数**（`2x3` = 2 行 × 3 列）。
 ///
-/// 四种设计尺寸：
-/// * [single]  `1x1`：1 行 × 1 列——最小的一格（约 1/6 屏宽 × 59dp，接近小方块）；
+/// 尺寸是**一套可扩展的档位目录**（[catalog]），不是写死的几种：
+/// 新增一档只要往 [catalog] 里加一个 [GridCardSpec] 并补上它自己的排版，
+/// 尺寸条、缩放手势吸附、落盘解析都会自动跟着支持。
+///
+/// 现有档位（行×列）：
+/// * [single]  `1x1`：最小的一格（约 1/6 屏宽 × 59dp），只放图标；
 /// * [wide]    `1x3`：1 行 × 3 列——半屏宽的横条；
-/// * [standard]`2x3`：2 行 × 3 列——**原来的默认大小**（半屏宽 × 128dp）；
+/// * [narrow]  `2x1`：2 行 × 1 列——**窄竖条**（图标在上、竖排少量文字）；
+/// * [standard]`2x3`：2 行 × 3 列——**默认大小**（半屏宽 × 128dp）；
 /// * [tall]    `2x2`：2 行 × 2 列——1/3 屏宽的竖卡。
 ///
 /// 行高由 [FlexibleCardGrid.unitHeight] 决定（默认 59dp）：2 行 + 1 个间距 = 128dp，
@@ -21,26 +26,80 @@ import 'theme_palette.dart';
 @immutable
 class GridCardSize {
   const GridCardSize(this.rows, this.columns)
-    : assert(rows >= 1 && rows <= 2),
-      assert(columns >= 1 && columns <= 3);
+    : assert(rows >= 1 && rows <= maxRows),
+      assert(columns >= 1 && columns <= maxColumns);
 
-  /// 高度占几行（1~2）。
+  /// 高度最多几行（网格总共就这么多行）。
+  static const int maxRows = 2;
+
+  /// 网格一共 6 列，最宽的档位是 3 列（半屏）。
+  static const int maxColumns = 3;
+
+  /// 高度占几行（1~[maxRows]）。
   final int rows;
 
-  /// 宽度占几列（1~3）。
+  /// 宽度占几列（1~[maxColumns]）。
   final int columns;
 
+  // ==================== 档位目录 ====================
+
+  /// 1 行 1 列：只放图标的小方格。
   static const single = GridCardSize(1, 1);
+
+  /// 1 行 3 列：半屏宽的横条。
   static const wide = GridCardSize(1, 3);
+
+  /// 2 行 1 列：窄竖条（图标在上、文字在下）。
+  static const narrow = GridCardSize(2, 1);
+
+  /// 2 行 3 列：默认尺寸（半屏宽 × 128dp）。
   static const standard = GridCardSize(2, 3);
+
+  /// 2 行 2 列：竖卡。
   static const tall = GridCardSize(2, 2);
 
-  /// 尺寸条按钮 / 手柄吸附到的四种设计尺寸（按「宽 × 高」的观感排）。
-  static const presets = <GridCardSize>[single, wide, standard, tall];
+  /// 默认尺寸：新建卡片、恢复默认都用它。
+  static const defaultSize = standard;
 
-  /// 按「占几格」从小到大排：左右滑动换尺寸时按这个顺序一档一档走
-  /// （1×1 = 1 格 → 1×3 = 3 格 → 2×2 = 4 格 → 2×3 = 6 格）。
-  static const byArea = <GridCardSize>[single, wide, tall, standard];
+  /// **全部可选档位**（尺寸条按这个顺序排）。
+  ///
+  /// 加一种尺寸就往这里加一项，并在各页 `_card` 里按 [kind] 补上对应排版；
+  /// 尺寸条、缩放吸附、落盘解析都是遍历这个目录的，不用再改别处。
+  static const List<GridCardSize> presets = <GridCardSize>[
+    single,
+    wide,
+    narrow,
+    standard,
+    tall,
+  ];
+
+  /// 按「占几格」从小到大排：连续缩放时按这个顺序一档一档吸附
+  /// （1×1 = 1 格 → 2×1 = 2 格 → 1×3 = 3 格 → 2×2 = 4 格 → 2×3 = 6 格）。
+  static const byArea = <GridCardSize>[single, narrow, wide, tall, standard];
+
+  /// 这一档在尺寸条 / 提示里的短名。
+  String get specLabel => switch (key) {
+        '1x1' => '小方格',
+        '1x3' => '横条',
+        '2x1' => '竖条',
+        '2x2' => '竖卡',
+        '2x3' => '默认',
+        _ => label,
+      };
+
+  /// 内容排版取向：页面按它决定「只有图标 / 图标在左 / 图标在上 / 完整卡」。
+  GridCardKind get kind => switch (key) {
+        '1x1' => GridCardKind.iconOnly,
+        '1x3' => GridCardKind.row,
+        '2x1' => GridCardKind.stack,
+        _ => GridCardKind.full,
+      };
+
+  /// 尺寸条上那个小预览的宽高（按行×列比例，封顶 22×16）。
+  ({double w, double h}) get previewBox => (
+        w: math.max(9, math.min(22, columns * 8)).toDouble(),
+        h: math.max(8, math.min(16, rows * 7)).toDouble(),
+      );
 
   /// 显示用标签（`2×3`，行×列）。
   String get label => '$rows×$columns';
@@ -49,17 +108,13 @@ class GridCardSize {
   String get key => '${rows}x$columns';
 
   /// 解析落盘值；认不出来就回落到 [fallback]。
-  static GridCardSize parse(Object? raw, {GridCardSize fallback = standard}) {
+  ///
+  /// 遍历 [presets] 而不是 switch：以后往目录里加档位，这里自动就认了。
+  static GridCardSize parse(Object? raw, {GridCardSize fallback = defaultSize}) {
     if (raw is! String) return fallback;
-    switch (raw.trim().toLowerCase()) {
-      case '1x1':
-        return single;
-      case '1x3':
-        return wide;
-      case '2x3':
-        return standard;
-      case '2x2':
-        return tall;
+    final t = raw.trim().toLowerCase();
+    for (final preset in presets) {
+      if (preset.key == t) return preset;
     }
     return fallback;
   }
@@ -73,6 +128,21 @@ class GridCardSize {
 
   @override
   String toString() => key;
+}
+
+/// 一种卡片尺寸的**排版取向**：页面据此决定内容怎么排。
+enum GridCardKind {
+  /// 只放一个图标（最小格，放不下名字）。
+  iconOnly,
+
+  /// 横向：图标在左、文字在右（1 行多列的横条）。
+  row,
+
+  /// 纵向：图标在上、文字在下，而且**窄**（多行 1 列的竖条）。
+  stack,
+
+  /// 完整卡：图标 / 标题 / 副标题都在（2x2、2x3）。
+  full,
 }
 
 /// [FlexibleCardGrid] 里的一张卡片：id 用来认人 / 落盘，size 是当前占位，
@@ -144,15 +214,29 @@ class CardSizeBar extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            for (final preset in GridCardSize.presets) ...[
-              _SizeOption(
-                preset: preset,
-                selected: size == preset,
-                enabled: enabled,
-                onTap: () => onChanged(preset),
+            // 档位来自目录；flex: 0 = 按内容自然宽度排（不像 Expanded 那样抢走
+            // 全部剩余空间），档位多到装不下时自己在条内横向滚动。
+            Flexible(
+              flex: 0,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < GridCardSize.presets.length; i++) ...[
+                      _SizeOption(
+                        preset: GridCardSize.presets[i],
+                        selected: size == GridCardSize.presets[i],
+                        enabled: enabled,
+                        onTap: () => onChanged(GridCardSize.presets[i]),
+                      ),
+                      if (i != GridCardSize.presets.length - 1)
+                        const SizedBox(width: 5),
+                    ],
+                  ],
+                ),
               ),
-              if (preset != GridCardSize.presets.last) const SizedBox(width: 5),
-            ],
+            ),
           ],
         ),
       ),
@@ -176,18 +260,11 @@ class _SizeOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fg = selected ? SemColors.accent : SemColors.textMuted;
-    final single = preset == GridCardSize.single;
-    final wide = preset == GridCardSize.wide;
-    final tall = preset == GridCardSize.tall;
-    final w = single ? 10.0 : (wide ? 22.0 : (tall ? 14.0 : 22.0));
-    final h = single ? 10.0 : (wide ? 8.0 : (tall ? 16.0 : 15.0));
-    final label = single
-        ? '1×1 小方格'
-        : wide
-        ? '1×3 横条'
-        : tall
-        ? '2×2 竖卡'
-        : '2×3 默认';
+    // 预览形状按「行×列」比例算，加档位自动适配（不用再写三元表达式）
+    final box = preset.previewBox;
+    final w = box.w;
+    final h = box.h;
+    final label = '${preset.label} ${preset.specLabel}';
     return Semantics(
       button: true,
       selected: selected,
@@ -1438,7 +1515,9 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
   Widget _resizeHandle(FlexibleGridItem item) {
     // 卡片越小、角标越小：1x1 只有 55×59，用 34 的角标会吃掉半个卡面，
     // 既盖住图标又跟「按住卡片拖动」抢手势。
-    final tiny = item.size == GridCardSize.single;
+    // 最小格（只放图标）用最小角标；1 行高的档位（1x1 / 1x3）也用小的，
+    // 否则 38 的角标会吃掉半个卡面，还跟「按住卡片拖动」抢手势。
+    final tiny = item.size.kind == GridCardKind.iconOnly;
     final small = item.size.rows == 1;
     final hit = tiny ? 22.0 : (small ? 26.0 : 38.0);
     final paint = tiny ? 16.0 : (small ? 22.0 : 34.0);

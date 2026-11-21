@@ -24,6 +24,14 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.43.0',
+    date: '2026-11-21',
+    notes: [
+      '卡片大小改成可扩展的档位：新增 2×1 窄竖条（图标在上、名字竖排），工具与拓展宫格都支持',
+      '尺寸条、缩放手势、落盘解析都改成读同一份档位目录，以后再加新尺寸不用改这几处',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.42.1',
     date: '2026-11-21',
     notes: [

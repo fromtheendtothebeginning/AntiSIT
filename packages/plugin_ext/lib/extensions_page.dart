@@ -1086,8 +1086,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     // 眼睛开关只隐藏网址：本地 / 市场来源与版本不是 URL，照旧显示
     final showSource = !_store.hideUrls || e.bundled;
     final showFooter = showSource || version.isNotEmpty;
-    final tile = size == GridCardSize.single;
-    final bar = size == GridCardSize.wide;
+    // 排版按尺寸档位的「取向」分（后续加档位只需补一种排法）
+    final kind = size.kind;
+    final tile = kind == GridCardKind.iconOnly;
+    final bar = kind == GridCardKind.row;
+    final narrow = kind == GridCardKind.stack;
     final tall = size == GridCardSize.tall;
 
     Widget footer({double fontSize = 10.5}) {
@@ -1185,6 +1188,40 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             ),
             const SizedBox(width: 2),
             _moreButton(e, size: 22, iconSize: 14),
+          ],
+        ),
+      );
+    }
+
+    if (narrow) {
+      // 2x1 竖条：**窄而高**。图标在顶、名称竖着两行；更多按钮压在右上角，
+      // 简介放不下就不放（信息密度交给 2x3）。
+      return AppCard(
+        bottomGap: 0,
+        radius: 16,
+        padding: const EdgeInsets.fromLTRB(9, 8, 6, 10),
+        onTap: editing ? null : () => _open(e),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _iconWithStatus(e, size: 18, padding: 6, dot: true),
+                const Spacer(),
+                _moreButton(e, size: 20, iconSize: 13),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              e.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                height: 1.2,
+              ),
+            ),
           ],
         ),
       );

@@ -204,7 +204,7 @@ class _ToolsPageState extends State<ToolsPage> {
     );
   }
 
-  /// 一张工具卡片：四种尺寸各自排版（1x1 小方格 / 1x3 横条 / 2x3 默认 / 2x2 竖卡）。
+  /// 一张工具卡片：按尺寸档位的排版取向分流（小方格 / 横条 / 竖条 / 完整卡）。
   Widget _toolCard(
     BuildContext context,
     PluginTool tool,
@@ -212,8 +212,11 @@ class _ToolsPageState extends State<ToolsPage> {
     bool editing,
   ) {
     final scheme = Theme.of(context).colorScheme;
-    final tile = size == GridCardSize.single;
-    final bar = size == GridCardSize.wide;
+    // 排版按尺寸档位的「取向」分，而不是逐个比大小：以后加档位只需在这里补一种排法
+    final kind = size.kind;
+    final tile = kind == GridCardKind.iconOnly;
+    final bar = kind == GridCardKind.row;
+    final narrow = kind == GridCardKind.stack;
     final tall = size == GridCardSize.tall;
     void open() => Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => tool.open()))
@@ -289,6 +292,41 @@ class _ToolsPageState extends State<ToolsPage> {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (narrow) {
+      // 2x1 竖条：**窄而高**。图标在上、标题竖着排两行，副标题放不下就不放——
+      // 这一档主要是「一眼认出 + 点得动」，信息密度交给 2x3。
+      return AppCard(
+        bottomGap: 0,
+        radius: 16,
+        padding: const EdgeInsets.fromLTRB(9, 10, 9, 10),
+        onTap: editing ? null : open,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: tool.color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(tool.icon, color: tool.color, size: 20),
+            ),
+            const Spacer(),
+            Text(
+              tool.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12.5,
+                height: 1.2,
               ),
             ),
           ],

@@ -178,6 +178,69 @@ void main() {
     expect(find.text('card-b-2x2'), findsOneWidget);
   });
 
+  testWidgets('2x1 竖条：2 行 1 列（1/6 屏宽 × 128 高）', (tester) async {
+    final key = await pumpGrid(tester);
+    key.currentState!.applySizes({'b': GridCardSize.narrow});
+    await tester.pumpAndSettle();
+    expect(tester.getSize(card('b')), const Size(55, 128));
+    expect(find.text('card-b-2x1'), findsOneWidget);
+  });
+
+  group('尺寸档位是可扩展的目录', () {
+    test('每个档位都有 key / 短名 / 排版取向 / 预览尺寸', () {
+      for (final preset in GridCardSize.presets) {
+        expect(preset.key, matches(RegExp(r'^[1-9]x[1-9]$')));
+        expect(preset.specLabel, isNotEmpty);
+        expect(preset.previewBox.w, greaterThan(0));
+        expect(preset.previewBox.h, greaterThan(0));
+      }
+    });
+
+    test('尺寸条按 catalog 顺序、每档都能解析回来', () {
+      expect(GridCardSize.presets, contains(GridCardSize.narrow));
+      expect(GridCardSize.presets.length, 5);
+      for (final preset in GridCardSize.presets) {
+        expect(GridCardSize.parse(preset.key), preset);
+      }
+      expect(GridCardSize.parse('9x9'), GridCardSize.defaultSize);
+    });
+
+    test('按面积排序：缩放逐档吸附时不会跳过更小的档', () {
+      final areas = [for (final s in GridCardSize.byArea) s.rows * s.columns];
+      final sorted = [...areas]..sort();
+      expect(areas, sorted);
+      expect(GridCardSize.byArea.toSet(), GridCardSize.presets.toSet());
+    });
+
+    test('排版取向：小方格 / 横条 / 竖条 / 完整卡各自对得上', () {
+      expect(GridCardSize.single.kind, GridCardKind.iconOnly);
+      expect(GridCardSize.wide.kind, GridCardKind.row);
+      expect(GridCardSize.narrow.kind, GridCardKind.stack);
+      expect(GridCardSize.tall.kind, GridCardKind.full);
+      expect(GridCardSize.standard.kind, GridCardKind.full);
+    });
+  });
+
+  testWidgets('尺寸条为每一档都给了一个按钮（含 2x1 竖条）', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CardSizeBar(
+            size: GridCardSize.standard,
+            onChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (final preset in GridCardSize.presets) {
+      expect(
+        find.byKey(ValueKey<String>('card-size-option:${preset.key}')),
+        findsOneWidget,
+        reason: '档位 ${preset.key} 应当有按钮',
+      );
+    }
+  });
   testWidgets('长按卡片进入整理，竖向拖到另一张前面就换位（松手回写顺序）', (tester) async {
     final key = await pumpGrid(tester);
     final state = key.currentState!;
@@ -316,9 +379,9 @@ void main() {
       const Offset(10, 10),
       reason: '缩放时本体左上角钉住不动',
     );
-    // 缩到 105 宽时，内容已经按装得下的最小档（1×1）排版
+    // 缩到 105 宽、高度仍是 2 行时，能完整装下的最大档是 2×1 竖条
     expect(
-      find.text('card-a-1x1'),
+      find.text('card-a-2x1'),
       findsOneWidget,
       reason: '内部排版跟着尺寸切换（图标 / 文字自由调整）',
     );
@@ -326,7 +389,7 @@ void main() {
         .getTopLeft(
           find.descendant(
             of: card('a'),
-            matching: find.text('card-a-1x1'),
+            matching: find.text('card-a-2x1'),
           ),
         )
         .dx;
@@ -349,8 +412,19 @@ void main() {
       reason: '松手后背景收起',
     );
 
-    // 2x2 再往左拖 65：宽度到 55 → 最近的是 1×1
+    // 2x2 再往左拖 65：宽度到 55、高度仍是 128 → 最接近的是 2×1 竖条
     await tester.drag(handle('a'), const Offset(-65, 0));
+    await tester.pumpAndSettle();
+    expect(
+      state.sizes['a'],
+      GridCardSize.narrow,
+      reason: '只收窄宽度 = 2 行 1 列的竖条',
+    );
+    expect(tester.getSize(card('a')), const Size(55, 128));
+    expect(find.text('card-a-2x1'), findsOneWidget);
+
+    // 竖条再往上收 70：高度到 59 → 最小档 1×1
+    await tester.drag(handle('a'), const Offset(0, -70));
     await tester.pumpAndSettle();
     expect(state.sizes['a'], GridCardSize.single);
     expect(tester.getSize(card('a')), const Size(55, 59));
