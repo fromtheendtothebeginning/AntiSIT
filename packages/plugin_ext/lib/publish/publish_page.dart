@@ -171,8 +171,14 @@ class _PublishPageState extends State<PublishPage> {
           style: const TextStyle(fontSize: 13, height: 1.6),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('新建并发布')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('新建并发布'),
+          ),
         ],
       ),
     );
@@ -189,10 +195,12 @@ class _PublishPageState extends State<PublishPage> {
   void _snack(String text) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(text, style: const TextStyle(fontSize: 13)),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(text, style: const TextStyle(fontSize: 13)),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   Future<void> _copy(String text, String label) async {
@@ -203,119 +211,138 @@ class _PublishPageState extends State<PublishPage> {
   @override
   Widget build(BuildContext context) {
     final m = widget.draft.manifest;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('发布拓展'),
-        actions: [
-          IconButton(
-            tooltip: '保存设置',
-            onPressed: _busy ? null : () => _saveConfig(),
-            icon: const Icon(Icons.save_outlined),
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('发布拓展'),
+            actions: [
+              IconButton(
+                tooltip: '保存设置',
+                onPressed: _busy ? null : () => _saveConfig(),
+                icon: const Icon(Icons.save_outlined),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-              children: [
-                _header(m),
-                const SizedBox(height: 14),
-                SegmentedButton<PublishProvider>(
-                  segments: [
-                    for (final p in PublishProvider.values)
-                      ButtonSegment(value: p, label: Text(p.label)),
-                  ],
-                  selected: {_provider},
-                  onSelectionChanged:
-                      _busy ? null : (s) => _switchProvider(s.first),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _token,
-                  enabled: !_busy,
-                  obscureText: _obscure,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: InputDecoration(
-                    labelText: '${_provider.label} Personal Access Token',
-                    hintText: _provider == PublishProvider.github
-                        ? 'ghp_… / github_pat_…'
-                        : '在 Gitee 设置里生成',
-                    helperText: '只存系统加密存储；'
-                        '${_provider == PublishProvider.github ? '需要 public_repo 或 repo 权限' : '需要 projects 权限'}',
-                    helperMaxLines: 2,
-                    suffixIcon: IconButton(
-                      tooltip: _obscure ? '显示' : '隐藏',
-                      onPressed: () => setState(() => _obscure = !_obscure),
-                      icon: Icon(_obscure
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined),
+          body: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  // 顶部让出悬浮顶栏
+                  padding: EdgeInsets.fromLTRB(16, 12 + topInset, 16, 32),
+                  children: [
+                    _header(m),
+                    const SizedBox(height: 14),
+                    SegmentedButton<PublishProvider>(
+                      segments: [
+                        for (final p in PublishProvider.values)
+                          ButtonSegment(value: p, label: Text(p.label)),
+                      ],
+                      selected: {_provider},
+                      onSelectionChanged:
+                          _busy ? null : (s) => _switchProvider(s.first),
                     ),
-                  ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _token,
+                      enabled: !_busy,
+                      obscureText: _obscure,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: InputDecoration(
+                        labelText: '${_provider.label} Personal Access Token',
+                        hintText: _provider == PublishProvider.github
+                            ? 'ghp_… / github_pat_…'
+                            : '在 Gitee 设置里生成',
+                        helperText: '只存系统加密存储；'
+                            '${_provider == PublishProvider.github ? '需要 public_repo 或 repo 权限' : '需要 projects 权限'}',
+                        helperMaxLines: 2,
+                        suffixIcon: IconButton(
+                          tooltip: _obscure ? '显示' : '隐藏',
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                          icon: Icon(
+                            _obscure
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () =>
+                            _copy(_provider.tokenUrl, 'Token 申请地址'),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: Text(
+                          '复制 ${_provider.label} Token 申请地址',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _repo,
+                      enabled: !_busy,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: '仓库',
+                        hintText: 'yourname/antisit-plugins',
+                        helperText: '仓库必须公开；会维护 ext/、dist/、market.json 与签名',
+                        helperMaxLines: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _branch,
+                      enabled: !_busy,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: '分支（可空）',
+                        hintText: '留空 = 仓库默认分支',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _fingerprintCard(),
+                    const SizedBox(height: 16),
+                    if (_busy) ...[
+                      const LinearProgressIndicator(minHeight: 3),
+                      const SizedBox(height: 8),
+                      Text(
+                        _step ?? '发布中…',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: SemColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    FilledButton.icon(
+                      onPressed: _busy ? null : _publish,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                      icon: const Icon(Icons.cloud_upload_outlined),
+                      label: Text('发布到 ${_provider.label}'),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 14),
+                      _errorCard(_error!),
+                    ],
+                    if (_result != null) ...[
+                      const SizedBox(height: 18),
+                      _ResultCard(result: _result!, onCopy: _copy),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => _copy(_provider.tokenUrl, 'Token 申请地址'),
-                    icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                    label: Text('复制 ${_provider.label} Token 申请地址',
-                        style: const TextStyle(fontSize: 12)),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _repo,
-                  enabled: !_busy,
-                  autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: '仓库',
-                    hintText: 'yourname/antisit-plugins',
-                    helperText: '仓库必须公开；会维护 ext/、dist/、market.json 与签名',
-                    helperMaxLines: 2,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _branch,
-                  enabled: !_busy,
-                  autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: '分支（可空）',
-                    hintText: '留空 = 仓库默认分支',
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _fingerprintCard(),
-                const SizedBox(height: 16),
-                if (_busy) ...[
-                  const LinearProgressIndicator(minHeight: 3),
-                  const SizedBox(height: 8),
-                  Text(_step ?? '发布中…',
-                      style: TextStyle(fontSize: 12.5, color: SemColors.textMuted)),
-                  const SizedBox(height: 12),
-                ],
-                FilledButton.icon(
-                  onPressed: _busy ? null : _publish,
-                  style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52)),
-                  icon: const Icon(Icons.cloud_upload_outlined),
-                  label: Text('发布到 ${_provider.label}'),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  _errorCard(_error!),
-                ],
-                if (_result != null) ...[
-                  const SizedBox(height: 18),
-                  _ResultCard(
-                    result: _result!,
-                    onCopy: _copy,
-                  ),
-                ],
-              ],
-            ),
+        );
+      },
     );
   }
 
@@ -329,10 +356,14 @@ class _PublishPageState extends State<PublishPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${m.name}  v${m.version}',
-                style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700)),
+            Text(
+              '${m.name}  v${m.version}',
+              style:
+                  const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 4),
-            Text(m.id, style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+            Text(m.id,
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
             const SizedBox(height: 8),
             Text(
               m.permissions.isEmpty
@@ -343,12 +374,20 @@ class _PublishPageState extends State<PublishPage> {
             const SizedBox(height: 6),
             Text(
               '发布后：别人扫结果页的二维码可直接安装；把源地址加到市场就能接收后续更新。',
-              style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.5),
+              style: TextStyle(
+                fontSize: 11.5,
+                color: SemColors.textMuted,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               '发布密钥只存在本机加密存储：清除 App 数据 / 换机后指纹会变，别人需要重新添加源。',
-              style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.5),
+              style: TextStyle(
+                fontSize: 11.5,
+                color: SemColors.textMuted,
+                height: 1.5,
+              ),
             ),
           ],
         ),
@@ -366,13 +405,19 @@ class _PublishPageState extends State<PublishPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('发布公钥指纹',
-                      style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                  Text(
+                    '发布公钥指纹',
+                    style:
+                        TextStyle(fontSize: 11.5, color: SemColors.textMuted),
+                  ),
                   const SizedBox(height: 2),
                   SelectableText(
                     _fingerprint ?? '生成中…',
                     style: const TextStyle(
-                        fontSize: 12.5, fontWeight: FontWeight.w600, letterSpacing: 0.6),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.6,
+                    ),
                   ),
                 ],
               ),
@@ -396,7 +441,8 @@ class _PublishPageState extends State<PublishPage> {
         ),
         child: SelectableText(
           text,
-          style: TextStyle(fontSize: 12.5, height: 1.5, color: SemColors.danger),
+          style:
+              TextStyle(fontSize: 12.5, height: 1.5, color: SemColors.danger),
         ),
       );
 }
@@ -421,25 +467,42 @@ class _ResultCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.check_circle_rounded, color: SemColors.success, size: 20),
+              Icon(
+                Icons.check_circle_rounded,
+                color: SemColors.success,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text('已发布「${result.name}」v${result.version}',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                child: Text(
+                  '已发布「${result.name}」v${result.version}',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-              '别人用 AntiSIT「拓展 → 扫一扫」扫下面两张码：一张直接安装，'
-              '一张把源加进市场（接收后续更新）。',
-              style: TextStyle(fontSize: 12, color: SemColors.textMuted, height: 1.5)),
+            '别人用 AntiSIT「拓展 → 扫一扫」扫下面两张码：一张直接安装，'
+            '一张把源加进市场（接收后续更新）。',
+            style: TextStyle(
+              fontSize: 12,
+              color: SemColors.textMuted,
+              height: 1.5,
+            ),
+          ),
           const SizedBox(height: 14),
-          Text('直装（扫码安装）',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: SemColors.textPrimary)),
+          Text(
+            '直装（扫码安装）',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: SemColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 8),
           Center(
             child: Container(
@@ -457,11 +520,14 @@ class _ResultCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          Text('添加插件源（接收后续更新）',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: SemColors.textPrimary)),
+          Text(
+            '添加插件源（接收后续更新）',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: SemColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 8),
           Center(
             child: Container(
@@ -479,8 +545,14 @@ class _ResultCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text('扫码后会先拉一次目录并核对公钥指纹，一致才让你确认添加。',
-              style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.5)),
+          Text(
+            '扫码后会先拉一次目录并核对公钥指纹，一致才让你确认添加。',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: SemColors.textMuted,
+              height: 1.5,
+            ),
+          ),
           const SizedBox(height: 14),
           _row('源地址', result.sourceInput),
           const SizedBox(height: 6),
@@ -491,7 +563,11 @@ class _ResultCard extends StatelessWidget {
           Text(
             '想接收后续更新：让对方扫上面第二张码，或在「拓展 → 市场 → 添加第三方源」'
             '填上面的源地址，核对指纹后添加；以后你重新发布，他们就能在列表里一键更新。',
-            style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.55),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: SemColors.textMuted,
+              height: 1.55,
+            ),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -524,10 +600,13 @@ class _ResultCard extends StatelessWidget {
   Widget _row(String label, String value) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+          Text(label,
+              style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
           const SizedBox(height: 2),
-          SelectableText(value,
-              style: const TextStyle(fontSize: 12.5, height: 1.45)),
+          SelectableText(
+            value,
+            style: const TextStyle(fontSize: 12.5, height: 1.45),
+          ),
         ],
       );
 }

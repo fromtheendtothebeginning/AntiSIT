@@ -702,133 +702,144 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
       ),
       if (market || _marketMounted) MarketView(onInstalled: _toast),
     ];
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 64,
-        centerTitle: true,
-        title: const Text(
-          '拓展',
-          style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1,
-          ),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 14),
-            child: _editing
-                ? TextButton(
-                    onPressed: () => _setEditing(false),
-                    style: TextButton.styleFrom(
-                      foregroundColor: SemColors.accent,
-                      textStyle: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    child: const Text('完成'),
-                  )
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）。
-                      // 从这页进去的扫码会把网址 / 拓展安装码带回来，直接用。
-                      if (scan != null)
-                        _roundAction(
-                          Icons.qr_code_scanner_outlined,
-                          '扫一扫',
-                          () => _scanExtension(scan),
-                        ),
-                      if (market)
-                        _roundAction(
-                          Icons.refresh_rounded,
-                          '重新拉市场目录',
-                          () => unawaited(MarketSource.I.load(force: true)),
-                        )
-                      else ...[
-                        _roundAction(
-                          hide
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          hide ? '显示全部网址' : '隐藏全部网址',
-                          items.isEmpty ? null : _toggleHideUrls,
-                          color: hide ? SemColors.accent : null,
-                        ),
-                        // 只有一条时本来没得排，但改过尺寸还需要从排序页「重置大小」
-                        if (items.length > 1 || _store.hasCustomSizes)
-                          _roundAction(
-                            Icons.swap_vert_rounded,
-                            '排序拓展',
-                            _openSorter,
-                          ),
-                        _roundAction(Icons.add, '添加拓展', _addMenu),
-                      ],
-                    ],
-                  ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-            child: GlassTabs(
-              labels: const ['我的', '市场'],
-              height: 38,
-              fontSize: 13.5,
-              index: _tab,
-              position: _tabPos,
-              dragPosition: _tabDrag,
-              onChanged: _setTab,
-            ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              // translucent：页面空白处也能起手势；内层真接住横滑的（搜索框选词等）优先
-              behavior: HitTestBehavior.translucent,
-              // 整理态点空白（卡片下方 / 卡片缝里）也退出；卡片自己会吸收点击
-              onTap: _editing ? () => _setEditing(false) : null,
-              // 整理卡片时不切子页：横向拖动要留给卡片 / 手柄，避免刚拖到一半整页滑走
-              onHorizontalDragStart: _editing ? null : _onTabDragStart,
-              onHorizontalDragUpdate: _editing ? null : _onTabDragUpdate,
-              onHorizontalDragEnd: _editing ? null : _onTabDragEnd,
-              onHorizontalDragCancel: _editing
-                  ? null
-                  : () {
-                      _tabDrag.value = null;
-                      _dragRaw = null;
-                      _navHost?.navDragCancel();
-                    },
-              child: ValueListenableBuilder<double>(
-                valueListenable: _tabPos,
-                builder: (context, rawPos, _) {
-                  // 开关关掉时界面不跟滑块连续滑，只按已落位的那一格显示（松手才换）
-                  final pos = AppState.I.followSlider
-                      ? rawPos
-                      : _tab.toDouble();
-                  final w = MediaQuery.sizeOf(context).width;
-                  return Stack(
-                    children: [
-                      for (var k = 0; k < panels.length; k++)
-                        Positioned.fill(
-                          // 只画当前页和拖动时露出的邻页
-                          child: Offstage(
-                            offstage: (k - pos).abs() >= 0.999,
-                            child: Transform.translate(
-                              offset: Offset((k - pos) * w, 0),
-                              child: panels[k],
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            toolbarHeight: 64,
+            centerTitle: true,
+            title: const Text(
+              '拓展',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1,
               ),
             ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 14),
+                child: _editing
+                    ? TextButton(
+                        onPressed: () => _setEditing(false),
+                        style: TextButton.styleFrom(
+                          foregroundColor: SemColors.accent,
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        child: const Text('完成'),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）。
+                          // 从这页进去的扫码会把网址 / 拓展安装码带回来，直接用。
+                          if (scan != null)
+                            _roundAction(
+                              Icons.qr_code_scanner_outlined,
+                              '扫一扫',
+                              () => _scanExtension(scan),
+                            ),
+                          if (market)
+                            _roundAction(
+                              Icons.refresh_rounded,
+                              '重新拉市场目录',
+                              () => unawaited(MarketSource.I.load(force: true)),
+                            )
+                          else ...[
+                            _roundAction(
+                              hide
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
+                              hide ? '显示全部网址' : '隐藏全部网址',
+                              items.isEmpty ? null : _toggleHideUrls,
+                              color: hide ? SemColors.accent : null,
+                            ),
+                            // 只有一条时本来没得排，但改过尺寸还需要从排序页「重置大小」
+                            if (items.length > 1 || _store.hasCustomSizes)
+                              _roundAction(
+                                Icons.swap_vert_rounded,
+                                '排序拓展',
+                                _openSorter,
+                              ),
+                            _roundAction(Icons.add, '添加拓展', _addMenu),
+                          ],
+                        ],
+                      ),
+              ),
+            ],
           ),
-        ],
-      ),
+          body: Column(
+            children: [
+              Padding(
+                // 顶部让出悬浮顶栏
+                padding: EdgeInsets.fromLTRB(14, 8 + topInset, 14, 8),
+                child: GlassTabs(
+                  labels: const ['我的', '市场'],
+                  height: 38,
+                  fontSize: 13.5,
+                  index: _tab,
+                  position: _tabPos,
+                  dragPosition: _tabDrag,
+                  onChanged: _setTab,
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  // translucent：页面空白处也能起手势；内层真接住横滑的（搜索框选词等）优先
+                  behavior: HitTestBehavior.translucent,
+                  // 整理态点空白（卡片下方 / 卡片缝里）也退出；卡片自己会吸收点击
+                  onTap: _editing ? () => _setEditing(false) : null,
+                  // 整理卡片时不切子页：横向拖动要留给卡片 / 手柄，避免刚拖到一半整页滑走
+                  onHorizontalDragStart: _editing ? null : _onTabDragStart,
+                  onHorizontalDragUpdate: _editing ? null : _onTabDragUpdate,
+                  onHorizontalDragEnd: _editing ? null : _onTabDragEnd,
+                  onHorizontalDragCancel: _editing
+                      ? null
+                      : () {
+                          _tabDrag.value = null;
+                          _dragRaw = null;
+                          _navHost?.navDragCancel();
+                        },
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _tabPos,
+                    builder: (context, rawPos, _) {
+                      // 开关关掉时界面不跟滑块连续滑，只按已落位的那一格显示（松手才换）
+                      final pos = AppState.I.followSlider
+                          ? rawPos
+                          : _tab.toDouble();
+                      final w = MediaQuery.sizeOf(context).width;
+                      return Stack(
+                        children: [
+                          for (var k = 0; k < panels.length; k++)
+                            Positioned.fill(
+                              // 只画当前页和拖动时露出的邻页
+                              child: Offstage(
+                                offstage: (k - pos).abs() >= 0.999,
+                                child: Transform.translate(
+                                  offset: Offset((k - pos) * w, 0),
+                                  child: panels[k],
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

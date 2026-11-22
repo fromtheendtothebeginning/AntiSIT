@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 
+import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -121,18 +122,20 @@ class _ExtLoginPageState extends State<ExtLoginPage> {
     if (widget.userAgent != null && widget.userAgent!.isNotEmpty) {
       _controller.setUserAgent(widget.userAgent!);
     }
-    _controller.setNavigationDelegate(NavigationDelegate(
-      onProgress: (value) {
-        if (mounted) setState(() => _progress = value / 100);
-      },
-      onPageFinished: (url) {
-        final host = Uri.tryParse(url)?.host ?? '';
-        if (mounted && host.isNotEmpty && host != _host) {
-          setState(() => _host = host);
-        }
-        unawaited(_tryCapture(url));
-      },
-    ));
+    _controller.setNavigationDelegate(
+      NavigationDelegate(
+        onProgress: (value) {
+          if (mounted) setState(() => _progress = value / 100);
+        },
+        onPageFinished: (url) {
+          final host = Uri.tryParse(url)?.host ?? '';
+          if (mounted && host.isNotEmpty && host != _host) {
+            setState(() => _host = host);
+          }
+          unawaited(_tryCapture(url));
+        },
+      ),
+    );
     _controller.loadRequest(Uri.parse(widget.startUrl));
   }
 
@@ -164,8 +167,7 @@ class _ExtLoginPageState extends State<ExtLoginPage> {
     _capturing = true;
     try {
       final byUrl = await ExtCookieBridge.read(widget.cookieUrls);
-      final header =
-          ExtCookieBridge.mergeHeaders(byUrl, widget.cookieUrls);
+      final header = ExtCookieBridge.mergeHeaders(byUrl, widget.cookieUrls);
       if (header.isEmpty) {
         if (!auto) _toast('还没拿到 Cookie，请先在页面里完成登录');
         return;
@@ -179,10 +181,9 @@ class _ExtLoginPageState extends State<ExtLoginPage> {
       }
       _captured = true;
       if (mounted) {
-        Navigator.of(context).pop(<String, Object?>{
-          'cookies': byUrl,
-          'cookieHeader': header,
-        });
+        Navigator.of(
+          context,
+        ).pop(<String, Object?>{'cookies': byUrl, 'cookieHeader': header});
       }
     } catch (e) {
       if (!auto) _toast('读取 Cookie 失败：$e');
@@ -201,46 +202,61 @@ class _ExtLoginPageState extends State<ExtLoginPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: [
-          TextButton(onPressed: _finish, child: const Text('完成')),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (_progress > 0 && _progress < 1)
-            LinearProgressIndicator(value: _progress, minHeight: 2),
-          Expanded(child: WebViewWidget(controller: _controller)),
-          SafeArea(
-            top: false,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '当前站点：$_host',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurface,
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: Text(widget.title),
+            actions: [TextButton(onPressed: _finish, child: const Text('完成'))],
+          ),
+          // 平台视图顶出悬浮顶栏
+          body: Padding(
+            padding: EdgeInsets.only(top: topInset),
+            child: Column(
+              children: [
+                if (_progress > 0 && _progress < 1)
+                  LinearProgressIndicator(value: _progress, minHeight: 2),
+                Expanded(child: WebViewWidget(controller: _controller)),
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                    color: scheme.surfaceContainerHighest.withValues(
+                      alpha: 0.5,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '当前站点：$_host',
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: scheme.onSurface,
+                                  ),
                         ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '登录完成后只把这里声明的域名的 Cookie 交给拓展；App 不保存账号密码。',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '登录完成后只把这里声明的域名的 Cookie 交给拓展；App 不保存账号密码。',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

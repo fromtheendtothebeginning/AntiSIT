@@ -18,7 +18,8 @@ class ReminderGuidePage extends StatefulWidget {
   State<ReminderGuidePage> createState() => _ReminderGuidePageState();
 }
 
-class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindingObserver {
+class _ReminderGuidePageState extends State<ReminderGuidePage>
+    with WidgetsBindingObserver {
   ReminderHealth? _health;
 
   @override
@@ -48,83 +49,114 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
   @override
   Widget build(BuildContext context) {
     final h = _health;
-    return Scaffold(
-      appBar: AppBar(title: const Text('上课提醒')),
-      body: h == null
-          ? Center(
-              child: Text('自检中…',
-                  style: TextStyle(fontSize: 13, color: SemColors.textMuted)))
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-              children: [
-                _verdict(h),
-                const SizedBox(height: 10),
-                _sectionTitle('系统权限'),
-                AppCard(
-                  child: Column(
-                    children: [
-                      if (h.notifications != null)
-                        _StatusRow(
-                          ok: h.notifications == true,
-                          label: '通知权限',
-                          value: h.notifications == true ? '已允许' : '未允许',
-                          action: h.notifications == true
-                              ? null
-                              : ('去开启', ClassReminderService.I.openNotificationSettings),
-                        ),
-                      if (h.exactAlarm != null)
-                        _StatusRow(
-                          ok: h.exactAlarm == true,
-                          label: '精确闹钟',
-                          value: h.exactAlarm == true ? '已允许' : '未允许',
-                          action: h.exactAlarm == true
-                              ? null
-                              : ('去允许', ClassReminderService.I.openExactAlarmSettings),
-                        ),
-                      if (h.batteryUnrestricted != null)
-                        _StatusRow(
-                          ok: h.batteryUnrestricted == true,
-                          label: '后台运行',
-                          value: h.batteryUnrestricted == true ? '不受限' : '受限',
-                          action: h.batteryUnrestricted == true ? null : ('去设置', _openBattery),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _sectionTitle('已排提醒'),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _StatusRow(
-                        ok: h.planned > 0,
-                        muted: h.planned == 0,
-                        label: '未来 ${ClassReminderService.horizonDays} 天',
-                        value: h.planned > 0 ? '${h.planned} 条' : '无',
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '按当前课表排期；打开 App 或修改课表时重新排。',
-                        style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _sectionTitle('常见原因'),
-                AppCard(
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('上课提醒')),
+          body: h == null
+              ? Center(
                   child: Text(
-                    '· 未允许通知权限：提醒不会出现。\n'
-                    '· 未允许精确闹钟：可能在原定时间之后触发。\n'
-                    '· 部分机型的省电策略会拦截后台提醒，需在系统设置中允许后台运行。\n'
-                    '· 从最近任务划除或强行停止会取消已排提醒，重新打开 App 即恢复。',
-                    style: TextStyle(
-                        fontSize: 12, color: SemColors.textSecondary, height: 1.75),
+                    '自检中…',
+                    style: TextStyle(fontSize: 13, color: SemColors.textMuted),
                   ),
+                )
+              : ListView(
+                  // 顶部让出悬浮顶栏
+                  padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
+                  children: [
+                    _verdict(h),
+                    const SizedBox(height: 10),
+                    _sectionTitle('系统权限'),
+                    AppCard(
+                      child: Column(
+                        children: [
+                          if (h.notifications != null)
+                            _StatusRow(
+                              ok: h.notifications == true,
+                              label: '通知权限',
+                              value: h.notifications == true ? '已允许' : '未允许',
+                              action: h.notifications == true
+                                  ? null
+                                  : (
+                                      '去开启',
+                                      ClassReminderService
+                                          .I.openNotificationSettings,
+                                    ),
+                            ),
+                          if (h.exactAlarm != null)
+                            _StatusRow(
+                              ok: h.exactAlarm == true,
+                              label: '精确闹钟',
+                              value: h.exactAlarm == true ? '已允许' : '未允许',
+                              action: h.exactAlarm == true
+                                  ? null
+                                  : (
+                                      '去允许',
+                                      ClassReminderService
+                                          .I.openExactAlarmSettings,
+                                    ),
+                            ),
+                          if (h.batteryUnrestricted != null)
+                            _StatusRow(
+                              ok: h.batteryUnrestricted == true,
+                              label: '后台运行',
+                              value:
+                                  h.batteryUnrestricted == true ? '不受限' : '受限',
+                              action: h.batteryUnrestricted == true
+                                  ? null
+                                  : ('去设置', _openBattery),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _sectionTitle('已排提醒'),
+                    AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _StatusRow(
+                            ok: h.planned > 0,
+                            muted: h.planned == 0,
+                            label: '未来 ${ClassReminderService.horizonDays} 天',
+                            value: h.planned > 0 ? '${h.planned} 条' : '无',
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '按当前课表排期；打开 App 或修改课表时重新排。',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: SemColors.textMuted,
+                              height: 1.6,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _sectionTitle('常见原因'),
+                    AppCard(
+                      child: Text(
+                        '· 未允许通知权限：提醒不会出现。\n'
+                        '· 未允许精确闹钟：可能在原定时间之后触发。\n'
+                        '· 部分机型的省电策略会拦截后台提醒，需在系统设置中允许后台运行。\n'
+                        '· 从最近任务划除或强行停止会取消已排提醒，重新打开 App 即恢复。',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: SemColors.textSecondary,
+                          height: 1.75,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+        );
+      },
     );
   }
 
@@ -133,7 +165,9 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
         child: Row(
           children: [
             Icon(
-              h.allGood ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+              h.allGood
+                  ? Icons.check_circle_rounded
+                  : Icons.error_outline_rounded,
               size: 22,
               color: h.allGood ? SemColors.success : SemColors.danger,
             ),
@@ -145,16 +179,22 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
                   Text(
                     h.allGood ? '状态正常' : '${h.issueCount} 项未就绪',
                     style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: h.allGood ? SemColors.textPrimary : SemColors.danger),
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color:
+                          h.allGood ? SemColors.textPrimary : SemColors.danger,
+                    ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     h.allGood
                         ? '课前 ${ClassReminderService.leadMinutes} 分钟提醒'
                         : '按下方状态逐项开启',
-                    style: TextStyle(fontSize: 12, color: SemColors.textMuted, height: 1.5),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: SemColors.textMuted,
+                      height: 1.5,
+                    ),
                   ),
                 ],
               ),
@@ -165,9 +205,14 @@ class _ReminderGuidePageState extends State<ReminderGuidePage> with WidgetsBindi
 
   Widget _sectionTitle(String title) => Padding(
         padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
-        child: Text(title,
-            style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.bold, color: SemColors.textSecondary)),
+        child: Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: SemColors.textSecondary,
+          ),
+        ),
       );
 
   /// 电池优化列表页；有些 ROM 没有这个页，退到应用信息页（省电策略在那儿）。
@@ -195,8 +240,9 @@ class _StatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        muted ? SemColors.textMuted : (ok ? SemColors.success : SemColors.danger);
+    final color = muted
+        ? SemColors.textMuted
+        : (ok ? SemColors.success : SemColors.danger);
     final done = action;
     return InkWell(
       onTap: done == null ? null : () => done.$2(),
@@ -207,25 +253,36 @@ class _StatusRow extends StatelessWidget {
             Icon(
               muted
                   ? Icons.info_outline_rounded
-                  : (ok ? Icons.check_circle_rounded : Icons.error_outline_rounded),
+                  : (ok
+                      ? Icons.check_circle_rounded
+                      : Icons.error_outline_rounded),
               size: 14,
               color: color,
             ),
             const SizedBox(width: 8),
             SizedBox(
               width: 76,
-              child: Text(label,
-                  style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 12, color: SemColors.textSecondary),
+              ),
             ),
             Expanded(
-              child: Text(value,
-                  style: TextStyle(fontSize: 12, color: color, height: 1.35)),
+              child: Text(
+                value,
+                style: TextStyle(fontSize: 12, color: color, height: 1.35),
+              ),
             ),
             if (done != null) ...[
               const SizedBox(width: 6),
-              Text(done.$1,
-                  style: TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600, color: SemColors.accent)),
+              Text(
+                done.$1,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: SemColors.accent,
+                ),
+              ),
               Icon(Icons.chevron_right, size: 16, color: SemColors.accent),
             ],
           ],

@@ -22,7 +22,13 @@ import 'webview_policy.dart';
 /// 点到 http(s) 外链会拦下来交给系统浏览器（见 [decideMainFrameNavigation]）；
 /// 网址形态就是普通浏览，不拦。
 class WebViewPage extends StatefulWidget {
-  const WebViewPage({super.key, this.url, this.html, this.title = '', this.bridge});
+  const WebViewPage({
+    super.key,
+    this.url,
+    this.html,
+    this.title = '',
+    this.bridge,
+  });
 
   /// 二选一：[url] 优先；都为空就是空白页。
   final String? url;
@@ -37,15 +43,17 @@ class WebViewPage extends StatefulWidget {
 }
 
 /// 网页里的接口垫片由 [kWebViewBridgeShim] 提供；内核只在加载前后负责注入与回填。
-class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink {
+class _WebViewPageState extends State<WebViewPage>
+    implements WebBridgeEventSink {
   late final WebViewController _controller;
   double _progress = 0; // 0 = 没在加载
   String? _error;
 
   /// 网页下载交给 Android DownloadManager（见 `ExtWebViewFilesBridge.kt`）。
   /// DownloadListener 是挂在原生 WebView 上的，每个页面装一次即可。
-  static const MethodChannel _webFilesChannel =
-      MethodChannel('antisit/webview_files');
+  static const MethodChannel _webFilesChannel = MethodChannel(
+    'antisit/webview_files',
+  );
   bool _downloadListenerInstalled = false;
 
   /// 主框架当前地址（跨站导航后桥接能力要关掉，见 [bridgeAllowedOnPage]）。
@@ -71,30 +79,37 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(SemColors.bg)
-      ..setNavigationDelegate(NavigationDelegate(
-        onProgress: (p) => mounted ? setState(() => _progress = p / 100) : null,
-        onPageStarted: (url) => _currentUrl = url,
-        onUrlChange: (change) => _currentUrl = change.url,
-        onPageFinished: (_) {
-          _injectBridge();
-          _installDownloadListener();
-        },
-        onNavigationRequest: _onNavigationRequest,
-        onWebResourceError: (e) {
-          // 主文档失败才提示；子资源（图片等）失败不打扰
-          if (e.isForMainFrame ?? false) {
-            if (mounted) setState(() => _error = e.description);
-          }
-        },
-      ));
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (p) =>
+              mounted ? setState(() => _progress = p / 100) : null,
+          onPageStarted: (url) => _currentUrl = url,
+          onUrlChange: (change) => _currentUrl = change.url,
+          onPageFinished: (_) {
+            _injectBridge();
+            _installDownloadListener();
+          },
+          onNavigationRequest: _onNavigationRequest,
+          onWebResourceError: (e) {
+            // 主文档失败才提示；子资源（图片等）失败不打扰
+            if (e.isForMainFrame ?? false) {
+              if (mounted) setState(() => _error = e.description);
+            }
+          },
+        ),
+      );
     if (widget.bridge != null) {
-      _controller.addJavaScriptChannel('antiSITBridge', onMessageReceived: _onBridgeCall);
+      _controller.addJavaScriptChannel(
+        'antiSITBridge',
+        onMessageReceived: _onBridgeCall,
+      );
       widget.bridge!.attachEventSink(this);
       widget.bridge!.attachBackGuard(_onBackGuard);
     }
     unawaited(_configureFileChooser());
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _installDownloadListener());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _installDownloadListener(),
+    );
     SemColors.palette.addListener(_onPaletteChanged);
     _load();
   }
@@ -132,7 +147,8 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
     var handled = false;
     try {
       final value = await _controller.runJavaScriptReturningResult(
-          'window.__antiSITBack ? window.__antiSITBack() : false');
+        'window.__antiSITBack ? window.__antiSITBack() : false',
+      );
       handled = value == true || value == 'true';
     } catch (_) {
       handled = false;
@@ -148,10 +164,13 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
   void emit(String event, Object? data) {
     // 跨站页面不再持有桥接能力，流式 AI 的增量也不能再推过去。
     if (!_canUseBridge) return;
-    unawaited(_controller
-        .runJavaScript(
-            'window.__antiSITEvent && window.__antiSITEvent(${jsonEncode(event)}, ${jsonEncode(data)})')
-        .catchError((_) {}));
+    unawaited(
+      _controller
+          .runJavaScript(
+            'window.__antiSITEvent && window.__antiSITEvent(${jsonEncode(event)}, ${jsonEncode(data)})',
+          )
+          .catchError((_) {}),
+    );
   }
 
   /// 导航守卫：内联页里的外链不在这儿加载，交给系统浏览器。
@@ -304,8 +323,9 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
 
   Future<void> _reply(String fn, Object? id, Object? payload) async {
     try {
-      await _controller
-          .runJavaScript('window.$fn(${jsonEncode(id)}, ${jsonEncode(payload)})');
+      await _controller.runJavaScript(
+        'window.$fn(${jsonEncode(id)}, ${jsonEncode(payload)})',
+      );
     } catch (_) {
       // 页面已经走了：没人接就没人接
     }
@@ -320,31 +340,58 @@ class _WebViewPageState extends State<WebViewPage> implements WebBridgeEventSink
         if (didPop) return;
         _backFromStack();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.title.isEmpty ? '网页' : widget.title, overflow: TextOverflow.ellipsis),
-          bottom: _progress > 0 && _progress < 1
-              ? PreferredSize(
-                  preferredSize: const Size.fromHeight(2),
-                  child: LinearProgressIndicator(value: _progress, minHeight: 2),
-                )
-              : null,
-        ),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_error != null)
-              Material(
-                color: SemColors.dangerSoft,
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Text(_error!,
-                      style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
-                ),
+      child: ListenableBuilder(
+        listenable: AppState.I,
+        builder: (context, _) {
+          // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+          final topInset = glassTopInset(context);
+          return Scaffold(
+            // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+            extendBodyBehindAppBar: glassTopBarEnabled,
+            appBar: glassAppBar(
+              context,
+              title: Text(
+                widget.title.isEmpty ? '网页' : widget.title,
+                overflow: TextOverflow.ellipsis,
               ),
-            Expanded(child: WebViewWidget(controller: _controller)),
-          ],
-        ),
+              // 加载进度条照旧是顶栏的 bottom，玻璃化后保留
+              bottom: _progress > 0 && _progress < 1
+                  ? PreferredSize(
+                      preferredSize: const Size.fromHeight(2),
+                      child: LinearProgressIndicator(
+                        value: _progress,
+                        minHeight: 2,
+                      ),
+                    )
+                  : null,
+            ),
+            // 平台视图不滚动：用 Padding 把网页从悬浮顶栏下面顶出来
+            body: Padding(
+              padding: EdgeInsets.only(top: topInset),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_error != null)
+                    Material(
+                      color: SemColors.dangerSoft,
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: SemColors.danger,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Expanded(child: WebViewWidget(controller: _controller)),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

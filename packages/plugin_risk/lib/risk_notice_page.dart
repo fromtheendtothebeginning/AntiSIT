@@ -63,70 +63,92 @@ class _RiskNoticePageState extends State<RiskNoticePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text(RiskTerms.title)),
-      body: ListView(
-        controller: _scroll,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          if (widget.confirmMode)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: SemColors.dangerSoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '用户拟停用本组件。依第三条第（四）项，停用后受拦截行为即行恢复；'
-                '请于阅读本条款全文后作出决定。',
-                style: TextStyle(fontSize: 12.5, height: 1.6, color: SemColors.danger),
-              ),
-            ),
-          const RiskNotice(),
-        ],
-      ),
-      bottomNavigationBar: widget.confirmMode
-          ? SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!_readToEnd) ...[
-                      Text('条款全文阅读完毕后，「已阅读并同意，停用本组件」按钮方为可用。',
-                          style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                      const SizedBox(height: 6),
-                    ],
-                    Row(
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text(RiskTerms.title)),
+          body: ListView(
+            controller: _scroll,
+            // 顶部让出悬浮顶栏
+            padding: EdgeInsets.fromLTRB(16, 8 + topInset, 16, 24),
+            children: [
+              if (widget.confirmMode)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: SemColors.dangerSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '用户拟停用本组件。依第三条第（四）项，停用后受拦截行为即行恢复；'
+                    '请于阅读本条款全文后作出决定。',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.6,
+                      color: SemColors.danger,
+                    ),
+                  ),
+                ),
+              const RiskNotice(),
+            ],
+          ),
+          bottomNavigationBar: widget.confirmMode
+              ? SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                                foregroundColor: SemColors.textSecondary),
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('不同意'),
+                        if (!_readToEnd) ...[
+                          Text(
+                            '条款全文阅读完毕后，「已阅读并同意，停用本组件」按钮方为可用。',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: SemColors.textMuted,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 2,
-                          child: FilledButton(
-                            style: FilledButton.styleFrom(
-                                backgroundColor: SemColors.danger,
-                                disabledBackgroundColor: SemColors.stripe),
-                            onPressed:
-                                _readToEnd ? () => Navigator.pop(context, true) : null,
-                            child: const Text('已阅读并同意，停用本组件'),
-                          ),
+                          const SizedBox(height: 6),
+                        ],
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: SemColors.textSecondary,
+                                ),
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text('不同意'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 2,
+                              child: FilledButton(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: SemColors.danger,
+                                  disabledBackgroundColor: SemColors.stripe,
+                                ),
+                                onPressed: _readToEnd
+                                    ? () => Navigator.pop(context, true)
+                                    : null,
+                                child: const Text('已阅读并同意，停用本组件'),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            )
-          : null,
+                  ),
+                )
+              : null,
+        );
+      },
     );
   }
 }
@@ -146,12 +168,22 @@ class RiskNotice extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${c.no}　${c.title}',
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+                Text(
+                  '${c.no}　${c.title}',
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 6),
-                Text(c.body,
-                    style: TextStyle(
-                        fontSize: 12.5, height: 1.7, color: SemColors.textSecondary)),
+                Text(
+                  c.body,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.7,
+                    color: SemColors.textSecondary,
+                  ),
+                ),
               ],
             ),
           ),

@@ -25,7 +25,6 @@ class EvaluateFormPage extends StatefulWidget {
   final EvaluateApi api;
   final EvalTarget target;
 
-
   final Future<void> Function() onChanged;
 
   @override
@@ -112,17 +111,19 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
     return form.total(_scores);
   }
 
-  int get _filled =>
-      _form == null ? 0 : _form!.items.where((i) => _scores.containsKey(i.id)).length;
+  int get _filled => _form == null
+      ? 0
+      : _form!.items.where((i) => _scores.containsKey(i.id)).length;
 
   Future<void> _save({required bool submit}) async {
     final form = _form;
     if (form == null || _busy) return;
     if (_scores.length < form.requiredCount) {
       showErr(
-          context,
-          '还有 ${form.requiredCount - _filled} 项必填指标没打分',
-          title: '不能${submit ? '提交' : '保存'}');
+        context,
+        '还有 ${form.requiredCount - _filled} 项必填指标没打分',
+        title: '不能${submit ? '提交' : '保存'}',
+      );
       return;
     }
     if (submit) {
@@ -138,8 +139,16 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
         return;
       }
       final text = submit
-          ? await widget.api.submitForm(form, _scores, comment: _comment.text.trim())
-          : await widget.api.saveForm(form, _scores, comment: _comment.text.trim());
+          ? await widget.api.submitForm(
+              form,
+              _scores,
+              comment: _comment.text.trim(),
+            )
+          : await widget.api.saveForm(
+              form,
+              _scores,
+              comment: _comment.text.trim(),
+            );
       // 本地也留一份：下次打开（或从缓存进来）默认显示这套分数
       await EvaluationLocalScores.write(widget.target, _scores);
       // 返回值不可信：以列表 / 汇总为准再核一遍
@@ -153,15 +162,26 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(text.isEmpty ? '教务没有返回文案' : text,
-                  style: const TextStyle(fontSize: 13, height: 1.6)),
+              Text(
+                text.isEmpty ? '教务没有返回文案' : text,
+                style: const TextStyle(fontSize: 13, height: 1.6),
+              ),
               const SizedBox(height: 8),
-              Text(verdict.detail,
-                  style: TextStyle(fontSize: 12, height: 1.6, color: SemColors.textMuted)),
+              Text(
+                verdict.detail,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.6,
+                  color: SemColors.textMuted,
+                ),
+              ),
             ],
           ),
           actions: [
-            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('知道了'),
+            ),
           ],
         ),
       );
@@ -170,10 +190,12 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
       if (verdict.ok) {
         // 保存/提交完成后**留在本页**：用户常要接着改下一项或核对；
         // 只有「提交」不可逆，才顺手退回列表（列表会显示已提交）。
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(submit ? '已提交，这条不能再改了' : '已保存，可以继续调整'),
-          duration: const Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(submit ? '已提交，这条不能再改了' : '已保存，可以继续调整'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
         if (submit) Navigator.of(context).maybePop();
       }
     } on EvaluateError catch (e) {
@@ -189,7 +211,8 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
   Future<({bool ok, String detail})> _verify({required bool submit}) async {
     try {
       final targets = await widget.api.fetchTargets();
-      final match = targets.where((t) => t.jxbId == widget.target.jxbId).toList();
+      final match =
+          targets.where((t) => t.jxbId == widget.target.jxbId).toList();
       if (match.isEmpty) {
         return (ok: false, detail: '复查时这条教学班已不在待评列表里，请回列表确认');
       }
@@ -214,16 +237,27 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${widget.target.teacher} · ${widget.target.course}',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              Text(
+                '${widget.target.teacher} · ${widget.target.course}',
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 10),
-              const Text('提交后不能修改，也不可撤销。评教是匿名：教师看不到你的具体打分。',
-                  style: TextStyle(fontSize: 12.5, height: 1.7)),
+              const Text(
+                '提交后不能修改，也不可撤销。评教是匿名：教师看不到你的具体打分。',
+                style: TextStyle(fontSize: 12.5, height: 1.7),
+              ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再想想')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认提交')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('再想想'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('确认提交'),
+            ),
           ],
         ),
       );
@@ -231,17 +265,34 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
   @override
   Widget build(BuildContext context) {
     final form = _form;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.target.course, overflow: TextOverflow.ellipsis),
-
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : (_error != null
-              ? _errorView()
-              : (form == null ? const SizedBox.shrink() : _formView(form))),
-      bottomNavigationBar: form == null || _error != null ? null : _actionBar(),
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: Text(widget.target.course, overflow: TextOverflow.ellipsis),
+          ),
+          // 表单主体是整块内容（加载 / 出错 / 表单三态），用 Padding 顶出顶栏这一截
+          body: Padding(
+            padding: EdgeInsets.only(top: topInset),
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : (_error != null
+                    ? _errorView()
+                    : (form == null
+                        ? const SizedBox.shrink()
+                        : _formView(form))),
+          ),
+          bottomNavigationBar:
+              form == null || _error != null ? null : _actionBar(),
+        );
+      },
     );
   }
 
@@ -253,9 +304,15 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
             children: [
               Icon(Icons.error_outline, size: 40, color: SemColors.textMuted),
               const SizedBox(height: 12),
-              Text(_error!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, height: 1.7, color: SemColors.textSecondary)),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.7,
+                  color: SemColors.textSecondary,
+                ),
+              ),
               const SizedBox(height: 16),
               FilledButton(onPressed: _load, child: const Text('重试')),
             ],
@@ -272,11 +329,17 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
               child: Row(
                 children: [
                   const SizedBox(
-                      width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(_log,
-                        style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                    child: Text(
+                      _log,
+                      style:
+                          TextStyle(fontSize: 11.5, color: SemColors.textMuted),
+                    ),
                   ),
                 ],
               ),
@@ -291,40 +354,60 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(widget.target.teacher,
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w600)),
+                          Text(
+                            widget.target.teacher,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           const SizedBox(height: 2),
                           Text(
                             widget.target.course +
                                 (widget.target.className.isEmpty
                                     ? ''
                                     : ' · ${widget.target.className}'),
-                            style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: SemColors.textMuted,
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    Capsule(widget.target.statusLabel,
-                        color: widget.target.submitted ? SemColors.success : SemColors.accent),
+                    Capsule(
+                      widget.target.statusLabel,
+                      color: widget.target.submitted
+                          ? SemColors.success
+                          : SemColors.accent,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    Text('统一分数',
-                        style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: SemColors.textPrimary)),
+                    Text(
+                      '统一分数',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: SemColors.textPrimary,
+                      ),
+                    ),
                     const Spacer(),
-                    Text(_uniform.toInt().toString(),
-                        style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: SemColors.accent)),
-                    Text(' 分',
-                        style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                    Text(
+                      _uniform.toInt().toString(),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: SemColors.accent,
+                      ),
+                    ),
+                    Text(
+                      ' 分',
+                      style:
+                          TextStyle(fontSize: 12, color: SemColors.textMuted),
+                    ),
                   ],
                 ),
                 Slider(
@@ -340,8 +423,10 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                   children: [
                     for (final v in const [100.0, 95.0, 90.0, 80.0, 60.0])
                       ActionChip(
-                        label: Text('${v.toInt()} 分',
-                            style: const TextStyle(fontSize: 11.5)),
+                        label: Text(
+                          '${v.toInt()} 分',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
                         onPressed: _busy ? null : () => _applyUniform(v),
                       ),
                   ],
@@ -365,10 +450,12 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
               hintText: '可以写下对本课程的建议',
             ),
           ),
-          PageNotes(lines: const [
-            '评教是匿名的：教师看不到你的具体打分，只看到汇总结果。',
-            '保存可以反复覆盖，提交之后不能修改，也不能撤销。',
-          ]),
+          PageNotes(
+            lines: const [
+              '评教是匿名的：教师看不到你的具体打分，只看到汇总结果。',
+              '保存可以反复覆盖，提交之后不能修改，也不能撤销。',
+            ],
+          ),
         ],
       );
 
@@ -379,11 +466,14 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (title.isNotEmpty) ...[
-            Text(title,
-                style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: SemColors.textSecondary)),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: SemColors.textSecondary,
+              ),
+            ),
             const SizedBox(height: 8),
           ],
           for (var i = 0; i < group.items.length; i++)
@@ -407,7 +497,10 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                 child: Text(
                   '$number. ${item.title}',
                   style: TextStyle(
-                      fontSize: 12.5, height: 1.45, color: SemColors.textSecondary),
+                    fontSize: 12.5,
+                    height: 1.45,
+                    color: SemColors.textSecondary,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -417,9 +510,10 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                   value.toInt().toString(),
                   textAlign: TextAlign.right,
                   style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: SemColors.accent),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: SemColors.accent,
+                  ),
                 ),
               ),
             ],
@@ -467,7 +561,8 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Icon(Icons.check_rounded, size: 18),
                   label: const Text('提交评教'),
                 ),

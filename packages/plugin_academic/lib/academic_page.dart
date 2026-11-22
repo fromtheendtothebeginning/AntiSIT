@@ -96,7 +96,9 @@ class _AcademicPageState extends State<AcademicPage> {
     bool isLeaf(Map<String, dynamic> c) => !parentIds.contains(_strOf(c['id']));
     final roots = [
       for (final c in categories)
-        if (_strOf(c['parent']).isEmpty || !byId.containsKey(_strOf(c['parent']))) c,
+        if (_strOf(c['parent']).isEmpty ||
+            !byId.containsKey(_strOf(c['parent'])))
+          c,
     ];
     // 归属到某个根节点：沿 parent 链往上走，看能不能走到 root。
     bool belongsTo(Map<String, dynamic> c, Map<String, dynamic> root) {
@@ -117,7 +119,8 @@ class _AcademicPageState extends State<AcademicPage> {
       final chain = <String>[];
       var parent = _strOf(c['parent']);
       final guard = <String>{};
-      while (parent.isNotEmpty && byId.containsKey(parent) && guard.add(parent)) {
+      while (
+          parent.isNotEmpty && byId.containsKey(parent) && guard.add(parent)) {
         chain.insert(0, _strOf(byId[parent]!['name']));
         parent = _strOf(byId[parent]!['parent']);
       }
@@ -135,68 +138,88 @@ class _AcademicPageState extends State<AcademicPage> {
     final sid = _strOf(data?['sid']);
     final hasContent = _hasContent(data);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('学业情况')),
-      body: PageStateView(
-        loading: _loading && data == null,
-        error: _err,
-        empty: !_loading && _err == null && !hasContent,
-        emptyText: '暂无学业情况数据：教务系统可能未返回统计与课程类别',
-        onRetry: _load,
-        child: RefreshIndicator(
-          onRefresh: _load,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
-            children: [
-              ToolRefreshBar(
-                refreshing: _loading,
-                fromCache: _fromCache,
-                failed: _refreshFailed,
-                onRefresh: _load,
-              ),
-              _gpaCard(gpa, sid, planed),
-              if (planed != null || unplaned != null) _statsCard(planed, unplaned),
-              if (categories.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-                  child: Row(
-                    children: [
-                      Text(
-                        '修读课程类别',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: SemColors.textPrimary,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        '共 ${categories.length} 类',
-                        style: TextStyle(fontSize: 11.5, color: SemColors.textMuted),
-                      ),
-                    ],
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('学业情况')),
+          body: PageStateView(
+            loading: _loading && data == null,
+            error: _err,
+            empty: !_loading && _err == null && !hasContent,
+            emptyText: '暂无学业情况数据：教务系统可能未返回统计与课程类别',
+            onRetry: _load,
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
+                children: [
+                  ToolRefreshBar(
+                    refreshing: _loading,
+                    fromCache: _fromCache,
+                    failed: _refreshFailed,
+                    onRefresh: _load,
                   ),
-                ),
-                // 方案一：不再逐层嵌套缩进——根节点做分区标题，下面是拍平的叶子类别卡片，
-                // 层级交给卡片里的面包屑文字表达，课程一律全宽独立卡片。
-                for (final root in roots) ...[
-                  _sectionHeader(root, leavesOf[_strOf(root['id'])]!.length),
-                  for (final leaf in leavesOf[_strOf(root['id'])]!)
-                    _leafCategoryCard(leaf, crumbsOf(leaf)),
+                  _gpaCard(gpa, sid, planed),
+                  if (planed != null || unplaned != null)
+                    _statsCard(planed, unplaned),
+                  if (categories.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
+                      child: Row(
+                        children: [
+                          Text(
+                            '修读课程类别',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: SemColors.textPrimary,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '共 ${categories.length} 类',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: SemColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // 方案一：不再逐层嵌套缩进——根节点做分区标题，下面是拍平的叶子类别卡片，
+                    // 层级交给卡片里的面包屑文字表达，课程一律全宽独立卡片。
+                    for (final root in roots) ...[
+                      _sectionHeader(
+                        root,
+                        leavesOf[_strOf(root['id'])]!.length,
+                      ),
+                      for (final leaf in leavesOf[_strOf(root['id'])]!)
+                        _leafCategoryCard(leaf, crumbsOf(leaf)),
+                    ],
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
+                    child: Text(
+                      '数据来自教务系统「学生学业情况查询」，仅含培养方案内的修读要求，供学业规划参考。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        height: 1.6,
+                        color: SemColors.textMuted,
+                      ),
+                    ),
+                  ),
                 ],
-              ],
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
-                child: Text(
-                  '数据来自教务系统「学生学业情况查询」，仅含培养方案内的修读要求，供学业规划参考。',
-                  style: TextStyle(fontSize: 11, height: 1.6, color: SemColors.textMuted),
-                ),
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -219,7 +242,10 @@ class _AcademicPageState extends State<AcademicPage> {
               if (sid.isNotEmpty)
                 Text(
                   '学号 $sid',
-                  style: TextStyle(fontSize: 12, color: SemColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: SemColors.textSecondary,
+                  ),
                 ),
               if (total != null) ...[
                 const SizedBox(height: 4),
@@ -236,7 +262,10 @@ class _AcademicPageState extends State<AcademicPage> {
   }
 
   // ── 整体统计：计划内（总/通过/未通过/未修/在读）+ 计划外（通过/未通过） ──
-  Widget _statsCard(Map<String, dynamic>? planed, Map<String, dynamic>? unplaned) {
+  Widget _statsCard(
+    Map<String, dynamic>? planed,
+    Map<String, dynamic>? unplaned,
+  ) {
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -289,7 +318,9 @@ class _AcademicPageState extends State<AcademicPage> {
             fontSize: 20,
             fontWeight: FontWeight.w600,
             height: 1.1,
-            color: n == null ? SemColors.textMuted : (color ?? SemColors.textPrimary),
+            color: n == null
+                ? SemColors.textMuted
+                : (color ?? SemColors.textPrimary),
           ),
         ),
       ],
@@ -352,7 +383,10 @@ class _AcademicPageState extends State<AcademicPage> {
             _chip('已得 ${_fmtNum(earned)}'),
           ],
           const SizedBox(width: 8),
-          Text('$leafCount 类', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+          Text(
+            '$leafCount 类',
+            style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+          ),
         ],
       ),
     );
@@ -455,7 +489,8 @@ class _AcademicPageState extends State<AcademicPage> {
     final tagWidgets = <Widget>[
       if (nature.isNotEmpty) _tagOrChip(nature, _natureColor(nature)),
       if (term.isNotEmpty) _tagOrChip(term, Colors.orange),
-      if (statusText.isNotEmpty) _tagOrChip(statusText, _statusColor(statusText)),
+      if (statusText.isNotEmpty)
+        _tagOrChip(statusText, _statusColor(statusText)),
     ];
     final meta = [
       if (credit != null) '学分 ${_fmtNum(credit)}',
@@ -489,10 +524,7 @@ class _AcademicPageState extends State<AcademicPage> {
                   Wrap(
                     spacing: 6,
                     runSpacing: 4,
-                    children: [
-                      if (code.isNotEmpty) _chip(code),
-                      ...tagWidgets,
-                    ],
+                    children: [if (code.isNotEmpty) _chip(code), ...tagWidgets],
                   ),
                 ],
               ],
@@ -521,6 +553,7 @@ class _AcademicPageState extends State<AcademicPage> {
       ),
     );
   }
+
   Widget _hintRow(String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Text(
@@ -570,7 +603,10 @@ class _AcademicPageState extends State<AcademicPage> {
           color: SemColors.neutralSoft,
           borderRadius: BorderRadius.circular(5),
         ),
-        child: Text(text, style: TextStyle(fontSize: 10, color: SemColors.textMuted)),
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 10, color: SemColors.textMuted),
+        ),
       );
 
   /// 有没有可展示的内容：只有学号、统计与类别全空时按「无数据」处理。
@@ -585,7 +621,8 @@ class _AcademicPageState extends State<AcademicPage> {
 }
 
 /// 宽容取子对象：字段可能缺失 / 为 null / 不是 Map（服务器换实现时）。
-Map<String, dynamic>? _objOf(Object? v) => v is Map ? v.cast<String, dynamic>() : null;
+Map<String, dynamic>? _objOf(Object? v) =>
+    v is Map ? v.cast<String, dynamic>() : null;
 
 /// 宽容取对象列表：非 List 或元素不是 Map 时跳过，不让单个脏元素炸整页。
 List<Map<String, dynamic>> _listOf(Object? v) => v is List
@@ -598,4 +635,5 @@ List<Map<String, dynamic>> _listOf(Object? v) => v is List
 String _strOf(Object? v) => '${v ?? ''}'.trim();
 
 /// 学分数值：整数不带小数点（28.0 → 28），小数原样保留。
-String _fmtNum(num v) => v == v.roundToDouble() ? v.round().toString() : v.toString();
+String _fmtNum(num v) =>
+    v == v.roundToDouble() ? v.round().toString() : v.toString();

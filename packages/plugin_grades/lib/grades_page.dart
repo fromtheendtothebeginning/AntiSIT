@@ -23,9 +23,10 @@ String _xqName(String? s) => switch (s) {
 List<String> gradeTags(Map<String, dynamic> g) => [
       _tag(g['kclbmc']),
       _tag(g['khfsmc']),
-      [_tag(g['xnmmc']), _xqName(g['xqmmc']?.toString())]
-          .where((s) => s.isNotEmpty)
-          .join(' '),
+      [
+        _tag(g['xnmmc']),
+        _xqName(g['xqmmc']?.toString()),
+      ].where((s) => s.isNotEmpty).join(' '),
     ].where((s) => s.isNotEmpty).toList();
 
 String _tag(Object? v) => '${v ?? ''}'.trim();
@@ -71,7 +72,8 @@ class _GradesPageState extends State<GradesPage> {
 
   void _applyData(Map<String, dynamic> data) {
     _all = ((data['grades'] as List?) ?? const []).cast<Map<String, dynamic>>();
-    final terms = ((data['terms'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final terms =
+        ((data['terms'] as List?) ?? const []).cast<Map<String, dynamic>>();
     if (terms.isNotEmpty) _terms = terms;
     _gpa = asNum(data['gpa']) ?? 0;
     _err = null;
@@ -121,12 +123,16 @@ class _GradesPageState extends State<GradesPage> {
           children: [
             ListTile(
               title: const Text('全部学期'),
-              trailing: _xnm.isEmpty ? Icon(Icons.check, color: SemColors.accent) : null,
+              trailing: _xnm.isEmpty
+                  ? Icon(Icons.check, color: SemColors.accent)
+                  : null,
               onTap: () => Navigator.pop(ctx, '|'),
             ),
             for (final t in _terms)
               ListTile(
-                title: Text('${t['xnmmc']} · ${_xqName(t['xqmmc']?.toString())}'),
+                title: Text(
+                  '${t['xnmmc']} · ${_xqName(t['xqmmc']?.toString())}',
+                ),
                 trailing: (_xnm == '${t['xnm']}' && _xqm == '${t['xqm']}')
                     ? Icon(Icons.check, color: SemColors.accent)
                     : null,
@@ -177,122 +183,166 @@ class _GradesPageState extends State<GradesPage> {
                 ? '$_xnm ${_xqName(_xqm)}'
                 : '${t['xnmmc']} · ${_xqName(t['xqmmc']?.toString())}';
           }();
-    return Scaffold(
-      appBar: AppBar(title: const Text('成绩查询')),
-      body: PageStateView(
-        loading: _loading && _all.isEmpty,
-        error: _err,
-        empty: !_loading && _err == null && _all.isEmpty,
-        emptyText: '暂无成绩记录',
-        onRetry: _load,
-        child: RefreshIndicator(
-          onRefresh: _load,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
-            children: [
-              ToolRefreshBar(
-                refreshing: _loading,
-                fromCache: _fromCache,
-                failed: _refreshFailed,
-                onRefresh: _load,
-              ),
-              AppCard(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    BigStat(
-                      label: '平均绩点',
-                      value: _gpa.toStringAsFixed(1),
-                      color: SemColors.accent,
-                    ),
-                    const Spacer(),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        GestureDetector(
-                          onTap: _pickTerm,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: SemColors.cardElevated,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: _xnm.isEmpty ? SemColors.border : SemColors.accent,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Text(filterLabel,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: _xnm.isEmpty
-                                            ? SemColors.textMuted
-                                            : SemColors.accent)),
-                                const SizedBox(width: 4),
-                                Icon(Icons.expand_more, size: 14, color: SemColors.textMuted),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text('共 ${_all.length} 门 · 满分绩点 5.0',
-                            style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 2),
-              for (final g in list)
-                Card(
-                  elevation: 0,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(color: SemColors.border),
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('成绩查询')),
+          body: PageStateView(
+            loading: _loading && _all.isEmpty,
+            error: _err,
+            empty: !_loading && _err == null && _all.isEmpty,
+            emptyText: '暂无成绩记录',
+            onRetry: _load,
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
+                children: [
+                  ToolRefreshBar(
+                    refreshing: _loading,
+                    fromCache: _fromCache,
+                    failed: _refreshFailed,
+                    onRefresh: _load,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  AppCard(
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('${g['kcmc']}',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w600, color: SemColors.textPrimary)),
-                              const SizedBox(height: 4),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 4,
-                                children: [for (final tag in gradeTags(g)) _chip(tag)],
-                              ),
-                            ],
-                          ),
+                        BigStat(
+                          label: '平均绩点',
+                          value: _gpa.toStringAsFixed(1),
+                          color: SemColors.accent,
                         ),
-                        const SizedBox(width: 10),
+                        const Spacer(),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('${g['cj']}',
-                                style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: SemColors.accent)),
-                            Text('学分 ${g['xf']} · 绩点 ${g['jd']}',
-                                style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                            GestureDetector(
+                              onTap: _pickTerm,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: SemColors.cardElevated,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: _xnm.isEmpty
+                                        ? SemColors.border
+                                        : SemColors.accent,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      filterLabel,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: _xnm.isEmpty
+                                            ? SemColors.textMuted
+                                            : SemColors.accent,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.expand_more,
+                                      size: 14,
+                                      color: SemColors.textMuted,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '共 ${_all.length} 门 · 满分绩点 5.0',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: SemColors.textSecondary,
+                              ),
+                            ),
                           ],
                         ),
                       ],
                     ),
                   ),
-                ),
-            ],
+                  const SizedBox(height: 2),
+                  for (final g in list)
+                    Card(
+                      elevation: 0,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(color: SemColors.border),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${g['kcmc']}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: SemColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: [
+                                      for (final tag in gradeTags(g))
+                                        _chip(tag),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '${g['cj']}',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: SemColors.accent,
+                                  ),
+                                ),
+                                Text(
+                                  '学分 ${g['xf']} · 绩点 ${g['jd']}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: SemColors.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -302,6 +352,9 @@ class _GradesPageState extends State<GradesPage> {
           color: SemColors.neutralSoft,
           borderRadius: BorderRadius.circular(5),
         ),
-        child: Text(text, style: TextStyle(fontSize: 10, color: SemColors.textMuted)),
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 10, color: SemColors.textMuted),
+        ),
       );
 }

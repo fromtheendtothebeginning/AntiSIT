@@ -117,6 +117,11 @@ AppBar glassAppBar(
   );
 }
 
+/// 把标题栏里的一个按钮套成悬浮玻璃圆钮（40 直径、更实一档的玻璃面 + 强描边）。
+/// [glassAppBar] 会自动处理 `IconButton` 类型的 action；包在 ListenableBuilder /
+/// PopupMenuButton 之类结构里的按钮不会被识别，页面要显式用这个包一下。
+Widget glassTopBarAction(Widget child, {double edge = 3}) => _orb(child, edge: edge);
+
 /// 悬浮圆钮：把标题栏里的按钮套成 40 直径的玻璃圆片。
 /// 圆片内不再做第二层模糊（会和顶栏的模糊层嵌套、在 Impeller 下产生椭圆光晕），
 /// 改用比顶栏更实一档的玻璃面 + 强描边，读起来仍是「浮在模糊上的一块厚玻璃」。

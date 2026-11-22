@@ -425,83 +425,95 @@ class _ToolOrderPageState extends State<ToolOrderPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('工具排序'),
-        actions: [
-          if (PluginRegistry.I.hasCustomToolSizes)
-            TextButton(
-              onPressed: _resetSizes,
-              child: const Text('重置大小', style: TextStyle(fontSize: 13)),
-            ),
-          TextButton(
-            onPressed: _reset,
-            child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
-            child: Text(
-              '按住右侧手柄上下拖动，松手即生效；工具页里长按卡片进入整理后，顶部尺寸条可在 1×1 / 1×3 / 2×3 / 2×2 间切换，也能拖右下角弧线细调',
-              style: TextStyle(
-                fontSize: 12,
-                color: SemColors.textMuted,
-                height: 1.5,
+    // 排序页也要跟着 AppState 重建（「悬浮玻璃顶栏」开关改了 Scaffold 的取参）
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('工具排序'),
+            actions: [
+              if (PluginRegistry.I.hasCustomToolSizes)
+                TextButton(
+                  onPressed: _resetSizes,
+                  child: const Text('重置大小', style: TextStyle(fontSize: 13)),
+                ),
+              TextButton(
+                onPressed: _reset,
+                child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
               ),
-            ),
+            ],
           ),
-          AppCard(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              buildDefaultDragHandles: false,
-              padding: EdgeInsets.zero,
-              itemCount: _items.length,
-              onReorder: _onReorder,
-              itemBuilder: (context, i) {
-                final (pluginId, tool) = _items[i];
-                return ListTile(
-                  key: ValueKey(pluginId),
-                  leading: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: tool.color.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Icon(tool.icon, color: tool.color, size: 20),
+          body: ListView(
+            // 顶部让出悬浮顶栏
+            padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
+                child: Text(
+                  '按住右侧手柄上下拖动，松手即生效；工具页里长按卡片进入整理后，顶部尺寸条可在 1×1 / 1×3 / 2×3 / 2×2 间切换，也能拖右下角弧线细调',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: SemColors.textMuted,
+                    height: 1.5,
                   ),
-                  title: Text(
-                    tool.title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    tool.subtitle(),
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  trailing: ReorderableDragStartListener(
-                    index: i,
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Icon(
-                        Icons.drag_handle_rounded,
-                        color: SemColors.textMuted,
+                ),
+              ),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  padding: EdgeInsets.zero,
+                  itemCount: _items.length,
+                  onReorder: _onReorder,
+                  itemBuilder: (context, i) {
+                    final (pluginId, tool) = _items[i];
+                    return ListTile(
+                      key: ValueKey(pluginId),
+                      leading: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: tool.color.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Icon(tool.icon, color: tool.color, size: 20),
                       ),
-                    ),
-                  ),
-                );
-              },
-            ),
+                      title: Text(
+                        tool.title,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        tool.subtitle(),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: ReorderableDragStartListener(
+                        index: i,
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.drag_handle_rounded,
+                            color: SemColors.textMuted,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

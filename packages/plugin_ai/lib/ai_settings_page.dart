@@ -130,7 +130,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       final out = await AiVision.I.testConnection();
       if (mounted) {
         setState(() {
-          _msg = '连接成功，模型回复：${out.length > 40 ? '${out.substring(0, 40)}…' : out}';
+          _msg =
+              '连接成功，模型回复：${out.length > 40 ? '${out.substring(0, 40)}…' : out}';
           _ok = true;
         });
       }
@@ -166,19 +167,34 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('临时 Key 只存本机、不会被提交到仓库；release 构建完全不读它。清空即可移除。',
-                style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.5)),
+            Text(
+              '临时 Key 只存本机、不会被提交到仓库；release 构建完全不读它。清空即可移除。',
+              style: TextStyle(
+                fontSize: 12,
+                color: SemColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: ctrl,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'API Key', isDense: true),
+              decoration: const InputDecoration(
+                labelText: 'API Key',
+                isDense: true,
+              ),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('保存')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('保存'),
+          ),
         ],
       ),
     );
@@ -204,8 +220,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     } catch (_) {
       await Clipboard.setData(ClipboardData(text: p.docs));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('打不开浏览器，申请链接已复制'), behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('打不开浏览器，申请链接已复制'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -258,180 +278,231 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           color: SemColors.dangerSoft,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(text,
-            style: TextStyle(fontSize: 11.5, color: SemColors.danger, height: 1.6)),
+        child: Text(
+          text,
+          style:
+              TextStyle(fontSize: 11.5, color: SemColors.danger, height: 1.6),
+        ),
       );
 
   @override
   Widget build(BuildContext context) {
     final p = _shown;
-    return Scaffold(
-      appBar: AppBar(title: const Text('AI 设置')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-        children: [
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  secondary: const Icon(Icons.auto_awesome_outlined),
-                  title: const Text('启用 AI 识别'),
-                  value: _c.enabled,
-                  onChanged: (v) => setState(() => _c.enabled = v),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (!_c.providerUsable) ...[
-                  _notice(PluginRegistry.I.providerChoices.isEmpty
-                      ? '所有 AI 提供商都被停用了，AI 识别暂时不可用：去「插件管理 → AI 提供商」打开至少一家。'
-                      : '当前选的「${p.label}」已被停用或没装进来，AI 识别暂时不可用：'
-                          '在下面换一家，或去「插件管理 → AI 提供商」把它打开。'),
-                  const SizedBox(height: 12),
-                ],
-                GlassPicker(
-                  label: '提供商',
-                  value: _c.providerUsable ? p.label : '${p.label}（已停用）',
-                  prefixIcon: BrandLogo(asset: p.logo, initial: p.label),
-                  onTap: _busy || _fetching ? () {} : _pickProviderDialog,
-                ),
-                const SizedBox(height: 14),
-                GlassField(
-                  label: 'API Key（按提供商分别保存）',
-                  controller: _key,
-                  obscureText: true,
-                  prefixIcon: const Icon(Icons.key_outlined),
-                  hintText: '粘贴 ${p.label} 的 API Key',
-                ),
-                if (p.isCustom) ...[
-                  const SizedBox(height: 14),
-                  GlassField(
-                    label: 'Base URL（OpenAI 兼容地址，必填）',
-                    controller: _base,
-                    prefixIcon: const Icon(Icons.link_outlined),
-                    hintText: 'https://your-host/v1',
-                  ),
-                ],
-                if (p.docs.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _busy ? null : () => _openApplyPage(p),
-                        icon: const Icon(Icons.open_in_new, size: 16),
-                        label: Text(p.applyLabel),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          Uri.tryParse(p.docs)?.host ?? p.docs,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 14),
-                GlassPicker(
-                  label: '模型',
-                  value: _model.text.trim(),
-                  hint: '未选择',
-                  prefixIcon: _fetching
-                      ? const SizedBox(
-                          width: 18, height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.memory_outlined),
-                  helperText: _fetching
-                      ? '正在拉取 ${p.label} 的官方模型列表…'
-                      : '点开用当前 Key 调 ${p.label} 的 /models 拉取后选择；列表里没有的模型可直接输入',
-                  onTap: _busy || _fetching ? () {} : _pickModel,
-                ),
-                // 开发期临时 Key：只写本机 prefs，不进仓库；仅 debug 构建显示
-                if (kDebugMode) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Icon(Icons.bug_report_outlined, size: 14, color: SemColors.textMuted),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          _c.debugApiKey.isEmpty
-                              ? '调试 Key：未设置（仅 debug 构建生效）'
-                              : '调试 Key：已设置 ${_maskKey(_c.debugApiKey)}',
-                          style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _busy ? null : _editDebugKey,
-                        child: const Text('设置', style: TextStyle(fontSize: 12)),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Row(
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('AI 设置')),
+          body: ListView(
+            // 顶部让出悬浮顶栏
+            padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
+            children: [
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : _test,
-                      icon: _busy
-                          ? const SizedBox(
-                              width: 14, height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.wifi_tethering, size: 18),
-                      label: const Text('测试连接'),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: const Icon(Icons.auto_awesome_outlined),
+                      title: const Text('启用 AI 识别'),
+                      value: _c.enabled,
+                      onChanged: (v) => setState(() => _c.enabled = v),
                     ),
-                    const SizedBox(width: 10),
-                    FilledButton(onPressed: _busy ? null : _save, child: const Text('保存')),
                   ],
                 ),
-                if (_msg != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: _ok ? SemColors.successSoft : SemColors.dangerSoft,
-                      borderRadius: BorderRadius.circular(8),
+              ),
+              const SizedBox(height: 10),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!_c.providerUsable) ...[
+                      _notice(
+                        PluginRegistry.I.providerChoices.isEmpty
+                            ? '所有 AI 提供商都被停用了，AI 识别暂时不可用：去「插件管理 → AI 提供商」打开至少一家。'
+                            : '当前选的「${p.label}」已被停用或没装进来，AI 识别暂时不可用：'
+                                '在下面换一家，或去「插件管理 → AI 提供商」把它打开。',
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    GlassPicker(
+                      label: '提供商',
+                      value: _c.providerUsable ? p.label : '${p.label}（已停用）',
+                      prefixIcon: BrandLogo(asset: p.logo, initial: p.label),
+                      onTap: _busy || _fetching ? () {} : _pickProviderDialog,
                     ),
-                    child: Text(_msg!,
-                        style: TextStyle(
+                    const SizedBox(height: 14),
+                    GlassField(
+                      label: 'API Key（按提供商分别保存）',
+                      controller: _key,
+                      obscureText: true,
+                      prefixIcon: const Icon(Icons.key_outlined),
+                      hintText: '粘贴 ${p.label} 的 API Key',
+                    ),
+                    if (p.isCustom) ...[
+                      const SizedBox(height: 14),
+                      GlassField(
+                        label: 'Base URL（OpenAI 兼容地址，必填）',
+                        controller: _base,
+                        prefixIcon: const Icon(Icons.link_outlined),
+                        hintText: 'https://your-host/v1',
+                      ),
+                    ],
+                    if (p.docs.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _busy ? null : () => _openApplyPage(p),
+                            icon: const Icon(Icons.open_in_new, size: 16),
+                            label: Text(p.applyLabel),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              Uri.tryParse(p.docs)?.host ?? p.docs,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: SemColors.textMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    GlassPicker(
+                      label: '模型',
+                      value: _model.text.trim(),
+                      hint: '未选择',
+                      prefixIcon: _fetching
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.memory_outlined),
+                      helperText: _fetching
+                          ? '正在拉取 ${p.label} 的官方模型列表…'
+                          : '点开用当前 Key 调 ${p.label} 的 /models 拉取后选择；列表里没有的模型可直接输入',
+                      onTap: _busy || _fetching ? () {} : _pickModel,
+                    ),
+                    // 开发期临时 Key：只写本机 prefs，不进仓库；仅 debug 构建显示
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.bug_report_outlined,
+                            size: 14,
+                            color: SemColors.textMuted,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _c.debugApiKey.isEmpty
+                                  ? '调试 Key：未设置（仅 debug 构建生效）'
+                                  : '调试 Key：已设置 ${_maskKey(_c.debugApiKey)}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: SemColors.textMuted,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _busy ? null : _editDebugKey,
+                            child: const Text(
+                              '设置',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _test,
+                          icon: _busy
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.wifi_tethering, size: 18),
+                          label: const Text('测试连接'),
+                        ),
+                        const SizedBox(width: 10),
+                        FilledButton(
+                          onPressed: _busy ? null : _save,
+                          child: const Text('保存'),
+                        ),
+                      ],
+                    ),
+                    if (_msg != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _ok
+                              ? SemColors.successSoft
+                              : SemColors.dangerSoft,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _msg!,
+                          style: TextStyle(
                             fontSize: 12,
                             color: _ok ? SemColors.success : SemColors.danger,
-                            height: 1.5)),
-                  ),
-                ],
-              ],
-            ),
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '能做些什么',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _bullet(
+                      '自动识别验证码：直连登录教务/学工需要验证码时，AI 读图与手输框同时开始'
+                      '（已关闭思考，只取几个字符）——你先输完就用你输的，AI 先认出来就自动提交；'
+                      '识别失败或没配 AI 就纯手输。',
+                    ),
+                    _bullet('识别校历调休：在课表「调休设置」里选一张校历截图，AI 提取放假 / 调休上课日并写入规则。'),
+                    _bullet('必须选支持读图的模型；换提供商后 Key 各自独立保存，不用重填。'),
+                  ],
+                ),
+              ),
+              // 从组件边上挪下来的说明，统一沉到页底
+              const PageNotes(
+                lines: ['Key 只保存在本机，直连模式下由 App 直接调用你填的 AI 服务（不经任何中转）。'],
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('能做些什么', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
-                _bullet('自动识别验证码：直连登录教务/学工需要验证码时，AI 读图与手输框同时开始'
-                    '（已关闭思考，只取几个字符）——你先输完就用你输的，AI 先认出来就自动提交；'
-                    '识别失败或没配 AI 就纯手输。'),
-                _bullet('识别校历调休：在课表「调休设置」里选一张校历截图，AI 提取放假 / 调休上课日并写入规则。'),
-                _bullet('必须选支持读图的模型；换提供商后 Key 各自独立保存，不用重填。'),
-              ],
-            ),
-          ),
-          // 从组件边上挪下来的说明，统一沉到页底
-          const PageNotes(lines: [
-            'Key 只保存在本机，直连模式下由 App 直接调用你填的 AI 服务（不经任何中转）。',
-          ]),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -443,20 +514,28 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             Padding(
               padding: const EdgeInsets.only(top: 6, right: 8),
               child: Container(
-                width: 5, height: 5,
-                decoration: BoxDecoration(color: SemColors.accent, shape: BoxShape.circle),
+                width: 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: SemColors.accent,
+                  shape: BoxShape.circle,
+                ),
               ),
             ),
             Expanded(
-              child: Text(text,
-                  style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6)),
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: SemColors.textSecondary,
+                  height: 1.6,
+                ),
+              ),
             ),
           ],
         ),
       );
 }
-
-
 
 // ==================== 统一的选择弹窗（提供商 / 模型共用） ====================
 
@@ -512,16 +591,22 @@ class _PickerDialogState extends State<_PickerDialog> {
     final q = raw.toLowerCase();
     final list = q.isEmpty
         ? widget.items
-        : widget.items.where((it) => it.title.toLowerCase().contains(q)).toList();
+        : widget.items
+            .where((it) => it.title.toLowerCase().contains(q))
+            .toList();
     // 允许手填时：筛选框里输入的内容若不是现成项，置顶一条「使用 …」
-    final custom = widget.allowCustom && raw.isNotEmpty && !widget.items.any((it) => it.value == raw);
+    final custom = widget.allowCustom &&
+        raw.isNotEmpty &&
+        !widget.items.any((it) => it.value == raw);
 
     // 弹窗高度自适应：一次能放下就别出现滚动（第一次用的人看到固定高度的半截列表，
     // 根本想不到还能上下滑）。放不下才滚，并且这时常显滚动条 + 「共 N 项」，
     // 让「列表没到底」这件事在界面上看得出来。
     const rowH = 46.0; // dense ListTile 一行的大致高度
     final listRows = list.length + (custom ? 1 : 0);
-    final chrome = 150.0 + (widget.searchHint != null ? 62.0 : 0) + widget.notes.length * 40.0;
+    final chrome = 150.0 +
+        (widget.searchHint != null ? 62.0 : 0) +
+        widget.notes.length * 40.0;
     final screenH = MediaQuery.of(context).size.height;
     // 上限同时受屏幕比例与「标题+按钮+弹窗内边距」留白约束，避免内容把弹窗撑出屏幕
     final maxH = math.min(screenH * 0.6, screenH - 190);
@@ -532,7 +617,8 @@ class _PickerDialogState extends State<_PickerDialog> {
       title: Row(
         children: [
           Expanded(child: Text(widget.title)),
-          if (widget.badge != null) Capsule(widget.badge!, color: SemColors.accent),
+          if (widget.badge != null)
+            Capsule(widget.badge!, color: SemColors.accent),
         ],
       ),
       contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
@@ -566,13 +652,22 @@ class _PickerDialogState extends State<_PickerDialog> {
               ),
               const SizedBox(height: 2),
             ] else
-              Text('共 ${widget.items.length} 项', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+              Text(
+                '共 ${widget.items.length} 项',
+                style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+              ),
             Expanded(
               // 列表为空但有「使用输入值」这条时也要渲染，否则手填入口会消失
               child: (list.isEmpty && !custom)
                   ? Center(
-                      child: Text('没有匹配的项',
-                          style: TextStyle(fontSize: 13, color: SemColors.textMuted)))
+                      child: Text(
+                        '没有匹配的项',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: SemColors.textMuted,
+                        ),
+                      ),
+                    )
                   : Scrollbar(
                       // 需要滚动时才常显滚动条（可滚动的提示），放得下时不占视觉
                       thumbVisibility: scrolls,
@@ -586,12 +681,19 @@ class _PickerDialogState extends State<_PickerDialog> {
                             return ListTile(
                               dense: true,
                               contentPadding: EdgeInsets.zero,
-                              leading: Icon(Icons.edit_outlined, size: 18, color: SemColors.accent),
-                              title: Text('使用「$raw」',
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      color: SemColors.accent,
-                                      fontWeight: FontWeight.w600)),
+                              leading: Icon(
+                                Icons.edit_outlined,
+                                size: 18,
+                                color: SemColors.accent,
+                              ),
+                              title: Text(
+                                '使用「$raw」',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: SemColors.accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                               onTap: () => Navigator.pop(context, raw),
                             );
                           }
@@ -601,13 +703,21 @@ class _PickerDialogState extends State<_PickerDialog> {
                             dense: true,
                             contentPadding: EdgeInsets.zero,
                             leading: it.leading,
-                            title: Text(it.title,
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    color: SemColors.textPrimary,
-                                    fontWeight: sel ? FontWeight.w700 : FontWeight.w400)),
+                            title: Text(
+                              it.title,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: SemColors.textPrimary,
+                                fontWeight:
+                                    sel ? FontWeight.w700 : FontWeight.w400,
+                              ),
+                            ),
                             trailing: sel
-                                ? Icon(Icons.check, size: 18, color: SemColors.accent)
+                                ? Icon(
+                                    Icons.check,
+                                    size: 18,
+                                    color: SemColors.accent,
+                                  )
                                 : null,
                             onTap: () => Navigator.pop(context, it.value),
                           );
@@ -619,7 +729,10 @@ class _PickerDialogState extends State<_PickerDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
       ],
     );
   }
@@ -633,7 +746,10 @@ class _PickerDialogState extends State<_PickerDialog> {
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(text, style: TextStyle(fontSize: 11, color: color, height: 1.5)),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 11, color: color, height: 1.5),
+      ),
     );
   }
 }

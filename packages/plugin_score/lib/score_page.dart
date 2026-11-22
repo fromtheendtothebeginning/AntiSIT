@@ -72,7 +72,8 @@ class _ScorePageState extends State<ScorePage> {
   /// 「加分明细」先读本机缓存；是否自动拉新同样看「工具页自动刷新」设置。
   Future<void> _restoreCredits() async {
     final cached = await ToolPageCache.read(_creditsCacheKey);
-    final list = ((cached?['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final list = ((cached?['records'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>();
     if (!mounted) return;
     if (list.isNotEmpty) {
       setState(() {
@@ -93,7 +94,8 @@ class _ScorePageState extends State<ScorePage> {
     });
     try {
       final r = await ApiClient.I.creditRecords();
-      final list = ((r['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      final list =
+          ((r['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
       _credits = list;
       _creditsLoaded = true;
       _creditsFromCache = false;
@@ -179,100 +181,124 @@ class _ScorePageState extends State<ScorePage> {
 
   /// 三级页面：调整本机达标线；返回后重拉分数与策略。
   Future<void> _openTargetSettings() async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ScoreTargetSettingsPage(cohort: _cohort.isEmpty ? null : _cohort),
-    ));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            ScoreTargetSettingsPage(cohort: _cohort.isEmpty ? null : _cohort),
+      ),
+    );
     if (mounted) _load();
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('第二课堂分'),
-          actions: [
-            IconButton(
-              tooltip: '达标线设置',
-              icon: const Icon(Icons.tune_rounded),
-              onPressed: _openTargetSettings,
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: GlassTabs(
-                labels: const ['分数概览', '加分明细'],
-                index: _tab,
-                onChanged: (i) => _tabs.animateToPage(i,
-                    duration: const Duration(milliseconds: 260),
-                    curve: Curves.easeOutCubic),
-                height: 32,
-                fontSize: 11.5,
+  Widget build(BuildContext context) {
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('第二课堂分'),
+            actions: [
+              IconButton(
+                tooltip: '达标线设置',
+                icon: const Icon(Icons.tune_rounded),
+                onPressed: _openTargetSettings,
               ),
-            ),
-            Expanded(
-              child: PageView(
-                controller: _tabs,
-                onPageChanged: _switchTab,
-                children: [_overviewView(), _creditsView()],
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _overviewView() {
-    final data = _data;
-    final groups = ((data?['groups'] as List?) ?? const []).cast<Map<String, dynamic>>();
-    final total = asNum(data?['total']);
-    final empty = total == null && groups.isEmpty;
-
-    return PageStateView(
-        loading: _loading && _data == null,
-        error: _err,
-        empty: !_loading && _err == null && empty,
-        emptyText: '暂无第二课堂数据，请稍后重试',
-        onRetry: _load,
-        child: RefreshIndicator(
-          onRefresh: _load,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+            ],
+          ),
+          body: Column(
             children: [
-              ToolRefreshBar(
-                refreshing: _loading,
-                fromCache: _fromCache,
-                failed: _refreshFailed,
-                onRefresh: _load,
+              Padding(
+                // 顶部让出悬浮顶栏
+                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 0),
+                child: GlassTabs(
+                  labels: const ['分数概览', '加分明细'],
+                  index: _tab,
+                  onChanged: (i) => _tabs.animateToPage(
+                    i,
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                  ),
+                  height: 32,
+                  fontSize: 11.5,
+                ),
               ),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (data != null) _studentLine(data),
-                    if (data != null && _policy.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text('本年级达标线尚未配置，仅显示实际分数',
-                            style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
-                      ),
-                    if (data != null && total != null) ...[
-                      const SizedBox(height: 14),
-                      _stats(data, total, _policy),
-                      const SizedBox(height: 16),
-                    ],
-                    for (var gi = 0; gi < groups.length; gi++)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _groupTile(groups[gi], gi, groups.length, _policy),
-                      ),
-                  ],
+              Expanded(
+                child: PageView(
+                  controller: _tabs,
+                  onPageChanged: _switchTab,
+                  children: [_overviewView(), _creditsView()],
                 ),
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  Widget _overviewView() {
+    final data = _data;
+    final groups =
+        ((data?['groups'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final total = asNum(data?['total']);
+    final empty = total == null && groups.isEmpty;
+
+    return PageStateView(
+      loading: _loading && _data == null,
+      error: _err,
+      empty: !_loading && _err == null && empty,
+      emptyText: '暂无第二课堂数据，请稍后重试',
+      onRetry: _load,
+      child: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+          children: [
+            ToolRefreshBar(
+              refreshing: _loading,
+              fromCache: _fromCache,
+              failed: _refreshFailed,
+              onRefresh: _load,
+            ),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (data != null) _studentLine(data),
+                  if (data != null && _policy.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '本年级达标线尚未配置，仅显示实际分数',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: SemColors.textMuted,
+                        ),
+                      ),
+                    ),
+                  if (data != null && total != null) ...[
+                    const SizedBox(height: 14),
+                    _stats(data, total, _policy),
+                    const SizedBox(height: 16),
+                  ],
+                  for (var gi = 0; gi < groups.length; gi++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _groupTile(groups[gi], gi, groups.length, _policy),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
+      ),
     );
   }
 
@@ -313,14 +339,19 @@ class _ScorePageState extends State<ScorePage> {
       return true;
     }).toList();
     return filterByPinyin(
-        list, (r) => '${r['name']} ${_tag(r['dldm'])} ${_tag(r['lbdm'])}', _creditsQuery);
+      list,
+      (r) => '${r['name']} ${_tag(r['dldm'])} ${_tag(r['lbdm'])}',
+      _creditsQuery,
+    );
   }
 
   void _setCreditDl(String d) {
     setState(() {
       _creditDl = d;
       // 换大类后，已选的类别若不再属于它就清掉
-      if (d.isNotEmpty && _creditLb.isNotEmpty && !_creditLbOptions.contains(_creditLb)) {
+      if (d.isNotEmpty &&
+          _creditLb.isNotEmpty &&
+          !_creditLbOptions.contains(_creditLb)) {
         _creditLb = '';
       }
     });
@@ -332,7 +363,9 @@ class _ScorePageState extends State<ScorePage> {
     // 这类二进制浮点尾巴（页面上曾显示 5.930000000000002），最后再换算回学分。
     final sum = sumCreditThousandths(_credits.map((r) => r['credit'])) / 1000;
     final filtered = _creditsFiltered;
-    final filtering = _creditsQuery.trim().isNotEmpty || _creditDl.isNotEmpty || _creditLb.isNotEmpty;
+    final filtering = _creditsQuery.trim().isNotEmpty ||
+        _creditDl.isNotEmpty ||
+        _creditLb.isNotEmpty;
     return PageStateView(
       loading: _creditsLoading && _credits.isEmpty,
       error: _creditsErr,
@@ -358,28 +391,44 @@ class _ScorePageState extends State<ScorePage> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('加分记录',
-                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                        Text(
+                          '加分记录',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: SemColors.textMuted,
+                          ),
+                        ),
                         const SizedBox(height: 2),
-                        Text('${_credits.length} 条',
-                            style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w600,
-                                color: SemColors.textPrimary)),
+                        Text(
+                          '${_credits.length} 条',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: SemColors.textPrimary,
+                          ),
+                        ),
                       ],
                     ),
                     const Spacer(),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('累计学分',
-                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                        Text(
+                          '累计学分',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: SemColors.textMuted,
+                          ),
+                        ),
                         const SizedBox(height: 2),
-                        Text(_fmtNum(sum),
-                            style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w600,
-                                color: SemColors.accent)),
+                        Text(
+                          _fmtNum(sum),
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: SemColors.accent,
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -392,25 +441,34 @@ class _ScorePageState extends State<ScorePage> {
                   hintText: '搜索活动名 / 类别，支持拼音…',
                   prefixIcon: Icon(Icons.search, size: 20),
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
               TagFilterRow(
-                  title: '大类',
-                  labels: _creditDlOptions,
-                  selected: _creditDl,
-                  onSelected: _setCreditDl),
+                title: '大类',
+                labels: _creditDlOptions,
+                selected: _creditDl,
+                onSelected: _setCreditDl,
+              ),
               const SizedBox(height: 4),
               TagFilterRow(
-                  title: '类别',
-                  labels: _creditLbOptions,
-                  selected: _creditLb,
-                  onSelected: (v) => setState(() => _creditLb = v)),
+                title: '类别',
+                labels: _creditLbOptions,
+                selected: _creditLb,
+                onSelected: (v) => setState(() => _creditLb = v),
+              ),
               if (filtering) ...[
                 const SizedBox(height: 6),
-                Text(filtered.isEmpty ? '没有符合条件的记录' : '已筛出 ${filtered.length} / ${_credits.length} 条',
-                    style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                Text(
+                  filtered.isEmpty
+                      ? '没有符合条件的记录'
+                      : '已筛出 ${filtered.length} / ${_credits.length} 条',
+                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted),
+                ),
               ],
               const SizedBox(height: 6),
             ],
@@ -425,9 +483,10 @@ class _ScorePageState extends State<ScorePage> {
   Widget _creditTile(Map<String, dynamic> r) {
     final credit = asNum(r['credit']);
     final status = '${r['status'] ?? ''}'.trim();
-    final cat = ['${r['dldm'] ?? ''}'.trim(), '${r['lbdm'] ?? ''}'.trim()]
-        .where((s) => s.isNotEmpty && s != 'null')
-        .join(' · ');
+    final cat = [
+      '${r['dldm'] ?? ''}'.trim(),
+      '${r['lbdm'] ?? ''}'.trim(),
+    ].where((s) => s.isNotEmpty && s != 'null').join(' · ');
     final start = '${r['start'] ?? ''}'.trim();
     final date = '${r['date'] ?? ''}'.trim();
     final when = start.isNotEmpty ? start : date;
@@ -447,20 +506,31 @@ class _ScorePageState extends State<ScorePage> {
                 if (credit != null)
                   Capsule('${_fmtNum(credit)} 学分', color: SemColors.accent),
                 if (status.isNotEmpty)
-                  Capsule(status,
-                      color: status.contains('通过') ? SemColors.success : SemColors.textMuted),
+                  Capsule(
+                    status,
+                    color: status.contains('通过')
+                        ? SemColors.success
+                        : SemColors.textMuted,
+                  ),
                 if (cat.isNotEmpty) Capsule(cat),
               ],
             ),
             const SizedBox(height: 8),
-            Text('${r['name']}',
-                style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600, color: SemColors.textPrimary)),
+            Text(
+              '${r['name']}',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: SemColors.textPrimary,
+              ),
+            ),
             if (when.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text('时间：${_shortTime(when)}',
-                    style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                child: Text(
+                  '时间：${_shortTime(when)}',
+                  style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+                ),
               ),
           ],
         ),
@@ -483,12 +553,20 @@ class _ScorePageState extends State<ScorePage> {
     ];
     return Text(
       parts.join('  ·  '),
-      style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6),
+      style: TextStyle(
+        fontSize: 12,
+        color: SemColors.textSecondary,
+        height: 1.6,
+      ),
     );
   }
 
   // ── 总得分 / 实践学分 两个大数字（cs-stats） ──
-  Widget _stats(Map<String, dynamic> data, num total, ScoreTargetPolicy policy) {
+  Widget _stats(
+    Map<String, dynamic> data,
+    num total,
+    ScoreTargetPolicy policy,
+  ) {
     final credit = asNum(data['credit']);
     final target = policy.total;
     final reached = target != null && credit != null && credit >= target;
@@ -498,19 +576,30 @@ class _ScorePageState extends State<ScorePage> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('总得分', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+            Text(
+              '总得分',
+              style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+            ),
             const SizedBox(height: 2),
-            Text('$total',
-                style: TextStyle(
-                    fontSize: 30, fontWeight: FontWeight.w600, height: 1.1,
-                    color: SemColors.textPrimary)),
+            Text(
+              '$total',
+              style: TextStyle(
+                fontSize: 30,
+                fontWeight: FontWeight.w600,
+                height: 1.1,
+                color: SemColors.textPrimary,
+              ),
+            ),
           ],
         ),
         const SizedBox(width: 28),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('实践学分', style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+            Text(
+              '实践学分',
+              style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+            ),
             const SizedBox(height: 2),
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -519,17 +608,24 @@ class _ScorePageState extends State<ScorePage> {
                 _CountUpText(
                   value: credit?.toDouble(),
                   style: TextStyle(
-                      fontSize: 30, fontWeight: FontWeight.w600, height: 1.1,
-                      color: target == null || credit == null
-                          ? SemColors.textPrimary
-                          : (reached ? SemColors.success : SemColors.danger)),
+                    fontSize: 30,
+                    fontWeight: FontWeight.w600,
+                    height: 1.1,
+                    color: target == null || credit == null
+                        ? SemColors.textPrimary
+                        : (reached ? SemColors.success : SemColors.danger),
+                  ),
                 ),
                 if (target != null) ...[
                   const SizedBox(width: 4),
-                  Text('/ ${_fmtNum(target)}',
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w700,
-                          color: SemColors.textSecondary)),
+                  Text(
+                    '/ ${_fmtNum(target)}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: SemColors.textSecondary,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -540,7 +636,12 @@ class _ScorePageState extends State<ScorePage> {
   }
 
   // ── 分组（cs-group）：美育/健康教育单行平铺，其余可展开 ──
-  Widget _groupTile(Map<String, dynamic> group, int gi, int groupCount, ScoreTargetPolicy policy) {
+  Widget _groupTile(
+    Map<String, dynamic> group,
+    int gi,
+    int groupCount,
+    ScoreTargetPolicy policy,
+  ) {
     final target = policy.groupFor('${group['name'] ?? ''}');
     final actual = asNum(group['subtotal']);
     final targetVal = target?.target;
@@ -575,9 +676,14 @@ class _ScorePageState extends State<ScorePage> {
         border: Border.all(color: SemColors.border),
       );
 
-  Widget _groupName(String name) => Text(name,
-      style: TextStyle(
-          fontSize: 13, fontWeight: FontWeight.w600, color: SemColors.textPrimary));
+  Widget _groupName(String name) => Text(
+        name,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: SemColors.textPrimary,
+        ),
+      );
 
   /// 组达标胶囊：默认蓝；有目标时达标绿 / 未达标红（cs-group-sub）。
   Widget _groupCapsule(num actual, double? targetVal) {
@@ -648,10 +754,14 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(widget.name,
-                        style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w600,
-                            color: SemColors.textPrimary)),
+                    child: Text(
+                      widget.name,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: SemColors.textPrimary,
+                      ),
+                    ),
                   ),
                   if (actual != null) ...[
                     Capsule(
@@ -661,15 +771,20 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
                       color: color,
                       soft: targetVal == null
                           ? SemColors.accentSoft
-                          : (reached ? SemColors.successSoft : SemColors.dangerSoft),
+                          : (reached
+                              ? SemColors.successSoft
+                              : SemColors.dangerSoft),
                     ),
                     const SizedBox(width: 8),
                   ],
                   AnimatedRotation(
                     turns: _open ? 0.5 : 0,
                     duration: const Duration(milliseconds: 200),
-                    child: Icon(Icons.arrow_drop_down,
-                        size: 20, color: SemColors.textMuted),
+                    child: Icon(
+                      Icons.arrow_drop_down,
+                      size: 20,
+                      color: SemColors.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -678,7 +793,8 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
             sizeCurve: Curves.easeOut,
-            crossFadeState: _open ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            crossFadeState:
+                _open ? CrossFadeState.showSecond : CrossFadeState.showFirst,
             firstChild: const SizedBox(width: double.infinity),
             secondChild: Container(
               width: double.infinity,
@@ -689,9 +805,14 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
               child: widget.rows.isEmpty
                   ? Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('暂无第二课堂数据，请稍后重试',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 13, color: SemColors.textMuted)),
+                      child: Text(
+                        '暂无第二课堂数据，请稍后重试',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: SemColors.textMuted,
+                        ),
+                      ),
                     )
                   : Column(
                       children: [
@@ -723,20 +844,24 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
       decoration: BoxDecoration(
-        border: last
-            ? null
-            : Border(bottom: BorderSide(color: SemColors.border)),
+        border:
+            last ? null : Border(bottom: BorderSide(color: SemColors.border)),
       ),
       child: Row(
         children: [
           Expanded(
-            child: Text(name,
-                style: TextStyle(fontSize: 13, color: SemColors.textSecondary)),
+            child: Text(
+              name,
+              style: TextStyle(fontSize: 13, color: SemColors.textSecondary),
+            ),
           ),
           Text(
             hasTarget ? '$valueText / ${_fmtNum(subTarget)}' : valueText,
             style: TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w700, color: valueColor),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: valueColor,
+            ),
           ),
         ],
       ),

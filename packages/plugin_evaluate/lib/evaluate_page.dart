@@ -104,8 +104,12 @@ class _EvaluatePageState extends State<EvaluatePage> {
       _serverProxyUrl = await _resolveProxy();
       if (!mounted) return;
       if (_serverProxyUrl.isEmpty) {
-        setState(() => _fail('服务器模式要经校园隧道访问教务：先到「我的 → 校园服务」连接校园网，'
-            '或切到直连模式再进来'));
+        setState(
+          () => _fail(
+            '服务器模式要经校园隧道访问教务：先到「我的 → 校园服务」连接校园网，'
+            '或切到直连模式再进来',
+          ),
+        );
         return;
       }
     }
@@ -184,9 +188,9 @@ class _EvaluatePageState extends State<EvaluatePage> {
   }
 
   void _openConnectionSettings() {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => const ConnectPage(),
-    ));
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const ConnectPage()));
   }
 
   /// 「全部打分」的默认分数：取本机记住的最近一条分数（原来打多少就还是多少），
@@ -222,8 +226,10 @@ class _EvaluatePageState extends State<EvaluatePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('把分数写进 ${pending.length} 位老师的每一道题，并保存（不提交）。',
-                  style: const TextStyle(fontSize: 13, height: 1.7)),
+              Text(
+                '把分数写进 ${pending.length} 位老师的每一道题，并保存（不提交）。',
+                style: const TextStyle(fontSize: 13, height: 1.7),
+              ),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -239,22 +245,37 @@ class _EvaluatePageState extends State<EvaluatePage> {
                   ),
                   SizedBox(
                     width: 40,
-                    child: Text(score.toInt().toString(),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: SemColors.accent)),
+                    child: Text(
+                      score.toInt().toString(),
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: SemColors.accent,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              Text('保存好之后，「全部提交」交的就是这套分——不会另设分数。',
-                  style: TextStyle(fontSize: 11.5, height: 1.6, color: SemColors.textMuted)),
+              Text(
+                '保存好之后，「全部提交」交的就是这套分——不会另设分数。',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.6,
+                  color: SemColors.textMuted,
+                ),
+              ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('开始')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('开始'),
+            ),
           ],
         ),
       ),
@@ -301,16 +322,26 @@ class _EvaluatePageState extends State<EvaluatePage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('把已保存的 $count 条评教原样提交（分数是你保存时打的那套）。',
-                style: const TextStyle(fontSize: 13, height: 1.7)),
+            Text(
+              '把已保存的 $count 条评教原样提交（分数是你保存时打的那套）。',
+              style: const TextStyle(fontSize: 13, height: 1.7),
+            ),
             const SizedBox(height: 8),
-            const Text('提交之后不能修改，也不能撤销。评教是匿名的：教师看不到你的具体打分。',
-                style: TextStyle(fontSize: 11.5, height: 1.6)),
+            const Text(
+              '提交之后不能修改，也不能撤销。评教是匿名的：教师看不到你的具体打分。',
+              style: TextStyle(fontSize: 11.5, height: 1.6),
+            ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再想想')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认提交')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('再想想'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认提交'),
+          ),
         ],
       ),
     );
@@ -354,7 +385,10 @@ class _EvaluatePageState extends State<EvaluatePage> {
     );
   }
 
-  Future<void> _showBatchResult(BatchResult result, {required bool submitted}) async {
+  Future<void> _showBatchResult(
+    BatchResult result, {
+    required bool submitted,
+  }) async {
     // 失败与「回了成功但复查没变」分开列，后者不是没做，只是没确认
     final problems = [
       ...result.failures,
@@ -384,21 +418,31 @@ class _EvaluatePageState extends State<EvaluatePage> {
             if (result.skipped > 0)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text('已提交的 ${result.skipped} 条已跳过。',
-                    style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                child: Text(
+                  '已提交的 ${result.skipped} 条已跳过。',
+                  style: const TextStyle(fontSize: 12.5, height: 1.6),
+                ),
               ),
             if (problems.isEmpty)
-              Text(headline, style: const TextStyle(fontSize: 12.5, height: 1.6))
+              Text(
+                headline,
+                style: const TextStyle(fontSize: 12.5, height: 1.6),
+              )
             else
               Flexible(
                 child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(headline, style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                      Text(
+                        headline,
+                        style: const TextStyle(fontSize: 12.5, height: 1.6),
+                      ),
                       const SizedBox(height: 8),
-                      Text(problems.join('\n\n'),
-                          style: const TextStyle(fontSize: 12.5, height: 1.6)),
+                      Text(
+                        problems.join('\n\n'),
+                        style: const TextStyle(fontSize: 12.5, height: 1.6),
+                      ),
                     ],
                   ),
                 ),
@@ -406,38 +450,58 @@ class _EvaluatePageState extends State<EvaluatePage> {
           ],
         ),
         actions: [
-          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('知道了'),
+          ),
         ],
       ),
     );
   }
 
   void _openTarget(EvalTarget target, int index) {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => EvaluateFormPage(
-        api: _api,
-        target: target,
-        onChanged: _loadTargets,
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EvaluateFormPage(
+          api: _api,
+          target: target,
+          onChanged: _loadTargets,
+        ),
       ),
-    ));
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('学生评教'),
-        actions: [
-          IconButton(
-            onPressed: _booting ? null : _loadTargets,
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: '刷新',
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('学生评教'),
+            actions: [
+              IconButton(
+                onPressed: _booting ? null : _loadTargets,
+                icon: const Icon(Icons.refresh_rounded),
+                tooltip: '刷新',
+              ),
+            ],
           ),
-        ],
-      ),
-      body: _booting
-          ? _loadingView()
-          : (_error != null ? _errorView(_error!) : _listView()),
+          // 主体是整块内容（加载 / 出错 / 列表三态），用 Padding 统一顶出顶栏这一截
+          body: Padding(
+            padding: EdgeInsets.only(top: topInset),
+            child: _booting
+                ? _loadingView()
+                : (_error != null ? _errorView(_error!) : _listView()),
+          ),
+        );
+      },
     );
   }
 
@@ -446,13 +510,21 @@ class _EvaluatePageState extends State<EvaluatePage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(
-                width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.4)),
+              width: 26,
+              height: 26,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
+            ),
             const SizedBox(height: 14),
-            Text('正在读取评教列表…',
-                style: TextStyle(fontSize: 12.5, color: SemColors.textMuted)),
+            Text(
+              '正在读取评教列表…',
+              style: TextStyle(fontSize: 12.5, color: SemColors.textMuted),
+            ),
             if (_log.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(_log, style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+              Text(
+                _log,
+                style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+              ),
             ],
           ],
         ),
@@ -464,11 +536,18 @@ class _EvaluatePageState extends State<EvaluatePage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off_outlined, size: 44, color: SemColors.textMuted),
+              Icon(Icons.cloud_off_outlined,
+                  size: 44, color: SemColors.textMuted),
               const SizedBox(height: 14),
-              Text(message,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, height: 1.7, color: SemColors.textSecondary)),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.7,
+                  color: SemColors.textSecondary,
+                ),
+              ),
               const SizedBox(height: 18),
               FilledButton(onPressed: _loadTargets, child: const Text('重试')),
               const SizedBox(height: 8),

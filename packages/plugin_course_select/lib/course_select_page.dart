@@ -47,8 +47,9 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
   static const int _grabIntervalMs = 1500;
   static const int _grabMaxAttempts = 120;
 
-  CourseScope? get _scope =>
-      _scopes.isEmpty || _scopeIndex >= _scopes.length ? null : _scopes[_scopeIndex];
+  CourseScope? get _scope => _scopes.isEmpty || _scopeIndex >= _scopes.length
+      ? null
+      : _scopes[_scopeIndex];
 
   bool get _isDirect => AppState.I.direct && !AppState.I.demo;
 
@@ -119,7 +120,11 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     });
     try {
       final start = reset ? 0 : _offers.length;
-      final list = await ApiClient.I.courseOffers(scope, keyword: _keyword, start: start);
+      final list = await ApiClient.I.courseOffers(
+        scope,
+        keyword: _keyword,
+        start: start,
+      );
       if (!mounted || seq != _offersSeq) return;
       setState(() {
         _offers = reset ? list : [..._offers, ...list];
@@ -149,7 +154,9 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
       setState(() => _sections[key] = list);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _sectionErrors[key] = e is ApiError ? e.message : e.toString());
+      setState(
+        () => _sectionErrors[key] = e is ApiError ? e.message : e.toString(),
+      );
     } finally {
       if (mounted) setState(() => _loadingSections.remove(key));
     }
@@ -195,8 +202,14 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
           style: const TextStyle(fontSize: 13.5, height: 1.6),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('开始抢课')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('开始抢课'),
+          ),
         ],
       ),
     );
@@ -249,17 +262,26 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
           _loadSections(offer, force: true);
           _loadOffers(reset: true);
         case CourseSelectStatus.noCapacity:
-          setState(() => _grabText =
-              '第 $_grabAttempt 次 · 名额已满，继续等待…${result.message.isEmpty ? '' : '\n${result.message}'}');
+          setState(
+            () => _grabText =
+                '第 $_grabAttempt 次 · 名额已满，继续等待…${result.message.isEmpty ? '' : '\n${result.message}'}',
+          );
         case CourseSelectStatus.roundClosed:
-          _stopGrab(message: result.message.isEmpty ? '当前不属于选课阶段' : result.message);
+          _stopGrab(
+            message: result.message.isEmpty ? '当前不属于选课阶段' : result.message,
+          );
         case CourseSelectStatus.needCaptcha:
-          _stopGrab(message: result.message.isEmpty ? '教务要求验证码，请重新登录后再试' : result.message);
+          _stopGrab(
+            message:
+                result.message.isEmpty ? '教务要求验证码，请重新登录后再试' : result.message,
+          );
         case CourseSelectStatus.sessionExpired:
           _stopGrab(message: '教务登录已失效，请返回重新进入后重试');
         case CourseSelectStatus.conflict:
         case CourseSelectStatus.creditLimit:
-          _stopGrab(message: result.message.isEmpty ? '选课被学校拒绝' : result.message);
+          _stopGrab(
+            message: result.message.isEmpty ? '选课被学校拒绝' : result.message,
+          );
         case CourseSelectStatus.networkRetryable:
         case CourseSelectStatus.unknown:
           _stopGrab(
@@ -270,12 +292,12 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     } catch (e) {
       if (!mounted) return;
       final msg = e is ApiError ? e.message : e.toString();
-      final uncertain = RegExp(r'超时|网络|连接|Socket|timed out', caseSensitive: false)
-          .hasMatch(msg);
+      final uncertain = RegExp(
+        r'超时|网络|连接|Socket|timed out',
+        caseSensitive: false,
+      ).hasMatch(msg);
       _stopGrab(
-        message: uncertain
-            ? '请求结果不确定，已停止自动重试。请到「已选课程」确认是否已选上\n$msg'
-            : msg,
+        message: uncertain ? '请求结果不确定，已停止自动重试。请到「已选课程」确认是否已选上\n$msg' : msg,
       );
     } finally {
       if (mounted && _grabActive) setState(() => _grabBusy = false);
@@ -302,12 +324,14 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
       _grabText = '';
     }
     if (!silent && wasActive && message != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: success ? SemColors.success : null,
-        duration: Duration(seconds: success ? 3 : 5),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: success ? SemColors.success : null,
+          duration: Duration(seconds: success ? 3 : 5),
+        ),
+      );
     }
   }
 
@@ -332,18 +356,23 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('已选课程 · ${scope.name}',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: SemColors.textPrimary)),
+                  Text(
+                    '已选课程 · ${scope.name}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: SemColors.textPrimary,
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   if (list.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Center(
-                        child: Text('暂无已选课程',
-                            style: TextStyle(color: SemColors.textMuted)),
+                        child: Text(
+                          '暂无已选课程',
+                          style: TextStyle(color: SemColors.textMuted),
+                        ),
                       ),
                     )
                   else
@@ -351,16 +380,20 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: list.length,
-                        separatorBuilder: (_, __) => Divider(
-                            height: 1, color: SemColors.border),
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: SemColors.border),
                         itemBuilder: (_, i) {
                           final c = list[i];
                           return ListTile(
                             dense: true,
                             contentPadding: EdgeInsets.zero,
-                            title: Text(c.name,
-                                maxLines: 1, overflow: TextOverflow.ellipsis),
-                            subtitle: c.teacher.isEmpty ? null : Text(c.teacher),
+                            title: Text(
+                              c.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle:
+                                c.teacher.isEmpty ? null : Text(c.teacher),
                           );
                         },
                       ),
@@ -381,74 +414,99 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('抢课'),
-        actions: [
-          IconButton(
-            tooltip: '已选课程',
-            onPressed: _scope == null ? null : _showSelected,
-            icon: const Icon(Icons.playlist_add_check_rounded),
-          ),
-          IconButton(
-            tooltip: '刷新',
-            onPressed: _scope == null ? null : () => _loadOffers(reset: true),
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: !_isDirect
-          ? _modeGate()
-          : PageStateView(
-              loading: _loadingScopes,
-              error: _scopesErr,
-              empty: !_loadingScopes && _scopesErr == null && _scopes.isEmpty,
-              emptyText: '当前没有开放的选课轮次',
-              onRetry: _loadScopes,
-              child: RefreshIndicator(
-                onRefresh: () => _loadOffers(reset: true),
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                  children: [
-                    if (_scopes.length > 1) _scopeChips(),
-                    _searchBar(),
-                    if (_grabActive) _grabBanner(),
-                    if (_loadingOffers && _offers.isNotEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4),
-                        child: LinearProgressIndicator(minHeight: 2),
-                      ),
-                    if (_offersErr != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          _offersErr!,
-                          style: TextStyle(fontSize: 12.5, color: SemColors.danger),
-                        ),
-                      ),
-                    if (!_loadingOffers && _offers.isEmpty && _offersErr == null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 28),
-                        child: Center(
-                          child: Text(
-                            _keyword.isEmpty ? '这个轮次暂时没有课程' : '没有匹配的课程',
-                            style: TextStyle(color: SemColors.textMuted),
-                          ),
-                        ),
-                      ),
-                    for (final offer in _offers) _offerCard(offer),
-                    if (_hasMore)
-                      Center(
-                        child: TextButton(
-                          onPressed: _loadingOffers ? null : () => _loadOffers(more: true),
-                          child: const Text('加载更多'),
-                        ),
-                      ),
-                  ],
-                ),
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('抢课'),
+            actions: [
+              IconButton(
+                tooltip: '已选课程',
+                onPressed: _scope == null ? null : _showSelected,
+                icon: const Icon(Icons.playlist_add_check_rounded),
               ),
-            ),
+              IconButton(
+                tooltip: '刷新',
+                onPressed:
+                    _scope == null ? null : () => _loadOffers(reset: true),
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          body: !_isDirect
+              // 非直连时是居中的整块提示，用 Padding 顶出悬浮顶栏
+              ? Padding(
+                  padding: EdgeInsets.only(top: topInset),
+                  child: _modeGate(),
+                )
+              : PageStateView(
+                  loading: _loadingScopes,
+                  error: _scopesErr,
+                  empty:
+                      !_loadingScopes && _scopesErr == null && _scopes.isEmpty,
+                  emptyText: '当前没有开放的选课轮次',
+                  onRetry: _loadScopes,
+                  child: RefreshIndicator(
+                    onRefresh: () => _loadOffers(reset: true),
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      // 顶部让出悬浮顶栏
+                      padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
+                      children: [
+                        if (_scopes.length > 1) _scopeChips(),
+                        _searchBar(),
+                        if (_grabActive) _grabBanner(),
+                        if (_loadingOffers && _offers.isNotEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 4),
+                            child: LinearProgressIndicator(minHeight: 2),
+                          ),
+                        if (_offersErr != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              _offersErr!,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: SemColors.danger,
+                              ),
+                            ),
+                          ),
+                        if (!_loadingOffers &&
+                            _offers.isEmpty &&
+                            _offersErr == null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 28),
+                            child: Center(
+                              child: Text(
+                                _keyword.isEmpty ? '这个轮次暂时没有课程' : '没有匹配的课程',
+                                style: TextStyle(color: SemColors.textMuted),
+                              ),
+                            ),
+                          ),
+                        for (final offer in _offers) _offerCard(offer),
+                        if (_hasMore)
+                          Center(
+                            child: TextButton(
+                              onPressed: _loadingOffers
+                                  ? null
+                                  : () => _loadOffers(more: true),
+                              child: const Text('加载更多'),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+        );
+      },
     );
   }
 
@@ -458,7 +516,11 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lock_outline_rounded, size: 44, color: SemColors.textMuted),
+              Icon(
+                Icons.lock_outline_rounded,
+                size: 44,
+                color: SemColors.textMuted,
+              ),
               const SizedBox(height: 12),
               Text(
                 '抢课需要在直连模式下使用：\n请到「我的 → 连接设置」切换到直连模式，'
@@ -468,9 +530,9 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
               ),
               const SizedBox(height: 16),
               FilledButton.tonal(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ConnectPage()),
-                ),
+                onPressed: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const ConnectPage())),
                 child: const Text('去连接设置'),
               ),
             ],
@@ -519,8 +581,10 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                           },
                         ),
                   isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
               ),
             ),
@@ -561,15 +625,21 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                     '正在抢：${offer.name}'
                     '${section.name.isEmpty ? '' : ' · ${section.name}'}',
                     style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: SemColors.textPrimary),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: SemColors.textPrimary,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  Text(_grabText,
-                      style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+                  Text(
+                    _grabText,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: SemColors.textSecondary,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -612,16 +682,19 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                 child: Text(
                   offer.name,
                   style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: SemColors.textPrimary),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: SemColors.textPrimary,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               _capacityCapsule(offer.capacity, offer.selected),
               const SizedBox(width: 4),
               Icon(
-                expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
                 size: 20,
                 color: SemColors.textMuted,
               ),
@@ -639,11 +712,15 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                 child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
               )
             else if (sectionErr != null)
-              Text(sectionErr,
-                  style: TextStyle(fontSize: 12, color: SemColors.danger))
+              Text(
+                sectionErr,
+                style: TextStyle(fontSize: 12, color: SemColors.danger),
+              )
             else if (sections == null || sections.isEmpty)
-              Text('暂无教学班数据',
-                  style: TextStyle(fontSize: 12, color: SemColors.textMuted))
+              Text(
+                '暂无教学班数据',
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+              )
             else
               for (final section in sections) _sectionRow(offer, section),
           ],
@@ -677,9 +754,10 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                       child: Text(
                         section.name.isEmpty ? '教学班' : section.name,
                         style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: SemColors.textPrimary),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: SemColors.textPrimary,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -690,10 +768,15 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                 ),
                 if (detail.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(detail,
-                      style: TextStyle(fontSize: 11.5, color: SemColors.textMuted),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: SemColors.textMuted,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ],
             ),

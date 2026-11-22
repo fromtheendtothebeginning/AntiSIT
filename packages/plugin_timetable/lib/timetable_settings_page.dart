@@ -31,30 +31,39 @@ class _TimetableSettingsPageState extends State<TimetableSettingsPage> {
   /// （课表页每次切换学期都会写进 [TimetableStore.active]），都没有才按今天推断。
   (String, String) get _target {
     final p = (widget.semesterKey ?? TimetableStore.instance.active).split('-');
-    if (p.length == 2 && p[0].isNotEmpty && p[1].isNotEmpty) return (p[0], p[1]);
+    if (p.length == 2 && p[0].isNotEmpty && p[1].isNotEmpty) {
+      return (p[0], p[1]);
+    }
     return AppState.inferSemester(DateTime.now());
   }
 
   @override
   Widget build(BuildContext context) {
-    // 听 AppState（淡化显示的开关）与注册表（插件增删带来的条目变化）：
+    // 听 AppState（淡化显示 / 悬浮玻璃顶栏的开关）与注册表（插件增删带来的条目变化）：
     // 少了这个，开关点下去值变了但界面不重绘，看起来像卡住。
     return ListenableBuilder(
       listenable: Listenable.merge([AppState.I, PluginRegistry.I]),
-      builder: (context, _) => _body(context),
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return _body(context, topInset);
+      },
     );
   }
 
-  Widget _body(BuildContext context) {
+  Widget _body(BuildContext context, double topInset) {
     final (xnm, xqm) = _target;
     final key = '$xnm-$xqm';
     final tt = TimetableStore.instance.semester(xnm, xqm);
     // 这一页可能改的不是「当前学期」（课表停在别的学期时），所以把是哪个学期写在行上
     final label = TimetableStore.instance.semesterLabel(key) ?? key;
     return Scaffold(
-      appBar: AppBar(title: const Text('课程表设置')),
+      // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+      extendBodyBehindAppBar: glassTopBarEnabled,
+      appBar: glassAppBar(context, title: const Text('课程表设置')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+        // 顶部让出悬浮顶栏
+        padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
         children: [
           AppCard(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -68,19 +77,29 @@ class _TimetableSettingsPageState extends State<TimetableSettingsPage> {
                     style: const TextStyle(fontSize: 12),
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => showSemesterSettingsSheet(context, xnm, xqm,
-                      onSaved: () => setState(() {})),
+                  onTap: () => showSemesterSettingsSheet(
+                    context,
+                    xnm,
+                    xqm,
+                    onSaved: () => setState(() {}),
+                  ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.swap_horiz_rounded),
                   title: const Text('调休设置'),
                   subtitle: Text(
-                    tt.adjustments.isEmpty ? '未设置放假 / 调课规则' : '${tt.adjustments.length} 条调休规则',
+                    tt.adjustments.isEmpty
+                        ? '未设置放假 / 调课规则'
+                        : '${tt.adjustments.length} 条调休规则',
                     style: const TextStyle(fontSize: 12),
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => showAdjustSettingsSheet(context, xnm, xqm,
-                      onSaved: () => setState(() {})),
+                  onTap: () => showAdjustSettingsSheet(
+                    context,
+                    xnm,
+                    xqm,
+                    onSaved: () => setState(() {}),
+                  ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.schedule_outlined),
@@ -91,7 +110,10 @@ class _TimetableSettingsPageState extends State<TimetableSettingsPage> {
                     style: const TextStyle(fontSize: 12),
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => showSlotTimesSheet(context, onSaved: () => setState(() {})),
+                  onTap: () => showSlotTimesSheet(
+                    context,
+                    onSaved: () => setState(() {}),
+                  ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.wallpaper_outlined),
@@ -103,7 +125,10 @@ class _TimetableSettingsPageState extends State<TimetableSettingsPage> {
                     style: const TextStyle(fontSize: 12),
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => showBackgroundSettingsSheet(context, onSaved: () => setState(() {})),
+                  onTap: () => showBackgroundSettingsSheet(
+                    context,
+                    onSaved: () => setState(() {}),
+                  ),
                 ),
                 // 由各插件贡献（上课提醒 / 上完的课淡化显示）
                 ...PluginRegistry.I.timetableSettingsTiles(context),
@@ -118,27 +143,36 @@ class _TimetableSettingsPageState extends State<TimetableSettingsPage> {
 
 /// 上课时间：11 节的上下课时刻都能改（默认见 [TimetableStore.defaultSlotStarts]）。
 /// 保存后课表轴、导出日历与上课提醒都用新表；「恢复默认」回到默认作息。
-Future<void> showSlotTimesSheet(BuildContext context, {VoidCallback? onSaved}) async {
+Future<void> showSlotTimesSheet(
+  BuildContext context, {
+  VoidCallback? onSaved,
+}) async {
   final starts = List<String>.from(TimetableStore.slotStarts);
   final ends = List<String>.from(TimetableStore.slotEnds);
   var error = '';
 
   int minutesOf(String hhmm) {
     final p = hhmm.split(':');
-    return (int.tryParse(p[0]) ?? 0) * 60 + (int.tryParse(p.length > 1 ? p[1] : '0') ?? 0);
+    return (int.tryParse(p[0]) ?? 0) * 60 +
+        (int.tryParse(p.length > 1 ? p[1] : '0') ?? 0);
   }
 
   TimeOfDay parse(String hhmm) {
     final p = hhmm.split(':');
     return TimeOfDay(
-        hour: int.tryParse(p[0]) ?? 0,
-        minute: int.tryParse(p.length > 1 ? p[1] : '0') ?? 0);
+      hour: int.tryParse(p[0]) ?? 0,
+      minute: int.tryParse(p.length > 1 ? p[1] : '0') ?? 0,
+    );
   }
 
   String fmt(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  Future<void> pickTime(StateSetter setS, int index, {required bool start}) async {
+  Future<void> pickTime(
+    StateSetter setS,
+    int index, {
+    required bool start,
+  }) async {
     final picked = await showTimePicker(
       context: context,
       initialTime: parse(start ? starts[index] : ends[index]),
@@ -161,86 +195,123 @@ Future<void> showSlotTimesSheet(BuildContext context, {VoidCallback? onSaved}) a
     isScrollControlled: true,
     builder: (ctx) => SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          0,
+          20,
+          16 + MediaQuery.of(ctx).viewInsets.bottom,
+        ),
         // 11 节 + 标题 + 按钮在矮屏 / 大字体下可能超过一屏：整体可滚动，保存键才点得到
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.86),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.86,
+          ),
           child: SingleChildScrollView(
             child: StatefulBuilder(
-          builder: (ctx, setS) => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('上课时间',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              ),
-              Text('点时间就能改；课表轴、导出日历与上课提醒都用这份作息。',
-                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
-              const SizedBox(height: 4),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 360),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: starts.length,
-                  itemBuilder: (ctx, i) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                            width: 52,
-                            child: Text('第${i + 1}节',
-                                style: const TextStyle(fontSize: 13))),
-                        _timeChip(starts[i], () => pickTime(setS, i, start: true)),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Text('–',
-                              style:
-                                  TextStyle(fontSize: 13, color: SemColors.textMuted)),
-                        ),
-                        _timeChip(ends[i], () => pickTime(setS, i, start: false)),
-                      ],
+              builder: (ctx, setS) => Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      '上课时间',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
-                ),
-              ),
-              if (error.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(error,
-                      style: TextStyle(fontSize: 12, color: SemColors.danger)),
-                ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: () async {
-                      await TimetableStore.setSlotTimes();
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      onSaved?.call();
-                    },
-                    child: const Text('恢复默认'),
+                  Text(
+                    '点时间就能改；课表轴、导出日历与上课提醒都用这份作息。',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: SemColors.textMuted,
+                    ),
                   ),
-                  const Spacer(),
-                  FilledButton(
-                    onPressed: () async {
-                      for (var i = 0; i < starts.length; i++) {
-                        if (minutesOf(ends[i]) <= minutesOf(starts[i])) {
-                          setS(() => error = '第 ${i + 1} 节的下课时间要晚于上课时间');
-                          return;
-                        }
-                      }
-                      await TimetableStore.setSlotTimes(starts: starts, ends: ends);
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      onSaved?.call();
-                    },
-                    child: const Text('保存'),
+                  const SizedBox(height: 4),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 360),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: starts.length,
+                      itemBuilder: (ctx, i) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 52,
+                              child: Text(
+                                '第${i + 1}节',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                            _timeChip(
+                              starts[i],
+                              () => pickTime(setS, i, start: true),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              child: Text(
+                                '–',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: SemColors.textMuted,
+                                ),
+                              ),
+                            ),
+                            _timeChip(
+                              ends[i],
+                              () => pickTime(setS, i, start: false),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (error.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        error,
+                        style: TextStyle(fontSize: 12, color: SemColors.danger),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () async {
+                          await TimetableStore.setSlotTimes();
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          onSaved?.call();
+                        },
+                        child: const Text('恢复默认'),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: () async {
+                          for (var i = 0; i < starts.length; i++) {
+                            if (minutesOf(ends[i]) <= minutesOf(starts[i])) {
+                              setS(() => error = '第 ${i + 1} 节的下课时间要晚于上课时间');
+                              return;
+                            }
+                          }
+                          await TimetableStore.setSlotTimes(
+                            starts: starts,
+                            ends: ends,
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          onSaved?.call();
+                        },
+                        child: const Text('保存'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
             ),
           ),
         ),
@@ -266,7 +337,10 @@ Widget _timeChip(String text, VoidCallback onTap) => InkWell(
 
 /// 课表背景设置（选图 / 淡显程度 / 恢复默认）。课表设置二级页专用，
 /// 保存后背景立即在课表页生效（[TtBackground] 变更通知带动重建）。
-Future<void> showBackgroundSettingsSheet(BuildContext context, {VoidCallback? onSaved}) async {
+Future<void> showBackgroundSettingsSheet(
+  BuildContext context, {
+  VoidCallback? onSaved,
+}) async {
   final picker = ImagePicker();
   // 提示画在弹层里：SnackBar 挂在页面 Scaffold 上，会被底部弹层盖住。
   String? error;
@@ -284,8 +358,10 @@ Future<void> showBackgroundSettingsSheet(BuildContext context, {VoidCallback? on
             children: [
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('课表背景',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  '课表背景',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
               ),
               StatefulBuilder(
                 builder: (ctx, setS) => Column(
@@ -296,12 +372,17 @@ Future<void> showBackgroundSettingsSheet(BuildContext context, {VoidCallback? on
                       leading: const Icon(Icons.image_outlined),
                       title: const Text('选择图片'),
                       subtitle: Text(
-                          TtBackground.I.path == null ? '从相册选一张图垫在课表底下' : '点按更换',
-                          style: const TextStyle(fontSize: 12)),
+                        TtBackground.I.path == null ? '从相册选一张图垫在课表底下' : '点按更换',
+                        style: const TextStyle(fontSize: 12),
+                      ),
                       onTap: () async {
-                        final picked = await picker.pickImage(source: ImageSource.gallery);
+                        final picked = await picker.pickImage(
+                          source: ImageSource.gallery,
+                        );
                         if (picked == null) return;
-                        final saved = await TtBackground.I.copyIntoAppDir(picked.path);
+                        final saved = await TtBackground.I.copyIntoAppDir(
+                          picked.path,
+                        );
                         if (saved == null) {
                           if (ctx.mounted) setS(() => error = '图片保存失败，请换一张再试');
                           return;
@@ -319,8 +400,14 @@ Future<void> showBackgroundSettingsSheet(BuildContext context, {VoidCallback? on
                           color: SemColors.dangerSoft,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(error!,
-                            style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
+                        child: Text(
+                          error!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: SemColors.danger,
+                            height: 1.5,
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -340,9 +427,11 @@ Future<void> showBackgroundSettingsSheet(BuildContext context, {VoidCallback? on
                   ),
                   SizedBox(
                     width: 44,
-                    child: Text('${(TtBackground.I.opacity * 100).round()}%',
-                        textAlign: TextAlign.end,
-                        style: const TextStyle(fontSize: 12)),
+                    child: Text(
+                      '${(TtBackground.I.opacity * 100).round()}%',
+                      textAlign: TextAlign.end,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
                 ],
               ),
@@ -382,13 +471,24 @@ Future<void> showSemesterSettingsSheet(
     isScrollControlled: true,
     builder: (ctx) => SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          0,
+          20,
+          20 + MediaQuery.of(ctx).viewInsets.bottom,
+        ),
         child: StatefulBuilder(
           builder: (ctx, setS) => Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('学期设置', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  '学期设置',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.event_outlined),
@@ -403,7 +503,9 @@ Future<void> showSemesterSettingsSheet(
                     firstDate: DateTime(init.year - 1),
                     lastDate: DateTime(init.year + 1),
                   );
-                  if (picked != null) setS(() => startDate = TimetableStore.iso(picked));
+                  if (picked != null) {
+                    setS(() => startDate = TimetableStore.iso(picked));
+                  }
                 },
               ),
               Row(
@@ -419,7 +521,10 @@ Future<void> showSemesterSettingsSheet(
                       onChanged: (v) => setS(() => weekCount = v.round()),
                     ),
                   ),
-                  SizedBox(width: 40, child: Text('$weekCount 周', textAlign: TextAlign.end)),
+                  SizedBox(
+                    width: 40,
+                    child: Text('$weekCount 周', textAlign: TextAlign.end),
+                  ),
                 ],
               ),
               Align(
@@ -467,21 +572,33 @@ Future<void> showAdjustSettingsSheet(
     isScrollControlled: true,
     builder: (ctx) => SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          0,
+          20,
+          20 + MediaQuery.of(ctx).viewInsets.bottom,
+        ),
         child: StatefulBuilder(
           builder: (ctx, setS) {
-            String desc(TtAdjust a) => a.type == 'off'
-                ? '放假（当天无课）'
-                : '按周${'一二三四五六日'[a.day]}的课表上课';
+            String desc(TtAdjust a) =>
+                a.type == 'off' ? '放假（当天无课）' : '按周${'一二三四五六日'[a.day]}的课表上课';
 
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('调休设置', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    '调休设置',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
                 if (tt.startDate.isEmpty)
-                  Text('请先在「学期设置」里设定学期起点，调休规则才能对应到周次。',
-                      style: TextStyle(fontSize: 12, color: SemColors.warning)),
+                  Text(
+                    '请先在「学期设置」里设定学期起点，调休规则才能对应到周次。',
+                    style: TextStyle(fontSize: 12, color: SemColors.warning),
+                  ),
                 const SizedBox(height: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 240),
@@ -491,19 +608,40 @@ Future<void> showAdjustSettingsSheet(
                       if (tt.adjustments.isEmpty)
                         Padding(
                           padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Text('暂无调休规则', textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 13, color: SemColors.textMuted)),
+                          child: Text(
+                            '暂无调休规则',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: SemColors.textMuted,
+                            ),
+                          ),
                         ),
                       for (final a in tt.adjustments)
                         ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
-                          title: Text(desc(a), style: const TextStyle(fontSize: 14)),
-                          subtitle: Text(a.date, style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                          title: Text(
+                            desc(a),
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          subtitle: Text(
+                            a.date,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: SemColors.textMuted,
+                            ),
+                          ),
                           trailing: IconButton(
-                            icon: Icon(Icons.delete_outline, size: 20, color: SemColors.textMuted),
+                            icon: Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: SemColors.textMuted,
+                            ),
                             onPressed: () {
-                              tt.adjustments.removeWhere((x) => x.date == a.date);
+                              tt.adjustments.removeWhere(
+                                (x) => x.date == a.date,
+                              );
                               TimetableStore.instance.save();
                               onSaved?.call();
                               setS(() {});
@@ -521,8 +659,9 @@ Future<void> showAdjustSettingsSheet(
                       onPressed: (aiBusy || tt.startDate.isEmpty)
                           ? null
                           : () async {
-                              final picked = await ImagePicker()
-                                  .pickImage(source: ImageSource.gallery);
+                              final picked = await ImagePicker().pickImage(
+                                source: ImageSource.gallery,
+                              );
                               if (picked == null) return;
                               final bytes = await picked.readAsBytes();
                               setS(() {
@@ -546,10 +685,17 @@ Future<void> showAdjustSettingsSheet(
                                 }
                                 final entries = [
                                   for (final r in rules)
-                                    TtAdjust(date: r.date, type: r.type, day: r.day ?? 0)
+                                    TtAdjust(
+                                      date: r.date,
+                                      type: r.type,
+                                      day: r.day ?? 0,
+                                    ),
                                 ];
-                                tt.adjustments = TimetableStore.mergeAdjustments(
-                                    tt.adjustments, entries);
+                                tt.adjustments =
+                                    TimetableStore.mergeAdjustments(
+                                  tt.adjustments,
+                                  entries,
+                                );
                                 TimetableStore.instance.save();
                                 onSaved?.call();
                                 setS(() {
@@ -567,16 +713,23 @@ Future<void> showAdjustSettingsSheet(
                             },
                       icon: aiBusy
                           ? const SizedBox(
-                              width: 14, height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Icon(Icons.image_search_outlined, size: 18),
                       label: Text(aiBusy ? '识别中…' : '从校历图片识别'),
                     ),
                     const SizedBox(width: 8),
                     if (!(ai?.available ?? false))
                       Flexible(
-                        child: Text('未配置 AI：到「我的 → AI 设置」填识图模型后可用',
-                            style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                        child: Text(
+                          '未配置 AI：到「我的 → AI 设置」填识图模型后可用',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: SemColors.textMuted,
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -586,14 +739,18 @@ Future<void> showAdjustSettingsSheet(
                     width: double.infinity,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: aiOk ? SemColors.successSoft : SemColors.dangerSoft,
+                      color:
+                          aiOk ? SemColors.successSoft : SemColors.dangerSoft,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(aiMsg!,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: aiOk ? SemColors.success : SemColors.danger,
-                            height: 1.5)),
+                    child: Text(
+                      aiMsg!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: aiOk ? SemColors.success : SemColors.danger,
+                        height: 1.5,
+                      ),
+                    ),
                   ),
                 ],
                 const Divider(),
@@ -606,33 +763,50 @@ Future<void> showAdjustSettingsSheet(
                       onPressed: () async {
                         final now = DateTime.now();
                         final picked = await showDatePicker(
-                          context: ctx, initialDate: date ?? now,
-                          firstDate: DateTime(now.year - 1), lastDate: DateTime(now.year + 1),
+                          context: ctx,
+                          initialDate: date ?? now,
+                          firstDate: DateTime(now.year - 1),
+                          lastDate: DateTime(now.year + 1),
                         );
                         if (picked != null) setS(() => date = picked);
                       },
-                      child: Text(date == null ? '选择日期' : TimetableStore.iso(date!)),
+                      child: Text(
+                        date == null ? '选择日期' : TimetableStore.iso(date!),
+                      ),
                     ),
                     OutlinedButton(
                       onPressed: () async {
                         final now = DateTime.now();
                         final picked = await showDatePicker(
-                          context: ctx, initialDate: endDate ?? date ?? now,
-                          firstDate: DateTime(now.year - 1), lastDate: DateTime(now.year + 1),
+                          context: ctx,
+                          initialDate: endDate ?? date ?? now,
+                          firstDate: DateTime(now.year - 1),
+                          lastDate: DateTime(now.year + 1),
                         );
                         if (picked != null) setS(() => endDate = picked);
                       },
-                      child: Text(endDate == null ? '结束日期（可选）' : '~ ${TimetableStore.iso(endDate!)}'),
+                      child: Text(
+                        endDate == null
+                            ? '结束日期（可选）'
+                            : '~ ${TimetableStore.iso(endDate!)}',
+                      ),
                     ),
                     GlassTabs(
                       labels: const ['放假', '调课'],
                       index: type == 'follow' ? 1 : 0,
-                      onChanged: (i) => setS(() => type = i == 1 ? 'follow' : 'off'),
+                      onChanged: (i) =>
+                          setS(() => type = i == 1 ? 'follow' : 'off'),
                     ),
                     if (type == 'follow')
                       DropdownButton<int>(
                         value: day,
-                        items: [for (var i = 0; i < 7; i++) DropdownMenuItem(value: i, child: Text('周${'一二三四五六日'[i]}'))],
+                        items: [
+                          for (var i = 0; i < 7; i++)
+                            DropdownMenuItem(
+                              value: i,
+                              child: Text('周${'一二三四五六日'[i]}'),
+                            ),
+                        ],
                         onChanged: (v) => setS(() => day = v!),
                       ),
                     FilledButton(
@@ -641,21 +815,36 @@ Future<void> showAdjustSettingsSheet(
                           : () {
                               final entries = TimetableStore.expandDateRange(
                                 TimetableStore.iso(date!),
-                                endDate == null ? null : TimetableStore.iso(endDate!),
-                              ).map((d) => TtAdjust(date: TimetableStore.iso(d), type: type, day: day));
+                                endDate == null
+                                    ? null
+                                    : TimetableStore.iso(endDate!),
+                              ).map(
+                                (d) => TtAdjust(
+                                  date: TimetableStore.iso(d),
+                                  type: type,
+                                  day: day,
+                                ),
+                              );
                               tt.adjustments = TimetableStore.mergeAdjustments(
-                                  tt.adjustments, entries.toList());
+                                tt.adjustments,
+                                entries.toList(),
+                              );
                               TimetableStore.instance.save();
                               onSaved?.call();
-                              setS(() { date = null; endDate = null; });
+                              setS(() {
+                                date = null;
+                                endDate = null;
+                              });
                             },
                       child: const Text('添加规则'),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text('规则在渲染时生效：同一天只会命中一条；「调课」当天的课在原星期列照常显示。',
-                    style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+                Text(
+                  '规则在渲染时生效：同一天只会命中一条；「调课」当天的课在原星期列照常显示。',
+                  style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+                ),
               ],
             );
           },
