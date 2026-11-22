@@ -64,7 +64,11 @@ class _ToolsPageState extends State<ToolsPage> {
   Widget build(BuildContext context) {
     final tools = PluginRegistry.I.toolCards;
     return Scaffold(
-      appBar: AppBar(
+      // 顶栏是悬浮玻璃条：内容从它底下穿过去，顶栏那层渐变模糊才有东西可糊。
+      // 首个滚动区的顶部留白按 glassTopInset 补（见下面的 FlexibleCardGrid padding）。
+      extendBodyBehindAppBar: true,
+      appBar: glassAppBar(
+        context,
         title: const Text('工具'),
         actions: [
           if (_editing)
@@ -143,9 +147,10 @@ class _ToolsPageState extends State<ToolsPage> {
                             ),
                             children: [
                               FlexibleCardGrid(
-                                padding: const EdgeInsets.fromLTRB(
+                                // 顶部留白 = 悬浮顶栏 + 它下面的渐变模糊段
+                                padding: EdgeInsets.fromLTRB(
                                   12,
-                                  4,
+                                  4 + glassTopInset(context),
                                   12,
                                   8,
                                 ),

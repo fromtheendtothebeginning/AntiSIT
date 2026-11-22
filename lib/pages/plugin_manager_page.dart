@@ -93,11 +93,14 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('插件管理')),
+      // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+      extendBodyBehindAppBar: true,
+      appBar: glassAppBar(context, title: const Text('插件管理')),
       body: ListenableBuilder(
         listenable: _r,
         builder: (context, _) => ListView(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+          // 顶部让出悬浮顶栏 + 它下面的渐变模糊段
+          padding: EdgeInsets.fromLTRB(12, 4 + glassTopInset(context), 12, 24),
           children: [
             if (_r.problems.isNotEmpty) _problems(),
             _graphCard(),
