@@ -1,15 +1,16 @@
 #version 460 core
 #include <flutter/runtime_effect.glsl>
 
-// 顶栏「渐进模糊」：**一维**高斯（可分离），横向一趟 + 纵向一趟分别挂在两个
-// BackdropFilter 上（第二个能采到第一个的输出，等价于一次 2D 高斯）。
+// 顶栏「渐进模糊」：单个 BackdropFilter 只捕获一次 backdrop，本 shader 一次绘制完成
+// 2D 高斯卷积，模糊强度随纵坐标渐变（顶栏顶边最强、底边收敛到 0）。
 //
-// 为什么不用单趟 2D：方阵采样在 σ 大时步长必须拉很大（欠采样），会出方格纹路；
-// 为什么不用 ImageFilter.compose：本项目的 Flutter 版本里，compose 组合两个 shader
-// filter 会静默失效（渲染成透明）。
+// 为什么是单趟：两个 backdrop 捕获（横向 + 纵向两趟）在滚动 / overscroll 时，
+// 第二个会采到上一帧或中间态的内容，重影会「挂」在顶栏上；只有一个捕获才彻底没有。
 //
-// 采样密度参考成熟实现（liquid_glass_widgets）：每轴 kHalf=24 tap，
-// stride = max(1, 3σ/24) 保证覆盖 ±3σ，配合双线性过滤足够平滑。
+// 单趟 2D 怎么避免栅格纹：采样点按 0.6σ 铺成方阵，再按「每像素随机旋转」打散——
+// 方阵的有序结构被打碎成高频噪点（被高斯权重一压基本不可见），不会出现规则格子。
+//
+// 权重用递推（w(n) = exp(-(n·stride)²/(2σ²)) 的等比数列），避免每个 tap 调一次 exp()。
 
 // 引擎注入：backdrop 纹理的像素尺寸（第一个 uniform 必须是 vec2，且必须有 sampler）
 uniform vec2 u_size;
@@ -20,11 +21,11 @@ uniform vec2 u_region_size; // 顶栏区域尺寸（物理像素）
 uniform float u_sigma_max; // 最大模糊强度（物理像素）
 uniform float u_fade_start; // 渐变起点占区域高度的比例（0~1）
 uniform float u_curve; // 渐变曲线指数
-uniform float u_axis; // 0 = 横向这一趟，1 = 纵向这一趟
 
 out vec4 frag_color;
 
-const int kHalf = 24; // 单侧采样数：共 49 tap / 趟
+// 单侧 5 → 11×11 = 121 个 tap
+const int kHalf = 5;
 
 void main() {
   vec2 frag = FlutterFragCoord().xy;
@@ -38,8 +39,8 @@ void main() {
 
   // 归一化到顶栏区域：t=0 是顶栏顶边，t=1 是顶栏底边
   vec2 regionSize = max(u_region_size, vec2(1.0));
-  vec2 r = (fragRegion - u_region_origin) / regionSize;
-  float t = clamp(r.y, 0.0, 1.0);
+  vec2 rr = (fragRegion - u_region_origin) / regionSize;
+  float t = clamp(rr.y, 0.0, 1.0);
 
   // 顶部一段保持最强，fade_start 之后按曲线衰减到 0（顶栏底边 = 清晰）
   float k = 1.0;
@@ -54,40 +55,59 @@ void main() {
   uv.y = 1.0 - uv.y;
   #endif
 
-  vec4 centerTap = texture(u_texture_input, uv);
-
   if (sigma < 0.5) {
-    frag_color = centerTap;
+    frag_color = texture(u_texture_input, uv);
   } else {
-    // 本趟只沿一个轴采样，步长按 σ 自适应，保证覆盖 ±3σ
-    vec2 axis = (u_axis < 0.5)
-        ? vec2(1.0 / u_size.x, 0.0)
-        : vec2(0.0, 1.0 / u_size.y);
-    float stride = max(1.0, 3.0 * sigma / float(kHalf));
-
-    // 递推权重：w(i) = exp(-(i·stride)²/(2σ²))，避免每个 tap 调一次 exp()
+    float stride = max(1.0, 3.0 * sigma / float(kHalf)); // 物理像素
     float inv2s2 = 1.0 / (2.0 * sigma * sigma);
-    float g1 = exp(-stride * stride * inv2s2);
+    float g1 = exp(-stride * stride * inv2s2); // w(n+1)/w(n)
     float g2 = g1 * g1;
 
-    vec4 acc = centerTap;
-    float wsum = 1.0;
-    float w = 1.0;
-    for (int i = 1; i <= kHalf; i++) {
-      float d = float(i) * stride;
-      w *= g1;
-      g1 *= g2;
-      vec2 off = axis * d;
-      vec2 sp = uv + off;
-      vec2 sm = uv - off;
-      // 越界采样丢弃（clamp 会把边缘像素拉出来抹成条）
-      float ip = step(0.0, sp.x) * step(sp.x, 1.0) *
-          step(0.0, sp.y) * step(sp.y, 1.0);
-      float im = step(0.0, sm.x) * step(sm.x, 1.0) *
-          step(0.0, sm.y) * step(sm.y, 1.0);
-      acc += texture(u_texture_input, clamp(sp, 0.0, 1.0)) * (w * ip);
-      acc += texture(u_texture_input, clamp(sm, 0.0, 1.0)) * (w * im);
-      wsum += w * ip + w * im;
+    // 每像素随机旋转：把方阵采样打散成噪点，避免规则格纹
+    float ign = fract(52.9829189 * fract(0.06711056 * frag.x + 0.00583715 * frag.y));
+    float rot = ign * 6.2831853;
+    float cr = cos(rot);
+    float sr = sin(rot);
+
+    vec4 acc = vec4(0.0);
+    float wsum = 0.0;
+
+    // 中心 tap
+    acc += texture(u_texture_input, uv);
+    wsum += 1.0;
+
+    float wy = 1.0;
+    float gy = g1;
+    float gyStep = g2;
+    for (int jn = 1; jn <= kHalf; jn++) {
+      wy *= gy;
+      gy *= gyStep;
+      for (int js = 0; js < 2; js++) {
+        float fj = (js == 0) ? float(jn) : -float(jn);
+        float wx = 1.0;
+        float gx = g1;
+        float gxStep = g2;
+        // 中间那一列（i = 0）
+        {
+          vec2 p = vec2(0.0, fj) * stride;
+          vec2 pr = vec2(p.x * cr - p.y * sr, p.x * sr + p.y * cr);
+          float w = wy;
+          acc += texture(u_texture_input, clamp(uv + pr / u_size, 0.0, 1.0)) * w;
+          wsum += w;
+        }
+        for (int ii = 1; ii <= kHalf; ii++) {
+          wx *= gx;
+          gx *= gxStep;
+          for (int isg = 0; isg < 2; isg++) {
+            float fi = (isg == 0) ? float(ii) : -float(ii);
+            vec2 p = vec2(fi, fj) * stride;
+            vec2 pr = vec2(p.x * cr - p.y * sr, p.x * sr + p.y * cr);
+            float w = wx * wy;
+            acc += texture(u_texture_input, clamp(uv + pr / u_size, 0.0, 1.0)) * w;
+            wsum += w;
+          }
+        }
+      }
     }
     frag_color = acc / wsum;
   }
