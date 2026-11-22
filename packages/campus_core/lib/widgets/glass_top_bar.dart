@@ -36,7 +36,7 @@ double glassTopInset(
 /// 标题居中/省略等系统行为全部保持原样，只是背景换成了分层窄带模糊。
 /// 页面侧还要把 `Scaffold.extendBodyBehindAppBar` 打开、并给第一个滚动区加上
 /// [glassTopInset] 的顶部留白，内容才会从顶栏底下穿过去而不是被压在下面。
-AppBar glassAppBar(
+PreferredSizeWidget glassAppBar(
   BuildContext context, {
   required Widget title,
   List<Widget>? actions,
@@ -66,7 +66,7 @@ AppBar glassAppBar(
       ? const BackButton()
       : null;
   final leadingWidget = leading ?? autoLeading;
-  return AppBar(
+  final appBar = AppBar(
     backgroundColor: Colors.transparent,
     elevation: 0,
     scrolledUnderElevation: 0,
@@ -79,13 +79,25 @@ AppBar glassAppBar(
     toolbarHeight: toolbarHeight,
     titleSpacing: titleSpacing,
     title: title,
-    flexibleSpace: const IgnorePointer(child: GlassBarScrim()),
     bottom: bottom == null
         ? null
         : PreferredSize(
             preferredSize: Size.fromHeight(bottom.preferredSize.height),
             child: bottom,
           ),
+  );
+  // AppBar 自己把 flexibleSpace 放在 SafeArea 里面，状态栏那一条不会被盖住；
+  // 这里把色带包在 AppBar 外面、按整个顶栏高度（状态栏 + 标题栏 + bottom）铺满。
+  return PreferredSize(
+    preferredSize: appBar.preferredSize,
+    child: Stack(
+      children: [
+        const Positioned.fill(
+          child: IgnorePointer(child: GlassBarScrim()),
+        ),
+        Positioned.fill(child: appBar),
+      ],
+    ),
   );
 }
 
