@@ -455,8 +455,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('添加拓展'), findsWidgets, reason: '页面标题');
     expect(find.text('填写网址'), findsOneWidget, reason: '三种加法在页内');
-    expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget, reason: '市场列表也在这一页');
+    expect(find.text('插件市场'), findsOneWidget, reason: '市场是一个入口，不在这页平铺');
     expect(find.text('还没有拓展'), findsNothing, reason: '「我的拓展」不在这一页里并排');
+
+    // 点「插件市场」→ 独立的插件市场页
+    await tester.tap(find.text('插件市场'));
+    await tester.pumpAndSettle();
+    expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget, reason: '市场页有搜索框');
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
     // 返回拓展页仍是自己的列表
     await tester.pageBack();

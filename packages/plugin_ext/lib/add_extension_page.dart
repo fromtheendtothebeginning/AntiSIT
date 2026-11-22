@@ -1,13 +1,9 @@
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 
-import 'market/market_view.dart';
+import 'market/market_page.dart';
 
-/// 「添加拓展」页：三种加法（填写网址 / 导入 Cordis 压缩包 / 导入 JSON）
-/// 加上插件市场列表。
-///
-/// 市场原来是拓展页里的第二个滑块页（和「我的拓展」并排）；现在收进这一页，
-/// 拓展页只剩自己的拓展列表，市场不再和它并排显示。
+/// 「添加拓展」页：三种加法 + 进入「插件市场」独立页的入口。
 class AddExtensionPage extends StatelessWidget {
   const AddExtensionPage({
     super.key,
@@ -39,47 +35,67 @@ class AddExtensionPage extends StatelessWidget {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('添加拓展')),
-          body: Column(
+          body: ListView(
+            // 顶部让出悬浮顶栏
+            padding: EdgeInsets.fromLTRB(
+              12,
+              8 + topInset,
+              12,
+              24 + MediaQuery.paddingOf(context).bottom,
+            ),
             children: [
-              Padding(
-                // 顶部让出悬浮顶栏
-                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 8),
-                child: AppCard(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.link_rounded),
-                        title: const Text('填写网址'),
-                        subtitle: const Text(
-                          '给它起个名字，填一个 http(s) 网址',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        onTap: onAddUrl,
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.link_rounded),
+                      title: const Text('填写网址'),
+                      subtitle: const Text(
+                        '给它起个名字，填一个 http(s) 网址',
+                        style: TextStyle(fontSize: 12),
                       ),
-                      ListTile(
-                        leading: const Icon(Icons.folder_zip_outlined),
-                        title: const Text('导入 Cordis 压缩包'),
-                        subtitle: const Text(
-                          'ext.json + main.js 打成 zip；导入后自动解压',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        onTap: onImportBundle,
+                      onTap: onAddUrl,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.folder_zip_outlined),
+                      title: const Text('导入 Cordis 压缩包'),
+                      subtitle: const Text(
+                        'ext.json + main.js 打成 zip；导入后自动解压',
+                        style: TextStyle(fontSize: 12),
                       ),
-                      ListTile(
-                        leading: const Icon(Icons.data_object_rounded),
-                        title: const Text('导入 JSON'),
-                        subtitle: const Text(
-                          '粘贴一份拓展 JSON（单条或数组）',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        onTap: onImportJson,
+                      onTap: onImportBundle,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.data_object_rounded),
+                      title: const Text('导入 JSON'),
+                      subtitle: const Text(
+                        '粘贴一份拓展 JSON（单条或数组）',
+                        style: TextStyle(fontSize: 12),
                       ),
-                    ],
+                      onTap: onImportJson,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: ListTile(
+                  leading: const Icon(Icons.storefront_outlined),
+                  title: const Text('插件市场'),
+                  subtitle: const Text(
+                    '从市场目录里发现并安装别人做的拓展',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => MarketPage(onInstalled: onInstalled),
+                    ),
                   ),
                 ),
               ),
-              Expanded(child: MarketView(onInstalled: onInstalled)),
             ],
           ),
         );

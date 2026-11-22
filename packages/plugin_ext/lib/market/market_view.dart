@@ -20,13 +20,10 @@ import 'market_sources_view.dart';
 /// 目录必须**验签**通过才显示（见 [MarketSource]），装的时候还要对 sha256；
 /// 市场装的拓展按清单声明的权限放行（见 `ExtBridge`），安装弹窗把权限摊给用户看。
 class MarketView extends StatefulWidget {
-  const MarketView({super.key, this.onInstalled, this.header});
+  const MarketView({super.key, this.onInstalled});
 
   /// 装完 / 更新完说一句（拓展页拿它弹提示）。
   final void Function(String message)? onInstalled;
-
-  /// 列表最前面的内容（拓展页把「我的 / 市场」滑块塞进来，让它随列表一起滚）。
-  final Widget? header;
 
   @override
   State<MarketView> createState() => _MarketViewState();
@@ -323,8 +320,7 @@ class _MarketViewState extends State<MarketView> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              if (widget.header != null)
-                SliverToBoxAdapter(child: widget.header!),
+
               SliverToBoxAdapter(child: _top()),
               // 官方目录拉不到时，第三方源照样要能列（一个源坏掉不该带崩整页）
               if (_visible.isNotEmpty)
