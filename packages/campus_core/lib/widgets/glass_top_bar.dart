@@ -158,21 +158,24 @@ class GlassBarScrim extends StatelessWidget {
     );
   }
 
-  /// 厂商式色带：顶上几乎不透明（标题/状态栏读得清），到顶栏底边完全透明。
+  /// 厂商式色带：标题/状态栏那一带保持「较实」的底色（内容滚到标题后面也读得清），
+  /// 只在顶栏最下面约 1/3 快速过渡到完全透明。
   /// 末段用「同色透明」而不是透明黑——RGBA 线性插值到透明黑会混出暗带。
   LinearGradient _tint(double fadeStart) {
     final base = SemColors.bg;
-    final fade = fadeStart.clamp(0.0, 0.95);
+    final solid = fadeStart.clamp(0.0, 0.95);
+    // 标题中心大约在顶栏 60%~65% 处（状态栏 + 半个标题栏），实底要盖过它
+    final solidEnd = (solid + (1 - solid) * 0.45).clamp(solid, 1.0);
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
         base.withValues(alpha: 0.96),
-        base.withValues(alpha: 0.88),
+        base.withValues(alpha: 0.95),
         base.withValues(alpha: 0.55),
         base.withValues(alpha: 0),
       ],
-      stops: [0, fade * 0.75, fade, 1],
+      stops: [0, solidEnd, (solidEnd + 0.12).clamp(0.0, 1.0), 1],
     );
   }
 }
