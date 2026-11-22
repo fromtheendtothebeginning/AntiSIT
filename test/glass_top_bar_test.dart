@@ -1,5 +1,8 @@
 import 'package:campus_core/campus_core.dart';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 悬浮玻璃顶栏的基础契约：真 AppBar（系统行为不变）+ 渐变模糊背景 + 圆钮按钮。
@@ -51,6 +54,52 @@ void main() {
     );
   });
 
+  testWidgets('顶栏色带真的生效：红色内容穿过标题行也会被底色盖住', (tester) async {
+    final key = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RepaintBoundary(
+          key: key,
+          child: Builder(
+            builder: (context) {
+              final topInset = glassTopInset(context);
+              return Scaffold(
+                extendBodyBehindAppBar: glassTopBarEnabled,
+                appBar: glassAppBar(context, title: const Text('标题')),
+                // 纯红 body：色带生效的话，标题行几乎看不到红
+                body: ColoredBox(
+                  color: const Color(0xFFFF0000),
+                  child: SizedBox(height: topInset + 400),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final boundary =
+        key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final bytes = await tester.runAsync(() async {
+      final image = await boundary.toImage();
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      image.dispose();
+      return data!;
+    });
+    final w = boundary.size.width.round();
+    int red(int x, int y) => bytes!.getUint8((y * w + x) * 4);
+    int green(int x, int y) => bytes!.getUint8((y * w + x) * 4 + 1);
+    int blue(int x, int y) => bytes!.getUint8((y * w + x) * 4 + 2);
+
+    // 标题行（顶栏 50% 处）：色带 alpha ≈0.95 → 红色只剩 5%，绿蓝仍是浅底色的高值
+    final cx = w ~/ 2;
+    expect(green(cx, kToolbarHeight ~/ 2), greaterThan(120), reason: '色带未覆盖标题行：内容透出来了');
+    expect(blue(cx, kToolbarHeight ~/ 2), greaterThan(120), reason: '色带未覆盖标题行：内容透出来了');
+
+    // 顶栏底边：色带已透明、内容渐隐 mask 也接近 1 → 应看得到红
+    expect(red(cx, kToolbarHeight.round() - 3), greaterThan(200), reason: '顶栏底边应完全透明');
+  });
   testWidgets('图标按钮套成玻璃圆钮（不再叠第二层模糊）', (tester) async {
     await tester.pumpWidget(
       host(
