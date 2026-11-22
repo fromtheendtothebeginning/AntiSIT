@@ -111,9 +111,7 @@ class _ToolsPageState extends State<ToolsPage> {
             ],
           ),
           // 自己监听注册表：启停插件 / 换顺序 / 改尺寸后立刻重排，不用等壳层来重建
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: ListenableBuilder(
+          body: ListenableBuilder(
             listenable: Listenable.merge([PluginRegistry.I, AppState.I]),
             builder: (context, _) {
               final entries = PluginRegistry.I.toolEntries;
@@ -218,7 +216,6 @@ class _ToolsPageState extends State<ToolsPage> {
                       ),
               );
             },
-          ),
           ),
         );
       },
@@ -452,9 +449,7 @@ class _ToolOrderPageState extends State<ToolOrderPage> {
               ),
             ],
           ),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: ListView(
+          body: ListView(
             // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
             children: [
@@ -516,7 +511,6 @@ class _ToolOrderPageState extends State<ToolOrderPage> {
                 ),
               ),
             ],
-          ),
           ),
         );
       },

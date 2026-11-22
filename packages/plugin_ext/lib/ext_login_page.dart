@@ -216,9 +216,7 @@ class _ExtLoginPageState extends State<ExtLoginPage> {
             actions: [TextButton(onPressed: _finish, child: const Text('完成'))],
           ),
           // 平台视图顶出悬浮顶栏
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: Padding(
+          body: Padding(
             padding: EdgeInsets.only(top: topInset),
             child: Column(
               children: [
@@ -256,7 +254,6 @@ class _ExtLoginPageState extends State<ExtLoginPage> {
                 ),
               ],
             ),
-          ),
           ),
         );
       },

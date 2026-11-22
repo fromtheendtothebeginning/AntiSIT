@@ -279,9 +279,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
             title: Text(widget.target.course, overflow: TextOverflow.ellipsis),
           ),
           // 表单主体是整块内容（加载 / 出错 / 表单三态），用 Padding 顶出顶栏这一截
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: Padding(
+          body: Padding(
             padding: EdgeInsets.only(top: topInset),
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -290,7 +288,6 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                     : (form == null
                         ? const SizedBox.shrink()
                         : _formView(form))),
-          ),
           ),
           bottomNavigationBar:
               form == null || _error != null ? null : _actionBar(),

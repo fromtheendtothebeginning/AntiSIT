@@ -65,9 +65,7 @@ class _ExtensionOrderPageState extends State<ExtensionOrderPage> {
               ),
             ],
           ),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: ListView(
+          body: ListView(
             // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
             children: [
@@ -124,7 +122,6 @@ class _ExtensionOrderPageState extends State<ExtensionOrderPage> {
                 ),
               ),
             ],
-          ),
           ),
         );
       },

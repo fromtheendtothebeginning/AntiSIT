@@ -276,9 +276,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('宿舍电费')),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: PageStateView(
+          body: PageStateView(
             loading: _loading && _data == null,
             error: _err,
             onRetry: _refreshAll,
@@ -444,7 +442,6 @@ class _ElectricityPageState extends State<ElectricityPage> {
                 ],
               ),
             ),
-          ),
           ),
         );
       },

@@ -187,9 +187,7 @@ class _ScoreTargetSettingsPageState extends State<ScoreTargetSettingsPage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('第二课堂达标线')),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: _loading
+          body: _loading
               ? const Center(child: CircularProgressIndicator())
               : ListView(
                   // 顶部让出悬浮顶栏
@@ -370,7 +368,6 @@ class _ScoreTargetSettingsPageState extends State<ScoreTargetSettingsPage> {
                     ),
                   ],
                 ),
-          ),
         );
       },
     );

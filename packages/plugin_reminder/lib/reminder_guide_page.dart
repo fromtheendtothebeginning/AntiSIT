@@ -58,9 +58,7 @@ class _ReminderGuidePageState extends State<ReminderGuidePage>
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('上课提醒')),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: h == null
+          body: h == null
               ? Center(
                   child: Text(
                     '自检中…',
@@ -157,7 +155,6 @@ class _ReminderGuidePageState extends State<ReminderGuidePage>
                     ),
                   ],
                 ),
-          ),
         );
       },
     );

@@ -318,9 +318,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                 ),
             ],
           ),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: Column(
+          body: Column(
             children: [
               Padding(
                 // 顶部让出悬浮顶栏
@@ -345,7 +343,6 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                 ),
               ),
             ],
-          ),
           ),
         );
       },
@@ -830,9 +827,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
               child: _signupButton(state),
             ),
           ),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: PageStateView(
+          body: PageStateView(
             loading: _loading,
             error: _err,
             onRetry: _load,
@@ -936,7 +931,6 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                 ),
               ],
             ),
-          ),
           ),
         );
       },

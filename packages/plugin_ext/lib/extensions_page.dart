@@ -679,9 +679,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             ],
           ),
           // 单页：只列自己的拓展；加法与市场都收进「添加拓展」页
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: Column(
+          body: Column(
             children: [
               Expanded(child: myPage),
               // 尺寸条放在页面下方、底栏上方：单手握持时拇指正好够得着
@@ -702,7 +700,6 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                   ),
                 ),
             ],
-          ),
           ),
         );
       },

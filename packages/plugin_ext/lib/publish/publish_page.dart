@@ -230,9 +230,7 @@ class _PublishPageState extends State<PublishPage> {
               ),
             ],
           ),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: _loading
+          body: _loading
               ? const Center(child: CircularProgressIndicator())
               : ListView(
                   // 顶部让出悬浮顶栏
@@ -343,7 +341,6 @@ class _PublishPageState extends State<PublishPage> {
                     ],
                   ],
                 ),
-          ),
         );
       },
     );
