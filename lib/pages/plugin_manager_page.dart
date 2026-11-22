@@ -92,6 +92,8 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+    final topInset = glassTopInset(context);
     return Scaffold(
       // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
       extendBodyBehindAppBar: true,
@@ -99,8 +101,8 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
       body: ListenableBuilder(
         listenable: _r,
         builder: (context, _) => ListView(
-          // 顶部让出悬浮顶栏 + 它下面的渐变模糊段
-          padding: EdgeInsets.fromLTRB(12, 4 + glassTopInset(context), 12, 24),
+          // 顶部让出悬浮顶栏
+          padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
           children: [
             if (_r.problems.isNotEmpty) _problems(),
             _graphCard(),

@@ -18,16 +18,16 @@ const double kGlassBarBlurSigma = 6;
 /// 8 段是「看不出台阶」和「不多吃 GPU」之间的折中（4 段时肉眼能看出阶梯）。
 const int _fadeBands = 8;
 
-/// 顶栏（状态栏 + 标题栏）的总高度。渐变段包含在顶栏内部，所以不再额外加高。
-double glassBarHeight(BuildContext context, {double toolbarHeight = kToolbarHeight}) =>
-    MediaQuery.viewPaddingOf(context).top + toolbarHeight;
-
-/// 页面第一个滚动区 / 内容的顶部内边距：躲开悬浮顶栏。
+/// 页面第一个滚动区 / 内容的顶部内边距：躲开悬浮顶栏（状态栏 + 标题栏）。
 ///
-/// 注意必须用 `viewPadding`：开了 `Scaffold.extendBodyBehindAppBar` 之后 body 里的
-/// `MediaQuery.padding.top` 会被清零，用 `paddingOf` 会算出 0。
-double glassTopInset(BuildContext context, {double toolbarHeight = kToolbarHeight}) =>
-    glassBarHeight(context, toolbarHeight: toolbarHeight);
+/// **必须在页面 `build` 的 context（Scaffold 之上）取**：开了
+/// `Scaffold.extendBodyBehindAppBar` 之后，body 里的 `MediaQuery` 已经被
+/// `removePadding` 处理过——`padding.top` 清零、`viewPadding.top` 也被减到 0，
+/// 在 body 内部调用会算出「只有标题栏、没有状态栏」的偏小值（内容会顶进顶栏里）。
+double glassTopInset(BuildContext context, {double toolbarHeight = kToolbarHeight}) {
+  final mq = MediaQuery.maybeOf(context);
+  return (mq?.viewPadding.top ?? 0) + toolbarHeight;
+}
 
 /// 玻璃悬浮顶栏：标题与按钮浮在「越往上越糊」的高斯模糊之上，内容从它底下穿过去。
 ///

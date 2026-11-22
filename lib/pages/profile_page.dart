@@ -208,6 +208,8 @@ class _ProfilePageState extends State<ProfilePage> {
         final connected = session?['connected'] == true;
         final configured = status?['configured'] == true;
 
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
         return Scaffold(
           // 顶栏是悬浮玻璃条：内容从它底下穿过去，顶栏那层渐变模糊才有东西可糊
           extendBodyBehindAppBar: true,
@@ -225,12 +227,9 @@ class _ProfilePageState extends State<ProfilePage> {
           body: ListView(
             // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：列表底部要多让出底栏这一截，
             // 最后一张设置卡才能滚到玻璃上方，而不是永远压在它下面
-            // 顶部同理让出悬浮顶栏 + 它下面的渐变模糊段
+            // 顶部同理让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(
-                12,
-                4 + glassTopInset(context),
-                12,
-                24 + MediaQuery.paddingOf(context).bottom),
+                12, 4 + topInset, 12, 24 + MediaQuery.paddingOf(context).bottom),
             children: [
               // 头部（未登录时整卡可点，直接进登录页）
               AppCard(
