@@ -13,13 +13,10 @@ const double kGlassBarFadeFraction = 0.4;
 /// 按钮是「隔着玻璃看内容」的强模糊，背景只把穿过去的内容压淡，太强会糊成一片色块。
 const double kGlassBarBlurSigma = 6;
 
-/// 按钮（悬浮圆钮）的模糊强度：不做渐变，直接复用玻璃底栏那一档（sigma 12）。
-const double kGlassOrbBlurSigma = 12;
-
 /// 渐变模糊用几层模糊叠出来。高斯模糊可以叠加，所以把「线性衰减」拆成若干段，
 /// 每段一层：越靠上的像素被越多的层糊过，累积下来就是连续增强的模糊。
-/// 层数越多过渡越顺，代价是每帧多几次 backdrop 采样——先取 4，卡再减。
-const int _fadeBands = 4;
+/// 8 段是「看不出台阶」和「不多吃 GPU」之间的折中（4 段时肉眼能看出阶梯）。
+const int _fadeBands = 8;
 
 /// 顶栏（状态栏 + 标题栏）的总高度。渐变段包含在顶栏内部，所以不再额外加高。
 double glassBarHeight(BuildContext context, {double toolbarHeight = kToolbarHeight}) =>
@@ -85,40 +82,22 @@ AppBar glassAppBar(
 }
 
 /// 悬浮圆钮：把标题栏里的按钮套成 40 直径的玻璃圆片。
-/// 圆片内部自己做一层**均匀**模糊（[kGlassOrbBlurSigma]，与玻璃底栏同档、不做渐变），
-/// 再压半透明卡面 + 细描边——按钮的糊度因此始终比背后的背景渐变带更强。
+/// 圆片内不再做第二层模糊（会和顶栏的模糊层嵌套、在 Impeller 下产生椭圆光晕），
+/// 改用比顶栏更实一档的玻璃面 + 强描边，读起来仍是「浮在模糊上的一块厚玻璃」。
 Widget _orb(Widget child, {required double edge}) => Padding(
       padding: EdgeInsets.only(left: edge, right: edge),
-      child: SizedBox(
+      child: Container(
         width: 40,
         height: 40,
-        child: ClipOval(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: kGlassOrbBlurSigma,
-                  sigmaY: kGlassOrbBlurSigma,
-                ),
-                child: const SizedBox.expand(),
-              ),
-              IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: SemColors.card,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: SemColors.border),
-                  ),
-                ),
-              ),
-              Center(
-                child: IconButtonTheme(
-                  data: IconButtonThemeData(style: _orbStyle()),
-                  child: child,
-                ),
-              ),
-            ],
+        decoration: BoxDecoration(
+          color: SemColors.thumb,
+          shape: BoxShape.circle,
+          border: Border.all(color: SemColors.borderStrong),
+        ),
+        child: Center(
+          child: IconButtonTheme(
+            data: IconButtonThemeData(style: _orbStyle()),
+            child: child,
           ),
         ),
       ),

@@ -46,23 +46,24 @@ void main() {
     );
   });
 
-  testWidgets('图标按钮套成玻璃圆钮（圆片内自带一层均匀模糊）', (tester) async {
+  testWidgets('图标按钮套成玻璃圆钮（不再叠第二层模糊）', (tester) async {
     await tester.pumpWidget(host(
       child: page(actions: [
         IconButton(onPressed: () {}, icon: const Icon(Icons.refresh), tooltip: '刷新'),
       ]),
     ));
-    // 圆钮 = ClipOval 里一层均匀模糊 + 卡面描边，图标按钮在中间
-    final oval = find.ancestor(
+    // 圆钮 = 40 直径的「更实一档」玻璃面；BackdropFilter 只留给顶栏背景那一层，
+    // 圆钮里再套一层会在 Impeller 下产生椭圆光晕
+    final face = find.ancestor(
       of: find.byTooltip('刷新'),
-      matching: find.byType(ClipOval),
+      matching: find.byType(Container),
     );
-    expect(oval, findsOneWidget);
+    expect(face, findsAtLeastNWidgets(1));
+    expect(tester.getSize(face.first), const Size(40, 40));
     expect(
-      find.descendant(of: oval, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
+      find.descendant(of: face.first, matching: find.byType(BackdropFilter)),
+      findsNothing,
     );
-    expect(tester.getSize(oval), const Size(40, 40));
   });
 
   testWidgets('能 pop 的页面自动补圆钮返回键；根页面不给', (tester) async {
