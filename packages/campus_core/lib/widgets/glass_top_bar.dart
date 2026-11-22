@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import '../app_state.dart';
 import 'theme_palette.dart';
 
 /// 顶栏里「渐变段」占顶栏高度的比例：模糊只发生在顶栏自己的范围内，
@@ -28,13 +29,24 @@ const double _bandBias = 1.25;
 /// 越靠底部变化越慢」。
 const double _sigmaCurve = 1.8;
 
+/// 顶栏是否用悬浮玻璃样式（「我的 → 外观」里的开关，默认开）。
+///
+/// 页面用它决定 `Scaffold.extendBodyBehindAppBar`；[glassAppBar] 内部也看它：
+/// 关掉时退回普通 [AppBar]（内容不再从顶栏底下穿过），[glassTopInset] 返回 0。
+bool get glassTopBarEnabled => AppState.I.glassTopBar;
+
 /// 页面第一个滚动区 / 内容的顶部内边距：躲开悬浮顶栏（状态栏 + 标题栏）。
+/// 开关关闭时返回 0（普通 AppBar 本身占位，内容不需要额外留白）。
 ///
 /// **必须在页面 `build` 的 context（Scaffold 之上）取**：开了
 /// `Scaffold.extendBodyBehindAppBar` 之后，body 里的 `MediaQuery` 已经被
 /// `removePadding` 处理过——`padding.top` 清零、`viewPadding.top` 也被减到 0，
 /// 在 body 内部调用会算出「只有标题栏、没有状态栏」的偏小值（内容会顶进顶栏里）。
-double glassTopInset(BuildContext context, {double toolbarHeight = kToolbarHeight}) {
+double glassTopInset(
+  BuildContext context, {
+  double toolbarHeight = kToolbarHeight,
+}) {
+  if (!glassTopBarEnabled) return 0;
   final mq = MediaQuery.maybeOf(context);
   return (mq?.viewPadding.top ?? 0) + toolbarHeight;
 }
@@ -59,8 +71,22 @@ AppBar glassAppBar(
   PreferredSizeWidget? bottom,
   double titleSpacing = NavigationToolbar.kMiddleSpacing,
 }) {
+  // 开关关闭：退回普通 AppBar（主题本身就是透明底，所以和加这个功能之前一致）
+  if (!glassTopBarEnabled) {
+    return AppBar(
+      centerTitle: centerTitle,
+      automaticallyImplyLeading: automaticallyImplyLeading,
+      leading: leading,
+      actions: actions,
+      toolbarHeight: toolbarHeight,
+      titleSpacing: titleSpacing,
+      title: title,
+      bottom: bottom,
+    );
+  }
   final bottomHeight = bottom?.preferredSize.height ?? 0;
-  final autoLeading = automaticallyImplyLeading &&
+  final autoLeading =
+      automaticallyImplyLeading &&
           leading == null &&
           (ModalRoute.of(context)?.canPop ?? false)
       ? const BackButton()
@@ -95,35 +121,35 @@ AppBar glassAppBar(
 /// 圆片内不再做第二层模糊（会和顶栏的模糊层嵌套、在 Impeller 下产生椭圆光晕），
 /// 改用比顶栏更实一档的玻璃面 + 强描边，读起来仍是「浮在模糊上的一块厚玻璃」。
 Widget _orb(Widget child, {required double edge}) => Padding(
-      padding: EdgeInsets.only(left: edge, right: edge),
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: SemColors.thumb,
-          shape: BoxShape.circle,
-          border: Border.all(color: SemColors.borderStrong),
-        ),
-        child: Center(
-          child: IconButtonTheme(
-            data: IconButtonThemeData(style: _orbStyle()),
-            child: child,
-          ),
-        ),
+  padding: EdgeInsets.only(left: edge, right: edge),
+  child: Container(
+    width: 40,
+    height: 40,
+    decoration: BoxDecoration(
+      color: SemColors.thumb,
+      shape: BoxShape.circle,
+      border: Border.all(color: SemColors.borderStrong),
+    ),
+    child: Center(
+      child: IconButtonTheme(
+        data: IconButtonThemeData(style: _orbStyle()),
+        child: child,
       ),
-    );
+    ),
+  ),
+);
 
 /// 圆钮里的图标按钮样式：只留点击/图标色，背景交给外面那层玻璃（含模糊与描边）。
 ButtonStyle _orbStyle() => ButtonStyle(
-      fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-      minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
-      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      elevation: const WidgetStatePropertyAll(0),
-      foregroundColor: WidgetStatePropertyAll(SemColors.textPrimary),
-      backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
-      shape: const WidgetStatePropertyAll(CircleBorder()),
-    );
+  fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+  minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
+  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  elevation: const WidgetStatePropertyAll(0),
+  foregroundColor: WidgetStatePropertyAll(SemColors.textPrimary),
+  backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+  shape: const WidgetStatePropertyAll(CircleBorder()),
+);
 
 /// 顶栏背景：一段「上强下无」的高斯模糊 + 压在上面的底色渐变。
 ///
@@ -163,18 +189,20 @@ class GlassBarScrim extends StatelessWidget {
           final ck1 = c(k + 1);
           final s = math.sqrt(math.max(0, ck * ck - ck1 * ck1));
           if (s <= 0) continue;
-          layers.add(Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            height: (fadeStart + fadeExtent * t(k + 1)).clamp(0.0, h),
-            child: ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: s, sigmaY: s),
-                child: const SizedBox.expand(),
+          layers.add(
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: (fadeStart + fadeExtent * t(k + 1)).clamp(0.0, h),
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: s, sigmaY: s),
+                  child: const SizedBox.expand(),
+                ),
               ),
             ),
-          ));
+          );
         }
         return Stack(
           fit: StackFit.expand,

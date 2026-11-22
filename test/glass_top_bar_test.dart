@@ -4,25 +4,30 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 悬浮玻璃顶栏的基础契约：真 AppBar（系统行为不变）+ 渐变模糊背景 + 圆钮按钮。
 void main() {
-  Widget host({required Widget child}) => MaterialApp(
-        home: child,
-      );
+  Widget host({required Widget child}) => MaterialApp(home: child);
 
-  Widget page({Widget? title, List<Widget>? actions, PreferredSizeWidget? bottom}) {
+  Widget page({
+    Widget? title,
+    List<Widget>? actions,
+    PreferredSizeWidget? bottom,
+  }) {
     return Builder(
-      builder: (context) => Scaffold(
-        extendBodyBehindAppBar: true,
-        appBar: glassAppBar(
-          context,
-          title: title ?? const Text('标题'),
-          actions: actions,
-          bottom: bottom,
-        ),
-        body: ListView(
-          padding: EdgeInsets.only(top: glassTopInset(context)),
-          children: const [SizedBox(height: 800)],
-        ),
-      ),
+      builder: (context) {
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: title ?? const Text('标题'),
+            actions: actions,
+            bottom: bottom,
+          ),
+          body: ListView(
+            padding: EdgeInsets.only(top: topInset),
+            children: const [SizedBox(height: 800)],
+          ),
+        );
+      },
     );
   }
 
@@ -47,11 +52,19 @@ void main() {
   });
 
   testWidgets('图标按钮套成玻璃圆钮（不再叠第二层模糊）', (tester) async {
-    await tester.pumpWidget(host(
-      child: page(actions: [
-        IconButton(onPressed: () {}, icon: const Icon(Icons.refresh), tooltip: '刷新'),
-      ]),
-    ));
+    await tester.pumpWidget(
+      host(
+        child: page(
+          actions: [
+            IconButton(
+              onPressed: () {},
+              icon: const Icon(Icons.refresh),
+              tooltip: '刷新',
+            ),
+          ],
+        ),
+      ),
+    );
     // 圆钮 = 40 直径的「更实一档」玻璃面；BackdropFilter 只留给顶栏背景那一层，
     // 圆钮里再套一层会在 Impeller 下产生椭圆光晕
     final face = find.ancestor(
@@ -83,13 +96,42 @@ void main() {
       MaterialApp(
         home: MediaQuery(
           data: const MediaQueryData(viewPadding: EdgeInsets.only(top: 24)),
-          child: Builder(builder: (context) {
-            inset = glassTopInset(context);
-            return const SizedBox.shrink();
-          }),
+          child: Builder(
+            builder: (context) {
+              inset = glassTopInset(context);
+              return const SizedBox.shrink();
+            },
+          ),
         ),
       ),
     );
     expect(inset, 24 + kToolbarHeight);
+  });
+
+  testWidgets('外观开关关掉 → 退回普通 AppBar、不再留顶栏内边距', (tester) async {
+    AppState.I.glassTopBar = false;
+    addTearDown(() => AppState.I.glassTopBar = true);
+
+    await tester.pumpWidget(host(child: page()));
+    expect(find.byType(AppBar), findsOneWidget);
+    // 没有渐变模糊层
+    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(GlassBarScrim), findsNothing);
+    // 内边距归零：内容排到普通 AppBar 下面，不再额外让位
+    late double inset;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(viewPadding: EdgeInsets.only(top: 24)),
+          child: Builder(
+            builder: (context) {
+              inset = glassTopInset(context);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+    expect(inset, 0);
   });
 }

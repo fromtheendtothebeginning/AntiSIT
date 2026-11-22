@@ -212,7 +212,7 @@ class _ProfilePageState extends State<ProfilePage> {
         final topInset = glassTopInset(context);
         return Scaffold(
           // 顶栏是悬浮玻璃条：内容从它底下穿过去，顶栏那层渐变模糊才有东西可糊
-          extendBodyBehindAppBar: true,
+          extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
             context,
             title: const Text('我的'),
