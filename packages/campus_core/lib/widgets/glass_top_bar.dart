@@ -146,11 +146,11 @@ ButtonStyle _orbStyle() => ButtonStyle(
   shape: const WidgetStatePropertyAll(CircleBorder()),
 );
 
-/// 顶栏「滚动中」状态：滚动期间顶栏改用**快照模糊**（见 [GlassTopBarSnapshot]），
+/// 顶栏「滚动中」状态：滚动期间顶栏用**快照模糊**（见 [GlassTopBarSnapshot]），
 /// 停手 150ms 后回到实时 backdrop 的磨砂。
 ///
-/// 为什么要这样：实时 backdrop 在两个过滤趟/滚动中途会采到上一帧或中间态的内容，
-/// 出现重影和噪点；而快照是「某一帧的画面 + 静态模糊」，不存在跨帧采样问题。
+/// 为什么要这样：实时 backdrop 在滚动/overscroll 保持时会跨帧采样，出重影和噪点；
+/// 快照是「某一帧的画面 + 静态模糊」，不存在跨帧采样问题。
 class GlassTopBarMotion {
   GlassTopBarMotion._();
 
@@ -159,10 +159,13 @@ class GlassTopBarMotion {
   /// true = 正在滚动（顶栏用快照模糊）。
   final ValueNotifier<bool> scrolling = ValueNotifier<bool>(false);
 
+  /// 最近一次滚动位置（逻辑像素）：快照按它和截帧位置的差平移，才会跟内容一起滚。
+  final ValueNotifier<double> position = ValueNotifier<double>(0);
+
   Timer? _timer;
 
-  /// 每次滚动位移调用一次。
-  void onScroll(double pixels) {
+  void onScroll(double p) {
+    position.value = p;
     if (!scrolling.value) scrolling.value = true;
     _timer?.cancel();
     _timer = Timer(const Duration(milliseconds: 150), () {
@@ -171,8 +174,10 @@ class GlassTopBarMotion {
   }
 }
 
-/// 顶栏快照：滚动开始时对整屏做一次截帧（约 120ms 刷新一次），
-/// 截出顶栏那一条做静态模糊。相当于系统应用的「RenderEffect + 截图」做法。
+/// 顶栏快照：滚动开始时对**整屏**截一帧（约 120ms 刷新一次）。
+/// 显示时按「当前滚动位置 − 截帧时位置」把快照反向平移并裁到顶栏区域，
+/// 所以快照是跟着内容一起滚的，不是定住的一张图。
+/// 相当于 Android 系统应用的「截帧 + RenderEffect 模糊」做法。
 class GlassTopBarSnapshot {
   GlassTopBarSnapshot._();
 
@@ -181,51 +186,43 @@ class GlassTopBarSnapshot {
   /// 截帧用的根 RepaintBoundary（main.dart 里包在 MaterialApp 外层）。
   static final GlobalKey rootKey = GlobalKey(debugLabel: 'glassSnapshotRoot');
 
-  /// 最近一帧顶栏区域的画面（逻辑像素）。
+  /// 最近一帧整屏画面。
   final ValueNotifier<ui.Image?> image = ValueNotifier<ui.Image?>(null);
+
+  /// 截帧时的滚动位置（逻辑像素），用来算快照该跟着滚多少。
+  double basePixels = 0;
+
+  /// 截帧像素比（图片像素 / 逻辑像素）。
+  double pixelRatio = 0.5;
 
   DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
   bool _busy = false;
 
   /// 请求一帧快照（内部节流，避免滚动时频繁 toImage 造成卡顿）。
-  void request({required double barHeight, double pixelRatio = 0.5}) {
+  void request({required double pixels, double pixelRatio = 0.5}) {
     if (_busy) return;
     final now = DateTime.now();
     if (now.difference(_last) < const Duration(milliseconds: 120)) return;
     _last = now;
     _busy = true;
+    this.pixelRatio = pixelRatio;
+    basePixels = pixels;
     // 滚动通知通常发生在布局/绘制阶段，直接 toImage 会拿到 debugNeedsPaint；
     // 挪到下一帧的帧后回调里再截。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _capture(barHeight: barHeight, pixelRatio: pixelRatio).whenComplete(() {
+      _capture().whenComplete(() {
         _busy = false;
       });
     });
   }
 
-  Future<void> _capture({
-    required double barHeight,
-    required double pixelRatio,
-  }) async {
+  Future<void> _capture() async {
     try {
       final object = rootKey.currentContext?.findRenderObject();
       if (object is! RenderRepaintBoundary) return;
-      final full = await object.toImage(pixelRatio: pixelRatio);
-      final barH = (barHeight * pixelRatio).round().clamp(1, full.height);
-      final recorder = ui.PictureRecorder();
-      final canvas = ui.Canvas(recorder);
-      canvas.drawImageRect(
-        full,
-        ui.Rect.fromLTWH(0, 0, full.width.toDouble(), barH.toDouble()),
-        ui.Rect.fromLTWH(0, 0, full.width.toDouble(), barH.toDouble()),
-        ui.Paint(),
-      );
-      final picture = recorder.endRecording();
-      final cropped = await picture.toImage(full.width, barH);
-      full.dispose();
-      picture.dispose();
+      final img = await object.toImage(pixelRatio: pixelRatio);
       final old = image.value;
-      image.value = cropped;
+      image.value = img;
       // 旧图可能还在本帧的 RawImage 里用着，延迟释放
       if (old != null) {
         Future<void>.delayed(const Duration(milliseconds: 300), old.dispose);
@@ -265,11 +262,13 @@ class GlassBarScrim extends StatelessWidget {
     final anim = route?.animation;
     final secondary = route?.secondaryAnimation;
     final scrolling = GlassTopBarMotion.I.scrolling;
+    final position = GlassTopBarMotion.I.position;
     final snapshot = GlassTopBarSnapshot.I.image;
     final animations = <Listenable>[
       if (anim != null) anim,
       if (secondary != null) secondary,
       scrolling,
+      position,
       snapshot,
     ];
     return AnimatedBuilder(
@@ -318,7 +317,7 @@ class GlassBarScrim extends StatelessWidget {
           blurLayer = _blurLayer(Size(w, h), dpr, fadeStart);
         } else if (GlassTopBarMotion.I.scrolling.value) {
           blurLayer = _snapshotLayer(w, h);
-          GlassTopBarSnapshot.I.request(barHeight: h);
+          GlassTopBarSnapshot.I.request(pixels: GlassTopBarMotion.I.position.value);
         }
         return Stack(
           fit: StackFit.expand,
@@ -337,19 +336,37 @@ class GlassBarScrim extends StatelessWidget {
     );
   }
 
-  /// 滚动中的快照模糊层：取最近一帧顶栏区域的截图，做静态高斯模糊再贴回来。
-  /// 截图按 0.5 像素比存的，放大回逻辑尺寸时模糊会被放大一倍，所以 sigma 也乘 0.5。
+  /// 滚动中的快照模糊层：整屏快照按「当前滚动位置 − 截帧位置」反向平移，
+  /// 裁到顶栏区域后做静态高斯模糊——所以它跟内容一起滚，而不是定住。
+  /// 截图按 0.5 像素比存，放大回逻辑尺寸时模糊会翻倍，所以 sigma 也乘那比例。
   Widget? _snapshotLayer(double w, double h) {
-    final img = GlassTopBarSnapshot.I.image.value;
+    final store = GlassTopBarSnapshot.I;
+    final img = store.image.value;
     if (img == null) return null;
+    final scale = store.pixelRatio; // 图片像素 / 逻辑像素
+    final logicalW = img.width / scale;
+    final logicalH = img.height / scale;
+    final dy = (GlassTopBarMotion.I.position.value - store.basePixels)
+        .clamp(0.0, (logicalH - h).clamp(0.0, double.infinity));
     return Positioned.fill(
       child: ClipRect(
         child: ImageFiltered(
           imageFilter: ui.ImageFilter.blur(
-            sigmaX: sigma * 0.5,
-            sigmaY: sigma * 0.5,
+            sigmaX: sigma * scale,
+            sigmaY: sigma * scale,
           ),
-          child: RawImage(image: img, fit: BoxFit.fill, filterQuality: FilterQuality.low),
+          child: Transform.translate(
+            offset: Offset(0, -dy),
+            child: SizedBox(
+              width: logicalW,
+              height: logicalH,
+              child: RawImage(
+                image: img,
+                fit: BoxFit.fill,
+                filterQuality: FilterQuality.low,
+              ),
+            ),
+          ),
         ),
       ),
     );
