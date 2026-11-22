@@ -24,6 +24,14 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.47.0',
+    date: '2026-11-22',
+    notes: [
+      '「插件市场」从拓展页移进「添加拓展」独立页：拓展页只看自己的拓展，不再和市场并排',
+      '拓展页顶栏标题改成和全站一致的样式（不再单独使用大号字）',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.46.0',
     date: '2026-11-22',
     notes: [

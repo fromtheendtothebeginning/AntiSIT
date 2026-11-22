@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'add_extension_page.dart';
 import 'bundle_import.dart';
 import 'cordis_bundle.dart';
 import 'ext_bridge.dart';
@@ -21,7 +21,6 @@ import 'market/market_installer.dart';
 import 'market/market_source.dart';
 import 'market/market_sources.dart';
 import 'market/market_sources_view.dart';
-import 'market/market_view.dart';
 import 'scanned_install.dart';
 
 /// 「拓展」页：网页形态的小功能，用户自己加进来。
@@ -44,59 +43,14 @@ class ExtensionsPage extends StatefulWidget {
   State<ExtensionsPage> createState() => _ExtensionsPageState();
 }
 
-class _ExtensionsPageState extends State<ExtensionsPage>
-    with SingleTickerProviderStateMixin {
+class _ExtensionsPageState extends State<ExtensionsPage> {
   ExtensionStore get _store => ExtensionStore.I;
 
-  /// 0 = 我的，1 = 市场。
-  int _tab = 0;
-
-  /// 「我的」页是否处于整理状态：长按卡片进入，可拖位 / 顶部尺寸条 / 拖右下角弧线改大小。
+  /// 是否处于整理状态：长按卡片进入，可拖位 / 顶部尺寸条 / 拖右下角弧线改大小。
   bool _editing = false;
 
   /// 当前选中的拓展卡片（顶部尺寸条作用于它，也只有它显示缩放弧线）。
   String? _selectedCardId;
-
-  /// 滑块的连续位置 / 页面区域拖动中的位置（与连接设置、主界面切页同一套）。
-  final ValueNotifier<double> _tabPos = ValueNotifier<double>(0);
-  final ValueNotifier<double?> _tabDrag = ValueNotifier<double?>(null);
-
-  /// 面板横向位移的弹簧（单位 = 段）：拖动时跟手，松手从当前位置弹到落点。
-  /// 以前这段物理藏在唯一的 GlassTabs 里；现在两个面板各有一份滑块（都只是「显示」），
-  /// 让两份都往回写位置会打架，所以位移改由这里统一驱动。
-  late final AnimationController _posCtrl = AnimationController.unbounded(
-    vsync: this,
-    duration: const Duration(milliseconds: 600),
-  )..value = _tab.toDouble();
-
-  static final _posSpring = SpringDescription.withDampingRatio(
-    mass: 1,
-    stiffness: 260,
-    ratio: 0.72,
-  );
-
-  void _publishPos() => _tabPos.value = _posCtrl.value;
-
-  void _springPosTo(double target, [double velocity = 0]) {
-    _posCtrl.animateWith(
-      SpringSimulation(_posSpring, _posCtrl.value, target, velocity),
-    );
-  }
-
-  /// 本次手势的连续（**未 clamp**）位置：越界量按它算，拖回来时越界量才会
-  /// 跟着归零——若以 clamp 后的位置为基准，回程会被吃掉，主界面弹过锚点
-  /// 冲向另一边。松手 / 取消时清空。
-  double? _dragRaw;
-
-  /// 市场页第一次要被看到时再建：拓展页会被主界面离屏预建，
-  /// 一上来就建它会把市场目录的网络请求带到启动阶段。
-  bool _marketMounted = false;
-
-
-  /// 主界面滑页桥（[NavSwipeScope]）：build 里取，树上没有（独立运行 / 单测）
-  /// 就是 null，越界拖动就地吞掉，与接桥前行为一致。
-  NavSwipeHost? _navHost;
-
   /// 本机 App 版本：判已装拓展的「需升级 App」（导入的 JSON 也能声明最低版本，
   /// 没有市场那道安装门，列表提示与打开拦截就是唯一检查点）。
   String _appVersion = '';
@@ -112,9 +66,6 @@ class _ExtensionsPageState extends State<ExtensionsPage>
     // 市场目录 / 第三方源加载完后，「可更新」角标要跟着出现
     MarketSource.I.addListener(_onChanged);
     ExtSourceStore.I.addListener(_onChanged);
-    _posCtrl.addListener(_publishPos);
-    _publishPos();
-
     if (!_store.loaded) unawaited(_store.load());
     unawaited(_readAppVersion());
   }
@@ -148,10 +99,6 @@ class _ExtensionsPageState extends State<ExtensionsPage>
     _store.removeListener(_onChanged);
     MarketSource.I.removeListener(_onChanged);
     ExtSourceStore.I.removeListener(_onChanged);
-    _tabPos.dispose();
-    _tabDrag.dispose();
-    _posCtrl.dispose();
-
     super.dispose();
   }
 
@@ -174,55 +121,21 @@ class _ExtensionsPageState extends State<ExtensionsPage>
       );
   }
 
-  Future<void> _addMenu() async {
-    final pick = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.link_rounded),
-              title: const Text('填写网址'),
-              subtitle: const Text(
-                '给它起个名字，填一个 http(s) 网址',
-                style: TextStyle(fontSize: 12),
-              ),
-              onTap: () => Navigator.pop(ctx, 'url'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder_zip_outlined),
-              title: const Text('导入 Cordis 压缩包'),
-              subtitle: const Text(
-                'ext.json + main.js 打成 zip；导入后自动解压',
-                style: TextStyle(fontSize: 12),
-              ),
-              onTap: () => Navigator.pop(ctx, 'zip'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.data_object_rounded),
-              title: const Text('导入 JSON'),
-              subtitle: const Text(
-                '粘贴一份拓展 JSON（单条或数组）',
-                style: TextStyle(fontSize: 12),
-              ),
-              onTap: () => Navigator.pop(ctx, 'json'),
-            ),
-          ],
+  /// 打开「添加拓展」页：三种加法（网址 / 压缩包 / JSON）+ 插件市场。
+  /// 市场不再和「我的拓展」并排，而是收进这一页里。
+  Future<void> _openAddPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AddExtensionPage(
+          onAddUrl: () => _edit(),
+          onImportBundle: _importBundle,
+          onImportJson: _importJson,
+          onInstalled: _toast,
         ),
       ),
     );
-    if (!mounted) return;
-    switch (pick) {
-      case 'url':
-        await _edit();
-      case 'zip':
-        await _importBundle();
-      case 'json':
-        await _importJson();
-    }
+    if (mounted) setState(() {});
   }
-
   /// 填写网址 / 编辑 / 看详情：同一个弹窗；[isNew] 决定按钮与写盘方式。
   Future<void> _edit({
     ExtensionItem? item,
@@ -613,21 +526,6 @@ class _ExtensionsPageState extends State<ExtensionsPage>
 
   // ==================== 界面 ====================
 
-  void _setTab(int i) {
-    if (i == _tab) return;
-    if (i == 1) _marketMounted = true;
-    setState(() {
-      _tab = i;
-      // 切去市场时不保留整理状态：回来时不会突然多出一排尺寸条 / 角标
-      if (i == 1) {
-        _editing = false;
-        _selectedCardId = null;
-      }
-    });
-    if (_tabDrag.value == null) _springPosTo(i.toDouble());
-
-  }
-
   void _setEditing(bool value) {
     if (_editing == value) return;
     setState(() {
@@ -639,50 +537,6 @@ class _ExtensionsPageState extends State<ExtensionsPage>
   void _selectCard(String id) {
     if (!_editing || _selectedCardId == id) return;
     setState(() => _selectedCardId = id);
-  }
-
-  // ── 页面区域左右滑动切「我的 / 市场」（与主界面、连接设置同一套：
-  //    拖过一半就换，快速甩动借动量多滑一格；页面内部接住横滑的照旧优先）──
-
-  void _onTabDragStart(DragStartDetails _) {
-    _tabDrag.value = _tabPos.value;
-    _dragRaw = _tabPos.value;
-    // 邻页得在树里才能跟着滑进来
-    if (!_marketMounted) setState(() => _marketMounted = true);
-  }
-
-  void _onTabDragUpdate(DragUpdateDetails d) {
-    final w = MediaQuery.sizeOf(context).width;
-    if (w <= 0) return;
-    // 内容往左拖 = 去下一格；连续位置先不 clamp，滑出边界的部分转给主界面
-    final raw = (_dragRaw ?? _tabPos.value) - d.delta.dx / w;
-    _dragRaw = raw;
-    _tabDrag.value = raw.clamp(0.0, 1.0);
-    _posCtrl.value = _tabDrag.value!;
-    // 「界面实时跟着滑块切换」关掉时等松手落位再换
-    if (AppState.I.followSlider) _setTab(_tabDrag.value!.round());
-    // 越界部分镜像给主界面（工具 ← 我的｜市场 → 我的）：主页面跟着手指连续
-    // 滑过去，拖回界内越界量归零、主界面位置也跟着弹回拓展格
-    _navHost?.navDragOver(raw < 0 ? raw : (raw > 1 ? raw - 1 : 0));
-  }
-
-  void _onTabDragEnd(DragEndDetails d) {
-    final w = MediaQuery.sizeOf(context).width;
-    final v = (-d.velocity.pixelsPerSecond.dx / (w <= 0 ? 1 : w)).clamp(
-      -8.0,
-      8.0,
-    );
-    var target = (_tabDrag.value ?? _tabPos.value).round().clamp(0, 1);
-    final next = target + (v > 0 ? 1 : -1);
-    if (v.abs() >= 5.0 && next >= 0 && next <= 1) target = next;
-    _tabDrag.value = null; // 交还弹簧：滑块从当前位置弹到落点
-    _dragRaw = null;
-    _setTab(target);
-    // 与 GlassTabs 内同一套符号：往左拖 = 去下一格（正值）；带速度落在新格上
-    final segVelocity = (d.velocity.pixelsPerSecond.dx / (w <= 0 ? 1 : w)).clamp(-8.0, 8.0);
-    _springPosTo(target.toDouble(), segVelocity);
-    // 越界拖动的落位交给主界面就近落格（没到过界外时它自己会忽略）
-    _navHost?.navDragEnd(d.velocity.pixelsPerSecond.dx);
   }
 
   /// 隐藏全部网址的总开关（卡片上那一行直接不显示，详情里照旧能看到）。
@@ -699,50 +553,18 @@ class _ExtensionsPageState extends State<ExtensionsPage>
 
   @override
   Widget build(BuildContext context) {
-    _navHost = NavSwipeScope.of(context);
     // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
     final topInset = glassTopInset(context);
     final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
     final items = _store.items;
     final hide = _store.hideUrls;
-    final market = _tab == 1;
     final selectedId = items.any((e) => e.id == _selectedCardId)
         ? _selectedCardId
         : null;
     final selectedSize = selectedId == null ? null : _store.sizeOf(selectedId);
-    // 两页都留在树里：横滑时一起位移，State（搜索词、滚动位置）也不会切走就丢。
-    // 市场页仍按需挂载，见 _marketMounted。
     final myPage = items.isEmpty
         ? _empty(context, topInset)
         : _grid(context, items, selectedId, topInset);
-    final panels = <Widget>[
-      Column(
-        children: [
-          Expanded(child: myPage),
-          // 尺寸条放在页面下方、底栏上方：顶部那块地方留给标题和两个圆形按钮，
-          // 单手握持时拇指正好够得着（顶栏那排按钮要伸上去）。
-          if (_editing && items.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                14,
-                4,
-                14,
-                8 + MediaQuery.paddingOf(context).bottom,
-              ),
-              child: CardSizeBar(
-                size: selectedSize,
-                onChanged: (size) {
-                  final id = selectedId;
-                  if (id != null) unawaited(_store.setSize(id, size));
-                },
-              ),
-            ),
-        ],
-      ),
-      if (market || _marketMounted)
-        // 滑块作为列表的第一项塞进市场页自己的滚动内容里
-        MarketView(onInstalled: _toast, header: _tabs(topInset)),
-    ];
     // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
     return ListenableBuilder(
       listenable: AppState.I,
@@ -751,16 +573,7 @@ class _ExtensionsPageState extends State<ExtensionsPage>
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
             context,
-            toolbarHeight: 64,
-            centerTitle: true,
-            title: const Text(
-              '拓展',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1,
-              ),
-            ),
+            title: const Text('拓展'),
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 14),
@@ -787,13 +600,7 @@ class _ExtensionsPageState extends State<ExtensionsPage>
                               '扫一扫',
                               () => _scanExtension(scan),
                             ),
-                          if (market)
-                            _roundAction(
-                              Icons.refresh_rounded,
-                              '重新拉市场目录',
-                              () => unawaited(MarketSource.I.load(force: true)),
-                            )
-                          else ...[
+                          ...[
                             _roundAction(
                               hide
                                   ? Icons.visibility_off_outlined
@@ -809,77 +616,56 @@ class _ExtensionsPageState extends State<ExtensionsPage>
                                 '排序拓展',
                                 _openSorter,
                               ),
-                            _roundAction(Icons.add, '添加拓展', _addMenu),
+                            _roundAction(Icons.add, '添加拓展', _openAddPage),
                           ],
                         ],
                       ),
               ),
             ],
           ),
-          // 滑块「我的 / 市场」是内容的一部分：它长在每个面板自己的滚动内容最前面，
-          // 跟着列表一起滚（连回弹一起动），滚到顶栏底下就被顶栏的模糊盖住。
-          body: GestureDetector(
-            // translucent：页面空白处也能起手势；内层真接住横滑的（搜索框选词等）优先
-            behavior: HitTestBehavior.translucent,
-            // 整理态点空白（卡片下方 / 卡片缝里）也退出；卡片自己会吸收点击
-            onTap: _editing ? () => _setEditing(false) : null,
-            // 整理卡片时不切子页：横向拖动要留给卡片 / 手柄，避免刚拖到一半整页滑走
-            onHorizontalDragStart: _editing ? null : _onTabDragStart,
-            onHorizontalDragUpdate: _editing ? null : _onTabDragUpdate,
-            onHorizontalDragEnd: _editing ? null : _onTabDragEnd,
-            onHorizontalDragCancel: _editing
-                ? null
-                : () {
-                    _tabDrag.value = null;
-                    _dragRaw = null;
-                    _navHost?.navDragCancel();
-                  },
-            child: ValueListenableBuilder<double>(
-              valueListenable: _tabPos,
-              builder: (context, rawPos, _) {
-                // 开关关掉时界面不跟滑块连续滑，只按已落位的那一格显示（松手才换）
-                final pos = AppState.I.followSlider ? rawPos : _tab.toDouble();
-                final w = MediaQuery.sizeOf(context).width;
-                return Stack(
-                  children: [
-                    for (var k = 0; k < panels.length; k++)
-                      Positioned.fill(
-                        // 只画当前页和拖动时露出的邻页
-                        child: Offstage(
-                          offstage: (k - pos).abs() >= 0.999,
-                          child: Transform.translate(
-                            offset: Offset((k - pos) * w, 0),
-                            child: panels[k],
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
+          // 单页：只列自己的拓展；加法与市场都收进「添加拓展」页
+          body: Column(
+            children: [
+              Expanded(child: myPage),
+              // 尺寸条放在页面下方、底栏上方：单手握持时拇指正好够得着
+              if (_editing && items.isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    14,
+                    4,
+                    14,
+                    8 + MediaQuery.paddingOf(context).bottom,
+                  ),
+                  child: CardSizeBar(
+                    size: selectedSize,
+                    onChanged: (size) {
+                      final id = selectedId;
+                      if (id != null) unawaited(_store.setSize(id, size));
+                    },
+                  ),
+                ),
+            ],
           ),
         );
       },
     );
   }
 
-  /// 「我的」页空态：滑块仍是内容第一项，跟卡片一起滚。
+  /// 「我的」页空态：三种加法，外加去「添加拓展」页（市场在那里）。
   Widget _empty(BuildContext context, double topInset) => SingleChildScrollView(
     // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：滚动底部让出底栏这一截
-    padding: EdgeInsets.only(
-      bottom: 20 + MediaQuery.paddingOf(context).bottom,
+    padding: EdgeInsets.fromLTRB(
+      20,
+      20 + topInset,
+      20,
+      20 + MediaQuery.paddingOf(context).bottom,
     ),
-    child: Column(
-      children: [
-        // 滑块是内容第一项：跟空态卡片一起滚
-        _tabs(topInset),
-        const SizedBox(height: 12),
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: AppCard(
-              child: Column(
-                children: [
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: AppCard(
+          child: Column(
+            children: [
               Icon(
                 Icons.extension_outlined,
                 size: 40,
@@ -908,7 +694,7 @@ class _ExtensionsPageState extends State<ExtensionsPage>
                 alignment: WrapAlignment.center,
                 children: [
                   FilledButton.tonal(
-                    onPressed: () => setState(() => _tab = 1),
+                    onPressed: _openAddPage,
                     child: const Text('去市场看看'),
                   ),
                   OutlinedButton(
@@ -935,29 +721,11 @@ class _ExtensionsPageState extends State<ExtensionsPage>
                   color: SemColors.textMuted,
                   height: 1.7,
                 ),
-              ),],
               ),
-            ),
+            ],
           ),
         ),
-        const SizedBox(height: 20),
-      ],
-    ),
-  );
-
-  /// 「我的 / 市场」滑块：作为各页滚动内容的第一项，跟着内容一起滚
-  /// （滚到顶栏底下会被顶栏的模糊盖住，而不是一条钉住的悬浮栏）。
-  Widget _tabs(double topInset) => Padding(
-    padding: EdgeInsets.fromLTRB(14, 8 + topInset, 14, 8),
-    // 只做显示：面板位置由 _posCtrl 统一驱动，这里不再往回写 position，
-    // 否则两个面板各一份滑块会互相打架（build 期 setState）。
-    child: GlassTabs(
-      labels: const ['我的', '市场'],
-      height: 38,
-      fontSize: 13.5,
-      index: _tab,
-      dragPosition: _tabDrag,
-      onChanged: _setTab,
+      ),
     ),
   );
   Widget _grid(
@@ -967,11 +735,10 @@ class _ExtensionsPageState extends State<ExtensionsPage>
     double topInset,
   ) => CustomScrollView(
     slivers: [
-      // 滑块是内容第一项：跟宫格一起滚
-      SliverToBoxAdapter(child: _tabs(topInset)),
       SliverToBoxAdapter(
         child: FlexibleCardGrid(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+          // 顶部让出悬浮顶栏
+          padding: EdgeInsets.fromLTRB(14, 12 + topInset, 14, 0),
           items: [
             for (final e in items)
               FlexibleGridItem(
@@ -1406,7 +1173,7 @@ class _ExtensionsPageState extends State<ExtensionsPage>
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: _addMenu,
+          onTap: _openAddPage,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
