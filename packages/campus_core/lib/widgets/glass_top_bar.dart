@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -144,6 +145,49 @@ ButtonStyle _orbStyle() => ButtonStyle(
   shape: const WidgetStatePropertyAll(CircleBorder()),
 );
 
+/// 顶栏模糊的「高速滚动」开关。
+///
+/// 两个 backdrop 捕获在快速滚动时（列表内容每帧大位移）会出现不同步，
+/// 表现为重影/黑白噪点。这里按滚动速度判断：速度超过阈值就临时不画模糊、
+/// 只画色带；速度降下来 / 停手 120ms 后自动恢复——运动中的内容本身就看不清，
+/// 肉眼几乎察觉不到切换，但重影和噪点会彻底消失。
+class GlassTopBarMotion {
+  GlassTopBarMotion._();
+
+  static final GlassTopBarMotion I = GlassTopBarMotion._();
+
+  /// true = 正在高速滚动，顶栏不画模糊。
+  final ValueNotifier<bool> fastScrolling = ValueNotifier<bool>(false);
+
+  Timer? _timer;
+  double? _lastPixels;
+  DateTime? _lastAt;
+
+  /// 超过这个速度（逻辑像素/秒）算「高速」；普通慢拖仍保留模糊。
+  static const double fastVelocity = 1200;
+
+  /// 每帧滚动位置（[ScrollUpdateNotification.metrics.pixels]）。
+  void onScroll(double pixels) {
+    final now = DateTime.now();
+    final last = _lastPixels;
+    final lastAt = _lastAt;
+    _lastPixels = pixels;
+    _lastAt = now;
+    if (last != null && lastAt != null) {
+      final dtMs = now.difference(lastAt).inMicroseconds / 1000.0;
+      if (dtMs > 0.5 && dtMs < 200) {
+        final velocity = (pixels - last).abs() / (dtMs / 1000.0);
+        if (velocity > fastVelocity) fastScrolling.value = true;
+      }
+    }
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 120), () {
+      fastScrolling.value = false;
+      _lastPixels = null;
+      _lastAt = null;
+    });
+  }
+}
 /// 顶栏背景：一段「上强下无」的高斯模糊 + 压在上面的底色渐变。
 ///
 /// 真机性能关键，跟社区（liquid_glass_widgets / inspire_blur）和系统实现一致：
@@ -172,14 +216,25 @@ class GlassBarScrim extends StatelessWidget {
   Widget build(BuildContext context) {
     final route = ModalRoute.of(context);
     final anim = route?.animation;
-    if (anim == null) return _build(context, blur: true);
     final secondary = route?.secondaryAnimation;
+    final motion = GlassTopBarMotion.I.fastScrolling;
+    final animations = <Listenable>[
+      if (anim != null) anim,
+      if (secondary != null) secondary,
+      motion,
+    ];
     return AnimatedBuilder(
-      animation: Listenable.merge([anim, secondary]),
-      builder: (context, _) => _build(
-        context,
-        blur: _blurAllowed(anim, secondary),
-      ),
+      animation: Listenable.merge(animations),
+      builder: (context, _) {
+        final routeOk = _blurAllowed(anim, secondary);
+        return _build(
+          context,
+          blur: routeOk && !motion.value,
+          // 路由过渡帧没有模糊托底，色带压重一点保证标题可读；
+          // 只是「高速滚动临时关模糊」时保持正常色带，避免滚动中闪一下。
+          boost: routeOk ? 1.0 : 1.35,
+        );
+      },
     );
   }
 
@@ -197,7 +252,11 @@ class GlassBarScrim extends StatelessWidget {
     return primaryDone && secondaryIdle;
   }
 
-  Widget _build(BuildContext context, {required bool blur}) {
+  Widget _build(
+    BuildContext context, {
+    required bool blur,
+    required double boost,
+  }) {
     return LayoutBuilder(
       builder: (context, cons) {
         final h = cons.maxHeight;
@@ -213,7 +272,7 @@ class GlassBarScrim extends StatelessWidget {
             // 末段必须是「同色透明」而不是透明黑，否则线性插值会在中间混出一条暗带。
             DecoratedBox(
               decoration: BoxDecoration(
-                gradient: _tint(fadeStart, boost: blur && _program != null ? 1.0 : 1.35),
+                gradient: _tint(fadeStart, boost: boost),
               ),
             ),
           ],

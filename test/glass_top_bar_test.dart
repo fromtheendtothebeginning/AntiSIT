@@ -108,6 +108,31 @@ void main() {
     expect(inset, 24 + kToolbarHeight);
   });
 
+  testWidgets('高速滚动时临时不画模糊，滑停后恢复', (tester) async {
+    addTearDown(() => GlassTopBarMotion.I.fastScrolling.value = false);
+    GlassTopBarMotion.I.fastScrolling.value = true;
+    await tester.pumpWidget(host(child: page()));
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNothing,
+      reason: '高速滚动中只画色带，避免两个 backdrop 捕获不同步出重影/噪点',
+    );
+
+    GlassTopBarMotion.I.fastScrolling.value = false;
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
+      reason: '滑停后恢复模糊（测试环境不支持 shader，回退单层均匀模糊）',
+    );
+  });
+
   testWidgets('外观开关关掉 → 退回普通 AppBar、不再留顶栏内边距', (tester) async {
     AppState.I.glassTopBar = false;
     addTearDown(() => AppState.I.glassTopBar = true);
