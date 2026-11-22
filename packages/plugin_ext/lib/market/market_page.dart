@@ -20,11 +20,9 @@ class MarketPage extends StatelessWidget {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('插件市场')),
-          // 市场列表本身有搜索/筛选/下拉刷新，顶部让出悬浮顶栏即可
-          body: Padding(
-            padding: EdgeInsets.only(top: topInset),
-            child: MarketView(onInstalled: onInstalled),
-          ),
+          // 列表顶部留白放进滚动内容里：内容从顶栏下方开始，但滚动时会穿过顶栏
+          // （顶栏那层渐变模糊才有东西可糊）。
+          body: MarketView(onInstalled: onInstalled, topPadding: topInset),
         );
       },
     );
