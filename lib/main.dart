@@ -372,8 +372,10 @@ bool onNavigationNotification(NavigationNotification notification) {
   return true;
 }
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 顶栏渐进模糊的 shader 预热：放在首帧前，避免第一次画顶栏时临时编译卡一下
+  await preloadGlassTopBarShader();
   // 敏感凭据改走加密存储（Keystore）：默认的内存实现不持久化，必须在这里装上真机版
   SecureStore.I = FlutterSecureStore();
   // 竖屏锁定：手机横过来也不跟着陀螺仪转（页面布局按竖屏设计）

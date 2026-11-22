@@ -39,15 +39,15 @@ void main() {
     expect(tester.getSize(find.byType(AppBar)).height, kToolbarHeight);
   });
 
-  testWidgets('背景带是渐变模糊（多层 BackdropFilter 叠加）', (tester) async {
+  testWidgets('背景带是「一次 backdrop 捕获 + shader 两趟」的单层模糊', (tester) async {
     await tester.pumpWidget(host(child: page()));
-    // 渐变段被切成若干层模糊叠出来，至少 2 层
+    // 只允许一层 BackdropFilter：叠多层在真机上会掉帧、出重影和噪点
     expect(
       find.descendant(
         of: find.byType(AppBar),
         matching: find.byType(BackdropFilter),
       ),
-      findsAtLeastNWidgets(2),
+      findsOneWidget,
     );
   });
 

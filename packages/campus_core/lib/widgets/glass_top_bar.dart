@@ -1,5 +1,4 @@
-import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -10,24 +9,13 @@ import 'theme_palette.dart';
 /// 上 60% 保持最强模糊，靠底部 40% 从最强线性降到 0——内容从顶栏底边露出时是清晰的。
 const double kGlassBarFadeFraction = 0.4;
 
-/// 背景（顶栏那条渐变模糊带）的最大模糊强度。**比按钮小一档**：
-/// 按钮是「隔着玻璃看内容」的强模糊，背景只把穿过去的内容压淡，太强会糊成一片色块。
+/// 背景（顶栏那条渐变模糊带）的最大模糊强度（逻辑像素）。**比按钮小一档**：
+/// 按钮是「隔着玻璃看内容」的强模糊，背景只把穿过去的内容压淡。
 const double kGlassBarBlurSigma = 8;
 
-/// 渐变模糊用几层模糊叠出来。**层数直接等于每帧的 backdrop 采样次数**，
-/// 真机上 10 层会把 GPU 打满（掉帧、快速滑动残影、低 alpha 叠层噪点），
-/// 所以 P0 先压到 2 层：渐变仍然保留（1 层会变成硬边），成本降到原来的 1/5。
-const int _fadeBands = 2;
-
-/// 分段的疏密：模糊数值按 [_sigmaCurve] 变化，但切段宽度不均匀——底部清晰、
-/// 相邻两级差一点就看得出来，所以底部略细、顶部略粗。取值 = 分布指数，
-/// 1 = 完全等宽；越大底部越细、顶部越粗（2.0 时顶部一级跨 23%，太粗，取 1.25）。
-const double _bandBias = 1.25;
-
-/// 模糊**数值**随深度的曲线（t=0 在渐变段起点/靠顶、t=1 在顶栏底边）：
-/// `sigma(t) = 最大 * (1 - t)^_sigmaCurve`。指数 > 1 即「越靠顶部变化越快、
-/// 越靠底部变化越慢」。
-const double _sigmaCurve = 1.8;
+/// 模糊值随纵坐标的衰减曲线：顶栏顶部一段保持最强，最后 [kGlassBarFadeFraction]
+/// 那一段按 (1 - f)^curve 收敛到 0（数值越大越「顶强底缓」）。
+const double kGlassBarBlurCurve = 1.8;
 
 /// 顶栏是否用悬浮玻璃样式（「我的 → 外观」里的开关，默认开）。
 ///
@@ -158,24 +146,27 @@ ButtonStyle _orbStyle() => ButtonStyle(
 
 /// 顶栏背景：一段「上强下无」的高斯模糊 + 压在上面的底色渐变。
 ///
-/// 模糊不能直接套 ShaderMask 做渐变——ShaderMask 会开 saveLayer，backdrop 就空了，
-/// 模糊采样不到页面内容。所以这里改用叠加：把渐变段切段，每段一层 BackdropFilter，
-/// 越靠上被越多的层糊过，累积效果就是「越靠近顶栏越模糊」。
-///
-/// 渐变段只占顶栏底部 [kGlassBarFadeFraction] 那一段：顶栏底边是 0（清晰），
-/// 往上到渐变段起点到达最大强度，再往上是均匀的最强模糊。
-///
-/// **路由过渡期间不开模糊**：页面进场 / 退场那几帧里，下面的页面还在合成中间态
-/// （甚至没有可采样的 backdrop），此时做模糊会得到一块发黑的毛玻璃；过渡结束后再开。
+/// 真机性能关键，跟社区（liquid_glass_widgets / inspire_blur）和系统实现一致：
+/// * **只有一个 BackdropFilter**：backdrop 只捕获一次；
+/// * 模糊用本仓库自带的 shader **单趟 2D 采样**（一次绘制）。不再叠多层模糊——
+///   多层在 Impeller 下滚动时每层各自采样不同帧的 backdrop，会出重影/噪点，
+///   还会把 GPU 打满；本版本 Flutter 的 ImageFilter.compose 组合两个 shader
+///   filter 会静默失效，所以也不用「两趟可分离」那条路；
+/// * 模糊强度随纵坐标渐变（shader 里按顶栏区域归一化），顶边最强、底边收敛到 0，
+///   所以内容从顶栏底边露出来时是清晰的，没有硬边；
+/// * 路由过渡期间不画模糊：过渡帧没有稳定的 backdrop，会得到一块发黑的毛玻璃；
+/// * 后端不支持 shader filter（Skia / Web）时退化为**单层均匀模糊**，不再有叠层问题。
 class GlassBarScrim extends StatelessWidget {
   const GlassBarScrim({
     super.key,
     this.fadeFraction = kGlassBarFadeFraction,
     this.sigma = kGlassBarBlurSigma,
+    this.curve = kGlassBarBlurCurve,
   });
 
   final double fadeFraction;
   final double sigma;
+  final double curve;
 
   @override
   Widget build(BuildContext context) {
@@ -210,51 +201,35 @@ class GlassBarScrim extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, cons) {
         final h = cons.maxHeight;
-        final fadeExtent = (h * fadeFraction).clamp(0.0, h);
-        final fadeStart = (h - fadeExtent).clamp(0.0, h);
-        final n = _fadeBands;
-        // 段边界（自上而下 0→1）：模糊值本身按位置线性衰减，但**分段的宽度不均匀**——
-        // t_j = 1 - (1 - j/n)^_bandBias，底部段窄（档位差一点就看得出）、顶部段宽。
-        double t(int j) => 1 - math.pow(1 - j / n, _bandBias).toDouble();
-        // 第 j 个段边界处的累积模糊强度：按 _sigmaCurve 的非线性曲线（顶快底慢）
-        double c(int j) => sigma * math.pow(1 - t(j), _sigmaCurve).toDouble();
-        final layers = <Widget>[];
+        final w = cons.maxWidth;
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
+        Widget? blurLayer;
         if (blur) {
-          for (var k = 0; k < n; k++) {
-            // 各层高斯可按「平方和」合成：本层要补的强度是 sqrt(c_k² - c_k₊₁²)
-            final ck = c(k);
-            final ck1 = c(k + 1);
-            final s = math.sqrt(math.max(0, ck * ck - ck1 * ck1));
-            if (s <= 0) continue;
-            layers.add(
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                height: (fadeStart + fadeExtent * t(k + 1)).clamp(0.0, h),
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: s, sigmaY: s),
-                    child: const SizedBox.expand(),
-                  ),
-                ),
+          final filter = _progressiveFilter(
+            size: Size(w, h),
+            dpr: dpr,
+            fadeStart: fadeStart,
+          );
+          blurLayer = Positioned.fill(
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: filter ??
+                    ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                child: const SizedBox.expand(),
               ),
-            );
-          }
+            ),
+          );
         }
         return Stack(
           fit: StackFit.expand,
           children: [
-            ...layers,
-            // 底色渐变：被糊掉的内容只是色块，这层让标题和按钮在任何内容上都读得清
+            if (blurLayer != null) blurLayer,
+            // 底色渐变：被糊掉的内容只是色块，这层让标题和按钮在任何内容上都读得清。
+            // 末段必须是「同色透明」而不是透明黑，否则线性插值会在中间混出一条暗带。
             DecoratedBox(
               decoration: BoxDecoration(
-                gradient: _tint(
-                  fadeStart,
-                  h,
-                  // 过渡期没有模糊托底，色带稍微压重一点，标题依旧可读
-                  boost: blur ? 1.0 : 1.35,
-                ),
+                gradient: _tint(fadeStart, boost: blur && _program != null ? 1.0 : 1.35),
               ),
             ),
           ],
@@ -263,9 +238,28 @@ class GlassBarScrim extends StatelessWidget {
     );
   }
 
-  LinearGradient _tint(double fadeStart, double h, {double boost = 1.0}) {
+  /// 单趟 2D 高斯 + 渐变遮罩的滤镜；shader 不可用时返回 null（调用方退化单层均匀模糊）。
+  ui.ImageFilter? _progressiveFilter({
+    required Size size,
+    required double dpr,
+    required double fadeStart,
+  }) {
+    final program = _program;
+    if (program == null || !ui.ImageFilter.isShaderFilterSupported) return null;
+    final shader = program.fragmentShader();
+    // float uniform 下标：u_size 占 0、1（引擎写），之后依次是下面这些字段；
+    // sampler 不占 float 下标（引擎绑定 backdrop）。
+    shader.setFloat(2, 0); // u_region_origin.x：顶栏在屏幕左上角
+    shader.setFloat(3, 0); // u_region_origin.y
+    shader.setFloat(4, size.width * dpr); // u_region_size.x
+    shader.setFloat(5, size.height * dpr); // u_region_size.y
+    shader.setFloat(6, sigma * dpr); // u_sigma_max（物理像素）
+    shader.setFloat(7, fadeStart); // u_fade_start
+    shader.setFloat(8, curve); // u_curve
+    return ui.ImageFilter.shader(shader);
+  }  LinearGradient _tint(double fadeStart, {double boost = 1.0}) {
     final base = SemColors.bg;
-    final fade = h <= 0 ? 0.6 : (fadeStart / h).clamp(0.0, 0.95);
+    final fade = fadeStart.clamp(0.0, 0.95);
     double a(double v) => (v * boost).clamp(0.0, 1.0);
     return LinearGradient(
       begin: Alignment.topCenter,
@@ -273,9 +267,27 @@ class GlassBarScrim extends StatelessWidget {
       colors: [
         base.withValues(alpha: a(0.55)),
         base.withValues(alpha: a(0.38)),
-        const Color(0x00000000),
+        base.withValues(alpha: 0),
       ],
       stops: [0, fade, 1],
     );
+  }
+}
+
+/// 顶栏渐进模糊 shader（两趟可分离高斯共用同一个 .frag）。
+///
+/// 启动时调用一次预热，避免第一帧顶栏临时编译 shader 造成卡顿；
+/// 加载失败也没关系，[GlassBarScrim] 会自动退化到单层均匀模糊。
+ui.FragmentProgram? _program;
+bool _programFailed = false;
+
+Future<void> preloadGlassTopBarShader() async {
+  if (_program != null || _programFailed) return;
+  try {
+    _program = await ui.FragmentProgram.fromAsset(
+      'packages/campus_core/shaders/glass_progressive_blur.frag',
+    );
+  } catch (_) {
+    _programFailed = true;
   }
 }
