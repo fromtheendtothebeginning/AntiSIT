@@ -18,6 +18,11 @@ const double kGlassBarBlurSigma = 6;
 /// 8 段是「看不出台阶」和「不多吃 GPU」之间的折中（4 段时肉眼能看出阶梯）。
 const int _fadeBands = 8;
 
+/// 分段的疏密：模糊**数值仍是线性**（0 → 最大按位置线性变化），但切段不均匀——
+/// 底部清晰、相邻两档差一点就看得出来，所以底部的段切得细；顶部本来就糊，
+/// 档位差一点看不出来，段切粗一点省层数。取值 = 分布的指数，>1 即「底细顶粗」。
+const double _bandBias = 2.0;
+
 /// 页面第一个滚动区 / 内容的顶部内边距：躲开悬浮顶栏（状态栏 + 标题栏）。
 ///
 /// **必须在页面 `build` 的 context（Scaffold 之上）取**：开了
@@ -141,19 +146,23 @@ class GlassBarScrim extends StatelessWidget {
         final fadeExtent = (h * fadeFraction).clamp(0.0, h);
         final fadeStart = (h - fadeExtent).clamp(0.0, h);
         final n = _fadeBands;
+        // 段边界（自上而下 0→1）：模糊值本身按位置线性衰减，但**分段的宽度不均匀**——
+        // t_j = 1 - (1 - j/n)^_bandBias，底部段窄（档位差一点就看得出）、顶部段宽。
+        double t(int j) => 1 - math.pow(1 - j / n, _bandBias).toDouble();
+        // 第 j 个段边界处的累积模糊强度（线性：t=0 时最强、t=1 时最弱 = 0）
+        double c(int j) => sigma * (1 - t(j));
         final layers = <Widget>[];
         for (var k = 0; k < n; k++) {
-          // 叠加公式：第 k 段的累积强度是 c_k = sigma * (1 - k/n)，
-          // 而各层的高斯可以按「平方和」合成，所以本层要补的强度是 sqrt(c_k² - c_k₊₁²)
-          final ck = sigma * (1 - k / n);
-          final ck1 = sigma * (1 - (k + 1) / n);
+          // 各层高斯可按「平方和」合成：本层要补的强度是 sqrt(c_k² - c_k₊₁²)
+          final ck = c(k);
+          final ck1 = c(k + 1);
           final s = math.sqrt(math.max(0, ck * ck - ck1 * ck1));
           if (s <= 0) continue;
           layers.add(Positioned(
             left: 0,
             right: 0,
             top: 0,
-            height: (fadeStart + fadeExtent * (k + 1) / n).clamp(0.0, h),
+            height: (fadeStart + fadeExtent * t(k + 1)).clamp(0.0, h),
             child: ClipRect(
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: s, sigmaY: s),
