@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../app_state.dart';
 import 'theme_palette.dart';
@@ -144,6 +146,95 @@ ButtonStyle _orbStyle() => ButtonStyle(
   shape: const WidgetStatePropertyAll(CircleBorder()),
 );
 
+/// 顶栏「滚动中」状态：滚动期间顶栏改用**快照模糊**（见 [GlassTopBarSnapshot]），
+/// 停手 150ms 后回到实时 backdrop 的磨砂。
+///
+/// 为什么要这样：实时 backdrop 在两个过滤趟/滚动中途会采到上一帧或中间态的内容，
+/// 出现重影和噪点；而快照是「某一帧的画面 + 静态模糊」，不存在跨帧采样问题。
+class GlassTopBarMotion {
+  GlassTopBarMotion._();
+
+  static final GlassTopBarMotion I = GlassTopBarMotion._();
+
+  /// true = 正在滚动（顶栏用快照模糊）。
+  final ValueNotifier<bool> scrolling = ValueNotifier<bool>(false);
+
+  Timer? _timer;
+
+  /// 每次滚动位移调用一次。
+  void onScroll(double pixels) {
+    if (!scrolling.value) scrolling.value = true;
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 150), () {
+      scrolling.value = false;
+    });
+  }
+}
+
+/// 顶栏快照：滚动开始时对整屏做一次截帧（约 120ms 刷新一次），
+/// 截出顶栏那一条做静态模糊。相当于系统应用的「RenderEffect + 截图」做法。
+class GlassTopBarSnapshot {
+  GlassTopBarSnapshot._();
+
+  static final GlassTopBarSnapshot I = GlassTopBarSnapshot._();
+
+  /// 截帧用的根 RepaintBoundary（main.dart 里包在 MaterialApp 外层）。
+  static final GlobalKey rootKey = GlobalKey(debugLabel: 'glassSnapshotRoot');
+
+  /// 最近一帧顶栏区域的画面（逻辑像素）。
+  final ValueNotifier<ui.Image?> image = ValueNotifier<ui.Image?>(null);
+
+  DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _busy = false;
+
+  /// 请求一帧快照（内部节流，避免滚动时频繁 toImage 造成卡顿）。
+  void request({required double barHeight, double pixelRatio = 0.5}) {
+    if (_busy) return;
+    final now = DateTime.now();
+    if (now.difference(_last) < const Duration(milliseconds: 120)) return;
+    _last = now;
+    _busy = true;
+    // 滚动通知通常发生在布局/绘制阶段，直接 toImage 会拿到 debugNeedsPaint；
+    // 挪到下一帧的帧后回调里再截。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _capture(barHeight: barHeight, pixelRatio: pixelRatio).whenComplete(() {
+        _busy = false;
+      });
+    });
+  }
+
+  Future<void> _capture({
+    required double barHeight,
+    required double pixelRatio,
+  }) async {
+    try {
+      final object = rootKey.currentContext?.findRenderObject();
+      if (object is! RenderRepaintBoundary) return;
+      final full = await object.toImage(pixelRatio: pixelRatio);
+      final barH = (barHeight * pixelRatio).round().clamp(1, full.height);
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      canvas.drawImageRect(
+        full,
+        ui.Rect.fromLTWH(0, 0, full.width.toDouble(), barH.toDouble()),
+        ui.Rect.fromLTWH(0, 0, full.width.toDouble(), barH.toDouble()),
+        ui.Paint(),
+      );
+      final picture = recorder.endRecording();
+      final cropped = await picture.toImage(full.width, barH);
+      full.dispose();
+      picture.dispose();
+      final old = image.value;
+      image.value = cropped;
+      // 旧图可能还在本帧的 RawImage 里用着，延迟释放
+      if (old != null) {
+        Future<void>.delayed(const Duration(milliseconds: 300), old.dispose);
+      }
+    } catch (_) {
+      // 截帧失败就退回实时模糊，不弹错
+    }
+  }
+}
 /// 顶栏背景：一段「上强下无」的高斯模糊 + 压在上面的底色渐变。
 ///
 /// 真机性能关键，跟社区（liquid_glass_widgets / inspire_blur）和系统实现一致：
@@ -172,14 +263,26 @@ class GlassBarScrim extends StatelessWidget {
   Widget build(BuildContext context) {
     final route = ModalRoute.of(context);
     final anim = route?.animation;
-    if (anim == null) return _build(context, blur: true);
     final secondary = route?.secondaryAnimation;
+    final scrolling = GlassTopBarMotion.I.scrolling;
+    final snapshot = GlassTopBarSnapshot.I.image;
+    final animations = <Listenable>[
+      if (anim != null) anim,
+      if (secondary != null) secondary,
+      scrolling,
+      snapshot,
+    ];
     return AnimatedBuilder(
-      animation: Listenable.merge([anim, secondary]),
-      builder: (context, _) => _build(
-        context,
-        blur: _blurAllowed(anim, secondary),
-      ),
+      animation: Listenable.merge(animations),
+      builder: (context, _) {
+        final routeOk = _blurAllowed(anim, secondary);
+        return _build(
+          context,
+          blur: routeOk && !scrolling.value,
+          // 路由过渡帧没有模糊托底，色带压重一点保证标题可读
+          boost: routeOk ? 1.0 : 1.35,
+        );
+      },
     );
   }
 
@@ -197,14 +300,26 @@ class GlassBarScrim extends StatelessWidget {
     return primaryDone && secondaryIdle;
   }
 
-  Widget _build(BuildContext context, {required bool blur}) {
+  Widget _build(
+    BuildContext context, {
+    required bool blur,
+    required double boost,
+  }) {
     return LayoutBuilder(
       builder: (context, cons) {
         final h = cons.maxHeight;
         final w = cons.maxWidth;
         final dpr = MediaQuery.devicePixelRatioOf(context);
         final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
-        final blurLayer = blur ? _blurLayer(Size(w, h), dpr, fadeStart) : null;
+        // 滚动中：用快照 + 静态模糊（没有跨帧 backdrop 采样，不会重影/噪点）；
+        // 静止：回到实时 backdrop 磨砂。
+        Widget? blurLayer;
+        if (blur) {
+          blurLayer = _blurLayer(Size(w, h), dpr, fadeStart);
+        } else if (GlassTopBarMotion.I.scrolling.value) {
+          blurLayer = _snapshotLayer(w, h);
+          GlassTopBarSnapshot.I.request(barHeight: h);
+        }
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -213,7 +328,7 @@ class GlassBarScrim extends StatelessWidget {
             // 末段必须是「同色透明」而不是透明黑，否则线性插值会在中间混出一条暗带。
             DecoratedBox(
               decoration: BoxDecoration(
-                gradient: _tint(fadeStart, boost: blur && _program != null ? 1.0 : 1.35),
+                gradient: _tint(fadeStart, boost: boost),
               ),
             ),
           ],
@@ -222,6 +337,23 @@ class GlassBarScrim extends StatelessWidget {
     );
   }
 
+  /// 滚动中的快照模糊层：取最近一帧顶栏区域的截图，做静态高斯模糊再贴回来。
+  /// 截图按 0.5 像素比存的，放大回逻辑尺寸时模糊会被放大一倍，所以 sigma 也乘 0.5。
+  Widget? _snapshotLayer(double w, double h) {
+    final img = GlassTopBarSnapshot.I.image.value;
+    if (img == null) return null;
+    return Positioned.fill(
+      child: ClipRect(
+        child: ImageFiltered(
+          imageFilter: ui.ImageFilter.blur(
+            sigmaX: sigma * 0.5,
+            sigmaY: sigma * 0.5,
+          ),
+          child: RawImage(image: img, fit: BoxFit.fill, filterQuality: FilterQuality.low),
+        ),
+      ),
+    );
+  }
   /// 模糊层：横向一趟 + 纵向一趟两个 BackdropFilter 叠起来（后者能采到前者的输出，
   /// 等价于一次 2D 可分离高斯）。shader 不可用时退化为一层均匀模糊。
   Widget _blurLayer(Size size, double dpr, double fadeStart) {

@@ -572,9 +572,23 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
           localizationsDelegates: appLocalizationsDelegates,
           onNavigationNotification: onNavigationNotification,
           // 全局场景底：Scaffold 全透明，光斑（由主题插件给）透出玻璃「折射」感
-          builder: (context, child) => GlassBackground(
-              wells: theme.wells(preview == null ? brightness : (preview >= 0.5 ? Brightness.dark : Brightness.light)),
-              child: child!),
+          // 整屏一层 RepaintBoundary：滚动时顶栏截一帧做静态模糊（实时的
+          // backdrop 在滚动/overscroll 时会跨帧采样，产生重影和噪点）。
+          builder: (context, child) => RepaintBoundary(
+            key: GlassTopBarSnapshot.rootKey,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                if (n is ScrollUpdateNotification) {
+                  GlassTopBarMotion.I.onScroll(n.metrics.pixels);
+                }
+                return false;
+              },
+              child: GlassBackground(
+                wells: theme.wells(preview == null ? brightness : (preview >= 0.5 ? Brightness.dark : Brightness.light)),
+                child: child!,
+              ),
+            ),
+          ),
           home: const BootPage(),
         );
       },
