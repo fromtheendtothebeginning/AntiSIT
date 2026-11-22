@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
@@ -9,8 +7,6 @@ import 'theme_palette.dart';
 /// 最上面 60% 保持较强模糊，靠底部 40% 逐渐收敛到接近 0——内容从顶栏底边露出时基本清晰。
 const double kGlassBarFadeFraction = 0.4;
 
-/// 顶栏模糊的最大强度（逻辑像素，最上面那条窄带）。
-const double kGlassBarBlurSigma = 8;
 
 /// 顶栏是否用悬浮玻璃样式（「我的 → 外观」里的开关，默认开）。
 ///
@@ -131,139 +127,52 @@ ButtonStyle _orbStyle() => ButtonStyle(
       shape: const WidgetStatePropertyAll(CircleBorder()),
     );
 
-/// 顶栏背景：**3 条边缘窄带模糊** + 压在上面的底色渐变。
+/// 顶栏背景：**厂商式渐变遮罩（scrim）**——不做任何实时模糊。
 ///
-/// 为什么不是整条栏的实时模糊：Flutter/Impeller 里大面积、多层、或者图层原点带小数的
-/// `BackdropFilter` 在滚动时会跨帧采样/抖动（上游 #138615、#194846），表现为内容在玻璃
-/// 下面重影、跳动。Apple 系统 App 的可复刻做法（BlurUIKit / onejs）也是「沿边缘叠
-/// 几条窄带模糊」，只糊边缘、成本低、不需要大面积实时重采样。
+/// 依据（各家系统软件的实际做法）：
+/// * Android/AOSP 的真模糊是「系统合成器窗口模糊」（只糊窗口背后，糊不到 App 自己的内容），
+///   弱 GPU 设备直接不支持；OEM（HyperOS/ColorOS/One UI）在中端机上就只留这种色带。
+/// * iOS 的 UIVisualEffectView 不能加渐变遮罩，系统栏在滚动到顶时也是不透明背景。
+/// * Flutter 上游的实时 backdrop 在滚动中还有跨帧采样/小数原点偏移问题
+///   （#138615 / #194846），这正是之前重影与噪点的来源。
 ///
-/// 实现：从下往上叠 3 条越来越高的模糊带（sigma 逐条增大），后画的层能采到先前层的
-/// 输出，累积后越靠上越糊、最底边接近清晰；所有矩形的 y 都对齐到**整数物理像素**，
-/// 规避 Impeller「小数原点导致内容偏移 1px」的问题。
-/// 路由过渡帧（没有稳定 backdrop）不画模糊，只画色带。
+/// 所以这里只画一层「自上而下由实到透」的底色渐变：内容从顶栏底下穿过时是**淡出**
+/// 而不是被糊——没有 backdrop 捕获，滚动/overscroll/切页都不可能出重影、噪点或掉帧。
 class GlassBarScrim extends StatelessWidget {
   const GlassBarScrim({
     super.key,
     this.fadeFraction = kGlassBarFadeFraction,
-    this.sigma = kGlassBarBlurSigma,
   });
 
   final double fadeFraction;
-  final double sigma;
 
   @override
   Widget build(BuildContext context) {
-    final route = ModalRoute.of(context);
-    final anim = route?.animation;
-    final secondary = route?.secondaryAnimation;
-    if (anim == null) return _build(context, blur: true, boost: 1.0);
-    return AnimatedBuilder(
-      animation: Listenable.merge([anim, secondary]),
-      builder: (context, _) {
-        final routeOk = _blurAllowed(anim, secondary);
-        return _build(context, blur: routeOk, boost: routeOk ? 1.0 : 1.35);
-      },
-    );
-  }
-
-  /// 路由动画没跑完（进场 / 退场 / 被新页面压住的过渡帧）就不做模糊。
-  static bool _blurAllowed(
-    Animation<double>? primary,
-    Animation<double>? secondary,
-  ) {
-    final primaryDone = primary == null ||
-        primary.status == AnimationStatus.completed ||
-        primary.status == AnimationStatus.dismissed;
-    final secondaryIdle = secondary == null ||
-        secondary.status == AnimationStatus.dismissed ||
-        secondary.status == AnimationStatus.completed;
-    return primaryDone && secondaryIdle;
-  }
-
-  Widget _build(
-    BuildContext context, {
-    required bool blur,
-    required double boost,
-  }) {
     return LayoutBuilder(
-      builder: (context, cons) {
-        final h = cons.maxHeight;
-        final w = cons.maxWidth;
-        final dpr = MediaQuery.devicePixelRatioOf(context);
+      builder: (context, _) {
         final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
-        final strips = blur ? _strips(w, h, dpr, fadeStart) : const <Widget>[];
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            ...strips,
-            // 底色渐变：被糊掉的内容只是色块，这层让标题和按钮在任何内容上都读得清。
-            // 末段必须是「同色透明」而不是透明黑，否则线性插值会在中间混出一条暗带。
-            DecoratedBox(
-              decoration: BoxDecoration(gradient: _tint(fadeStart, boost: boost)),
-            ),
-          ],
+        return DecoratedBox(
+          decoration: BoxDecoration(gradient: _tint(fadeStart)),
         );
       },
     );
   }
 
-  /// 3 条窄带：越靠上的带越高、sigma 越大；底边那条 sigma 很小（近似清晰）。
-  /// 所有 y 坐标对齐到整数物理像素。
-  List<Widget> _strips(double w, double h, double dpr, double fadeStart) {
-    // 每条带从顶栏顶部延伸到 bottomF（占顶栏高度的比例）；从下往上 sigma 递增。
-    final bottoms = <double>[
-      1.0, // 整条顶栏（最下面一层，sigma 最小）
-      (fadeStart + (1 - fadeStart) * 0.55).clamp(0.0, 1.0),
-      fadeStart, // 最上面一层：到渐变段起点为止（最强）
-    ];
-    final maxSigma = sigma * dpr; // 物理像素
-    final sigmas = <double>[
-      maxSigma * 0.15, // 底边附近：几乎清晰
-      maxSigma * 0.45,
-      maxSigma * 0.8,
-    ];
-    // 累积后最上层的等效 sigma ≈ sqrt(0.15²+0.45²+0.8²)·max ≈ 0.93·max
-    final widgets = <Widget>[];
-    for (var i = 0; i < bottoms.length; i++) {
-      final bottom = _alignPx(bottoms[i] * h, dpr);
-      if (bottom <= 0) continue;
-      final s = sigmas[i] / dpr; // 转回逻辑像素
-      widgets.add(
-        Positioned(
-          left: 0,
-          right: 0,
-          top: 0,
-          height: bottom,
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: s, sigmaY: s),
-              child: const SizedBox.expand(),
-            ),
-          ),
-        ),
-      );
-    }
-    return widgets;
-  }
-
-  /// 把逻辑尺寸对齐到整数物理像素，避免图层原点带小数（Impeller #194846）。
-  static double _alignPx(double logical, double dpr) =>
-      (logical * dpr).roundToDouble() / dpr;
-
-  LinearGradient _tint(double fadeStart, {double boost = 1.0}) {
+  /// 厂商式色带：顶上几乎不透明（标题/状态栏读得清），到顶栏底边完全透明。
+  /// 末段用「同色透明」而不是透明黑——RGBA 线性插值到透明黑会混出暗带。
+  LinearGradient _tint(double fadeStart) {
     final base = SemColors.bg;
     final fade = fadeStart.clamp(0.0, 0.95);
-    double a(double v) => (v * boost).clamp(0.0, 1.0);
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        base.withValues(alpha: a(0.55)),
-        base.withValues(alpha: a(0.38)),
+        base.withValues(alpha: 0.96),
+        base.withValues(alpha: 0.88),
+        base.withValues(alpha: 0.55),
         base.withValues(alpha: 0),
       ],
-      stops: [0, fade, 1],
+      stops: [0, fade * 0.75, fade, 1],
     );
   }
 }

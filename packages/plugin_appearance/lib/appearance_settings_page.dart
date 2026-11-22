@@ -223,7 +223,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                   secondary: const Icon(Icons.blur_on_rounded),
                   title: const Text('悬浮玻璃顶栏'),
                   subtitle: const Text(
-                    '内容从顶栏底下穿过，靠近顶栏时渐变模糊；关闭则用普通顶栏',
+                    '内容从顶栏底下穿过，靠近顶栏时渐变淡出（不做实时模糊，滚动最稳）；关闭则用普通顶栏',
                     style: TextStyle(fontSize: 12),
                   ),
                   value: st.glassTopBar,

@@ -39,16 +39,15 @@ void main() {
     expect(tester.getSize(find.byType(AppBar)).height, kToolbarHeight);
   });
 
-  testWidgets('背景是 3 条边缘窄带模糊（不是整条栏的大面积实时模糊）', (tester) async {
+  testWidgets('背景是纯渐变遮罩，没有任何实时模糊', (tester) async {
     await tester.pumpWidget(host(child: page()));
-    // Apple 系统 App 的可复刻做法：沿边缘叠几条窄带模糊。
-    // 窄带数量固定为 3，且都不覆盖整条栏之外的区域。
+    // 方案 B：只有色带、不画 backdrop——滚动/overscroll/切页都不可能出重影与噪点
     expect(
       find.descendant(
         of: find.byType(AppBar),
         matching: find.byType(BackdropFilter),
       ),
-      findsNWidgets(3),
+      findsNothing,
     );
   });
 
