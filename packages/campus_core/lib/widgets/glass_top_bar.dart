@@ -1,23 +1,16 @@
-import 'dart:async';
-import 'dart:ui' as ui;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 
 import '../app_state.dart';
 import 'theme_palette.dart';
 
 /// 顶栏里「渐变段」占顶栏高度的比例：模糊只发生在顶栏自己的范围内，
-/// 上 60% 保持最强模糊，靠底部 40% 从最强线性降到 0——内容从顶栏底边露出时是清晰的。
+/// 最上面 60% 保持较强模糊，靠底部 40% 逐渐收敛到接近 0——内容从顶栏底边露出时基本清晰。
 const double kGlassBarFadeFraction = 0.4;
 
-/// 背景（顶栏那条渐变模糊带）的最大模糊强度（逻辑像素）。**比按钮小一档**：
-/// 按钮是「隔着玻璃看内容」的强模糊，背景只把穿过去的内容压淡。
+/// 顶栏模糊的最大强度（逻辑像素，最上面那条窄带）。
 const double kGlassBarBlurSigma = 8;
-
-/// 模糊值随纵坐标的衰减曲线：顶栏顶部一段保持最强，最后 [kGlassBarFadeFraction]
-/// 那一段按 (1 - f)^curve 收敛到 0（数值越大越「顶强底缓」）。
-const double kGlassBarBlurCurve = 1.8;
 
 /// 顶栏是否用悬浮玻璃样式（「我的 → 外观」里的开关，默认开）。
 ///
@@ -41,15 +34,12 @@ double glassTopInset(
   return (mq?.viewPadding.top ?? 0) + toolbarHeight;
 }
 
-/// 玻璃悬浮顶栏：标题与按钮浮在「越往上越糊」的高斯模糊之上，内容从它底下穿过去。
+/// 玻璃悬浮顶栏：标题与按钮浮在「越往上越糊」的模糊之上，内容从它底下穿过去。
 ///
 /// 返回的仍是真 [AppBar]（不是自绘工具栏）：返回键、tooltip、状态栏图标深浅、
-/// 标题居中/省略等系统行为全部保持原样，只是背景换成了渐变模糊。
+/// 标题居中/省略等系统行为全部保持原样，只是背景换成了分层窄带模糊。
 /// 页面侧还要把 `Scaffold.extendBodyBehindAppBar` 打开、并给第一个滚动区加上
 /// [glassTopInset] 的顶部留白，内容才会从顶栏底下穿过去而不是被压在下面。
-///
-/// 需要 `context` 是为了自己决定返回键：只有能 pop 的页面才给 [BackButton]，
-/// 但返回键和右上角图标都要套上悬浮玻璃圆钮（框架自动加的返回键套不了样式）。
 AppBar glassAppBar(
   BuildContext context, {
   required Widget title,
@@ -74,9 +64,7 @@ AppBar glassAppBar(
       bottom: bottom,
     );
   }
-  final bottomHeight = bottom?.preferredSize.height ?? 0;
-  final autoLeading =
-      automaticallyImplyLeading &&
+  final autoLeading = automaticallyImplyLeading &&
           leading == null &&
           (ModalRoute.of(context)?.canPop ?? false)
       ? const BackButton()
@@ -95,13 +83,11 @@ AppBar glassAppBar(
     toolbarHeight: toolbarHeight,
     titleSpacing: titleSpacing,
     title: title,
-    // flexibleSpace 铺满整个顶栏（含状态栏）：渐变模糊只发生在顶栏自己的范围里，
-    // 不向下延伸——内容从顶栏底边露出时已经是清晰的
     flexibleSpace: const IgnorePointer(child: GlassBarScrim()),
     bottom: bottom == null
         ? null
         : PreferredSize(
-            preferredSize: Size.fromHeight(bottomHeight),
+            preferredSize: Size.fromHeight(bottom.preferredSize.height),
             child: bottom,
           ),
   );
@@ -110,177 +96,73 @@ AppBar glassAppBar(
 /// 把标题栏里的一个按钮套成悬浮玻璃圆钮（40 直径、更实一档的玻璃面 + 强描边）。
 /// [glassAppBar] 会自动处理 `IconButton` 类型的 action；包在 ListenableBuilder /
 /// PopupMenuButton 之类结构里的按钮不会被识别，页面要显式用这个包一下。
-Widget glassTopBarAction(Widget child, {double edge = 3}) => _orb(child, edge: edge);
+Widget glassTopBarAction(Widget child, {double edge = 3}) =>
+    _orb(child, edge: edge);
 
-/// 悬浮圆钮：把标题栏里的按钮套成 40 直径的玻璃圆片。
-/// 圆片内不再做第二层模糊（会和顶栏的模糊层嵌套、在 Impeller 下产生椭圆光晕），
-/// 改用比顶栏更实一档的玻璃面 + 强描边，读起来仍是「浮在模糊上的一块厚玻璃」。
+/// 悬浮圆钮：40 直径的玻璃圆片（更实一档的玻璃面 + 细描边）。
 Widget _orb(Widget child, {required double edge}) => Padding(
-  padding: EdgeInsets.only(left: edge, right: edge),
-  child: Container(
-    width: 40,
-    height: 40,
-    decoration: BoxDecoration(
-      color: SemColors.thumb,
-      shape: BoxShape.circle,
-      border: Border.all(color: SemColors.borderStrong),
-    ),
-    child: Center(
-      child: IconButtonTheme(
-        data: IconButtonThemeData(style: _orbStyle()),
-        child: child,
+      padding: EdgeInsets.only(left: edge, right: edge),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: SemColors.thumb,
+          shape: BoxShape.circle,
+          border: Border.all(color: SemColors.borderStrong),
+        ),
+        child: Center(
+          child: IconButtonTheme(
+            data: IconButtonThemeData(style: _orbStyle()),
+            child: child,
+          ),
+        ),
       ),
-    ),
-  ),
-);
+    );
 
-/// 圆钮里的图标按钮样式：只留点击/图标色，背景交给外面那层玻璃（含模糊与描边）。
+/// 圆钮里的图标按钮样式：只留点击/图标色，背景交给外面那层玻璃。
 ButtonStyle _orbStyle() => ButtonStyle(
-  fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-  minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
-  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  elevation: const WidgetStatePropertyAll(0),
-  foregroundColor: WidgetStatePropertyAll(SemColors.textPrimary),
-  backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
-  shape: const WidgetStatePropertyAll(CircleBorder()),
-);
+      fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+      minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
+      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      elevation: const WidgetStatePropertyAll(0),
+      foregroundColor: WidgetStatePropertyAll(SemColors.textPrimary),
+      backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+      shape: const WidgetStatePropertyAll(CircleBorder()),
+    );
 
-/// 顶栏「滚动中」状态：滚动期间顶栏用**快照模糊**（见 [GlassTopBarSnapshot]），
-/// 停手 150ms 后回到实时 backdrop 的磨砂。
+/// 顶栏背景：**3 条边缘窄带模糊** + 压在上面的底色渐变。
 ///
-/// 为什么要这样：实时 backdrop 在滚动/overscroll 保持时会跨帧采样，出重影和噪点；
-/// 快照是「某一帧的画面 + 静态模糊」，不存在跨帧采样问题。
-class GlassTopBarMotion {
-  GlassTopBarMotion._();
-
-  static final GlassTopBarMotion I = GlassTopBarMotion._();
-
-  /// true = 正在滚动（顶栏用快照模糊）。
-  final ValueNotifier<bool> scrolling = ValueNotifier<bool>(false);
-
-  /// 最近一次滚动位置（逻辑像素）：快照按它和截帧位置的差平移，才会跟内容一起滚。
-  final ValueNotifier<double> position = ValueNotifier<double>(0);
-
-  Timer? _timer;
-
-  void onScroll(double p) {
-    position.value = p;
-    if (!scrolling.value) scrolling.value = true;
-    _timer?.cancel();
-    _timer = Timer(const Duration(milliseconds: 150), () {
-      scrolling.value = false;
-    });
-  }
-}
-
-/// 顶栏快照：滚动开始时对**整屏**截一帧（约 120ms 刷新一次）。
-/// 显示时按「当前滚动位置 − 截帧时位置」把快照反向平移并裁到顶栏区域，
-/// 所以快照是跟着内容一起滚的，不是定住的一张图。
-/// 相当于 Android 系统应用的「截帧 + RenderEffect 模糊」做法。
-class GlassTopBarSnapshot {
-  GlassTopBarSnapshot._();
-
-  static final GlassTopBarSnapshot I = GlassTopBarSnapshot._();
-
-  /// 截帧用的根 RepaintBoundary（main.dart 里包在 MaterialApp 外层）。
-  static final GlobalKey rootKey = GlobalKey(debugLabel: 'glassSnapshotRoot');
-
-  /// 最近一帧整屏画面。
-  final ValueNotifier<ui.Image?> image = ValueNotifier<ui.Image?>(null);
-
-  /// 截帧时的滚动位置（逻辑像素），用来算快照该跟着滚多少。
-  double basePixels = 0;
-
-  /// 截帧像素比（图片像素 / 逻辑像素）。
-  double pixelRatio = 0.5;
-
-  DateTime _last = DateTime.fromMillisecondsSinceEpoch(0);
-  bool _busy = false;
-
-  /// 请求一帧快照（内部节流，避免滚动时频繁 toImage 造成卡顿）。
-  void request({required double pixels, double pixelRatio = 0.5}) {
-    if (_busy) return;
-    final now = DateTime.now();
-    if (now.difference(_last) < const Duration(milliseconds: 120)) return;
-    _last = now;
-    _busy = true;
-    this.pixelRatio = pixelRatio;
-    basePixels = pixels;
-    // 滚动通知通常发生在布局/绘制阶段，直接 toImage 会拿到 debugNeedsPaint；
-    // 挪到下一帧的帧后回调里再截。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _capture().whenComplete(() {
-        _busy = false;
-      });
-    });
-  }
-
-  Future<void> _capture() async {
-    try {
-      final object = rootKey.currentContext?.findRenderObject();
-      if (object is! RenderRepaintBoundary) return;
-      final img = await object.toImage(pixelRatio: pixelRatio);
-      final old = image.value;
-      image.value = img;
-      // 旧图可能还在本帧的 RawImage 里用着，延迟释放
-      if (old != null) {
-        Future<void>.delayed(const Duration(milliseconds: 300), old.dispose);
-      }
-    } catch (_) {
-      // 截帧失败就退回实时模糊，不弹错
-    }
-  }
-}
-/// 顶栏背景：一段「上强下无」的高斯模糊 + 压在上面的底色渐变。
+/// 为什么不是整条栏的实时模糊：Flutter/Impeller 里大面积、多层、或者图层原点带小数的
+/// `BackdropFilter` 在滚动时会跨帧采样/抖动（上游 #138615、#194846），表现为内容在玻璃
+/// 下面重影、跳动。Apple 系统 App 的可复刻做法（BlurUIKit / onejs）也是「沿边缘叠
+/// 几条窄带模糊」，只糊边缘、成本低、不需要大面积实时重采样。
 ///
-/// 真机性能关键，跟社区（liquid_glass_widgets / inspire_blur）和系统实现一致：
-/// * **只有一个 BackdropFilter**：backdrop 只捕获一次；
-/// * 模糊用本仓库自带的 shader **单趟 2D 采样**（一次绘制）。不再叠多层模糊——
-///   多层在 Impeller 下滚动时每层各自采样不同帧的 backdrop，会出重影/噪点，
-///   还会把 GPU 打满；本版本 Flutter 的 ImageFilter.compose 组合两个 shader
-///   filter 会静默失效，所以也不用「两趟可分离」那条路；
-/// * 模糊强度随纵坐标渐变（shader 里按顶栏区域归一化），顶边最强、底边收敛到 0，
-///   所以内容从顶栏底边露出来时是清晰的，没有硬边；
-/// * 路由过渡期间不画模糊：过渡帧没有稳定的 backdrop，会得到一块发黑的毛玻璃；
-/// * 后端不支持 shader filter（Skia / Web）时退化为**单层均匀模糊**，不再有叠层问题。
+/// 实现：从下往上叠 3 条越来越高的模糊带（sigma 逐条增大），后画的层能采到先前层的
+/// 输出，累积后越靠上越糊、最底边接近清晰；所有矩形的 y 都对齐到**整数物理像素**，
+/// 规避 Impeller「小数原点导致内容偏移 1px」的问题。
+/// 路由过渡帧（没有稳定 backdrop）不画模糊，只画色带。
 class GlassBarScrim extends StatelessWidget {
   const GlassBarScrim({
     super.key,
     this.fadeFraction = kGlassBarFadeFraction,
     this.sigma = kGlassBarBlurSigma,
-    this.curve = kGlassBarBlurCurve,
   });
 
   final double fadeFraction;
   final double sigma;
-  final double curve;
 
   @override
   Widget build(BuildContext context) {
     final route = ModalRoute.of(context);
     final anim = route?.animation;
     final secondary = route?.secondaryAnimation;
-    final scrolling = GlassTopBarMotion.I.scrolling;
-    final position = GlassTopBarMotion.I.position;
-    final snapshot = GlassTopBarSnapshot.I.image;
-    final animations = <Listenable>[
-      if (anim != null) anim,
-      if (secondary != null) secondary,
-      scrolling,
-      position,
-      snapshot,
-    ];
+    if (anim == null) return _build(context, blur: true, boost: 1.0);
     return AnimatedBuilder(
-      animation: Listenable.merge(animations),
+      animation: Listenable.merge([anim, secondary]),
       builder: (context, _) {
         final routeOk = _blurAllowed(anim, secondary);
-        return _build(
-          context,
-          blur: routeOk && !scrolling.value,
-          // 路由过渡帧没有模糊托底，色带压重一点保证标题可读
-          boost: routeOk ? 1.0 : 1.35,
-        );
+        return _build(context, blur: routeOk, boost: routeOk ? 1.0 : 1.35);
       },
     );
   }
@@ -310,25 +192,15 @@ class GlassBarScrim extends StatelessWidget {
         final w = cons.maxWidth;
         final dpr = MediaQuery.devicePixelRatioOf(context);
         final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
-        // 滚动中：用快照 + 静态模糊（没有跨帧 backdrop 采样，不会重影/噪点）；
-        // 静止：回到实时 backdrop 磨砂。
-        Widget? blurLayer;
-        if (blur) {
-          blurLayer = _blurLayer(Size(w, h), dpr, fadeStart);
-        } else if (GlassTopBarMotion.I.scrolling.value) {
-          blurLayer = _snapshotLayer(w, h);
-          GlassTopBarSnapshot.I.request(pixels: GlassTopBarMotion.I.position.value);
-        }
+        final strips = blur ? _strips(w, h, dpr, fadeStart) : const <Widget>[];
         return Stack(
           fit: StackFit.expand,
           children: [
-            if (blurLayer != null) blurLayer,
+            ...strips,
             // 底色渐变：被糊掉的内容只是色块，这层让标题和按钮在任何内容上都读得清。
             // 末段必须是「同色透明」而不是透明黑，否则线性插值会在中间混出一条暗带。
             DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: _tint(fadeStart, boost: boost),
-              ),
+              decoration: BoxDecoration(gradient: _tint(fadeStart, boost: boost)),
             ),
           ],
         );
@@ -336,101 +208,50 @@ class GlassBarScrim extends StatelessWidget {
     );
   }
 
-  /// 滚动中的快照模糊层：整屏快照按「当前滚动位置 − 截帧位置」反向平移，
-  /// 裁到顶栏区域后做静态高斯模糊——所以它跟内容一起滚，而不是定住。
-  /// 截图按 0.5 像素比存，放大回逻辑尺寸时模糊会翻倍，所以 sigma 也乘那比例。
-  Widget? _snapshotLayer(double w, double h) {
-    final store = GlassTopBarSnapshot.I;
-    final img = store.image.value;
-    if (img == null) return null;
-    final scale = store.pixelRatio; // 图片像素 / 逻辑像素
-    final logicalW = img.width / scale;
-    final logicalH = img.height / scale;
-    final dy = (GlassTopBarMotion.I.position.value - store.basePixels)
-        .clamp(0.0, (logicalH - h).clamp(0.0, double.infinity));
-    return Positioned.fill(
-      child: ClipRect(
-        child: ImageFiltered(
-          imageFilter: ui.ImageFilter.blur(
-            sigmaX: sigma * scale,
-            sigmaY: sigma * scale,
-          ),
-          child: Transform.translate(
-            offset: Offset(0, -dy),
-            child: SizedBox(
-              width: logicalW,
-              height: logicalH,
-              child: RawImage(
-                image: img,
-                fit: BoxFit.fill,
-                filterQuality: FilterQuality.low,
-              ),
+  /// 3 条窄带：越靠上的带越高、sigma 越大；底边那条 sigma 很小（近似清晰）。
+  /// 所有 y 坐标对齐到整数物理像素。
+  List<Widget> _strips(double w, double h, double dpr, double fadeStart) {
+    // 每条带从顶栏顶部延伸到 bottomF（占顶栏高度的比例）；从下往上 sigma 递增。
+    final bottoms = <double>[
+      1.0, // 整条顶栏（最下面一层，sigma 最小）
+      (fadeStart + (1 - fadeStart) * 0.55).clamp(0.0, 1.0),
+      fadeStart, // 最上面一层：到渐变段起点为止（最强）
+    ];
+    final maxSigma = sigma * dpr; // 物理像素
+    final sigmas = <double>[
+      maxSigma * 0.15, // 底边附近：几乎清晰
+      maxSigma * 0.45,
+      maxSigma * 0.8,
+    ];
+    // 累积后最上层的等效 sigma ≈ sqrt(0.15²+0.45²+0.8²)·max ≈ 0.93·max
+    final widgets = <Widget>[];
+    for (var i = 0; i < bottoms.length; i++) {
+      final bottom = _alignPx(bottoms[i] * h, dpr);
+      if (bottom <= 0) continue;
+      final s = sigmas[i] / dpr; // 转回逻辑像素
+      widgets.add(
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          height: bottom,
+          child: ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: s, sigmaY: s),
+              child: const SizedBox.expand(),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-  /// 模糊层：横向一趟 + 纵向一趟两个 BackdropFilter 叠起来（后者能采到前者的输出，
-  /// 等价于一次 2D 可分离高斯）。shader 不可用时退化为一层均匀模糊。
-  Widget _blurLayer(Size size, double dpr, double fadeStart) {
-    final hPass = _passFilter(
-      size: size,
-      dpr: dpr,
-      fadeStart: fadeStart,
-      axis: 0,
-    );
-    final vPass = _passFilter(
-      size: size,
-      dpr: dpr,
-      fadeStart: fadeStart,
-      axis: 1,
-    );
-    if (hPass == null || vPass == null) {
-      return Positioned.fill(
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-            child: const SizedBox.expand(),
           ),
         ),
       );
     }
-    return Positioned.fill(
-      child: ClipRect(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            BackdropFilter(filter: hPass, child: const SizedBox.expand()),
-            BackdropFilter(filter: vPass, child: const SizedBox.expand()),
-          ],
-        ),
-      ),
-    );
+    return widgets;
   }
 
-  /// 单趟一维高斯的滤镜；shader 不可用时返回 null。
-  ui.ImageFilter? _passFilter({
-    required Size size,
-    required double dpr,
-    required double fadeStart,
-    required double axis,
-  }) {
-    final program = _program;
-    if (program == null || !ui.ImageFilter.isShaderFilterSupported) return null;
-    final shader = program.fragmentShader();
-    // float uniform 下标：u_size 占 0、1（引擎写），之后依次是下面这些字段；
-    // sampler 不占 float 下标（引擎绑定 backdrop）。
-    shader.setFloat(2, 0); // u_region_origin.x：顶栏在屏幕左上角
-    shader.setFloat(3, 0); // u_region_origin.y
-    shader.setFloat(4, size.width * dpr); // u_region_size.x
-    shader.setFloat(5, size.height * dpr); // u_region_size.y
-    shader.setFloat(6, sigma * dpr); // u_sigma_max（物理像素）
-    shader.setFloat(7, fadeStart); // u_fade_start
-    shader.setFloat(8, curve); // u_curve
-    shader.setFloat(9, axis); // u_axis：0 横向、1 纵向
-    return ui.ImageFilter.shader(shader);
-  }  LinearGradient _tint(double fadeStart, {double boost = 1.0}) {
+  /// 把逻辑尺寸对齐到整数物理像素，避免图层原点带小数（Impeller #194846）。
+  static double _alignPx(double logical, double dpr) =>
+      (logical * dpr).roundToDouble() / dpr;
+
+  LinearGradient _tint(double fadeStart, {double boost = 1.0}) {
     final base = SemColors.bg;
     final fade = fadeStart.clamp(0.0, 0.95);
     double a(double v) => (v * boost).clamp(0.0, 1.0);
@@ -444,23 +265,5 @@ class GlassBarScrim extends StatelessWidget {
       ],
       stops: [0, fade, 1],
     );
-  }
-}
-
-/// 顶栏渐进模糊 shader（两趟可分离高斯共用同一个 .frag）。
-///
-/// 启动时调用一次预热，避免第一帧顶栏临时编译 shader 造成卡顿；
-/// 加载失败也没关系，[GlassBarScrim] 会自动退化到单层均匀模糊。
-ui.FragmentProgram? _program;
-bool _programFailed = false;
-
-Future<void> preloadGlassTopBarShader() async {
-  if (_program != null || _programFailed) return;
-  try {
-    _program = await ui.FragmentProgram.fromAsset(
-      'packages/campus_core/shaders/glass_progressive_blur.frag',
-    );
-  } catch (_) {
-    _programFailed = true;
   }
 }

@@ -372,10 +372,8 @@ bool onNavigationNotification(NavigationNotification notification) {
   return true;
 }
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // 顶栏渐进模糊的 shader 预热：放在首帧前，避免第一次画顶栏时临时编译卡一下
-  await preloadGlassTopBarShader();
   // 敏感凭据改走加密存储（Keystore）：默认的内存实现不持久化，必须在这里装上真机版
   SecureStore.I = FlutterSecureStore();
   // 竖屏锁定：手机横过来也不跟着陀螺仪转（页面布局按竖屏设计）
@@ -572,23 +570,9 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
           localizationsDelegates: appLocalizationsDelegates,
           onNavigationNotification: onNavigationNotification,
           // 全局场景底：Scaffold 全透明，光斑（由主题插件给）透出玻璃「折射」感
-          // 整屏一层 RepaintBoundary：滚动时顶栏截一帧做静态模糊（实时的
-          // backdrop 在滚动/overscroll 时会跨帧采样，产生重影和噪点）。
-          builder: (context, child) => RepaintBoundary(
-            key: GlassTopBarSnapshot.rootKey,
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                if (n is ScrollUpdateNotification) {
-                  GlassTopBarMotion.I.onScroll(n.metrics.pixels);
-                }
-                return false;
-              },
-              child: GlassBackground(
-                wells: theme.wells(preview == null ? brightness : (preview >= 0.5 ? Brightness.dark : Brightness.light)),
-                child: child!,
-              ),
-            ),
-          ),
+          builder: (context, child) => GlassBackground(
+              wells: theme.wells(preview == null ? brightness : (preview >= 0.5 ? Brightness.dark : Brightness.light)),
+              child: child!),
           home: const BootPage(),
         );
       },

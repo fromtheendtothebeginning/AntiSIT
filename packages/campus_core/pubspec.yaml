@@ -28,7 +28,3 @@ dependencies:
   timezone: ^0.10.0
   lpinyin: ^2.0.3
 
-flutter:
-  # 顶栏渐进模糊：单个 BackdropFilter + 一次 backdrop 捕获、两趟可分离高斯（Impeller）
-  shaders:
-    - shaders/glass_progressive_blur.frag

@@ -39,15 +39,16 @@ void main() {
     expect(tester.getSize(find.byType(AppBar)).height, kToolbarHeight);
   });
 
-  testWidgets('背景带是「一次 backdrop 捕获 + shader 两趟」的单层模糊', (tester) async {
+  testWidgets('背景是 3 条边缘窄带模糊（不是整条栏的大面积实时模糊）', (tester) async {
     await tester.pumpWidget(host(child: page()));
-    // 只允许一层 BackdropFilter：叠多层在真机上会掉帧、出重影和噪点
+    // Apple 系统 App 的可复刻做法：沿边缘叠几条窄带模糊。
+    // 窄带数量固定为 3，且都不覆盖整条栏之外的区域。
     expect(
       find.descendant(
         of: find.byType(AppBar),
         matching: find.byType(BackdropFilter),
       ),
-      findsOneWidget,
+      findsNWidgets(3),
     );
   });
 
