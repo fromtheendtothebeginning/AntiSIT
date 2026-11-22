@@ -440,7 +440,9 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
               ),
             ],
           ),
-          body: !_isDirect
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: !_isDirect
               // 非直连时是居中的整块提示，用 Padding 顶出悬浮顶栏
               ? Padding(
                   padding: EdgeInsets.only(top: topInset),
@@ -505,6 +507,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                     ),
                   ),
                 ),
+          ),
         );
       },
     );

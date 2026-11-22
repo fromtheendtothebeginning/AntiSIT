@@ -96,7 +96,9 @@ class _ConfigPageState extends State<ConfigPage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('配置')),
-          body: ListView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: ListView(
             padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
             children: [
               AppCard(
@@ -156,6 +158,7 @@ class _ConfigPageState extends State<ConfigPage> {
                 ],
               ),
             ],
+          ),
           ),
         );
       },

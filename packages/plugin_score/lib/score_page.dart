@@ -211,7 +211,9 @@ class _ScorePageState extends State<ScorePage> {
               ),
             ],
           ),
-          body: Column(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: Column(
             children: [
               Padding(
                 // 顶部让出悬浮顶栏
@@ -236,6 +238,7 @@ class _ScorePageState extends State<ScorePage> {
                 ),
               ),
             ],
+          ),
           ),
         );
       },

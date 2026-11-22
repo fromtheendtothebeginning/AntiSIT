@@ -1569,7 +1569,9 @@ class _TimetablePageState extends State<TimetablePage> {
               ),
             ],
           ),
-          body: ListenableBuilder(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: ListenableBuilder(
             listenable: Listenable.merge([AppState.I, TtBackground.I]),
             builder: (context, _) {
               if (_dayView) {
@@ -1631,6 +1633,7 @@ class _TimetablePageState extends State<TimetablePage> {
                 ],
               );
             },
+          ),
           ),
         );
       },

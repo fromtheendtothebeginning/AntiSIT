@@ -182,12 +182,55 @@ class GlassBarScrim extends StatelessWidget {
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        base.withValues(alpha: 0.96),
-        base.withValues(alpha: 0.95),
         base.withValues(alpha: 0.55),
+        base.withValues(alpha: 0.5),
+        base.withValues(alpha: 0.3),
         base.withValues(alpha: 0),
       ],
       stops: [0, solidEnd, (solidEnd + 0.12).clamp(0.0, 1.0), 1],
+    );
+  }
+}
+/// 内容顶部渐隐：给页面 body 套一层 alpha 渐变，让内容在顶栏区域逐渐透明。
+/// 和顶栏色带（盖一层同色）叠加：色带负责"压低对比度"，这层负责"内容自己溶解"。
+///
+/// [barHeight] 传页面在 Scaffold 之上算好的 glassTopInset(context)。
+class GlassFadedBody extends StatelessWidget {
+  const GlassFadedBody({
+    super.key,
+    required this.barHeight,
+    required this.child,
+  });
+
+  final double barHeight;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!glassTopBarEnabled || barHeight <= 0) return child;
+    return LayoutBuilder(
+      builder: (context, cons) {
+        final h = cons.maxHeight;
+        if (!h.isFinite || h <= 0) return child;
+        final end = (barHeight / h).clamp(0.0, 1.0);
+        // 从顶栏约 55% 高度开始渐显：标题行一带内容基本不可见，越往下越清晰
+        final start = ((barHeight * 0.55) / h).clamp(0.0, end);
+        return ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (rect) => LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: const [
+              Color(0x00000000),
+              Color(0x00000000),
+              Color(0xFFFFFFFF),
+              Color(0xFFFFFFFF),
+            ],
+            stops: [0, start, end, 1],
+          ).createShader(rect),
+          child: child,
+        );
+      },
     );
   }
 }

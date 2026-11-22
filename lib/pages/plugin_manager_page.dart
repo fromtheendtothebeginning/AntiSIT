@@ -120,7 +120,9 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
           // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('插件管理')),
-          body: ListView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: ListView(
             // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
             children: [
@@ -170,6 +172,7 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
                 ),
               ),
             ],
+          ),
           ),
         );
       },

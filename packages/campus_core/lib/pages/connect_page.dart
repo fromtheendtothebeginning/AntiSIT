@@ -465,7 +465,9 @@ class _ConnectPageState extends State<ConnectPage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('连接设置')),
-          body: GestureDetector(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: GestureDetector(
             // 页面区域横滑切模式；页面内部真接住横滑的组件（滑块自己）照旧优先——
             // 和主界面底栏切页是同一套做法。
             behavior: HitTestBehavior.translucent,
@@ -549,6 +551,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 ),
               ],
             ),
+          ),
           ),
         );
       },
