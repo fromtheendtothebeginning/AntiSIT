@@ -281,31 +281,50 @@ class GlassBarScrim extends StatelessWidget {
     );
   }
 
-  /// 模糊层：**只有一个 BackdropFilter**（一次 backdrop 捕获），
-  /// 模糊由 shader 一次 2D 采样完成——两个捕获在滚动/overscroll 时会把重影挂在顶栏上。
-  /// shader 不可用时退化为一层均匀模糊。
+  /// 模糊层：横向一趟 + 纵向一趟两个 BackdropFilter 叠起来（后者能采到前者的输出，
+  /// 等价于一次 2D 可分离高斯）。shader 不可用时退化为一层均匀模糊。
   Widget _blurLayer(Size size, double dpr, double fadeStart) {
-    final filter = _progressiveFilter(
+    final hPass = _passFilter(
       size: size,
       dpr: dpr,
       fadeStart: fadeStart,
+      axis: 0,
     );
+    final vPass = _passFilter(
+      size: size,
+      dpr: dpr,
+      fadeStart: fadeStart,
+      axis: 1,
+    );
+    if (hPass == null || vPass == null) {
+      return Positioned.fill(
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      );
+    }
     return Positioned.fill(
       child: ClipRect(
-        child: BackdropFilter(
-          filter:
-              filter ?? ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-          child: const SizedBox.expand(),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            BackdropFilter(filter: hPass, child: const SizedBox.expand()),
+            BackdropFilter(filter: vPass, child: const SizedBox.expand()),
+          ],
         ),
       ),
     );
   }
 
-  /// 单趟 2D 高斯 + 渐变 sigma 的滤镜；shader 不可用时返回 null。
-  ui.ImageFilter? _progressiveFilter({
+  /// 单趟一维高斯的滤镜；shader 不可用时返回 null。
+  ui.ImageFilter? _passFilter({
     required Size size,
     required double dpr,
     required double fadeStart,
+    required double axis,
   }) {
     final program = _program;
     if (program == null || !ui.ImageFilter.isShaderFilterSupported) return null;
@@ -319,6 +338,7 @@ class GlassBarScrim extends StatelessWidget {
     shader.setFloat(6, sigma * dpr); // u_sigma_max（物理像素）
     shader.setFloat(7, fadeStart); // u_fade_start
     shader.setFloat(8, curve); // u_curve
+    shader.setFloat(9, axis); // u_axis：0 横向、1 纵向
     return ui.ImageFilter.shader(shader);
   }  LinearGradient _tint(double fadeStart, {double boost = 1.0}) {
     final base = SemColors.bg;
