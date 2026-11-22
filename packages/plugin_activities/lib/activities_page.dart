@@ -318,38 +318,33 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                 ),
             ],
           ),
-          body: Column(
-            children: [
-              Padding(
-                // 顶部让出悬浮顶栏
-                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 0),
-                child: GlassTabs(
-                  labels: const ['活动广场', '我的报名'],
-                  index: _tab,
-                  onChanged: (i) => _tabs.animateToPage(
-                    i,
-                    duration: const Duration(milliseconds: 260),
-                    curve: Curves.easeOutCubic,
-                  ),
-                  height: 32,
-                  fontSize: 11.5,
-                ),
-              ),
-              Expanded(
-                child: PageView(
-                  controller: _tabs,
-                  onPageChanged: _switchTab,
-                  children: [_marketView(), _signedView()],
-                ),
-              ),
-            ],
+          body: GlassFadedBody(
+            barHeight: topInset,
+            // 分段切换器放进各页的滚动内容里：会和内容一起滚上去，不再钉在顶部
+            child: PageView(
+              controller: _tabs,
+              onPageChanged: _switchTab,
+              children: [_marketView(topInset), _signedView(topInset)],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _marketView() {
+  Widget _tabsRow() => GlassTabs(
+        labels: const ['活动广场', '我的报名'],
+        index: _tab,
+        onChanged: (i) => _tabs.animateToPage(
+          i,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        ),
+        height: 32,
+        fontSize: 11.5,
+      );
+
+  Widget _marketView(double topInset) {
     final list = _filtered;
     return PageStateView(
       loading: _loading && _list.isEmpty,
@@ -361,8 +356,9 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
         onRefresh: _load,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+          padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 20),
           children: [
+            _tabsRow(),
             ToolRefreshBar(
               refreshing: _loading,
               fromCache: _fromCache,
@@ -497,7 +493,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   /// 「我的报名」：已报名的第二课堂活动（与活动广场左右滑动切换）。
-  Widget _signedView() => PageStateView(
+  Widget _signedView(double topInset) => PageStateView(
         loading: _signedLoading && _signed.isEmpty,
         error: _signedErr,
         empty: !_signedLoading && _signedErr == null && _signed.isEmpty,
@@ -507,8 +503,9 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
           onRefresh: _loadSigned,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+            padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
             children: [
+              _tabsRow(),
               ToolRefreshBar(
                 refreshing: _signedLoading,
                 fromCache: _signedFromCache,
@@ -827,7 +824,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
               child: _signupButton(state),
             ),
           ),
-          body: PageStateView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: PageStateView(
             loading: _loading,
             error: _err,
             onRetry: _load,
@@ -931,6 +930,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                 ),
               ],
             ),
+          ),
           ),
         );
       },

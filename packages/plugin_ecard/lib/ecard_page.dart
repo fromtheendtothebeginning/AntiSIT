@@ -227,7 +227,9 @@ class _EcardPageState extends State<EcardPage> {
           // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('校园码')),
-          body: LoginGate(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: LoginGate(
             child: Center(
               child: SingleChildScrollView(
                 // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：小屏滚动时底部让出底栏这一截
@@ -260,6 +262,7 @@ class _EcardPageState extends State<EcardPage> {
                 ),
               ),
             ),
+          ),
           ),
         );
       },

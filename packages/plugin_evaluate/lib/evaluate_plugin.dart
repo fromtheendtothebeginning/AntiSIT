@@ -22,8 +22,7 @@ class EvaluatePlugin extends FeaturePlugin {
 
   @override
   List<PluginTool> tools(PluginRegistry registry) {
-    // 演示模式是本地假数据：评教要真教务，这里不出现入口
-    if (AppState.I.demo) return const [];
+    // 演示模式也给入口（假数据走一遍 UI）；真实提交 / 保存由页面自己拦截
     return [
       PluginTool(
         icon: Icons.rate_review_outlined,
