@@ -23,6 +23,11 @@ const int _fadeBands = 8;
 /// 档位差一点看不出来，段切粗一点省层数。取值 = 分布的指数，>1 即「底细顶粗」。
 const double _bandBias = 2.0;
 
+/// 模糊**数值**随深度的曲线（t=0 在顶栏下沿处的渐变起点、t=1 在顶栏底边）：
+/// `sigma(t) = 最大 * (1 - t)^_sigmaCurve`，指数 > 1 即「越靠顶部变化越快、
+/// 越靠底部变化越慢」——顶部很快把模糊拉满，底部留一段很缓的收尾。
+const double _sigmaCurve = 1.8;
+
 /// 页面第一个滚动区 / 内容的顶部内边距：躲开悬浮顶栏（状态栏 + 标题栏）。
 ///
 /// **必须在页面 `build` 的 context（Scaffold 之上）取**：开了
@@ -149,8 +154,8 @@ class GlassBarScrim extends StatelessWidget {
         // 段边界（自上而下 0→1）：模糊值本身按位置线性衰减，但**分段的宽度不均匀**——
         // t_j = 1 - (1 - j/n)^_bandBias，底部段窄（档位差一点就看得出）、顶部段宽。
         double t(int j) => 1 - math.pow(1 - j / n, _bandBias).toDouble();
-        // 第 j 个段边界处的累积模糊强度（线性：t=0 时最强、t=1 时最弱 = 0）
-        double c(int j) => sigma * (1 - t(j));
+        // 第 j 个段边界处的累积模糊强度：按 _sigmaCurve 的非线性曲线（顶快底慢）
+        double c(int j) => sigma * math.pow(1 - t(j), _sigmaCurve).toDouble();
         final layers = <Widget>[];
         for (var k = 0; k < n; k++) {
           // 各层高斯可按「平方和」合成：本层要补的强度是 sqrt(c_k² - c_k₊₁²)
