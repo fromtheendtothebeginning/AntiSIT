@@ -204,23 +204,7 @@ class GlassBarScrim extends StatelessWidget {
         final w = cons.maxWidth;
         final dpr = MediaQuery.devicePixelRatioOf(context);
         final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
-        Widget? blurLayer;
-        if (blur) {
-          final filter = _progressiveFilter(
-            size: Size(w, h),
-            dpr: dpr,
-            fadeStart: fadeStart,
-          );
-          blurLayer = Positioned.fill(
-            child: ClipRect(
-              child: BackdropFilter(
-                filter: filter ??
-                    ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-                child: const SizedBox.expand(),
-              ),
-            ),
-          );
-        }
+        final blurLayer = blur ? _blurLayer(Size(w, h), dpr, fadeStart) : null;
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -238,11 +222,50 @@ class GlassBarScrim extends StatelessWidget {
     );
   }
 
-  /// 单趟 2D 高斯 + 渐变遮罩的滤镜；shader 不可用时返回 null（调用方退化单层均匀模糊）。
-  ui.ImageFilter? _progressiveFilter({
+  /// 模糊层：横向一趟 + 纵向一趟两个 BackdropFilter 叠起来（后者能采到前者的输出，
+  /// 等价于一次 2D 可分离高斯）。shader 不可用时退化为一层均匀模糊。
+  Widget _blurLayer(Size size, double dpr, double fadeStart) {
+    final hPass = _passFilter(
+      size: size,
+      dpr: dpr,
+      fadeStart: fadeStart,
+      axis: 0,
+    );
+    final vPass = _passFilter(
+      size: size,
+      dpr: dpr,
+      fadeStart: fadeStart,
+      axis: 1,
+    );
+    if (hPass == null || vPass == null) {
+      return Positioned.fill(
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      );
+    }
+    return Positioned.fill(
+      child: ClipRect(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            BackdropFilter(filter: hPass, child: const SizedBox.expand()),
+            BackdropFilter(filter: vPass, child: const SizedBox.expand()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 单趟一维高斯的滤镜；shader 不可用时返回 null。
+  ui.ImageFilter? _passFilter({
     required Size size,
     required double dpr,
     required double fadeStart,
+    required double axis,
   }) {
     final program = _program;
     if (program == null || !ui.ImageFilter.isShaderFilterSupported) return null;
@@ -256,6 +279,7 @@ class GlassBarScrim extends StatelessWidget {
     shader.setFloat(6, sigma * dpr); // u_sigma_max（物理像素）
     shader.setFloat(7, fadeStart); // u_fade_start
     shader.setFloat(8, curve); // u_curve
+    shader.setFloat(9, axis); // u_axis：0 横向、1 纵向
     return ui.ImageFilter.shader(shader);
   }  LinearGradient _tint(double fadeStart, {double boost = 1.0}) {
     final base = SemColors.bg;
