@@ -68,6 +68,17 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   /// 一上来就建它会把市场目录的网络请求带到启动阶段。
   bool _marketMounted = false;
 
+  /// 两个面板各自的滚动控制器：滑块停在内容最上面时贴在顶栏下方，
+  /// 内容往上滚时滑块跟着一起滑到顶栏底下（所以它是「内容的一部分」而不是固定栏）。
+  final ScrollController _myScroll = ScrollController();
+  final ScrollController _marketScroll = ScrollController();
+
+  /// 当前面板已向上滚动的距离（0 = 贴顶），钳在滑块块高以内。
+  final ValueNotifier<double> _tabRoll = ValueNotifier<double>(0);
+
+  /// 滑块块高：上下各 8 的内边距 + GlassTabs 的 38 高。
+  static const double _tabsBlockH = 54;
+
   /// 主界面滑页桥（[NavSwipeScope]）：build 里取，树上没有（独立运行 / 单测）
   /// 就是 null，越界拖动就地吞掉，与接桥前行为一致。
   NavSwipeHost? _navHost;
@@ -88,8 +99,17 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     MarketSource.I.addListener(_onChanged);
     ExtSourceStore.I.addListener(_onChanged);
     _tabPos.value = _tab.toDouble();
+    _myScroll.addListener(_syncTabRoll);
+    _marketScroll.addListener(_syncTabRoll);
     if (!_store.loaded) unawaited(_store.load());
     unawaited(_readAppVersion());
+  }
+
+  /// 只有「当前显示的」那个面板在滚时才带动滑块；另一个面板保留自己的滚动位置。
+  void _syncTabRoll() {
+    final c = _tab == 0 ? _myScroll : _marketScroll;
+    final v = c.hasClients ? c.offset.clamp(0.0, _tabsBlockH) : 0.0;
+    if (_tabRoll.value != v) _tabRoll.value = v;
   }
 
   Future<void> _readAppVersion() async {
@@ -121,6 +141,9 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     ExtSourceStore.I.removeListener(_onChanged);
     _tabPos.dispose();
     _tabDrag.dispose();
+    _tabRoll.dispose();
+    _myScroll.dispose();
+    _marketScroll.dispose();
     super.dispose();
   }
 
@@ -593,6 +616,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         _selectedCardId = null;
       }
     });
+    // 新面板可能还没挂到控制器上：立刻同步一次，下一帧布局完再同步一次
+    _syncTabRoll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncTabRoll();
+    });
   }
 
   void _setEditing(bool value) {
@@ -663,6 +691,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   @override
   Widget build(BuildContext context) {
     _navHost = NavSwipeScope.of(context);
+    // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+    final topInset = glassTopInset(context);
     final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
     final items = _store.items;
     final hide = _store.hideUrls;
@@ -674,8 +704,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     // 两页都留在树里：横滑时一起位移，State（搜索词、滚动位置）也不会切走就丢。
     // 市场页仍按需挂载，见 _marketMounted。
     final myPage = items.isEmpty
-        ? _empty(context)
-        : _grid(context, items, selectedId);
+        ? _empty(context, topInset)
+        : _grid(context, items, selectedId, topInset);
     final panels = <Widget>[
       Column(
         children: [
@@ -700,14 +730,18 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             ),
         ],
       ),
-      if (market || _marketMounted) MarketView(onInstalled: _toast),
+      if (market || _marketMounted)
+        MarketView(
+          onInstalled: _toast,
+          controller: _marketScroll,
+          // 滑块现在是内容的一部分：列表顶部让出「顶栏 + 滑块」这一截
+          topPadding: topInset + _tabsBlockH,
+        ),
     ];
     // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
-        final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
@@ -777,22 +811,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
               ),
             ],
           ),
-          body: Column(
+          // 滑块是「内容的一部分」：放在面板之上，跟着面板的滚动位置一起上滑，
+          // 滚到顶栏底下就被顶栏的模糊盖住（不再是一条永远钉住的固定栏）。
+          body: Stack(
             children: [
-              Padding(
-                // 顶部让出悬浮顶栏
-                padding: EdgeInsets.fromLTRB(14, 8 + topInset, 14, 8),
-                child: GlassTabs(
-                  labels: const ['我的', '市场'],
-                  height: 38,
-                  fontSize: 13.5,
-                  index: _tab,
-                  position: _tabPos,
-                  dragPosition: _tabDrag,
-                  onChanged: _setTab,
-                ),
-              ),
-              Expanded(
+              Positioned.fill(
                 child: GestureDetector(
                   // translucent：页面空白处也能起手势；内层真接住横滑的（搜索框选词等）优先
                   behavior: HitTestBehavior.translucent,
@@ -836,6 +859,24 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                   ),
                 ),
               ),
+              AnimatedBuilder(
+                animation: _tabRoll,
+                builder: (context, _) => Positioned(
+                  left: 14,
+                  right: 14,
+                  // 初始：顶栏下方 8；内容每往上滚 1px，滑块跟着上移 1px
+                  top: topInset + 8 - _tabRoll.value,
+                  child: GlassTabs(
+                    labels: const ['我的', '市场'],
+                    height: 38,
+                    fontSize: 13.5,
+                    index: _tab,
+                    position: _tabPos,
+                    dragPosition: _tabDrag,
+                    onChanged: _setTab,
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -843,12 +884,13 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     );
   }
 
-  Widget _empty(BuildContext context) => Center(
+  Widget _empty(BuildContext context, double topInset) => Center(
     child: SingleChildScrollView(
-      // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：滚动底部让出底栏这一截
+      // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：滚动底部让出底栏这一截；
+      // 顶部让出悬浮顶栏 + 滑块那一截（滑块随内容滚动，初始就排在这段留白下面）
       padding: EdgeInsets.fromLTRB(
         20,
-        20,
+        20 + topInset + _tabsBlockH,
         20,
         20 + MediaQuery.paddingOf(context).bottom,
       ),
@@ -924,11 +966,19 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     BuildContext context,
     List<ExtensionItem> items,
     String? selectedId,
+    double topInset,
   ) => CustomScrollView(
+    controller: _myScroll,
     slivers: [
       SliverToBoxAdapter(
         child: FlexibleCardGrid(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+          // 顶部让出悬浮顶栏 + 滑块那一截（滑块随内容滚动）
+          padding: EdgeInsets.fromLTRB(
+            14,
+            12 + topInset + _tabsBlockH,
+            14,
+            0,
+          ),
           items: [
             for (final e in items)
               FlexibleGridItem(
