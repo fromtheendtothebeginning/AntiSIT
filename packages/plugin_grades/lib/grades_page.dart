@@ -192,7 +192,9 @@ class _GradesPageState extends State<GradesPage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('成绩查询')),
-          body: PageStateView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: PageStateView(
             loading: _loading && _all.isEmpty,
             error: _err,
             empty: !_loading && _err == null && _all.isEmpty,
@@ -340,6 +342,7 @@ class _GradesPageState extends State<GradesPage> {
                 ],
               ),
             ),
+          ),
           ),
         );
       },

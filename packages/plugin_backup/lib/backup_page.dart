@@ -161,7 +161,9 @@ class _BackupPageState extends State<BackupPage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('备份与恢复')),
-          body: ListView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: ListView(
             padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
             children: [
               if (_busy) ...[
@@ -218,6 +220,7 @@ class _BackupPageState extends State<BackupPage> {
                 ],
               ),
             ],
+          ),
           ),
         );
       },

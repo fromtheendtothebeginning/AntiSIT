@@ -72,7 +72,9 @@ class _RiskNoticePageState extends State<RiskNoticePage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text(RiskTerms.title)),
-          body: ListView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: ListView(
             controller: _scroll,
             // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(16, 8 + topInset, 16, 24),
@@ -97,6 +99,7 @@ class _RiskNoticePageState extends State<RiskNoticePage> {
                 ),
               const RiskNotice(),
             ],
+          ),
           ),
           bottomNavigationBar: widget.confirmMode
               ? SafeArea(

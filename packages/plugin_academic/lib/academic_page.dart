@@ -147,7 +147,9 @@ class _AcademicPageState extends State<AcademicPage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('学业情况')),
-          body: PageStateView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: PageStateView(
             loading: _loading && data == null,
             error: _err,
             empty: !_loading && _err == null && !hasContent,
@@ -217,6 +219,7 @@ class _AcademicPageState extends State<AcademicPage> {
                 ],
               ),
             ),
+          ),
           ),
         );
       },

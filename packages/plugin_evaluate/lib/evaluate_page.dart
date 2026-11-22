@@ -494,11 +494,14 @@ class _EvaluatePageState extends State<EvaluatePage> {
             ],
           ),
           // 主体是整块内容（加载 / 出错 / 列表三态），用 Padding 统一顶出顶栏这一截
-          body: Padding(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: Padding(
             padding: EdgeInsets.only(top: topInset),
             child: _booting
                 ? _loadingView()
                 : (_error != null ? _errorView(_error!) : _listView()),
+          ),
           ),
         );
       },

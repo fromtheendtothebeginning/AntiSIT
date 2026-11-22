@@ -366,7 +366,9 @@ class _WebViewPageState extends State<WebViewPage>
                   : null,
             ),
             // 平台视图不滚动：用 Padding 把网页从悬浮顶栏下面顶出来
-            body: Padding(
+            body: GlassFadedBody(
+              barHeight: topInset,
+              child: Padding(
               padding: EdgeInsets.only(top: topInset),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -389,6 +391,7 @@ class _WebViewPageState extends State<WebViewPage>
                   Expanded(child: WebViewWidget(controller: _controller)),
                 ],
               ),
+            ),
             ),
           );
         },
