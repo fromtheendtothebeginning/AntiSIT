@@ -12,8 +12,10 @@ import '../direct/school.dart';
 import '../widgets/common.dart';
 import 'login_page.dart';
 
-const String _antisitRepo = 'https://github.com/fromtheendtothebeginning/AntiSIT';
-const String _anticraftRepo = 'https://github.com/fromtheendtothebeginning/anticraft';
+const String _antisitRepo =
+    'https://github.com/fromtheendtothebeginning/AntiSIT';
+const String _anticraftRepo =
+    'https://github.com/fromtheendtothebeginning/anticraft';
 
 /// 连接设置：项目用同一套接口，两种接入方式——
 /// 1) 服务器模式：填任意服务器地址（IP / 域名[:端口]）+ 该服务器的 anticraft 账号密码，由服务器代连校园内网；
@@ -109,8 +111,20 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void dispose() {
     for (final c in [
-      _server, _schoolName, _authBase, _jwxtBase, _xgBase, _ecardBase, _aesKey,
-      _sid, _pwd, _payPwd, _dormBuilding, _dormRoom, _realName, _grade,
+      _server,
+      _schoolName,
+      _authBase,
+      _jwxtBase,
+      _xgBase,
+      _ecardBase,
+      _aesKey,
+      _sid,
+      _pwd,
+      _payPwd,
+      _dormBuilding,
+      _dormRoom,
+      _realName,
+      _grade,
     ]) {
       c.dispose();
     }
@@ -137,7 +151,10 @@ class _ConnectPageState extends State<ConnectPage> {
     final w = MediaQuery.sizeOf(context).width;
     if (w <= 0) return;
     // 与内容方向一致：往左拖 = 去下一格
-    final next = ((_tabDrag.value ?? _tabPos.value) - d.delta.dx / w).clamp(0.0, 1.0);
+    final next = ((_tabDrag.value ?? _tabPos.value) - d.delta.dx / w).clamp(
+      0.0,
+      1.0,
+    );
     _tabDrag.value = next;
     // 「界面实时跟着滑块切换」关掉时不在拖动中换——等松手落位再换
     if (AppState.I.followSlider) _setTab(next.round()); // 界面 = 最贴近滑块的那一格
@@ -145,7 +162,10 @@ class _ConnectPageState extends State<ConnectPage> {
 
   void _onTabDragEnd(DragEndDetails d) {
     final w = MediaQuery.sizeOf(context).width;
-    final v = (-d.velocity.pixelsPerSecond.dx / (w <= 0 ? 1 : w)).clamp(-8.0, 8.0);
+    final v = (-d.velocity.pixelsPerSecond.dx / (w <= 0 ? 1 : w)).clamp(
+      -8.0,
+      8.0,
+    );
     var target = (_tabDrag.value ?? _tabPos.value).round().clamp(0, 1);
     final next = target + (v > 0 ? 1 : -1);
     if (v.abs() >= 5.0 && next >= 0 && next <= 1) target = next; // 甩动多滑一格
@@ -178,7 +198,9 @@ class _ConnectPageState extends State<ConnectPage> {
                 children: [
                   // 当前这套：既是滑动的一方，也决定这块的高度
                   Transform.translate(
-                      offset: Offset((active - pos) * w, 0), child: panel(active)),
+                    offset: Offset((active - pos) * w, 0),
+                    child: panel(active),
+                  ),
                   // 另一套按自身高度布局（不能 Positioned.fill：会被拉成当前那套的高度、内容溢出），
                   // 滑出这块区域的部分由上面的 ClipRect 裁掉
                   Positioned(
@@ -186,7 +208,9 @@ class _ConnectPageState extends State<ConnectPage> {
                     right: 0,
                     top: 0,
                     child: Transform.translate(
-                        offset: Offset((other - pos) * w, 0), child: panel(other)),
+                      offset: Offset((other - pos) * w, 0),
+                      child: panel(other),
+                    ),
                   ),
                 ],
               ),
@@ -210,14 +234,19 @@ class _ConnectPageState extends State<ConnectPage> {
     try {
       // 空体登录请求：401/422 都说明该地址上跑着同一套开放接口
       final resp = await http
-          .post(Uri.parse('$url/api/login'),
-              headers: {'Content-Type': 'application/json'}, body: '{}')
+          .post(
+            Uri.parse('$url/api/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: '{}',
+          )
           .timeout(const Duration(seconds: 15));
       final ok = [400, 401, 422].contains(resp.statusCode);
       if (mounted) {
-        setState(() => _serverProbe = ok
-            ? '连接成功：$url（HTTP ${resp.statusCode}，接口可用）'
-            : '该地址返回 HTTP ${resp.statusCode}，可能不是同款开放接口服务');
+        setState(
+          () => _serverProbe = ok
+              ? '连接成功：$url（HTTP ${resp.statusCode}，接口可用）'
+              : '该地址返回 HTTP ${resp.statusCode}，可能不是同款开放接口服务',
+        );
       }
     } catch (e) {
       if (mounted) setState(() => _serverProbe = '连接失败：$e');
@@ -308,32 +337,31 @@ class _ConnectPageState extends State<ConnectPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            GlassField(
-              label: '学校名称',
-              controller: name,
-              autofocus: true,
-            ),
+            GlassField(label: '学校名称', controller: name, autofocus: true),
             const SizedBox(height: 12),
-            GlassField(
-              label: '学校域名',
-              controller: domain,
-            ),
+            GlassField(label: '学校域名', controller: domain),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () {
               final n = name.text.trim();
               if (n.isEmpty) return;
               final p = SchoolProfile.fromDomain(domain.text);
-              Navigator.pop(ctx, SchoolProfile(
-                name: n,
-                authBase: p.authBase,
-                jwxtBase: p.jwxtBase,
-                xgBase: p.xgBase,
-                ecardBase: p.ecardBase,
-              ));
+              Navigator.pop(
+                ctx,
+                SchoolProfile(
+                  name: n,
+                  authBase: p.authBase,
+                  jwxtBase: p.jwxtBase,
+                  xgBase: p.xgBase,
+                  ecardBase: p.ecardBase,
+                ),
+              );
             },
             child: const Text('添加'),
           ),
@@ -417,84 +445,113 @@ class _ConnectPageState extends State<ConnectPage> {
     st.statusInfo = null;
     st.studentInfo = null;
     if (mounted) {
-      setState(() => _ok = _pwd.text.isEmpty
-          ? '已保存学校信息：还需填写统一身份认证密码才能查询校园数据'
-          : '已保存：直连模式 · ${school.name}（首次查询会要求输入验证码）');
+      setState(
+        () => _ok = _pwd.text.isEmpty
+            ? '已保存学校信息：还需填写统一身份认证密码才能查询校园数据'
+            : '已保存：直连模式 · ${school.name}（首次查询会要求输入验证码）',
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final st = AppState.I;
-    return Scaffold(
-      appBar: AppBar(title: const Text('连接设置')),
-      body: GestureDetector(
-        // 页面区域横滑切模式；页面内部真接住横滑的组件（滑块自己）照旧优先——
-        // 和主界面底栏切页是同一套做法。
-        behavior: HitTestBehavior.translucent,
-        onHorizontalDragStart: _onTabDragStart,
-        onHorizontalDragUpdate: _onTabDragUpdate,
-        onHorizontalDragEnd: _onTabDragEnd,
-        onHorizontalDragCancel: () => _tabDrag.value = null,
-        child: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-        children: [
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('连接设置')),
+          body: GestureDetector(
+            // 页面区域横滑切模式；页面内部真接住横滑的组件（滑块自己）照旧优先——
+            // 和主界面底栏切页是同一套做法。
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: _onTabDragStart,
+            onHorizontalDragUpdate: _onTabDragUpdate,
+            onHorizontalDragEnd: _onTabDragEnd,
+            onHorizontalDragCancel: () => _tabDrag.value = null,
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
               children: [
-                _sectionTitle(Icons.alt_route_rounded, '数据来源'),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sectionTitle(Icons.alt_route_rounded, '数据来源'),
+                      const SizedBox(height: 10),
+                      GlassTabs(
+                        labels: const ['服务器模式', '直连模式'],
+                        index: _tabIndex,
+                        position: _tabPos,
+                        dragPosition: _tabDrag,
+                        onChanged: _setTab,
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 10),
-                GlassTabs(
-                  labels: const ['服务器模式', '直连模式'],
-                  index: _tabIndex,
-                  position: _tabPos,
-                  dragPosition: _tabDrag,
-                  onChanged: _setTab,
+                // 下方两套设置跟着滑块一起左右滑动（与主界面切页同一套观感）
+                _slidingSections(st),
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: SemColors.dangerSoft,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: SemColors.danger.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: SemColors.danger,
+                        height: 1.6,
+                      ),
+                    ),
+                  ),
+                ],
+                if (_ok != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: SemColors.successSoft,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: SemColors.success.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Text(
+                      _ok!,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: SemColors.success,
+                        height: 1.6,
+                      ),
+                    ),
+                  ),
+                ],
+                // 从组件边上挪下来的说明，统一沉到页底
+                const PageNotes(
+                  lines: [
+                    '服务器模式：由服务器代连校园内网；登录用该服务器的账号密码，'
+                        '校园凭据（学号 / 校园网密码）在该服务器的网站「我的 → 校园服务」配置一次。',
+                    '直连模式：本机凭据直连学校系统，数据不经过任何服务器；需设备在校园网 / 校内 VPN 内。',
+                    '校园凭据仅保存在本机，不会上传到任何服务器。',
+                    '直连模式的「姓名」留空时查学工会自动补全（校园卡登录用）。',
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          // 下方两套设置跟着滑块一起左右滑动（与主界面切页同一套观感）
-          _slidingSections(st),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: SemColors.dangerSoft,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
-              ),
-              child: Text(_error!,
-                  style: TextStyle(fontSize: 12.5, color: SemColors.danger, height: 1.6)),
-            ),
-          ],
-          if (_ok != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: SemColors.successSoft,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: SemColors.success.withValues(alpha: 0.35)),
-              ),
-              child: Text(_ok!,
-                  style: TextStyle(fontSize: 12.5, color: SemColors.success, height: 1.6)),
-            ),
-          ],
-          // 从组件边上挪下来的说明，统一沉到页底
-          const PageNotes(lines: [
-            '服务器模式：由服务器代连校园内网；登录用该服务器的账号密码，'
-                '校园凭据（学号 / 校园网密码）在该服务器的网站「我的 → 校园服务」配置一次。',
-            '直连模式：本机凭据直连学校系统，数据不经过任何服务器；需设备在校园网 / 校内 VPN 内。',
-            '校园凭据仅保存在本机，不会上传到任何服务器。',
-            '直连模式的「姓名」留空时查学工会自动补全（校园卡登录用）。',
-          ]),
-        ],
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -505,7 +562,10 @@ class _ConnectPageState extends State<ConnectPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('服务器地址', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const Text(
+                '服务器地址',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
               const SizedBox(height: 10),
               GlassField(
                 label: 'IP 或域名（可带端口）',
@@ -522,7 +582,10 @@ class _ConnectPageState extends State<ConnectPage> {
                     onPressed: _serverTesting ? null : _probeServer,
                     child: _serverTesting
                         ? const SizedBox(
-                            width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Text('测试连接'),
                   ),
                   OutlinedButton(
@@ -540,17 +603,21 @@ class _ConnectPageState extends State<ConnectPage> {
               ),
               if (_serverProbe != null) ...[
                 const SizedBox(height: 8),
-                Text(_serverProbe!,
-                    style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6)),
+                Text(
+                  _serverProbe!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: SemColors.textSecondary,
+                    height: 1.6,
+                  ),
+                ),
               ],
               const SizedBox(height: 6),
               Row(
                 children: [
                   Expanded(
-                    child: FilledButton(
-                      onPressed: _save,
-                      child: const Text('保存'),
-                    ),
+                    child:
+                        FilledButton(onPressed: _save, child: const Text('保存')),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -558,7 +625,9 @@ class _ConnectPageState extends State<ConnectPage> {
                       onPressed: () async {
                         await _save();
                         if (!mounted) return;
-                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const LoginPage()),
+                        );
                       },
                       child: const Text('保存并登录'),
                     ),
@@ -575,10 +644,14 @@ class _ConnectPageState extends State<ConnectPage> {
               Icon(
                 st.demo
                     ? Icons.science_outlined
-                    : (st.token != null ? Icons.check_circle : Icons.info_outline),
+                    : (st.token != null
+                        ? Icons.check_circle
+                        : Icons.info_outline),
                 color: st.demo
                     ? SemColors.accent
-                    : (st.token != null ? SemColors.success : SemColors.textMuted),
+                    : (st.token != null
+                        ? SemColors.success
+                        : SemColors.textMuted),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -588,7 +661,11 @@ class _ConnectPageState extends State<ConnectPage> {
                       : (st.token != null
                           ? '已登录：${st.username ?? ''} @ ${st.serverUrl.isEmpty ? '未填写地址' : st.serverUrl}'
                           : '该服务器未登录：登录后即可查询校园数据'),
-                  style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.6),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: SemColors.textSecondary,
+                    height: 1.6,
+                  ),
                 ),
               ),
             ],
@@ -606,12 +683,14 @@ class _ConnectPageState extends State<ConnectPage> {
           decoration: BoxDecoration(
             color: SemColors.warning.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: SemColors.warning.withValues(alpha: 0.35)),
+            border:
+                Border.all(color: SemColors.warning.withValues(alpha: 0.35)),
           ),
           child: Text(
             '直连模式不走服务器：请先连接校园网或校内 VPN（校园内网）。校外且没有校内 VPN 时，'
             '请改用服务器模式，或让学校提供可访问的服务器地址。',
-            style: TextStyle(fontSize: 12.5, color: SemColors.warning, height: 1.7),
+            style: TextStyle(
+                fontSize: 12.5, color: SemColors.warning, height: 1.7),
           ),
         ),
         const SizedBox(height: 10),
@@ -644,8 +723,13 @@ class _ConnectPageState extends State<ConnectPage> {
                   Expanded(child: _sectionTitle(icon, title)),
                   ...actions,
                   const SizedBox(width: 4),
-                  Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                      size: 20, color: SemColors.textMuted),
+                  Icon(
+                    open
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 20,
+                    color: SemColors.textMuted,
+                  ),
                 ],
               ),
             ),
@@ -684,7 +768,10 @@ class _ConnectPageState extends State<ConnectPage> {
               suffixIcon: IconButton(
                 onPressed: () => setState(() => _hidePwd = !_hidePwd),
                 icon: Icon(
-                    _hidePwd ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                  _hidePwd
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -696,7 +783,10 @@ class _ConnectPageState extends State<ConnectPage> {
               suffixIcon: IconButton(
                 onPressed: () => setState(() => _hidePayPwd = !_hidePayPwd),
                 icon: Icon(
-                    _hidePayPwd ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                  _hidePayPwd
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -737,10 +827,8 @@ class _ConnectPageState extends State<ConnectPage> {
             Row(
               children: [
                 Expanded(
-                  child: FilledButton(
-                    onPressed: _save,
-                    child: const Text('保存'),
-                  ),
+                  child:
+                      FilledButton(onPressed: _save, child: const Text('保存')),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -748,7 +836,10 @@ class _ConnectPageState extends State<ConnectPage> {
                     onPressed: _testing ? null : _testDirect,
                     child: _testing
                         ? const SizedBox(
-                            width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
                         : const Text('测试连接'),
                   ),
                 ),
@@ -762,15 +853,23 @@ class _ConnectPageState extends State<ConnectPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(p.ok ? Icons.check_circle : Icons.error_outline,
-                          size: 16, color: p.ok ? SemColors.success : SemColors.danger),
+                      Icon(
+                        p.ok ? Icons.check_circle : Icons.error_outline,
+                        size: 16,
+                        color: p.ok ? SemColors.success : SemColors.danger,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
-                        child: Text('${p.name}：${p.detail}',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: p.ok ? SemColors.textSecondary : SemColors.danger,
-                                height: 1.5)),
+                        child: Text(
+                          '${p.name}：${p.detail}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: p.ok
+                                ? SemColors.textSecondary
+                                : SemColors.danger,
+                            height: 1.5,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -839,8 +938,10 @@ class _ConnectPageState extends State<ConnectPage> {
               children: [
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('允许学校系统使用自签证书',
-                      style: TextStyle(fontSize: 13.5)),
+                  title: const Text(
+                    '允许学校系统使用自签证书',
+                    style: TextStyle(fontSize: 13.5),
+                  ),
                   subtitle: const Text(
                     '默认关闭：证书校验失败会直接断开，避免校园网里用假证书替换登录页。'
                     '仅当学校系统确实使用自签证书时开启；开启会降低登录密码的抗中间人能力。',
@@ -849,10 +950,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   value: _allowSelfSigned,
                   onChanged: (v) => setState(() => _allowSelfSigned = v),
                 ),
-                GlassField(
-                  label: '响应解密密钥',
-                  controller: _aesKey,
-                ),
+                GlassField(label: '响应解密密钥', controller: _aesKey),
               ],
             ),
           ],
@@ -860,7 +958,12 @@ class _ConnectPageState extends State<ConnectPage> {
       );
 
   /// 分区标题：玻璃风图标章 + 标题（+ 可选右侧按钮），让卡片头部与液态玻璃面融合。
-  Widget _sectionTitle(IconData icon, String title, {List<Widget> actions = const []}) => Row(
+  Widget _sectionTitle(
+    IconData icon,
+    String title, {
+    List<Widget> actions = const [],
+  }) =>
+      Row(
         children: [
           Container(
             width: 30,
@@ -872,17 +975,17 @@ class _ConnectPageState extends State<ConnectPage> {
             child: Icon(icon, size: 17, color: SemColors.accent),
           ),
           const SizedBox(width: 8),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
           const Spacer(),
           ...actions,
         ],
       );
 
-  Widget _addrField(TextEditingController c, String label) => GlassField(
-        label: label,
-        controller: c,
-        keyboardType: TextInputType.url,
-      );
+  Widget _addrField(TextEditingController c, String label) =>
+      GlassField(label: label, controller: c, keyboardType: TextInputType.url);
 
   // ==================== 本地模拟服务（仅 debug） ====================
 
@@ -898,8 +1001,10 @@ class _ConnectPageState extends State<ConnectPage> {
             children: [
               Icon(Icons.science_outlined, size: 18, color: SemColors.accent),
               SizedBox(width: 6),
-              Text('本地模拟服务（仅调试构建）',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              Text(
+                '本地模拟服务（仅调试构建）',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -907,7 +1012,11 @@ class _ConnectPageState extends State<ConnectPage> {
             '在 App 内监听 127.0.0.1 起一套与学校系统行为一致的模拟服务：'
             '正方教务（RSA 加密 + 图形验证码）、统一认证 CAS（AES 加密 + 图形验证码）、'
             '学工二课、校园卡（SM4 支付密码）。没有校园网也能把直连链路跑通。',
-            style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.7),
+            style: TextStyle(
+              fontSize: 12,
+              color: SemColors.textSecondary,
+              height: 1.7,
+            ),
           ),
           const SizedBox(height: 10),
           Row(
@@ -927,7 +1036,11 @@ class _ConnectPageState extends State<ConnectPage> {
                     '密码 ${MockCampusServer.password} / 支付密码 ${MockCampusServer.payPassword}）'
                 : '模拟凭据：学号 ${MockCampusServer.studentId} / 密码 ${MockCampusServer.password} / '
                     '支付密码 ${MockCampusServer.payPassword} / 寝室 ${MockCampusServer.dorm}',
-            style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.6),
+            style: TextStyle(
+              fontSize: 11,
+              color: SemColors.textMuted,
+              height: 1.6,
+            ),
           ),
         ],
       ),
@@ -943,8 +1056,12 @@ class _ConnectPageState extends State<ConnectPage> {
     } catch (_) {
       await Clipboard.setData(ClipboardData(text: url));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('已复制链接：$url'), behavior: SnackBarBehavior.floating));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已复制链接：$url'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
   }
@@ -959,9 +1076,14 @@ class _ConnectPageState extends State<ConnectPage> {
               Icon(Icons.open_in_new, size: 15, color: SemColors.accent),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(label,
-                    style: TextStyle(
-                        fontSize: 12.5, color: SemColors.accent, height: 1.5)),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: SemColors.accent,
+                    height: 1.5,
+                  ),
+                ),
               ),
             ],
           ),
@@ -974,31 +1096,56 @@ class _ConnectPageState extends State<ConnectPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('自建服务器', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const Text(
+            '自建服务器',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
           const SizedBox(height: 8),
           Text(
             '上面填的地址可以是任何实现了同一套开放接口的服务器，两种方式：',
-            style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.7),
+            style: TextStyle(
+              fontSize: 12.5,
+              color: SemColors.textSecondary,
+              height: 1.7,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             '① 参照 API 文档自行实现：本项目仓库内 docs/campus-api.md 是完整接口规约，'
-                '照此用任意语言 / 框架重建服务端即可接入本 App。',
-            style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.7),
+            '照此用任意语言 / 框架重建服务端即可接入本 App。',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: SemColors.textSecondary,
+              height: 1.7,
+            ),
           ),
-          _repoLink('github.com/fromtheendtothebeginning/AntiSIT（含 API 文档）', _antisitRepo),
+          _repoLink(
+            'github.com/fromtheendtothebeginning/AntiSIT（含 API 文档）',
+            _antisitRepo,
+          ),
           const SizedBox(height: 8),
           Text(
             '② 直接部署现成服务端：anticraft 校园服务网站就是这套接口的参考实现，同样开源，'
-                '部署好把地址填到上方即可。',
-            style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.7),
+            '部署好把地址填到上方即可。',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: SemColors.textSecondary,
+              height: 1.7,
+            ),
           ),
-          _repoLink('github.com/fromtheendtothebeginning/anticraft（GPL-3.0）', _anticraftRepo),
+          _repoLink(
+            'github.com/fromtheendtothebeginning/anticraft（GPL-3.0）',
+            _anticraftRepo,
+          ),
           const SizedBox(height: 6),
           Text(
             '两个项目均为 GPL-3.0 开源。协议要点：可自由使用、学习、修改与再分发；'
-                '再分发或衍生作品必须同样以 GPL-3.0 开源并提供完整源码；软件不含任何担保。',
-            style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
+            '再分发或衍生作品必须同样以 GPL-3.0 开源并提供完整源码；软件不含任何担保。',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: SemColors.textMuted,
+              height: 1.6,
+            ),
           ),
         ],
       ),

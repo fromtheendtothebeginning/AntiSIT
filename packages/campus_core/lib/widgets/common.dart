@@ -11,6 +11,7 @@ import 'theme_palette.dart';
 // 色板 / 主题场景、玻璃组件、底栏拆到了同目录三个文件，
 // 这里 re-export 保持 `common.dart` 的原有出口不变（campus_core.dart 只导出本文件）。
 export 'glass_nav.dart';
+export 'glass_top_bar.dart';
 export 'glass_widgets.dart';
 export 'theme_palette.dart';
 

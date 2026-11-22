@@ -42,64 +42,89 @@ class _ExtensionOrderPageState extends State<ExtensionOrderPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('拓展排序'),
-        actions: [
-          if (_store.hasCustomSizes)
-            TextButton(
-              onPressed: _resetSizes,
-              child: const Text('重置大小', style: TextStyle(fontSize: 13)),
-            ),
-          TextButton(
-            onPressed: _reset,
-            child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('拓展排序'),
+            actions: [
+              if (_store.hasCustomSizes)
+                TextButton(
+                  onPressed: _resetSizes,
+                  child: const Text('重置大小', style: TextStyle(fontSize: 13)),
+                ),
+              TextButton(
+                onPressed: _reset,
+                child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
-            child: Text(
-                '按住右侧手柄上下拖动，松手即生效；拓展页里长按卡片进入整理后，顶部尺寸条可在 1×1 / 1×3 / 2×3 / 2×2 间切换，也能拖右下角弧线细调',
-                style: TextStyle(
-                    fontSize: 12, color: SemColors.textMuted, height: 1.5)),
-          ),
-          AppCard(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              buildDefaultDragHandles: false,
-              padding: EdgeInsets.zero,
-              itemCount: _items.length,
-              onReorder: _onReorder,
-              itemBuilder: (context, i) {
-                final e = _items[i];
-                return ListTile(
-                  key: ValueKey(e.id),
-                  leading: ExtIcon(item: e, size: 20),
-                  title: Text(e.name,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  subtitle: Text(e.urlLine,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12)),
-                  trailing: ReorderableDragStartListener(
-                    index: i,
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Icon(Icons.drag_handle_rounded, color: SemColors.textMuted),
-                    ),
+          body: ListView(
+            // 顶部让出悬浮顶栏
+            padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
+                child: Text(
+                  '按住右侧手柄上下拖动，松手即生效；拓展页里长按卡片进入整理后，顶部尺寸条可在 1×1 / 1×3 / 2×3 / 2×2 间切换，也能拖右下角弧线细调',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: SemColors.textMuted,
+                    height: 1.5,
                   ),
-                );
-              },
-            ),
+                ),
+              ),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  padding: EdgeInsets.zero,
+                  itemCount: _items.length,
+                  onReorder: _onReorder,
+                  itemBuilder: (context, i) {
+                    final e = _items[i];
+                    return ListTile(
+                      key: ValueKey(e.id),
+                      leading: ExtIcon(item: e, size: 20),
+                      title: Text(
+                        e.name,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        e.urlLine,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: ReorderableDragStartListener(
+                        index: i,
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.drag_handle_rounded,
+                            color: SemColors.textMuted,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

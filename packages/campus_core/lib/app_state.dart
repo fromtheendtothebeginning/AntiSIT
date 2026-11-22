@@ -25,15 +25,17 @@ class ScoreSnapshot {
   num get total => asNum(raw['total']) ?? 0;
 
   /// 学籍信息节点（院系 / 专业 / 班级），「我的 → 学籍信息」用。
-  Map<String, dynamic>? get student =>
-      raw['student'] is Map<String, dynamic> ? raw['student'] as Map<String, dynamic> : null;
+  Map<String, dynamic>? get student => raw['student'] is Map<String, dynamic>
+      ? raw['student'] as Map<String, dynamic>
+      : null;
 }
 
 /// 宿舍电费快照（/electricity/query 的 data 节点）。
 class ElectricitySnapshot {
   const ElectricitySnapshot._(this.raw);
 
-  factory ElectricitySnapshot.fromJson(Map<String, dynamic> j) => ElectricitySnapshot._(j);
+  factory ElectricitySnapshot.fromJson(Map<String, dynamic> j) =>
+      ElectricitySnapshot._(j);
 
   final Map<String, dynamic> raw;
 
@@ -160,6 +162,11 @@ class AppState extends ChangeNotifier {
   /// 关 = 手势期间画面不动，松手按普通返回（淡入淡出）。开关在「我的 → 设置 → 外观」里。
   bool predictiveBack = true;
 
+  /// 顶栏是否用「悬浮玻璃」样式：开（默认）= 顶栏浮在内容上、内容从它底下穿过去，
+  /// 靠近顶栏的内容被渐变高斯模糊糊掉；关 = 普通 AppBar，内容排在它下面。
+  /// 开关在「我的 → 设置 → 外观」里。
+  bool glassTopBar = true;
+
   /// 工具页（电费 / 二课 / 活动 / 考试 / 成绩）进入时是否自动刷新。
   /// 关掉后只展示本机缓存，由页面右上角的手动刷新按钮更新。开关在「我的 → 配置」里。
   bool autoRefreshTools = true;
@@ -199,14 +206,25 @@ class AppState extends ChangeNotifier {
     courseNotifyMode = cn == 'none' || cn == 'cloud' ? cn! : 'popup';
     followSlider = sp.getBool('follow_slider') ?? true;
     predictiveBack = sp.getBool('predictive_back') ?? true;
+    glassTopBar = sp.getBool('glass_top_bar') ?? true;
     autoRefreshTools = sp.getBool('tool_auto_refresh') ?? true;
-    ecardRefreshSeconds = (sp.getInt('ecard_refresh_seconds') ?? 10).clamp(5, 30);
-    mode = sp.getString('app_mode') == 'direct' ? AppMode.direct : AppMode.server;
+    ecardRefreshSeconds = (sp.getInt('ecard_refresh_seconds') ?? 10).clamp(
+      5,
+      30,
+    );
+    mode = sp.getString('app_mode') == 'direct'
+        ? AppMode.direct
+        : AppMode.server;
     schools = SchoolProfile.decodeList(sp.getString('direct_schools'));
     if (schools.isEmpty) schools = [SchoolProfile.sit()];
     final active = sp.getString('direct_school') ?? '';
-    school = schools.firstWhere((s) => s.name == active, orElse: () => schools.first);
-    creds = CampusCreds.fromJson(_decodeObj(await _migrate(secure, sp, 'direct_creds')));
+    school = schools.firstWhere(
+      (s) => s.name == active,
+      orElse: () => schools.first,
+    );
+    creds = CampusCreds.fromJson(
+      _decodeObj(await _migrate(secure, sp, 'direct_creds')),
+    );
     if (remember) {
       username = await _migrate(secure, sp, 'username');
       password = await _migrate(secure, sp, 'password');
@@ -221,7 +239,10 @@ class AppState extends ChangeNotifier {
   /// 加密存储优先；它没有而明文 SharedPreferences 里有（旧版本写入的）→
   /// 采用明文值、写入加密存储、删掉明文。
   static Future<String?> _migrate(
-      SecureStore secure, SharedPreferences sp, String key) async {
+    SecureStore secure,
+    SharedPreferences sp,
+    String key,
+  ) async {
     final v = await secure.read(key);
     if (v != null && v.isNotEmpty) return v;
     final legacy = sp.getString(key);
@@ -247,12 +268,16 @@ class AppState extends ChangeNotifier {
     await sp.setBool('demo', demo);
     await sp.setString('server_url', serverUrl);
     await sp.setBool('remember', remember);
-    await sp.setString('theme_mode',
-        switch (themeMode) { ThemeMode.light => 'light', ThemeMode.dark => 'dark', _ => 'system' });
+    await sp.setString('theme_mode', switch (themeMode) {
+      ThemeMode.light => 'light',
+      ThemeMode.dark => 'dark',
+      _ => 'system',
+    });
     await sp.setBool('dim_completed', dimCompleted);
     await sp.setString('course_notify_mode', courseNotifyMode);
     await sp.setBool('follow_slider', followSlider);
     await sp.setBool('predictive_back', predictiveBack);
+    await sp.setBool('glass_top_bar', glassTopBar);
     await sp.setBool('tool_auto_refresh', autoRefreshTools);
     await sp.setInt('ecard_refresh_seconds', ecardRefreshSeconds);
     await sp.setString('app_mode', direct ? 'direct' : 'server');
@@ -272,7 +297,11 @@ class AppState extends ChangeNotifier {
   /// 敏感值写加密存储；顺带清掉早期版本可能留在明文里的同名 key。
   /// 值为 null / 空表示删除。
   static Future<void> _putSecure(
-      SecureStore secure, SharedPreferences sp, String key, String? value) async {
+    SecureStore secure,
+    SharedPreferences sp,
+    String key,
+    String? value,
+  ) async {
     if (value != null && value.isNotEmpty) {
       await secure.write(key, value);
     } else {
@@ -299,7 +328,9 @@ class AppState extends ChangeNotifier {
     // 只有真的换账号才清工具页缓存：token 续期 / 掉线自动重登也是走这里，
     // 每次都清会把用户上次看过的数据全抹掉，再进二级页就只剩转圈。
     final switchedAccount =
-        username.isNotEmpty && this.username != null && this.username != username;
+        username.isNotEmpty &&
+        this.username != null &&
+        this.username != username;
     this.token = token;
     this.username = username;
     if (password != null && password.isNotEmpty) this.password = password;
@@ -398,6 +429,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 顶栏是否用悬浮玻璃样式（见 [glassTopBar]）。
+  Future<void> setGlassTopBar(bool v) async {
+    if (glassTopBar == v) return;
+    glassTopBar = v;
+    await _persist();
+    notifyListeners();
+  }
+
   /// 工具页进入时是否自动刷新（见 [autoRefreshTools]）。
   Future<void> setAutoRefreshTools(bool v) async {
     autoRefreshTools = v;
@@ -445,7 +484,10 @@ class AppState extends ChangeNotifier {
   /// [manual] 为 true 表示「用户主动点了退出登录」：这是明确的要走信号，
   /// 所以连「记住密码并自动重登」一起关掉——否则下次有请求 401 时，
   /// [ApiClient] 会拿加密存储里的旧密码自动重登，用户会看到「退出了又自己登上」。
-  Future<void> clearSession({bool keepCreds = true, bool manual = false}) async {
+  Future<void> clearSession({
+    bool keepCreds = true,
+    bool manual = false,
+  }) async {
     token = null;
     statusInfo = null;
     studentInfo = null;
@@ -480,7 +522,8 @@ class AppState extends ChangeNotifier {
   }
 
   bool get loggedIn => demo || (direct ? creds.hasLogin : token != null);
-  bool get hasCreds => (username ?? '').isNotEmpty && (password ?? '').isNotEmpty;
+  bool get hasCreds =>
+      (username ?? '').isNotEmpty && (password ?? '').isNotEmpty;
 
   /// 按日期推算当前学年学期：xqm 3=第一学期，12=第二学期（正方约定）。
   static (String, String) inferSemester(DateTime now) {

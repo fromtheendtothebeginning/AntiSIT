@@ -11,6 +11,10 @@ import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_webview/plugin_webview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// 弹窗里的输入框：现在「添加拓展」页自带一个市场搜索框，不能再按类型找全部 TextField。
+Finder dialogFields() =>
+    find.descendant(of: find.byType(Dialog), matching: find.byType(TextField));
+
 /// 「拓展」（底栏页，默认开启、硬依赖 WebView 内核）的验收：
 /// * 默认开启（内核也随之开启）；停用内核会连带停掉它（关系图实线的语义）；
 /// * 页面初始为空，三种加法：填网址 / 导入压缩包 / 导入 JSON；
@@ -362,8 +366,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('填写网址'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).at(0), '坏拓展');
-    await tester.enterText(find.byType(TextField).at(1), 'ftp://x.com');
+    await tester.enterText(dialogFields().at(0), '坏拓展');
+    await tester.enterText(dialogFields().at(1), 'ftp://x.com');
     await tester.tap(find.text('添加'));
     await tester.pumpAndSettle();
     expect(find.textContaining('网址要能打开'), findsOneWidget);
@@ -377,7 +381,7 @@ void main() {
     await tester.tap(find.text('导入 JSON'));
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.byType(TextField),
+      dialogFields(),
       '[{"name":"甲","url":"a.example.com"},{"url":"https://b.example.com"}]',
     );
     await tester.tap(find.text('导入'));
@@ -395,7 +399,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('导入 JSON'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '{坏掉的');
+    await tester.enterText(dialogFields(), '{坏掉的');
     await tester.tap(find.text('导入'));
     await tester.pumpAndSettle();
     expect(ExtensionStore.I.items, hasLength(2), reason: '解析失败不该改动清单');
@@ -441,24 +445,27 @@ void main() {
     expect(tester.takeException(), isNull, reason: '简介 / 网址不能画出卡片外');
   });
 
-  testWidgets('左右滑动切换「我的 / 市场」（与主界面同一套）', (tester) async {
+  testWidgets('「添加拓展」还是原来的底部菜单；另有一项进独立市场页', (tester) async {
     await PluginRegistry.I.enable('ext');
     await pumpPage(tester);
     expect(find.text('还没有拓展'), findsOneWidget);
 
-    // 往左拖过半屏 → 市场
-    await tester.drag(find.text('还没有拓展'), const Offset(-400, 0));
+    // 右上角「添加拓展」圆钮 → 底部菜单（三种加法 + 市场入口）
+    await tester.tap(find.byTooltip('添加拓展'));
     await tester.pumpAndSettle();
-    expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget, reason: '已经切到市场页');
-    expect(find.text('还没有拓展'), findsNothing, reason: '我的页已滑出（离屏不参与查找）');
+    // 底部菜单出现后，空态页上的同名按钮也在树里，所以用 findsWidgets
+    expect(find.text('填写网址'), findsWidgets, reason: '三种加法照旧');
+    expect(find.text('导入 JSON'), findsWidgets);
+    expect(find.text('插件市场'), findsOneWidget, reason: '多了一项市场入口');
 
-    // 往右拖回去 → 我的（从列表空白处起手，避开搜索框的选词手势）
-    await tester.dragFrom(const Offset(270, 900), const Offset(400, 0));
+    // 点「插件市场」→ 独立的插件市场页
+    await tester.tap(find.text('插件市场'));
     await tester.pumpAndSettle();
-    expect(find.text('还没有拓展'), findsOneWidget, reason: '切回我的页');
-    expect(find.text('搜名称 / 简介 / 作者'), findsNothing);
+    expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget, reason: '市场页有搜索框');
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('还没有拓展'), findsOneWidget, reason: '回到拓展页');
   });
-
   testWidgets('总开关：一下隐藏全部网址，详情里仍能看全，再点一下恢复', (tester) async {
     await PluginRegistry.I.enable('ext');
     await ExtensionStore.I.add(
@@ -1220,89 +1227,6 @@ void main() {
     await ExtensionStore.I.setCard('e1', icon: '🛠');
     await tester.pumpAndSettle();
     expect(find.text('🛠'), findsOneWidget, reason: '接口给的文字图标直接上卡片');
-  });
-
-  group('滑出子页边界转给主界面（NavSwipeScope 桥）', () {
-    late _RecordingSwipeHost host;
-
-    setUp(() {
-      host = _RecordingSwipeHost();
-      // 市场目录不真发网络请求（失败即可，别让 loading 的不定动画卡住 settle）
-      MarketSource.I = MarketSource();
-      MarketSource.fetcher = (Uri url) => throw Exception('offline');
-    });
-
-    Future<void> pumpWithHost(WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 2200);
-      tester.view.devicePixelRatio = 2;
-      addTearDown(tester.view.reset);
-      await tester.pumpWidget(
-        NavSwipeScope(
-          host: host,
-          child: const MaterialApp(home: ExtensionsPage()),
-        ),
-      );
-      await tester.pumpAndSettle();
-    }
-
-    /// 从 [from] 起手横拖，第一步（[slopDir] 方向 20px）只为越过 touch slop
-    Future<TestGesture> beginSwipe(
-      WidgetTester tester,
-      Offset from, {
-      double slopDir = -1,
-    }) async {
-      final g = await tester.startGesture(from);
-      await g.moveBy(Offset(20 * slopDir, 0));
-      await tester.pump();
-      return g;
-    }
-
-    testWidgets('「我的」向上一格方向拖：越界量为负，拖回来归零，松手交主界面落位', (tester) async {
-      await pumpWithHost(tester);
-      expect(find.text('还没有拓展'), findsOneWidget);
-
-      final g = await beginSwipe(tester, const Offset(270, 900), slopDir: 1);
-      await g.moveBy(const Offset(700, 0)); // 逻辑宽 540：越界约一页
-      await tester.pump();
-      expect(host.overs.last, lessThan(-0.9), reason: '滑出边界的量要镜像给主界面');
-
-      await g.moveBy(const Offset(-700, 0)); // 拖回界内
-      await tester.pump();
-      expect(host.overs.last, closeTo(0, 0.05), reason: '拖回来越界量归零，主界面跟着弹回');
-
-      await g.up();
-      await tester.pumpAndSettle();
-      expect(host.endVelocity, isNotNull, reason: '松手要交给主界面落位');
-      expect(find.text('还没有拓展'), findsOneWidget, reason: '子页留在「我的」');
-    });
-
-    testWidgets('「市场」向下一格方向拖：越界量为正', (tester) async {
-      await pumpWithHost(tester);
-      await tester.drag(find.text('还没有拓展'), const Offset(-400, 0));
-      await tester.pumpAndSettle();
-      expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget);
-      host.overs.clear();
-      host.endVelocity = null;
-
-      final g = await beginSwipe(tester, const Offset(270, 900));
-      await g.moveBy(const Offset(-700, 0));
-      await tester.pump();
-      expect(host.overs.last, greaterThan(0.9));
-      await g.up();
-      await tester.pumpAndSettle();
-      expect(host.endVelocity, isNotNull);
-    });
-
-    testWidgets('界内拖（我的 → 市场）不产生越界量', (tester) async {
-      await pumpWithHost(tester);
-      final g = await beginSwipe(tester, const Offset(270, 900));
-      await g.moveBy(const Offset(-300, 0)); // 半屏多一点：子页刚好切到市场
-      await tester.pump();
-      await g.up();
-      await tester.pumpAndSettle();
-      expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget, reason: '子页正常切到市场');
-      expect(host.overs.every((o) => o == 0), isTrue, reason: '没滑出边界就别去动主界面');
-    });
   });
 
   group('接口：ai.chat（提示词本地转义成提供商请求）', () {
@@ -2477,21 +2401,6 @@ class _FakeAiCapability implements AiCapability {
   }
 }
 
-/// 记录 NavSwipeHost 每次调用的假宿主（桥的单测用）。
-class _RecordingSwipeHost implements NavSwipeHost {
-  final overs = <double>[];
-  double? endVelocity;
-  int cancels = 0;
-
-  @override
-  void navDragOver(double over) => overs.add(over);
-
-  @override
-  void navDragEnd(double velocityDx) => endVelocity = velocityDx;
-
-  @override
-  void navDragCancel() => cancels++;
-}
 
 /// 记录桥推给网页的下行事件（流式 AI 增量）。
 class _RecordingSink implements WebBridgeEventSink {

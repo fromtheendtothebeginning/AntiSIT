@@ -32,10 +32,12 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
   void _toast(String msg) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        content: Text(msg, style: const TextStyle(fontSize: 13)),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(msg, style: const TextStyle(fontSize: 13)),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   Future<void> _setEnabled(FeaturePlugin p, bool on) async {
@@ -43,9 +45,11 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
       final turned = await _r.enable(p.id);
       if (!mounted || turned.isEmpty) return;
       final deps = turned.where((x) => x != p.id).toList();
-      _toast(deps.isEmpty
-          ? '已启用「${p.name}」'
-          : '已启用「${p.name}」，并连带启用依赖：${deps.map(_name).join('、')}');
+      _toast(
+        deps.isEmpty
+            ? '已启用「${p.name}」'
+            : '已启用「${p.name}」，并连带启用依赖：${deps.map(_name).join('、')}',
+      );
       return;
     }
 
@@ -55,12 +59,20 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('连带停用'),
-          content: Text('这些插件依赖「${p.name}」，停用它会把它们一起停掉：\n\n'
-              '${gone.map((id) => '· ${_name(id)}').join('\n')}\n\n'
-              '之后重新启用「${p.name}」不会自动把它们打开。'),
+          content: Text(
+            '这些插件依赖「${p.name}」，停用它会把它们一起停掉：\n\n'
+            '${gone.map((id) => '· ${_name(id)}').join('\n')}\n\n'
+            '之后重新启用「${p.name}」不会自动把它们打开。',
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('一并停用')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('一并停用'),
+            ),
           ],
         ),
       );
@@ -78,61 +90,89 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
   String _depLine(FeaturePlugin p) {
     final parts = <String>[];
     if (!p.removable) parts.add('核心插件，不可停用');
-    if (p.dependencies.isNotEmpty) parts.add('依赖 ${p.dependencies.map(_name).join('、')}');
+    if (p.dependencies.isNotEmpty) {
+      parts.add('依赖 ${p.dependencies.map(_name).join('、')}');
+    }
     if (p.optionalDependencies.isNotEmpty) {
       parts.add('可选 ${p.optionalDependencies.map(_name).join('、')}');
     }
-    if (p.id != PluginIds.tools && p.tools(_r).isNotEmpty && _r.byId(PluginIds.tools) != null) {
+    if (p.id != PluginIds.tools &&
+        p.tools(_r).isNotEmpty &&
+        _r.byId(PluginIds.tools) != null) {
       parts.add('卡片挂在工具中心');
     }
     final dependents = _r.dependentsOf(p.id);
-    if (dependents.isNotEmpty) parts.add('被 ${dependents.map(_name).join('、')} 依赖');
+    if (dependents.isNotEmpty) {
+      parts.add('被 ${dependents.map(_name).join('、')} 依赖');
+    }
     return parts.join(' · ');
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('插件管理')),
-      body: ListenableBuilder(
-        listenable: _r,
-        builder: (context, _) => ListView(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-          children: [
-            if (_r.problems.isNotEmpty) _problems(),
-            _graphCard(),
-            const SizedBox(height: 10),
-            _effectCard(),
-            const SizedBox(height: 10),
-            _sectionTitle('功能插件', '${_r.enabled.length}/${_r.features.length} 已启用'),
-            AppCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(children: [for (final p in _r.features) _featureTile(p)]),
-            ),
-            const SizedBox(height: 10),
-            _sectionTitle('主题插件', '当前「${_r.theme.name}」'),
-            AppCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: const ThemePickerList(),
-            ),
-            const SizedBox(height: 10),
-            _sectionTitle(
+    // 整页监听：顶栏样式开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: Listenable.merge([_r, AppState.I]),
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('插件管理')),
+          body: ListView(
+            // 顶部让出悬浮顶栏
+            padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
+            children: [
+              if (_r.problems.isNotEmpty) _problems(),
+              _graphCard(),
+              const SizedBox(height: 10),
+              _effectCard(),
+              const SizedBox(height: 10),
+              _sectionTitle(
+                '功能插件',
+                '${_r.enabled.length}/${_r.features.length} 已启用',
+              ),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: [for (final p in _r.features) _featureTile(p)],
+                ),
+              ),
+              const SizedBox(height: 10),
+              _sectionTitle('主题插件', '当前「${_r.theme.name}」'),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: const ThemePickerList(),
+              ),
+              const SizedBox(height: 10),
+              _sectionTitle(
                 'AI 提供商',
                 '${_r.enabledProviders.length}/${_r.providers.length} 已启用 · '
-                    '当前「${_ai?.providerLabel ?? '未装 / 已停用'}」'),
-            AppCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(children: [for (final p in _r.providerList) _providerTile(p)]),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
-              child: Text('停用的提供商不会出现在「我的 → 设置 → AI 设置」的选择器里；'
+                    '当前「${_ai?.providerLabel ?? '未装 / 已停用'}」',
+              ),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: [for (final p in _r.providerList) _providerTile(p)],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+                child: Text(
+                  '停用的提供商不会出现在「我的 → 设置 → AI 设置」的选择器里；'
                   '要让一家从构建里彻底消失，才需要删掉它的包或 EXCLUDE_AI_XXX。',
-                  style: TextStyle(fontSize: 11, color: SemColors.textMuted, height: 1.5)),
-            ),
-          ],
-        ),
-      ),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: SemColors.textMuted,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -144,12 +184,20 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('停用正在使用的提供商'),
-          content: Text('「${p.label}」是当前选中的 AI 提供商。停用后它不再出现在「AI 设置」里，'
-              'AI 识别按未配置处理（验证码退回手动输入、校历识别入口消失）。\n\n'
-              '已填的 Key 会留着，重新启用就能继续用；也可以在「AI 设置」里先换一家。'),
+          content: Text(
+            '「${p.label}」是当前选中的 AI 提供商。停用后它不再出现在「AI 设置」里，'
+            'AI 识别按未配置处理（验证码退回手动输入、校历识别入口消失）。\n\n'
+            '已填的 Key 会留着，重新启用就能继续用；也可以在「AI 设置」里先换一家。',
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('停用')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('停用'),
+            ),
           ],
         ),
       );
@@ -169,15 +217,21 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
       title: Row(
         children: [
           Flexible(
-            child: Text(p.label,
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: cur ? FontWeight.w700 : FontWeight.w500,
-                    color: on ? null : SemColors.textMuted)),
+            child: Text(
+              p.label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: cur ? FontWeight.w700 : FontWeight.w500,
+                color: on ? null : SemColors.textMuted,
+              ),
+            ),
           ),
           if (cur) ...[
             const SizedBox(width: 6),
-            Capsule('当前', color: on ? SemColors.accent : const Color(0xFF8A8F98)),
+            Capsule(
+              '当前',
+              color: on ? SemColors.accent : const Color(0xFF8A8F98),
+            ),
           ],
           if (!on) ...[
             const SizedBox(width: 6),
@@ -204,75 +258,116 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
         children: [
           Row(
             children: [
-              const Text('实时效果', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const Text(
+                '实时效果',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
               const Spacer(),
-              Text('当前主题「${_r.theme.name}」',
-                  style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
+              Text(
+                '当前主题「${_r.theme.name}」',
+                style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          _effectLine('底栏', navLabels.isEmpty ? '（没有页面了）' : navLabels.join(' · ')),
+          _effectLine(
+            '底栏',
+            navLabels.isEmpty ? '（没有页面了）' : navLabels.join(' · '),
+          ),
           const SizedBox(height: 6),
-          _effectLine('工具宫格',
-              tools.isEmpty ? '（没有启用的工具）' : '${tools.length} 个：${tools.map((t) => t.title).join(' · ')}'),
+          _effectLine(
+            '工具宫格',
+            tools.isEmpty
+                ? '（没有启用的工具）'
+                : '${tools.length} 个：${tools.map((t) => t.title).join(' · ')}',
+          ),
         ],
       ),
     );
   }
 
   Widget _effectLine(String label, String value) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 60,
-            child: Text(label, style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(
+        width: 60,
+        child: Text(
+          label,
+          style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+        ),
+      ),
+      Expanded(
+        child: Text(
+          value,
+          style: TextStyle(
+            fontSize: 12.5,
+            color: SemColors.textSecondary,
+            height: 1.5,
           ),
-          Expanded(
-            child: Text(value,
-                style: TextStyle(fontSize: 12.5, color: SemColors.textSecondary, height: 1.5)),
-          ),
-        ],
-      );
+        ),
+      ),
+    ],
+  );
 
   Widget _sectionTitle(String title, String trailing) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
-        child: Row(
-          children: [
-            Text(title,
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.bold, color: SemColors.textSecondary)),
-            const Spacer(),
-            Text(trailing, style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-          ],
+    padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+    child: Row(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: SemColors.textSecondary,
+          ),
         ),
-      );
+        const Spacer(),
+        Text(
+          trailing,
+          style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+        ),
+      ],
+    ),
+  );
 
   /// 清单自检没过时最该看见的东西：写错的是清单，不是用户的设置。
   Widget _problems() => Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: SemColors.dangerSoft,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: SemColors.dangerSoft,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: SemColors.danger.withValues(alpha: 0.3)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '插件清单有问题',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: SemColors.danger,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('插件清单有问题',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.bold, color: SemColors.danger)),
-            const SizedBox(height: 4),
-            for (final p in _r.problems)
-              Text('· $p',
-                  style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.6)),
-          ],
-        ),
-      );
+        const SizedBox(height: 4),
+        for (final p in _r.problems)
+          Text(
+            '· $p',
+            style: TextStyle(
+              fontSize: 12,
+              color: SemColors.danger,
+              height: 1.6,
+            ),
+          ),
+      ],
+    ),
+  );
 
   /// AI 能力（提供方是 AI 设置插件）：宿主只按 id 取接口，不碰它包里的实现。
   /// 插件没装/被停用时取不到——那几处显示「未装 / 已停用」即可。
-  AiCapability? get _ai => PluginRegistry.I.capability<AiCapability>(PluginIds.ai);
+  AiCapability? get _ai =>
+      PluginRegistry.I.capability<AiCapability>(PluginIds.ai);
 
   Widget _graphCard() {
     final graph = PluginGraph.fromRegistry(_r);
@@ -285,13 +380,20 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('依赖关系', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          const Text(
+            '依赖关系',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          ),
           const SizedBox(height: 4),
           Text(
             '一列 = 一层依赖，基础插件在右、组合功能在左；箭头指向被依赖的一方。'
             '实线 = 启停联动，长虚线 = 可选依赖，短虚线 = 工具卡片挂在工具中心。'
             '点节点看详情，再点一次取消；双指放大看细节。',
-            style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
+            style: TextStyle(
+              fontSize: 11.5,
+              color: SemColors.textMuted,
+              height: 1.6,
+            ),
           ),
           const SizedBox(height: 8),
           ClipRRect(
@@ -304,7 +406,8 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
                 layout: layout,
                 selected: _selected,
                 off: off,
-                onTap: (id) => setState(() => _selected = _selected == id ? null : id),
+                onTap: (id) =>
+                    setState(() => _selected = _selected == id ? null : id),
               ),
             ),
           ),
@@ -318,12 +421,17 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
   Widget _selectedPanel() {
     final id = _selected;
     if (id == null) {
-      return Text('点关系图里的任意节点，这里显示它的依赖详情。',
-          style: TextStyle(fontSize: 12, color: SemColors.textMuted));
+      return Text(
+        '点关系图里的任意节点，这里显示它的依赖详情。',
+        style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+      );
     }
     final feature = _r.byId(id);
     if (feature == null) {
-      final theme = _r.themes.firstWhere((t) => t.id == id, orElse: () => _r.theme);
+      final theme = _r.themes.firstWhere(
+        (t) => t.id == id,
+        orElse: () => _r.theme,
+      );
       final active = _r.theme.id == theme.id;
       return _panelBox(
         icon: Icons.palette_outlined,
@@ -358,37 +466,54 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
     required String description,
     String? extra,
     Widget? action,
-  }) =>
-      Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: SemColors.stripe,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  }) => Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: SemColors.stripe,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Icon(icon, size: 14, color: SemColors.accent),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(title,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            Icon(icon, size: 14, color: SemColors.accent),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
                 ),
-                if (action != null) action,
-              ],
+              ),
             ),
-            const SizedBox(height: 2),
-            Text(description,
-                style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.5)),
-            if (extra != null && extra.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(extra, style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.5)),
-            ],
+            if (action != null) action,
           ],
         ),
-      );
+        const SizedBox(height: 2),
+        Text(
+          description,
+          style: TextStyle(
+            fontSize: 12,
+            color: SemColors.textSecondary,
+            height: 1.5,
+          ),
+        ),
+        if (extra != null && extra.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            extra,
+            style: TextStyle(
+              fontSize: 11.5,
+              color: SemColors.textMuted,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
 
   Widget _featureTile(FeaturePlugin p) {
     final dep = _depLine(p);
@@ -401,12 +526,15 @@ class _PluginManagerPageState extends State<PluginManagerPage> {
       title: Row(
         children: [
           Flexible(
-            child: Text(p.name,
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    // 停用的整行跟着变淡：不用看开关也能一眼扫出哪些关着
-                    color: on ? null : SemColors.textMuted)),
+            child: Text(
+              p.name,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                // 停用的整行跟着变淡：不用看开关也能一眼扫出哪些关着
+                color: on ? null : SemColors.textMuted,
+              ),
+            ),
           ),
           if (!on) ...[
             const SizedBox(width: 6),

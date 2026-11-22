@@ -23,9 +23,13 @@ class TimetablePage extends StatefulWidget {
     DateTime? next;
     for (final hhmm in slotEndTimes) {
       final parts = hhmm.split(':');
-      final at = DateTime(now.year, now.month, now.day,
-          int.tryParse(parts.first) ?? 0,
-          int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0);
+      final at = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        int.tryParse(parts.first) ?? 0,
+        int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0,
+      );
       if (at.isAfter(now) && (next == null || at.isBefore(next))) next = at;
     }
     return next;
@@ -62,6 +66,7 @@ class _TimetablePageState extends State<TimetablePage> {
   static const _slotH = 56.0;
   static const _bandH = 20.0;
   static const _noonH = 12.0;
+
   /// 16:30–18:00 没有节次（晚饭空档）：留一行给这个时段的日程，否则保存了也看不见。
   /// 48px 才放得下「时间 + 两行课名」，40px 时时间会被挤掉。
   static const _gapH = 48.0;
@@ -77,7 +82,10 @@ class _TimetablePageState extends State<TimetablePage> {
   int? get _todayWeek => TimetableStore.locateToday(tt.startDate, tt.weekCount);
 
   /// 手动课程排在教务课程之后 → 渲染时在上层（同位置重叠时用户自己的课优先可见）。
-  List<TtCourse> get _allCourses => [...TimetableStore.deriveImported(tt), ...tt.courses];
+  List<TtCourse> get _allCourses => [
+        ...TimetableStore.deriveImported(tt),
+        ...tt.courses,
+      ];
 
   @override
   void initState() {
@@ -150,12 +158,14 @@ class _TimetablePageState extends State<TimetablePage> {
     required int dayIndex,
     DateTime? now,
   }) =>
-      TimetableStore.upcomingOn(courses,
-          startDate: startDate,
-          week: week,
-          dayIndex: dayIndex,
-          endTimes: TimetableStore.slotEnds,
-          now: now);
+      TimetableStore.upcomingOn(
+        courses,
+        startDate: startDate,
+        week: week,
+        dayIndex: dayIndex,
+        endTimes: TimetableStore.slotEnds,
+        now: now,
+      );
 
   Future<void> _init({bool keepSemester = false}) async {
     if (mounted) setState(() => _booting = true);
@@ -203,7 +213,11 @@ class _TimetablePageState extends State<TimetablePage> {
     if (!_pc.hasClients) return;
     final target = zs.clamp(1, _weekCount) - 1;
     if (animate) {
-      _pc.animateToPage(target, duration: const Duration(milliseconds: 250), curve: Curves.easeOutCubic);
+      _pc.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
     } else {
       _pc.jumpToPage(target);
     }
@@ -215,7 +229,10 @@ class _TimetablePageState extends State<TimetablePage> {
   Future<void> _ensureWeek(int zs, {bool force = false}) async {
     if (zs < 1 || zs > _maxZs) return;
     if (!AppState.I.loggedIn) return;
-    if (!force && (tt.jwxtWeeks.containsKey('$zs') || _loadingWeeks.contains(zs))) return;
+    if (!force &&
+        (tt.jwxtWeeks.containsKey('$zs') || _loadingWeeks.contains(zs))) {
+      return;
+    }
     _loadingWeeks.add(zs);
     if (mounted) setState(() {});
     try {
@@ -268,10 +285,17 @@ class _TimetablePageState extends State<TimetablePage> {
       builder: (ctx) => AlertDialog(
         title: const Text('从教务导入课表'),
         content: Text(
-            '将逐周拉取当前学期（$xnm 学年${xqm == '3' ? '第一' : '第二'}学期）的全部课表，覆盖本机教务数据。\n手动课程与调休规则会保留。'),
+          '将逐周拉取当前学期（$xnm 学年${xqm == '3' ? '第一' : '第二'}学期）的全部课表，覆盖本机教务数据。\n手动课程与调休规则会保留。',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('开始导入')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('开始导入'),
+          ),
         ],
       ),
     );
@@ -280,30 +304,45 @@ class _TimetablePageState extends State<TimetablePage> {
     tt.jwxtWeeks.clear();
     final progress = ValueNotifier('正在连接教务…');
     final popper = ValueNotifier(false);
-    unawaited(showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => PopScope(
-        canPop: false,
-        child: ValueListenableBuilder(
-          valueListenable: popper,
-          builder: (ctx, done, _) => AlertDialog(
-            title: Text(done ? '导入完成' : '正在导入'),
-            content: ValueListenableBuilder(
-              valueListenable: progress,
-              builder: (ctx, msg, _) => Row(children: [
-                if (!done) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                if (!done) const SizedBox(width: 12),
-                Expanded(child: Text(msg, style: const TextStyle(fontSize: 13.5))),
-              ]),
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => PopScope(
+          canPop: false,
+          child: ValueListenableBuilder(
+            valueListenable: popper,
+            builder: (ctx, done, _) => AlertDialog(
+              title: Text(done ? '导入完成' : '正在导入'),
+              content: ValueListenableBuilder(
+                valueListenable: progress,
+                builder: (ctx, msg, _) => Row(
+                  children: [
+                    if (!done)
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    if (!done) const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(msg, style: const TextStyle(fontSize: 13.5)),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                if (done)
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('好的'),
+                  ),
+              ],
             ),
-            actions: [
-              if (done) FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('好的')),
-            ],
           ),
         ),
       ),
-    ));
+    );
 
     var w = 1;
     var lastWeek = 0;
@@ -344,15 +383,22 @@ class _TimetablePageState extends State<TimetablePage> {
     if (!_checkLogin()) return;
     try {
       final r = await ApiClient.I.exams(xnm, xqm);
-      final exams = ((r['exams'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      final exams =
+          ((r['exams'] as List?) ?? const []).cast<Map<String, dynamic>>();
       final added = TimetableStore.addExamEvents(tt, exams);
       await TimetableStore.instance.save();
       if (!mounted) return;
       setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(added > 0 ? '已导入 $added 场考试（跳过 ${exams.length - added} 场）' : '没有新的考试可导入'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            added > 0
+                ? '已导入 $added 场考试（跳过 ${exams.length - added} 场）'
+                : '没有新的考试可导入',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       if (mounted) showErr(context, e, title: '考试导入失败');
     }
@@ -360,11 +406,14 @@ class _TimetablePageState extends State<TimetablePage> {
 
   bool _checkLogin() {
     if (AppState.I.loggedIn) return true;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(AppState.I.direct
-            ? '该功能需要先在「连接设置 → 直连模式」填写校园凭据'
-            : '该功能需要先登录服务器账号'),
-        behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          AppState.I.direct ? '该功能需要先在「连接设置 → 直连模式」填写校园凭据' : '该功能需要先登录服务器账号',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
     return false;
   }
 
@@ -374,7 +423,8 @@ class _TimetablePageState extends State<TimetablePage> {
     if (AppState.I.loggedIn && _terms == null) {
       try {
         final r = await ApiClient.I.grades();
-        _terms = ((r['data'] as Map?)?['terms'] as List?)?.cast<Map<String, dynamic>>();
+        _terms = ((r['data'] as Map?)?['terms'] as List?)
+            ?.cast<Map<String, dynamic>>();
       } catch (_) {}
     }
     final terms = _terms ?? const [];
@@ -384,19 +434,30 @@ class _TimetablePageState extends State<TimetablePage> {
     void addOpt(String xn, String xq, {String? label}) {
       if (xn.isEmpty || xq.isEmpty) return;
       if (opts.any((o) => o.$1 == xn && o.$2 == xq)) return;
-      opts.add((xn, xq, label ?? '$xn-${int.tryParse(xn) != null ? int.parse(xn) + 1 : '?'}学年 ${xq == '3' ? '第一' : xq == '12' ? '第二' : '短'}学期'));
+      opts.add((
+        xn,
+        xq,
+        label ??
+            '$xn-${int.tryParse(xn) != null ? int.parse(xn) + 1 : '?'}学年 ${xq == '3' ? '第一' : xq == '12' ? '第二' : '短'}学期',
+      ));
     }
 
     final inferred = AppState.inferSemester(DateTime.now());
     addOpt(inferred.$1, inferred.$2);
     for (final t in terms) {
-      addOpt('${t['xnm']}', '${t['xqm']}', label: '${t['xnmmc']} ${t['xqmmc']}');
+      addOpt(
+        '${t['xnm']}',
+        '${t['xqm']}',
+        label: '${t['xnmmc']} ${t['xqmmc']}',
+      );
     }
     for (final k in TimetableStore.instance.semesters.keys) {
       final p = k.split('-');
       if (p.length == 2) addOpt(p[0], p[1]);
     }
-    opts.sort((a, b) => '${b.$1}-${b.$2}'.compareTo('${a.$1}-${a.$2}')); // 新 → 旧
+    opts.sort(
+      (a, b) => '${b.$1}-${b.$2}'.compareTo('${a.$1}-${a.$2}'),
+    ); // 新 → 旧
 
     if (!mounted) return;
     await showModalBottomSheet<Object?>(
@@ -407,7 +468,13 @@ class _TimetablePageState extends State<TimetablePage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Padding(padding: EdgeInsets.all(8), child: Text('选择学期', style: TextStyle(fontWeight: FontWeight.bold))),
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  '选择学期',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
               if (opts.isEmpty) _genericSemesterPicker(ctx),
               for (final o in opts)
                 ListTile(
@@ -419,10 +486,15 @@ class _TimetablePageState extends State<TimetablePage> {
                 ),
               const Divider(height: 1),
               ListTile(
-                leading: Icon(Icons.add_circle_outline, color: SemColors.accent),
+                leading: Icon(
+                  Icons.add_circle_outline,
+                  color: SemColors.accent,
+                ),
                 title: Text('新建学期', style: TextStyle(color: SemColors.accent)),
-                subtitle: const Text('建一个空学期，手动排课或稍后从教务导入',
-                    style: TextStyle(fontSize: 12)),
+                subtitle: const Text(
+                  '建一个空学期，手动排课或稍后从教务导入',
+                  style: TextStyle(fontSize: 12),
+                ),
                 onTap: () => Navigator.pop(ctx, const {'new': true}),
               ),
             ],
@@ -461,7 +533,13 @@ class _TimetablePageState extends State<TimetablePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(padding: EdgeInsets.all(8), child: Text('新建学期', style: TextStyle(fontWeight: FontWeight.bold))),
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text(
+                '新建学期',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
             _genericSemesterPicker(ctx, confirmLabel: '创建'),
           ],
         ),
@@ -484,7 +562,10 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   /// 未登录（无学期列表）时的通用选择器：学年 + 学期码。
-  Widget _genericSemesterPicker(BuildContext ctx, {String confirmLabel = '确定'}) {
+  Widget _genericSemesterPicker(
+    BuildContext ctx, {
+    String confirmLabel = '确定',
+  }) {
     final now = DateTime.now().year;
     final years = [for (var y = now - 3; y <= now; y++) '$y'];
     var year = years.contains(xnm) ? xnm : years.last;
@@ -499,8 +580,17 @@ class _TimetablePageState extends State<TimetablePage> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: year,
-                    decoration: const InputDecoration(labelText: '学年（起始年）', isDense: true),
-                    items: [for (final y in years) DropdownMenuItem(value: y, child: Text('$y-${int.parse(y) + 1}学年'))],
+                    decoration: const InputDecoration(
+                      labelText: '学年（起始年）',
+                      isDense: true,
+                    ),
+                    items: [
+                      for (final y in years)
+                        DropdownMenuItem(
+                          value: y,
+                          child: Text('$y-${int.parse(y) + 1}学年'),
+                        ),
+                    ],
                     onChanged: (v) => setS(() => year = v!),
                   ),
                 ),
@@ -508,7 +598,10 @@ class _TimetablePageState extends State<TimetablePage> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: xq,
-                    decoration: const InputDecoration(labelText: '学期', isDense: true),
+                    decoration: const InputDecoration(
+                      labelText: '学期',
+                      isDense: true,
+                    ),
                     items: const [
                       DropdownMenuItem(value: '3', child: Text('第一学期')),
                       DropdownMenuItem(value: '12', child: Text('第二学期')),
@@ -535,21 +628,31 @@ class _TimetablePageState extends State<TimetablePage> {
   // 两个弹窗（学期 / 调休）的实现在 timetable_settings_page.dart：课表页与
   // 「课程表设置」二级页共用同一个，这里只负责「改的就是本页正在显示的那个学期」和改完刷新本页。
 
-  Future<void> _semSettings() =>
-      showSemesterSettingsSheet(context, xnm, xqm, onSaved: () => setState(() {}));
+  Future<void> _semSettings() => showSemesterSettingsSheet(
+        context,
+        xnm,
+        xqm,
+        onSaved: () => setState(() {}),
+      );
 
   /// 「课程表设置」二级页（学期 / 调休 / 上课提醒 / 淡化显示）。
   /// 回来时刷一次：这一页里改的学期起点、调休规则本页都要跟着变。
   Future<void> _openSettings() async {
-    await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => TimetableSettingsPage(semesterKey: '$xnm-$xqm')));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TimetableSettingsPage(semesterKey: '$xnm-$xqm'),
+      ),
+    );
     if (mounted) setState(() {});
   }
 
   /// 「导出 / 导入日历」：把课表导成 .ics，或把日历文件导进来当日程。
   Future<void> _openCalendarIo() async {
-    await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => TimetableIcsPage(xnm: xnm, xqm: xqm)));
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TimetableIcsPage(xnm: xnm, xqm: xqm),
+      ),
+    );
     if (mounted) setState(() {});
   }
 
@@ -560,7 +663,9 @@ class _TimetablePageState extends State<TimetablePage> {
     final placeC = TextEditingController(text: existing?.place ?? '');
     final teachersC = TextEditingController(text: existing?.teachers ?? '');
     final wsC = TextEditingController(text: '${existing?.weekStart ?? 1}');
-    final weC = TextEditingController(text: '${existing?.weekEnd ?? tt.weekCount}');
+    final weC = TextEditingController(
+      text: '${existing?.weekEnd ?? tt.weekCount}',
+    );
     var day = existing?.day ?? 0;
     var slotStart = existing?.slotStart ?? 0;
     var slotEnd = existing?.slotEnd ?? 1;
@@ -573,7 +678,12 @@ class _TimetablePageState extends State<TimetablePage> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          0,
+          20,
+          20 + MediaQuery.of(ctx).viewInsets.bottom,
+        ),
         child: StatefulBuilder(
           builder: (ctx, setS) => Column(
             mainAxisSize: MainAxisSize.min,
@@ -581,29 +691,113 @@ class _TimetablePageState extends State<TimetablePage> {
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(imported ? '编辑教务课程（保存后转为手动）' : existing == null ? '添加课程' : '编辑课程',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  imported
+                      ? '编辑教务课程（保存后转为手动）'
+                      : existing == null
+                          ? '添加课程'
+                          : '编辑课程',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
               ),
-              TextField(controller: nameC, decoration: const InputDecoration(labelText: '课程名 *', isDense: true)),
+              TextField(
+                controller: nameC,
+                decoration: const InputDecoration(
+                  labelText: '课程名 *',
+                  isDense: true,
+                ),
+              ),
               const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: TextField(controller: placeC, decoration: const InputDecoration(labelText: '地点', isDense: true))),
-                const SizedBox(width: 10),
-                Expanded(child: TextField(controller: teachersC, decoration: const InputDecoration(labelText: '教师', isDense: true))),
-              ]),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: placeC,
+                      decoration: const InputDecoration(
+                        labelText: '地点',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: teachersC,
+                      decoration: const InputDecoration(
+                        labelText: '教师',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
-              Wrap(spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                _dropdown<int>('星期', day, [for (var i = 0; i < 7; i++) (i, '周${'一二三四五六日'[i]}')], (v) => setS(() => day = v)),
-                _dropdown<int>('开始', slotStart, [for (var i = 0; i < 11; i++) (i, '第${i + 1}节')], (v) => setS(() => slotStart = v)),
-                _dropdown<int>('结束', slotEnd, [for (var i = 0; i < 11; i++) (i, '第${i + 1}节')], (v) => setS(() => slotEnd = v)),
-                _dropdown<String>('周次', weekType, const [('all', '每周'), ('odd', '单周'), ('even', '双周')], (v) => setS(() => weekType = v)),
-              ]),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _dropdown<int>(
+                      '星期',
+                      day,
+                      [
+                        for (var i = 0; i < 7; i++) (i, '周${'一二三四五六日'[i]}'),
+                      ],
+                      (v) => setS(() => day = v)),
+                  _dropdown<int>(
+                      '开始',
+                      slotStart,
+                      [
+                        for (var i = 0; i < 11; i++) (i, '第${i + 1}节'),
+                      ],
+                      (v) => setS(() => slotStart = v)),
+                  _dropdown<int>(
+                      '结束',
+                      slotEnd,
+                      [
+                        for (var i = 0; i < 11; i++) (i, '第${i + 1}节'),
+                      ],
+                      (v) => setS(() => slotEnd = v)),
+                  _dropdown<String>(
+                      '周次',
+                      weekType,
+                      const [
+                        ('all', '每周'),
+                        ('odd', '单周'),
+                        ('even', '双周'),
+                      ],
+                      (v) => setS(() => weekType = v)),
+                ],
+              ),
               const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: TextField(controller: wsC, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '开始周', isDense: true))),
-                const SizedBox(width: 10),
-                Expanded(child: TextField(controller: weC, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: '结束周（共 $_weekCount 周）', isDense: true))),
-              ]),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: wsC,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '开始周',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: weC,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: '结束周（共 $_weekCount 周）',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               if (error != null) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -613,8 +807,14 @@ class _TimetablePageState extends State<TimetablePage> {
                     color: SemColors.dangerSoft,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(error!,
-                      style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
+                  child: Text(
+                    error!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: SemColors.danger,
+                      height: 1.5,
+                    ),
+                  ),
                 ),
               ],
               const SizedBox(height: 14),
@@ -625,12 +825,18 @@ class _TimetablePageState extends State<TimetablePage> {
                     final name = nameC.text.trim();
                     final ws = int.tryParse(wsC.text.trim()) ?? 0;
                     final we = int.tryParse(weC.text.trim()) ?? 0;
-                    if (name.isEmpty || slotStart > slotEnd || ws < 1 || we < ws || we > _weekCount) {
-                      setS(() => error = name.isEmpty
-                          ? '请填写课程名'
-                          : slotStart > slotEnd
-                              ? '开始节次不能晚于结束节次'
-                              : '周次范围需在 1~$_weekCount 周之间');
+                    if (name.isEmpty ||
+                        slotStart > slotEnd ||
+                        ws < 1 ||
+                        we < ws ||
+                        we > _weekCount) {
+                      setS(
+                        () => error = name.isEmpty
+                            ? '请填写课程名'
+                            : slotStart > slotEnd
+                                ? '开始节次不能晚于结束节次'
+                                : '周次范围需在 1~$_weekCount 周之间',
+                      );
                       return;
                     }
                     final data = TtCourse(
@@ -650,7 +856,9 @@ class _TimetablePageState extends State<TimetablePage> {
                       tt.courses.add(data);
                       TimetableStore.removeImportedSegment(tt, existing);
                     } else if (existing != null) {
-                      final i = tt.courses.indexWhere((c) => c.id == existing.id);
+                      final i = tt.courses.indexWhere(
+                        (c) => c.id == existing.id,
+                      );
                       if (i >= 0) tt.courses[i] = data;
                     } else {
                       tt.courses.add(data);
@@ -669,11 +877,24 @@ class _TimetablePageState extends State<TimetablePage> {
     if (saved == true && mounted) setState(() {});
   }
 
-  Widget _dropdown<T>(String label, T value, List<(T, String)> items, ValueChanged<T> onChanged) =>
+  Widget _dropdown<T>(
+    String label,
+    T value,
+    List<(T, String)> items,
+    ValueChanged<T> onChanged,
+  ) =>
       DropdownButton<T>(
         value: value,
-        items: [for (final (v, l) in items) DropdownMenuItem(value: v, child: Text('$label $l', style: const TextStyle(fontSize: 13)))],
-        onChanged: (v) { if (v != null) onChanged(v); },
+        items: [
+          for (final (v, l) in items)
+            DropdownMenuItem(
+              value: v,
+              child: Text('$label $l', style: const TextStyle(fontSize: 13)),
+            ),
+        ],
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
         underline: const SizedBox(),
         isDense: true,
       );
@@ -692,37 +913,56 @@ class _TimetablePageState extends State<TimetablePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Expanded(child: Text(c.name, style: Theme.of(ctx).textTheme.titleLarge)),
-                if (imported) Capsule('教务课程', color: SemColors.info),
-              ]),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      c.name,
+                      style: Theme.of(ctx).textTheme.titleLarge,
+                    ),
+                  ),
+                  if (imported) Capsule('教务课程', color: SemColors.info),
+                ],
+              ),
               const SizedBox(height: 12),
-              _detailRow('时间', '周${'一二三四五六日'[c.day]} 第${c.slotStart + 1}-${c.slotEnd + 1}节 · '
-                  '${_weekTypeLabel(c.weekType)} ${c.weekStart}-${c.weekEnd} 周'),
+              _detailRow(
+                '时间',
+                '周${'一二三四五六日'[c.day]} 第${c.slotStart + 1}-${c.slotEnd + 1}节 · '
+                    '${_weekTypeLabel(c.weekType)} ${c.weekStart}-${c.weekEnd} 周',
+              ),
               _detailRow('地点', c.place.isEmpty ? '-' : c.place),
               _detailRow('教师', c.teachers.isEmpty ? '-' : c.teachers),
               if (c.code.isNotEmpty) _detailRow('课程代码', c.code),
               if (c.clazz.isNotEmpty) _detailRow('教学班', c.clazz),
               const SizedBox(height: 8),
-              Row(children: [
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _courseForm(existing: c, imported: imported);
-                  },
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: Text(imported ? '编辑（转手动）' : '编辑'),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _deleteCourse(c, zs);
-                  },
-                  icon: Icon(Icons.delete_outline, size: 18, color: SemColors.danger),
-                  label: Text('删除', style: TextStyle(color: SemColors.danger)),
-                ),
-              ]),
+              Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _courseForm(existing: c, imported: imported);
+                    },
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: Text(imported ? '编辑（转手动）' : '编辑'),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _deleteCourse(c, zs);
+                    },
+                    icon: Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: SemColors.danger,
+                    ),
+                    label: Text(
+                      '删除',
+                      style: TextStyle(color: SemColors.danger),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -730,7 +970,11 @@ class _TimetablePageState extends State<TimetablePage> {
     );
   }
 
-  String _weekTypeLabel(String t) => switch (t) { 'odd' => '单周', 'even' => '双周', _ => '每周' };
+  String _weekTypeLabel(String t) => switch (t) {
+        'odd' => '单周',
+        'even' => '双周',
+        _ => '每周',
+      };
 
   Future<void> _deleteCourse(TtCourse c, int zs) async {
     final imported = _isImported(c);
@@ -741,10 +985,18 @@ class _TimetablePageState extends State<TimetablePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(padding: EdgeInsets.all(12), child: Text('删除方式', style: TextStyle(fontWeight: FontWeight.bold))),
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                '删除方式',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
             ListTile(
               title: Text('仅第 $zs 周这一次'),
-              subtitle: imported ? null : const Text('自动拆分周次，其余周保留', style: TextStyle(fontSize: 12)),
+              subtitle: imported
+                  ? null
+                  : const Text('自动拆分周次，其余周保留', style: TextStyle(fontSize: 12)),
               onTap: () => Navigator.pop(ctx, 'week'),
             ),
             ListTile(
@@ -763,18 +1015,36 @@ class _TimetablePageState extends State<TimetablePage> {
         // 拆分周次：原条目替换成前段 + 后段
         final parts = <TtCourse>[];
         if (c.weekStart < zs) {
-          parts.add(TtCourse(
-            id: TimetableStore.genId(), name: c.name, place: c.place, teachers: c.teachers,
-            day: c.day, slotStart: c.slotStart, slotEnd: c.slotEnd, weekType: c.weekType,
-            weekStart: c.weekStart, weekEnd: zs - 1,
-          ));
+          parts.add(
+            TtCourse(
+              id: TimetableStore.genId(),
+              name: c.name,
+              place: c.place,
+              teachers: c.teachers,
+              day: c.day,
+              slotStart: c.slotStart,
+              slotEnd: c.slotEnd,
+              weekType: c.weekType,
+              weekStart: c.weekStart,
+              weekEnd: zs - 1,
+            ),
+          );
         }
         if (zs < c.weekEnd) {
-          parts.add(TtCourse(
-            id: TimetableStore.genId(), name: c.name, place: c.place, teachers: c.teachers,
-            day: c.day, slotStart: c.slotStart, slotEnd: c.slotEnd, weekType: c.weekType,
-            weekStart: zs + 1, weekEnd: c.weekEnd,
-          ));
+          parts.add(
+            TtCourse(
+              id: TimetableStore.genId(),
+              name: c.name,
+              place: c.place,
+              teachers: c.teachers,
+              day: c.day,
+              slotStart: c.slotStart,
+              slotEnd: c.slotEnd,
+              weekType: c.weekType,
+              weekStart: zs + 1,
+              weekEnd: c.weekEnd,
+            ),
+          );
         }
         tt.courses.removeWhere((x) => x.id == c.id);
         tt.courses.addAll(parts);
@@ -796,11 +1066,15 @@ class _TimetablePageState extends State<TimetablePage> {
     final nameC = TextEditingController(text: existing?.name ?? '');
     final placeC = TextEditingController(text: existing?.place ?? '');
     final noteC = TextEditingController(text: existing?.note ?? '');
-    DateTime? date = existing == null || existing.date.isEmpty ? null : DateTime.tryParse(existing.date);
+    DateTime? date = existing == null || existing.date.isEmpty
+        ? null
+        : DateTime.tryParse(existing.date);
     var weekly = existing != null && existing.date.isEmpty;
     var day = existing?.day ?? 0;
-    TimeOfDay start = _toTOD(existing?.start) ?? const TimeOfDay(hour: 19, minute: 0);
-    TimeOfDay end = _toTOD(existing?.end) ?? const TimeOfDay(hour: 20, minute: 0);
+    TimeOfDay start =
+        _toTOD(existing?.start) ?? const TimeOfDay(hour: 19, minute: 0);
+    TimeOfDay end =
+        _toTOD(existing?.end) ?? const TimeOfDay(hour: 20, minute: 0);
     // 校验提示画在弹层里：SnackBar 挂在页面 Scaffold 上，会被底部弹层盖住。
     String? error;
 
@@ -809,7 +1083,12 @@ class _TimetablePageState extends State<TimetablePage> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          0,
+          20,
+          20 + MediaQuery.of(ctx).viewInsets.bottom,
+        ),
         child: StatefulBuilder(
           builder: (ctx, setS) => Column(
             mainAxisSize: MainAxisSize.min,
@@ -817,12 +1096,29 @@ class _TimetablePageState extends State<TimetablePage> {
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(existing == null ? '添加日程' : '编辑日程',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  existing == null ? '添加日程' : '编辑日程',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
               ),
-              TextField(controller: nameC, decoration: const InputDecoration(labelText: '名称 *', isDense: true)),
+              TextField(
+                controller: nameC,
+                decoration: const InputDecoration(
+                  labelText: '名称 *',
+                  isDense: true,
+                ),
+              ),
               const SizedBox(height: 8),
-              TextField(controller: placeC, decoration: const InputDecoration(labelText: '地点', isDense: true)),
+              TextField(
+                controller: placeC,
+                decoration: const InputDecoration(
+                  labelText: '地点',
+                  isDense: true,
+                ),
+              ),
               const SizedBox(height: 8),
               GlassTabs(
                 labels: const ['单次（选日期）', '每周重复'],
@@ -830,53 +1126,80 @@ class _TimetablePageState extends State<TimetablePage> {
                 onChanged: (i) => setS(() => weekly = i == 1),
               ),
               const SizedBox(height: 8),
-              Row(children: [
-                if (weekly)
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      initialValue: day,
-                      decoration: const InputDecoration(labelText: '星期', isDense: true),
-                      items: [for (var i = 0; i < 7; i++) DropdownMenuItem(value: i, child: Text('周${'一二三四五六日'[i]}'))],
-                      onChanged: (v) => setS(() => day = v!),
+              Row(
+                children: [
+                  if (weekly)
+                    Expanded(
+                      child: DropdownButtonFormField<int>(
+                        initialValue: day,
+                        decoration: const InputDecoration(
+                          labelText: '星期',
+                          isDense: true,
+                        ),
+                        items: [
+                          for (var i = 0; i < 7; i++)
+                            DropdownMenuItem(
+                              value: i,
+                              child: Text('周${'一二三四五六日'[i]}'),
+                            ),
+                        ],
+                        onChanged: (v) => setS(() => day = v!),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final now = DateTime.now();
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate: date ?? now,
+                            firstDate: DateTime(now.year - 1),
+                            lastDate: DateTime(now.year + 1),
+                          );
+                          if (picked != null) setS(() => date = picked);
+                        },
+                        child: Text(
+                          date == null ? '选择日期 *' : TimetableStore.iso(date!),
+                        ),
+                      ),
                     ),
-                  )
-                else
+                  const SizedBox(width: 10),
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () async {
-                        final now = DateTime.now();
-                        final picked = await showDatePicker(
-                          context: ctx, initialDate: date ?? now,
-                          firstDate: DateTime(now.year - 1), lastDate: DateTime(now.year + 1),
+                        final t = await showTimePicker(
+                          context: ctx,
+                          initialTime: start,
                         );
-                        if (picked != null) setS(() => date = picked);
+                        if (t != null) setS(() => start = t);
                       },
-                      child: Text(date == null ? '选择日期 *' : TimetableStore.iso(date!)),
+                      child: Text('开始 ${start.format(ctx)}'),
                     ),
                   ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      final t = await showTimePicker(context: ctx, initialTime: start);
-                      if (t != null) setS(() => start = t);
-                    },
-                    child: Text('开始 ${start.format(ctx)}'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        final t = await showTimePicker(
+                          context: ctx,
+                          initialTime: end,
+                        );
+                        if (t != null) setS(() => end = t);
+                      },
+                      child: Text('结束 ${end.format(ctx)}'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      final t = await showTimePicker(context: ctx, initialTime: end);
-                      if (t != null) setS(() => end = t);
-                    },
-                    child: Text('结束 ${end.format(ctx)}'),
-                  ),
-                ),
-              ]),
+                ],
+              ),
               const SizedBox(height: 8),
-              TextField(controller: noteC, decoration: const InputDecoration(labelText: '备注', isDense: true)),
+              TextField(
+                controller: noteC,
+                decoration: const InputDecoration(
+                  labelText: '备注',
+                  isDense: true,
+                ),
+              ),
               if (error != null) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -886,8 +1209,14 @@ class _TimetablePageState extends State<TimetablePage> {
                     color: SemColors.dangerSoft,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(error!,
-                      style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.5)),
+                  child: Text(
+                    error!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: SemColors.danger,
+                      height: 1.5,
+                    ),
+                  ),
                 ),
               ],
               const SizedBox(height: 14),
@@ -897,9 +1226,9 @@ class _TimetablePageState extends State<TimetablePage> {
                   onPressed: () {
                     final name = nameC.text.trim();
                     if (name.isEmpty || (!weekly && date == null)) {
-                      setS(() => error = name.isEmpty
-                          ? '请填写日程名称'
-                          : '单次日程需要选择日期');
+                      setS(
+                        () => error = name.isEmpty ? '请填写日程名称' : '单次日程需要选择日期',
+                      );
                       return;
                     }
                     final ev = TtEvent(
@@ -908,12 +1237,16 @@ class _TimetablePageState extends State<TimetablePage> {
                       place: placeC.text.trim(),
                       date: weekly ? '' : TimetableStore.iso(date!),
                       day: weekly ? day : (date!.weekday - 1),
-                      start: '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}',
-                      end: '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
+                      start:
+                          '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}',
+                      end:
+                          '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
                       note: noteC.text.trim(),
                     );
                     if (existing != null) {
-                      final i = tt.events.indexWhere((x) => x.id == existing.id);
+                      final i = tt.events.indexWhere(
+                        (x) => x.id == existing.id,
+                      );
                       if (i >= 0) tt.events[i] = ev;
                     } else {
                       tt.events.add(ev);
@@ -949,39 +1282,60 @@ class _TimetablePageState extends State<TimetablePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Expanded(child: Text(e.name, style: Theme.of(ctx).textTheme.titleLarge)),
-                if (e.kind == 'exam') Capsule('考试', color: SemColors.danger),
-                if (e.date.isEmpty) Capsule('每周', color: SemColors.info),
-              ]),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      e.name,
+                      style: Theme.of(ctx).textTheme.titleLarge,
+                    ),
+                  ),
+                  if (e.kind == 'exam') Capsule('考试', color: SemColors.danger),
+                  if (e.date.isEmpty) Capsule('每周', color: SemColors.info),
+                ],
+              ),
               const SizedBox(height: 12),
-              _detailRow('时间', e.date.isEmpty
-                  ? '每周 周${'一二三四五六日'[e.day]} ${e.start}~${e.end}'
-                  : '${e.date} ${e.start}~${e.end}'),
+              _detailRow(
+                '时间',
+                e.date.isEmpty
+                    ? '每周 周${'一二三四五六日'[e.day]} ${e.start}~${e.end}'
+                    : '${e.date} ${e.start}~${e.end}',
+              ),
               if (e.place.isNotEmpty) _detailRow('地点', e.place),
               if (e.seat.isNotEmpty) _detailRow('座位', e.seat),
               if (e.note.isNotEmpty) _detailRow('备注', e.note),
               const SizedBox(height: 8),
-              Row(children: [
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _eventForm(existing: e);
-                  },
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('编辑'),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    setState(() => tt.events.removeWhere((x) => x.id == e.id));
-                    TimetableStore.instance.save();
-                  },
-                  icon: Icon(Icons.delete_outline, size: 18, color: SemColors.danger),
-                  label: Text('删除', style: TextStyle(color: SemColors.danger)),
-                ),
-              ]),
+              Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _eventForm(existing: e);
+                    },
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('编辑'),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      setState(
+                        () => tt.events.removeWhere((x) => x.id == e.id),
+                      );
+                      TimetableStore.instance.save();
+                    },
+                    icon: Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: SemColors.danger,
+                    ),
+                    label: Text(
+                      '删除',
+                      style: TextStyle(color: SemColors.danger),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -1011,175 +1365,275 @@ class _TimetablePageState extends State<TimetablePage> {
     }
     if (!mounted) return;
     if (tip != null) {
-      messenger.showSnackBar(SnackBar(content: Text(tip), behavior: SnackBarBehavior.floating));
+      messenger.showSnackBar(
+        SnackBar(content: Text(tip), behavior: SnackBarBehavior.floating),
+      );
     }
   }
 
   /// 课表页 AppBar 的提醒图标：点击即开关（与「我的」页开关同一份状态）。
-  Future<void> _toggleReminder() => _onReminderToggle(!(_reminder?.enabled ?? false));
+  Future<void> _toggleReminder() =>
+      _onReminderToggle(!(_reminder?.enabled ?? false));
 
   @override
   Widget build(BuildContext context) {
     if (_booting) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    return Scaffold(
-      appBar: AppBar(
-        // 学期名靠左：它是这张表的标识，左边更像「这一页的标题」；右侧留给三个操作按钮。
-        // 标题本身就是切换学期的入口（箭头暗示可点），右上角菜单里也留着同一项。
-        centerTitle: false,
-        title: InkWell(
-          onTap: _pickSemester,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(_semesterTitle,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+    // 整页监听 AppState：「悬浮玻璃顶栏」开关改完要连 Scaffold 一起重建
+    // （extendBodyBehindAppBar / appBar / 顶部留白都在 build 里定死）
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            // 学期名靠左：它是这张表的标识，左边更像「这一页的标题」；右侧留给三个操作按钮。
+            // 标题本身就是切换学期的入口（箭头暗示可点），右上角菜单里也留着同一项。
+            centerTitle: false,
+            title: InkWell(
+              onTap: _pickSemester,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _semesterTitle,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.arrow_drop_down, size: 22),
+                  ],
                 ),
-                const SizedBox(width: 2),
-                const Icon(Icons.arrow_drop_down, size: 22),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: () {
-              if (!_dayView) {
-                // 切到日视图：目标页 = 当前显示的周/日；跳转后显式同步状态，
-                // 不依赖 onPageChanged（attach 到新 PageView 时可能不触发）
-                final target = (_shownWeek - 1) * 7 + _shownDay;
-                setState(() => _dayView = true);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted || !_dayPc.hasClients) return;
-                  _dayPc.jumpToPage(target);
-                  setState(() {
-                    _shownWeek = target ~/ 7 + 1;
-                    _shownDay = target % 7;
-                  });
-                });
-              } else {
-                setState(() => _dayView = false);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && _pc.hasClients) _pc.jumpToPage(_shownWeek - 1);
-                });
-              }
-            },
-            icon: Icon(_dayView ? Icons.calendar_view_week_rounded : Icons.calendar_view_day_rounded),
-            tooltip: _dayView ? '周视图' : '日视图',
-          ),
-          // 「上课提醒」插件停用/没装时取不到能力，整颗按钮都不出现
-          // （提醒是插件提供的功能，不是课表的一部分）
-          if (_reminder case final r?)
-            ListenableBuilder(
-              listenable: r.listenable,
-              builder: (_, __) => IconButton(
-                onPressed: _toggleReminder,
-                icon: Icon(r.enabled
-                    ? Icons.notifications_active
-                    : Icons.notifications_off_outlined),
-                tooltip: r.enabled
-                    ? '上课提醒已开启（课前 ${r.leadMinutes} 分钟）'
-                    : '开启上课提醒（课前 ${r.leadMinutes} 分钟）',
               ),
             ),
-          PopupMenuButton<String>(
-            tooltip: '更多',
-            onSelected: (v) {
-              switch (v) {
-                case 'addCourse':
-                  _courseFormAdd();
-                case 'addEvent':
-                  _eventForm();
-                case 'import':
-                  _importAll();
-                case 'exams':
-                  _importExams();
-                case 'ical':
-                  _openCalendarIo();
-                case 'settings':
-                  _openSettings();
-                case 'switch':
-                  _pickSemester();
-                case 'refresh':
-                  _ensureWeek(_shownWeek, force: true);
-              }
-            },
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(value: 'addCourse', child: ListTile(leading: Icon(Icons.add), title: Text('添加课程'), contentPadding: EdgeInsets.zero, dense: true)),
-              const PopupMenuItem(value: 'addEvent', child: ListTile(leading: Icon(Icons.schedule_rounded), title: Text('添加日程'), contentPadding: EdgeInsets.zero, dense: true)),
-              const PopupMenuItem(value: 'import', child: ListTile(leading: Icon(Icons.cloud_download_outlined), title: Text('教务导入课表'), contentPadding: EdgeInsets.zero, dense: true)),
-              const PopupMenuItem(value: 'exams', child: ListTile(leading: Icon(Icons.event_note_outlined), title: Text('导入考试安排'), contentPadding: EdgeInsets.zero, dense: true)),
-              const PopupMenuItem(value: 'ical', child: ListTile(leading: Icon(Icons.ios_share_rounded), title: Text('导出 / 导入日历'), contentPadding: EdgeInsets.zero, dense: true)),
-              const PopupMenuItem(value: 'settings', child: ListTile(leading: Icon(Icons.settings_outlined), title: Text('课程表设置'), contentPadding: EdgeInsets.zero, dense: true)),
-              const PopupMenuItem(value: 'switch', child: ListTile(leading: Icon(Icons.calendar_month_outlined), title: Text('切换学期'), contentPadding: EdgeInsets.zero, dense: true)),
-              if (AppState.I.loggedIn)
-                const PopupMenuItem(value: 'refresh', child: ListTile(leading: Icon(Icons.refresh), title: Text('刷新本周'), contentPadding: EdgeInsets.zero, dense: true)),
-            ],
-          ),
-        ],
-      ),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([AppState.I, TtBackground.I]),
-        builder: (context, _) {
-          if (_dayView) {
-            // 日视图分页高度取当周各天内容的最高值（每天课数不同）——量完再设，故在这里排一帧
-            WidgetsBinding.instance.addPostFrameCallback((_) => _measureDayPager());
-          }
-          return Stack(
-            children: [
-              // 自定义背景图：整页淡显铺底，垫在所有内容之下（没设置就不占层）
-              if (TtBackground.I.path case final bgPath?)
-                Positioned.fill(
-                  child: Opacity(
-                    opacity: TtBackground.I.opacity.clamp(
-                        TtBackground.minOpacity, TtBackground.maxOpacity),
-                    child: Image.file(
-                      File(bgPath),
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            actions: [
+              IconButton(
+                onPressed: () {
+                  if (!_dayView) {
+                    // 切到日视图：目标页 = 当前显示的周/日；跳转后显式同步状态，
+                    // 不依赖 onPageChanged（attach 到新 PageView 时可能不触发）
+                    final target = (_shownWeek - 1) * 7 + _shownDay;
+                    setState(() => _dayView = true);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted || !_dayPc.hasClients) return;
+                      _dayPc.jumpToPage(target);
+                      setState(() {
+                        _shownWeek = target ~/ 7 + 1;
+                        _shownDay = target % 7;
+                      });
+                    });
+                  } else {
+                    setState(() => _dayView = false);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted && _pc.hasClients) {
+                        _pc.jumpToPage(_shownWeek - 1);
+                      }
+                    });
+                  }
+                },
+                icon: Icon(
+                  _dayView
+                      ? Icons.calendar_view_week_rounded
+                      : Icons.calendar_view_day_rounded,
+                ),
+                tooltip: _dayView ? '周视图' : '日视图',
+              ),
+              // 「上课提醒」插件停用/没装时取不到能力，整颗按钮都不出现
+              // （提醒是插件提供的功能，不是课表的一部分）
+              if (_reminder case final r?)
+                glassTopBarAction(
+                  ListenableBuilder(
+                    listenable: r.listenable,
+                    builder: (_, __) => IconButton(
+                      onPressed: _toggleReminder,
+                      icon: Icon(
+                        r.enabled
+                            ? Icons.notifications_active
+                            : Icons.notifications_off_outlined,
+                      ),
+                      tooltip: r.enabled
+                          ? '上课提醒已开启（课前 ${r.leadMinutes} 分钟）'
+                          : '开启上课提醒（课前 ${r.leadMinutes} 分钟）',
                     ),
                   ),
                 ),
-              // 顶部「今天」卡与近期日程条不属于任何一页：它们和课表在**同一条竖向滚动**里
-              // （整页一起上下滑），但左右切周 / 切天时不该跟着横向位移，所以放在分页之外。
-              // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：滚动底部与切换条都要让开它，
-              // 否则最后几节课和切换条会被压在玻璃底栏下面
-              Positioned.fill(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.only(
-                      bottom: 90 + MediaQuery.paddingOf(context).bottom),
-                  child: Column(
-                    children: [
-                      if (!AppState.I.loggedIn) _guestBanner(),
-                      _todayCard(),
-                      _examStrip(),
-                      LayoutBuilder(
-                        builder: (context, cons) => _dayView
-                            ? _dayPager(cons.maxWidth)
-                            : _weekPager(),
-                      ),
-                    ],
+              glassTopBarAction(
+                PopupMenuButton<String>(
+                tooltip: '更多',
+                onSelected: (v) {
+                  switch (v) {
+                    case 'addCourse':
+                      _courseFormAdd();
+                    case 'addEvent':
+                      _eventForm();
+                    case 'import':
+                      _importAll();
+                    case 'exams':
+                      _importExams();
+                    case 'ical':
+                      _openCalendarIo();
+                    case 'settings':
+                      _openSettings();
+                    case 'switch':
+                      _pickSemester();
+                    case 'refresh':
+                      _ensureWeek(_shownWeek, force: true);
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                    value: 'addCourse',
+                    child: ListTile(
+                      leading: Icon(Icons.add),
+                      title: Text('添加课程'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
                   ),
-                ),
+                  const PopupMenuItem(
+                    value: 'addEvent',
+                    child: ListTile(
+                      leading: Icon(Icons.schedule_rounded),
+                      title: Text('添加日程'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'import',
+                    child: ListTile(
+                      leading: Icon(Icons.cloud_download_outlined),
+                      title: Text('教务导入课表'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'exams',
+                    child: ListTile(
+                      leading: Icon(Icons.event_note_outlined),
+                      title: Text('导入考试安排'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'ical',
+                    child: ListTile(
+                      leading: Icon(Icons.ios_share_rounded),
+                      title: Text('导出 / 导入日历'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'settings',
+                    child: ListTile(
+                      leading: Icon(Icons.settings_outlined),
+                      title: Text('课程表设置'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'switch',
+                    child: ListTile(
+                      leading: Icon(Icons.calendar_month_outlined),
+                      title: Text('切换学期'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  if (AppState.I.loggedIn)
+                    const PopupMenuItem(
+                      value: 'refresh',
+                      child: ListTile(
+                        leading: Icon(Icons.refresh),
+                        title: Text('刷新本周'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                ],
               ),
-              // 底部悬浮导航条：周视图切周 / 日视图切天（抬高一个底栏高度，压在玻璃底栏上方）
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 12 + MediaQuery.paddingOf(context).bottom,
-                child: _dayView ? _dayNav() : _weekNav(),
               ),
             ],
-          );
-        },
-      ),
+          ),
+          body: ListenableBuilder(
+            listenable: Listenable.merge([AppState.I, TtBackground.I]),
+            builder: (context, _) {
+              if (_dayView) {
+                // 日视图分页高度取当周各天内容的最高值（每天课数不同）——量完再设，故在这里排一帧
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _measureDayPager(),
+                );
+              }
+              return Stack(
+                children: [
+                  // 自定义背景图：整页淡显铺底，垫在所有内容之下（没设置就不占层）
+                  if (TtBackground.I.path case final bgPath?)
+                    Positioned.fill(
+                      child: Opacity(
+                        opacity: TtBackground.I.opacity.clamp(
+                          TtBackground.minOpacity,
+                          TtBackground.maxOpacity,
+                        ),
+                        child: Image.file(
+                          File(bgPath),
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ),
+                  // 顶部「今天」卡与近期日程条不属于任何一页：它们和课表在**同一条竖向滚动**里
+                  // （整页一起上下滑），但左右切周 / 切天时不该跟着横向位移，所以放在分页之外。
+                  // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：滚动底部与切换条都要让开它，
+                  // 否则最后几节课和切换条会被压在玻璃底栏下面
+                  Positioned.fill(
+                    child: SingleChildScrollView(
+                      // 自绘滚动内容：顶部让出悬浮顶栏，初始状态内容不被顶栏压住
+                      padding: EdgeInsets.only(
+                        top: topInset,
+                        bottom: 90 + MediaQuery.paddingOf(context).bottom,
+                      ),
+                      child: Column(
+                        children: [
+                          if (!AppState.I.loggedIn) _guestBanner(),
+                          _todayCard(),
+                          _examStrip(),
+                          LayoutBuilder(
+                            builder: (context, cons) => _dayView
+                                ? _dayPager(cons.maxWidth)
+                                : _weekPager(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // 底部悬浮导航条：周视图切周 / 日视图切天（抬高一个底栏高度，压在玻璃底栏上方）
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 12 + MediaQuery.paddingOf(context).bottom,
+                    child: _dayView ? _dayNav() : _weekNav(),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -1229,7 +1683,10 @@ class _TimetablePageState extends State<TimetablePage> {
                 top: 0,
                 width: width,
                 child: Offstage(
-                  child: KeyedSubtree(key: _dayProbeKeys[d], child: _dayBody(_shownWeek, d)),
+                  child: KeyedSubtree(
+                    key: _dayProbeKeys[d],
+                    child: _dayBody(_shownWeek, d),
+                  ),
                 ),
               ),
           ],
@@ -1244,7 +1701,9 @@ class _TimetablePageState extends State<TimetablePage> {
       final box = key.currentContext?.findRenderObject() as RenderBox?;
       if (box != null && box.hasSize) maxH = math.max(maxH, box.size.height);
     }
-    if (maxH > 0 && (maxH - _dayPagerH).abs() > 0.5) setState(() => _dayPagerH = maxH);
+    if (maxH > 0 && (maxH - _dayPagerH).abs() > 0.5) {
+      setState(() => _dayPagerH = maxH);
+    }
   }
 
   void _courseFormAdd() => _courseForm();
@@ -1278,9 +1737,8 @@ class _TimetablePageState extends State<TimetablePage> {
     final noStart = tt.startDate.isEmpty;
     // 调休规则同样作用于今天：off → 无课，follow → 按被借星期的课表
     final adj = tw == null ? null : _colAdjust(tw, now.weekday - 1);
-    final effDay = adj == null
-        ? now.weekday - 1
-        : (adj.type == 'off' ? null : adj.day);
+    final effDay =
+        adj == null ? now.weekday - 1 : (adj.type == 'off' ? null : adj.day);
     List<TtCourse> courses = const [];
     if (tw != null && effDay != null) {
       courses = _coursesOf(tw).where((c) => c.day == effDay).toList()
@@ -1292,8 +1750,13 @@ class _TimetablePageState extends State<TimetablePage> {
     // 卡片就变成一句课都不显示（不调休时正常）。所以只按 effDay 取课，日期仍用今天所在列。
     final upcoming = (tw == null || effDay == null)
         ? courses
-        : upcomingToday(courses,
-            startDate: tt.startDate, week: tw, dayIndex: now.weekday - 1, now: now);
+        : upcomingToday(
+            courses,
+            startDate: tt.startDate,
+            week: tw,
+            dayIndex: now.weekday - 1,
+            now: now,
+          );
     final next = upcoming.isEmpty ? null : upcoming.first;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
@@ -1312,26 +1775,38 @@ class _TimetablePageState extends State<TimetablePage> {
                       : tw == null
                           ? '假期中（学期外）'
                           : '今天 · 第$tw周',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                 ),
                 const Spacer(),
                 if (noStart)
                   GestureDetector(
                     onTap: _semSettings,
-                    child: Text('去设置', style: TextStyle(fontSize: 12, color: SemColors.accent)),
+                    child: Text(
+                      '去设置',
+                      style: TextStyle(fontSize: 12, color: SemColors.accent),
+                    ),
                   )
                 else
                   Text(
-                      adj?.type == 'off'
-                          ? '放假（调休）'
-                          : (adj?.type == 'follow'
-                              ? '按周${'一二三四五六日'[adj!.day]}上课'
-                              : (courses.isEmpty
-                                  ? '今天没有课'
-                                  : (next == null ? '今天的课都上完了' : '还剩 ${upcoming.length} 节'))),
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: adj?.type == 'off' ? SemColors.danger : SemColors.textMuted)),
+                    adj?.type == 'off'
+                        ? '放假（调休）'
+                        : (adj?.type == 'follow'
+                            ? '按周${'一二三四五六日'[adj!.day]}上课'
+                            : (courses.isEmpty
+                                ? '今天没有课'
+                                : (next == null
+                                    ? '今天的课都上完了'
+                                    : '还剩 ${upcoming.length} 节'))),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: adj?.type == 'off'
+                          ? SemColors.danger
+                          : SemColors.textMuted,
+                    ),
+                  ),
               ],
             ),
             if (!noStart && tw != null && next != null) ...[
@@ -1374,9 +1849,17 @@ class _TimetablePageState extends State<TimetablePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(from,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                Text(to, style: TextStyle(fontSize: 10, color: SemColors.textMuted)),
+                Text(
+                  from,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  to,
+                  style: TextStyle(fontSize: 10, color: SemColors.textMuted),
+                ),
               ],
             ),
           ),
@@ -1387,25 +1870,38 @@ class _TimetablePageState extends State<TimetablePage> {
                 Row(
                   children: [
                     Flexible(
-                      child: Text(c.name,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        c.name,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     if (inClass) ...[
                       const SizedBox(width: 6),
                       // 玻璃化：底色很淡 + 文字半透明 + 细描边，压在课程色块上不抢主体
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: SemColors.accent.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                              color: SemColors.accent.withValues(alpha: 0.25), width: 0.8),
+                            color: SemColors.accent.withValues(alpha: 0.25),
+                            width: 0.8,
+                          ),
                         ),
-                        child: Text('正在上课',
-                            style: TextStyle(
-                                fontSize: 9.5,
-                                color: SemColors.accent.withValues(alpha: 0.85))),
+                        child: Text(
+                          '正在上课',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            color: SemColors.accent.withValues(alpha: 0.85),
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -1414,7 +1910,10 @@ class _TimetablePageState extends State<TimetablePage> {
                   '第${c.slotStart + 1}-${c.slotEnd + 1}节'
                   '${c.place.isEmpty ? '' : ' · ${c.place}'}'
                   '${c.teachers.isEmpty ? '' : ' · ${c.teachers}'}',
-                  style: TextStyle(fontSize: 11, color: SemColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: SemColors.textSecondary,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -1448,12 +1947,23 @@ class _TimetablePageState extends State<TimetablePage> {
           children: [
             Row(
               children: [
-                Icon(upcoming.first.$1.kind == 'exam' ? Icons.event_note_rounded : Icons.schedule_rounded,
-                    size: 15, color: SemColors.danger),
+                Icon(
+                  upcoming.first.$1.kind == 'exam'
+                      ? Icons.event_note_rounded
+                      : Icons.schedule_rounded,
+                  size: 15,
+                  color: SemColors.danger,
+                ),
                 const SizedBox(width: 6),
-                const Text('近期日程', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const Text(
+                  '近期日程',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
                 const Spacer(),
-                Text('${upcoming.length} 项', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                Text(
+                  '${upcoming.length} 项',
+                  style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -1469,18 +1979,21 @@ class _TimetablePageState extends State<TimetablePage> {
                   return Opacity(
                     opacity: _eventPast(e, e.date) && _dimPast ? 0.55 : 1,
                     child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: SemColors.dangerSoft,
-                      borderRadius: BorderRadius.circular(8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: SemColors.dangerSoft,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${e.name} ${e.date.substring(5)} '
+                        '${diff == 0 ? '今天' : diff == 1 ? '明天' : '还有$diff天'}',
+                        style: TextStyle(fontSize: 12, color: SemColors.danger),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    child: Text(
-                      '${e.name} ${e.date.substring(5)} '
-                      '${diff == 0 ? '今天' : diff == 1 ? '明天' : '还有$diff天'}',
-                      style: TextStyle(fontSize: 12, color: SemColors.danger),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
                   );
                 },
               ),
@@ -1499,14 +2012,21 @@ class _TimetablePageState extends State<TimetablePage> {
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: SemColors.borderStrong),
           boxShadow: [
-            BoxShadow(color: SemColors.accent.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 2)),
+            BoxShadow(
+              color: SemColors.accent.withValues(alpha: 0.15),
+              blurRadius: 12,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _navBtn(Icons.chevron_left, _shownWeek > 1 ? () => _jumpTo(_shownWeek - 1) : null),
+            _navBtn(
+              Icons.chevron_left,
+              _shownWeek > 1 ? () => _jumpTo(_shownWeek - 1) : null,
+            ),
             GestureDetector(
               onTap: () {
                 if (_navTitleTappedTwice()) {
@@ -1516,11 +2036,19 @@ class _TimetablePageState extends State<TimetablePage> {
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text('第 $_shownWeek 周',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                child: Text(
+                  '第 $_shownWeek 周',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
-            _navBtn(Icons.chevron_right, _shownWeek < _weekCount ? () => _jumpTo(_shownWeek + 1) : null),
+            _navBtn(
+              Icons.chevron_right,
+              _shownWeek < _weekCount ? () => _jumpTo(_shownWeek + 1) : null,
+            ),
           ],
         ),
       ),
@@ -1530,8 +2058,8 @@ class _TimetablePageState extends State<TimetablePage> {
   /// 周次标题 500ms 内被点第二次 → 回到今天。
   bool _navTitleTappedTwice() {
     final now = DateTime.now();
-    final twice =
-        _lastNavTap != null && now.difference(_lastNavTap!) < const Duration(milliseconds: 500);
+    final twice = _lastNavTap != null &&
+        now.difference(_lastNavTap!) < const Duration(milliseconds: 500);
     _lastNavTap = twice ? null : now;
     return twice;
   }
@@ -1543,7 +2071,12 @@ class _TimetablePageState extends State<TimetablePage> {
           padding: EdgeInsets.zero,
           visualDensity: VisualDensity.compact,
           onPressed: onTap,
-          icon: Icon(icon, size: 20, color: onTap == null ? SemColors.textMuted : SemColors.textSecondary),
+          icon: Icon(
+            icon,
+            size: 20,
+            color:
+                onTap == null ? SemColors.textMuted : SemColors.textSecondary,
+          ),
         ),
       );
 
@@ -1551,7 +2084,11 @@ class _TimetablePageState extends State<TimetablePage> {
 
   void _goDay(int week, int day) {
     final idx = ((week - 1) * 7 + day).clamp(0, _weekCount * 7 - 1);
-    _dayPc.animateToPage(idx, duration: const Duration(milliseconds: 250), curve: Curves.easeOutCubic);
+    _dayPc.animateToPage(
+      idx,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Widget _dayNav() {
@@ -1563,14 +2100,21 @@ class _TimetablePageState extends State<TimetablePage> {
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: SemColors.borderStrong),
           boxShadow: [
-            BoxShadow(color: SemColors.accent.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 2)),
+            BoxShadow(
+              color: SemColors.accent.withValues(alpha: 0.15),
+              blurRadius: 12,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _navBtn(Icons.chevron_left, idx > 0 ? () => _goDay(idx ~/ 7, idx % 7 - 1) : null),
+            _navBtn(
+              Icons.chevron_left,
+              idx > 0 ? () => _goDay(idx ~/ 7, idx % 7 - 1) : null,
+            ),
             GestureDetector(
               onTap: () {
                 if (_navTitleTappedTwice()) {
@@ -1580,11 +2124,22 @@ class _TimetablePageState extends State<TimetablePage> {
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text('周${'一二三四五六日'[_shownDay]} · 第 $_shownWeek 周',
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                child: Text(
+                  '周${'一二三四五六日'[_shownDay]} · 第 $_shownWeek 周',
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
-            _navBtn(Icons.chevron_right, idx < _weekCount * 7 - 1 ? () => _goDay(idx ~/ 7 + (idx % 7 == 6 ? 1 : 0), (idx + 1) % 7) : null),
+            _navBtn(
+              Icons.chevron_right,
+              idx < _weekCount * 7 - 1
+                  ? () =>
+                      _goDay(idx ~/ 7 + (idx % 7 == 6 ? 1 : 0), (idx + 1) % 7)
+                  : null,
+            ),
           ],
         ),
       ),
@@ -1598,11 +2153,18 @@ class _TimetablePageState extends State<TimetablePage> {
     final adj = _colAdjust(week, day);
     final eff = adj == null ? day : (adj.type == 'off' ? null : adj.day);
     final courses = (eff == null
-            ? <TtCourse>[]
-            : _allCourses.where((c) => c.day == eff && TimetableStore.coversWeek(c, week)).toList())
+        ? <TtCourse>[]
+        : _allCourses
+            .where(
+              (c) => c.day == eff && TimetableStore.coversWeek(c, week),
+            )
+            .toList())
       ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
     final events = tt.events
-        .where((e) => e.date.isEmpty ? (eff != null && e.day == eff) : e.date == colISO)
+        .where(
+          (e) =>
+              e.date.isEmpty ? (eff != null && e.day == eff) : e.date == colISO,
+        )
         .toList()
       ..sort((a, b) => _hm(a.start).compareTo(_hm(b.start)));
 
@@ -1612,56 +2174,81 @@ class _TimetablePageState extends State<TimetablePage> {
         : '${int.tryParse(colISO.substring(5, 7)) ?? ''}月${int.tryParse(colISO.substring(8)) ?? ''}日';
 
     final items = <(int, Widget)>[
-      for (final c in courses) (_hm(TimetableStore.slotStarts[c.slotStart.clamp(0, 10)]), _dayCourseCard(c, week, colISO)),
-      for (final e in events) (_hm(e.start) < 0 ? 0 : _hm(e.start), _dayEventCard(e, isToday, colISO)),
+      for (final c in courses)
+        (
+          _hm(TimetableStore.slotStarts[c.slotStart.clamp(0, 10)]),
+          _dayCourseCard(c, week, colISO),
+        ),
+      for (final e in events)
+        (
+          _hm(e.start) < 0 ? 0 : _hm(e.start),
+          _dayEventCard(e, isToday, colISO),
+        ),
     ]..sort((a, b) => a.$1.compareTo(b.$1));
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
       child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            Text('$dateText 周${'一二三四五六日'[day]}',
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-            const SizedBox(width: 8),
-            if (isToday) Capsule('今天', color: SemColors.accent),
-          ],
-        ),
-        if (adj != null) ...[
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: adj.type == 'off' ? SemColors.dangerSoft : SemColors.infoSoft,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              adj.type == 'off' ? '放假（调休规则：当天无课）' : '按周${'一二三四五六日'[adj.day]}的课表上课（调休规则）',
-              style: TextStyle(
-                  fontSize: 12.5, color: adj.type == 'off' ? SemColors.danger : SemColors.info),
-            ),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Text(
+                '$dateText 周${'一二三四五六日'[day]}',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (isToday) Capsule('今天', color: SemColors.accent),
+            ],
           ),
-        ],
-        const SizedBox(height: 10),
-        if (items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 60),
-            child: Column(
-              children: [
-                Icon(Icons.event_available_outlined, size: 44, color: SemColors.textMuted),
-                const SizedBox(height: 10),
-                Text(adj?.type == 'off' ? '放假中，当天无课' : '当天没有安排',
-                    style: TextStyle(color: SemColors.textMuted)),
-              ],
+          if (adj != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: adj.type == 'off'
+                    ? SemColors.dangerSoft
+                    : SemColors.infoSoft,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                adj.type == 'off'
+                    ? '放假（调休规则：当天无课）'
+                    : '按周${'一二三四五六日'[adj.day]}的课表上课（调休规则）',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: adj.type == 'off' ? SemColors.danger : SemColors.info,
+                ),
+              ),
             ),
-          )
-        else
-          ...items.map((it) => it.$2),
-      ],
+          ],
+          const SizedBox(height: 10),
+          if (items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 60),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.event_available_outlined,
+                    size: 44,
+                    color: SemColors.textMuted,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    adj?.type == 'off' ? '放假中，当天无课' : '当天没有安排',
+                    style: TextStyle(color: SemColors.textMuted),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...items.map((it) => it.$2),
+        ],
       ),
     );
   }
@@ -1682,11 +2269,26 @@ class _TimetablePageState extends State<TimetablePage> {
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: _courseColor(c.name), borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(
+                  color: _courseColor(c.name),
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Column(
                   children: [
-                    Text(TimetableStore.slotStarts[rs], style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                    Text(TimetableStore.slotEnds[re.clamp(0, 10)], style: TextStyle(fontSize: 10, color: SemColors.textSecondary)),
+                    Text(
+                      TimetableStore.slotStarts[rs],
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      TimetableStore.slotEnds[re.clamp(0, 10)],
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: SemColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1695,13 +2297,32 @@ class _TimetablePageState extends State<TimetablePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(c.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    Text(
+                      c.name,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text('第${c.slotStart + 1}-${c.slotEnd + 1}节 · ${c.weekStart}-${c.weekEnd}周${_weekTypeLabel(c.weekType)}',
-                        style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                    Text(
+                      '第${c.slotStart + 1}-${c.slotEnd + 1}节 · ${c.weekStart}-${c.weekEnd}周${_weekTypeLabel(c.weekType)}',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: SemColors.textMuted,
+                      ),
+                    ),
                     if (c.place.isNotEmpty || c.teachers.isNotEmpty)
-                      Text([if (c.place.isNotEmpty) c.place, if (c.teachers.isNotEmpty) c.teachers].join(' · '),
-                          style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+                      Text(
+                        [
+                          if (c.place.isNotEmpty) c.place,
+                          if (c.teachers.isNotEmpty) c.teachers,
+                        ].join(' · '),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: SemColors.textSecondary,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1734,12 +2355,22 @@ class _TimetablePageState extends State<TimetablePage> {
                 ),
                 child: Column(
                   children: [
-                    Text(e.start.isEmpty ? '—' : e.start,
-                        style: TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.w600,
-                            color: isExam ? SemColors.danger : SemColors.accent)),
+                    Text(
+                      e.start.isEmpty ? '—' : e.start,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isExam ? SemColors.danger : SemColors.accent,
+                      ),
+                    ),
                     if (e.end.isNotEmpty)
-                      Text(e.end, style: TextStyle(fontSize: 10, color: SemColors.textSecondary)),
+                      Text(
+                        e.end,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: SemColors.textSecondary,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1748,19 +2379,40 @@ class _TimetablePageState extends State<TimetablePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [
-                      Expanded(
-                        child: Text(e.name,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            e.name,
                             style: TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w600,
-                                color: isExam ? SemColors.danger : SemColors.textPrimary)),
-                      ),
-                      if (e.date.isEmpty) Capsule('每周', color: SemColors.info),
-                    ]),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: isExam
+                                  ? SemColors.danger
+                                  : SemColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        if (e.date.isEmpty)
+                          Capsule('每周', color: SemColors.info),
+                      ],
+                    ),
                     if (e.place.isNotEmpty)
-                      Text(e.place, style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
+                      Text(
+                        e.place,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: SemColors.textSecondary,
+                        ),
+                      ),
                     if (e.note.isNotEmpty)
-                      Text(e.note, style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
+                      Text(
+                        e.note,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: SemColors.textMuted,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1773,8 +2425,17 @@ class _TimetablePageState extends State<TimetablePage> {
 
   double _rowY(int row) {
     if (row <= 3) return _bandH + row * _slotH;
-    if (row <= 7) return _bandH + 4 * _slotH + _noonH + _bandH + (row - 4) * _slotH;
-    return _bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH + _gapH + _bandH + (row - 8) * _slotH;
+    if (row <= 7) {
+      return _bandH + 4 * _slotH + _noonH + _bandH + (row - 4) * _slotH;
+    }
+    return _bandH +
+        4 * _slotH +
+        _noonH +
+        _bandH +
+        4 * _slotH +
+        _gapH +
+        _bandH +
+        (row - 8) * _slotH;
   }
 
   double get _gridH => _rowY(10) + _slotH;
@@ -1785,7 +2446,9 @@ class _TimetablePageState extends State<TimetablePage> {
   /// 当周某列（0=周一）的日期 ISO；无学期起点返回空串。
   String _colISO(int zs, int di) {
     if (tt.startDate.isEmpty) return '';
-    return TimetableStore.iso(TimetableStore.dateOfWeekDay(tt.startDate, zs, di));
+    return TimetableStore.iso(
+      TimetableStore.dateOfWeekDay(tt.startDate, zs, di),
+    );
   }
 
   TtAdjust? _colAdjust(int zs, int di) {
@@ -1809,7 +2472,10 @@ class _TimetablePageState extends State<TimetablePage> {
 
   List<String> _datesOf(int zs) {
     if (tt.startDate.isEmpty) return List.filled(7, '');
-    return [for (var di = 0; di < 7; di++) _colISO(zs, di).substring(5).replaceAll('-', '/')];
+    return [
+      for (var di = 0; di < 7; di++)
+        _colISO(zs, di).substring(5).replaceAll('-', '/'),
+    ];
   }
 
   /// 周视图某一周的格子（不含顶部两块——它们在分页之外，见 build）。
@@ -1826,15 +2492,20 @@ class _TimetablePageState extends State<TimetablePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.edit_calendar_outlined, size: 40, color: SemColors.textMuted),
+            Icon(
+              Icons.edit_calendar_outlined,
+              size: 40,
+              color: SemColors.textMuted,
+            ),
             const SizedBox(height: 8),
             Text('还没有课程', style: TextStyle(color: SemColors.textMuted)),
             const SizedBox(height: 4),
             Text(
-                AppState.I.direct
-                    ? '点右上角 + 手动添加，或在连接设置填好凭据后从教务导入'
-                    : '点右上角 + 手动添加，或登录后从教务导入',
-                style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+              AppState.I.direct
+                  ? '点右上角 + 手动添加，或在连接设置填好凭据后从教务导入'
+                  : '点右上角 + 手动添加，或登录后从教务导入',
+              style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+            ),
             const SizedBox(height: 60),
           ],
         ),
@@ -1842,24 +2513,24 @@ class _TimetablePageState extends State<TimetablePage> {
     }
 
     return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: SemColors.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: SemColors.border),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: SizedBox(
-                height: _headerH + _gridH + 8,
-                child: Column(
-                  children: [
-                    _dayHeaders(zs, dates, todayIdx),
-                    Expanded(
-                      child: Stack(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: SemColors.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: SemColors.border),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: SizedBox(
+              height: _headerH + _gridH + 8,
+              child: Column(
+                children: [
+                  _dayHeaders(zs, dates, todayIdx),
+                  Expanded(
+                    child: Stack(
                       children: [
                         // 中午细线（11:55）
                         Positioned(
@@ -1870,12 +2541,20 @@ class _TimetablePageState extends State<TimetablePage> {
                             children: [
                               SizedBox(
                                 width: _axisW,
-                                child: Text('11:55',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 8, color: SemColors.textMuted)),
+                                child: Text(
+                                  '11:55',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    color: SemColors.textMuted,
+                                  ),
+                                ),
                               ),
                               Expanded(
-                                child: Container(height: 1, color: SemColors.border),
+                                child: Container(
+                                  height: 1,
+                                  color: SemColors.border,
+                                ),
                               ),
                             ],
                           ),
@@ -1888,7 +2567,11 @@ class _TimetablePageState extends State<TimetablePage> {
                           height: _gridH,
                           child: Column(
                             children: [
-                              for (final group in const [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10]]) ...[
+                              for (final group in const [
+                                [0, 1, 2, 3],
+                                [4, 5, 6, 7],
+                                [8, 9, 10],
+                              ]) ...[
                                 for (final row in group)
                                   SizedBox(
                                     width: _axisW,
@@ -1897,13 +2580,21 @@ class _TimetablePageState extends State<TimetablePage> {
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Text('${row + 1}',
-                                              style: TextStyle(
-                                                  fontSize: 11, fontWeight: FontWeight.w600,
-                                                  color: SemColors.textMuted)),
-                                          Text(TimetableStore.slotStarts[row],
-                                              style: TextStyle(
-                                                  fontSize: 7.5, color: SemColors.textMuted)),
+                                          Text(
+                                            '${row + 1}',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: SemColors.textMuted,
+                                            ),
+                                          ),
+                                          Text(
+                                            TimetableStore.slotStarts[row],
+                                            style: TextStyle(
+                                              fontSize: 7.5,
+                                              color: SemColors.textMuted,
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -1912,8 +2603,12 @@ class _TimetablePageState extends State<TimetablePage> {
                                   SizedBox(
                                     width: _axisW,
                                     height: _bandH +
-                                        (group == const [0, 1, 2, 3] ? _noonH : 0) +
-                                        (group == const [4, 5, 6, 7] ? _gapH : 0),
+                                        (group == const [0, 1, 2, 3]
+                                            ? _noonH
+                                            : 0) +
+                                        (group == const [4, 5, 6, 7]
+                                            ? _gapH
+                                            : 0),
                                   ),
                               ],
                             ],
@@ -1931,35 +2626,53 @@ class _TimetablePageState extends State<TimetablePage> {
                               final eff = _colEffDay(zs, di);
                               final dayCourses = eff == null
                                   ? const <TtCourse>[]
-                                  : all.where((c) => c.day == eff && TimetableStore.coversWeek(c, zs)).toList();
+                                  : all
+                                      .where(
+                                        (c) =>
+                                            c.day == eff &&
+                                            TimetableStore.coversWeek(c, zs),
+                                      )
+                                      .toList();
                               // 按开始时刻排序：后开始的后画，真重叠时压在上层，
                               // 不会被先开始的日程盖住（原来顺序取决于数据顺序）。
                               final dayEvents = tt.events
-                                  .where((e) => e.date.isEmpty
-                                      ? (eff != null && e.day == eff)
-                                      : e.date == _colISO(zs, di))
+                                  .where(
+                                    (e) => e.date.isEmpty
+                                        ? (eff != null && e.day == eff)
+                                        : e.date == _colISO(zs, di),
+                                  )
                                   .toList()
-                                ..sort((a, b) => _hm(a.start).compareTo(_hm(b.start)));
+                                ..sort(
+                                  (a, b) =>
+                                      _hm(a.start).compareTo(_hm(b.start)),
+                                );
                               return Expanded(
                                 child: Container(
                                   decoration: BoxDecoration(
                                     border: Border(
                                       left: BorderSide(
-                                        color: SemColors.border.withValues(alpha: 0.7),
+                                        color: SemColors.border.withValues(
+                                          alpha: 0.7,
+                                        ),
                                         style: BorderStyle.solid,
                                       ),
                                     ),
                                   ),
                                   child: Stack(
                                     children: [
-                                      for (final c in dayCourses) _courseBlock(c, zs, _colISO(zs, di)),
+                                      for (final c in dayCourses)
+                                        _courseBlock(c, zs, _colISO(zs, di)),
                                       for (final e in dayEvents)
                                         ..._eventBlock(
                                           e,
                                           _colISO(zs, di),
                                           // 真重叠的日程改用不透明底色：半透明叠半透明
                                           // 会让上下两张卡的文字透过来糊成一片。
-                                          solid: _eventOverlaps(e, dayEvents, dayCourses),
+                                          solid: _eventOverlaps(
+                                            e,
+                                            dayEvents,
+                                            dayCourses,
+                                          ),
                                         ),
                                     ],
                                   ),
@@ -1971,30 +2684,42 @@ class _TimetablePageState extends State<TimetablePage> {
                         // 时段色带最后绘制：盖在天分隔竖线上方，且不进入左侧时间列
                         _band(0, '上午'),
                         _band(_bandH + 4 * _slotH + _noonH, '下午'),
-                        _band(_bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH + _gapH, '晚上'),
+                        _band(
+                          _bandH +
+                              4 * _slotH +
+                              _noonH +
+                              _bandH +
+                              4 * _slotH +
+                              _gapH,
+                          '晚上',
+                        ),
                       ],
-                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
-          ),
+        ),
+      ),
     );
   }
 
   Widget _dayHeaders(int zs, List<String> dates, int todayIdx) {
-    final monthLabel = dates.isEmpty || dates.first.isEmpty ? '' : '${int.tryParse(dates.first.split('/')[0]) ?? ''}月';
+    final monthLabel = dates.isEmpty || dates.first.isEmpty
+        ? ''
+        : '${int.tryParse(dates.first.split('/')[0]) ?? ''}月';
     return SizedBox(
       height: _headerH,
       child: Row(
         children: [
           SizedBox(
             width: _axisW,
-            child: Text(monthLabel,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 9, color: SemColors.textMuted)),
+            child: Text(
+              monthLabel,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 9, color: SemColors.textMuted),
+            ),
           ),
           Expanded(
             child: Row(
@@ -2017,18 +2742,24 @@ class _TimetablePageState extends State<TimetablePage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('周${'一二三四五六日'[i]}',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: wdColor)),
                           Text(
-                            dates.isEmpty ? '-' : (dates[i].isEmpty ? '-' : dates[i]),
+                            '周${'一二三四五六日'[i]}',
                             style: TextStyle(
-                                fontSize: 10,
-                                color: isToday
-                                    ? SemColors.accent
-                                    : SemColors.textMuted.withValues(alpha: 0.85)),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: wdColor,
+                            ),
+                          ),
+                          Text(
+                            dates.isEmpty
+                                ? '-'
+                                : (dates[i].isEmpty ? '-' : dates[i]),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isToday
+                                  ? SemColors.accent
+                                  : SemColors.textMuted.withValues(alpha: 0.85),
+                            ),
                           ),
                         ],
                       ),
@@ -2053,15 +2784,21 @@ class _TimetablePageState extends State<TimetablePage> {
           alignment: Alignment.center,
           child: Text(
             label,
-            style: TextStyle(fontSize: 9, letterSpacing: 2, color: SemColors.textMuted),
+            style: TextStyle(
+              fontSize: 9,
+              letterSpacing: 2,
+              color: SemColors.textMuted,
+            ),
           ),
         ),
       );
 
   /// 这节课是否已上完（置灰依据）：该列**当天日期 + 实际下课时刻**已过。
   /// 不能只看「今天那一列」——本周周一~周三的课在周四看时早已上完，也该置灰（同网站 lessonPassed）。
-  bool _isPast(TtCourse c, String colISO) =>
-      TimetableStore.lessonPassed(colISO, TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)]);
+  bool _isPast(TtCourse c, String colISO) => TimetableStore.lessonPassed(
+        colISO,
+        TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)],
+      );
 
   /// 是否淡化已上完的课 / 已结束的日程（「课程表设置 → 上完的课淡化显示」可关）。
   bool get _dimPast => AppState.I.dimCompleted;
@@ -2111,7 +2848,14 @@ class _TimetablePageState extends State<TimetablePage> {
                 maxScaleFactor: 1.15,
                 child: LayoutBuilder(
                   builder: (context, box) => _courseCardBody(
-                      context, box, c, past, rowStart, placePrefix, placeCode),
+                    context,
+                    box,
+                    c,
+                    past,
+                    rowStart,
+                    placePrefix,
+                    placeCode,
+                  ),
                 ),
               ),
             ),
@@ -2137,26 +2881,42 @@ class _TimetablePageState extends State<TimetablePage> {
     final w = box.maxWidth;
     final avail = box.maxHeight - 1; // 1px 余量，避免量高和实际排版差一点点就溢出
     final nameStyle = TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        height: 1.2,
-        color: past ? SemColors.textMuted : SemColors.textPrimary);
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
+      height: 1.2,
+      color: past ? SemColors.textMuted : SemColors.textPrimary,
+    );
     final timeStyle = TextStyle(
-        fontSize: 9, color: past ? SemColors.textMuted : SemColors.textSecondary);
+      fontSize: 9,
+      color: past ? SemColors.textMuted : SemColors.textSecondary,
+    );
     final placeStyle = TextStyle(
-        fontSize: 10,
-        height: 1.15,
-        color: past ? SemColors.textMuted : SemColors.textSecondary);
+      fontSize: 10,
+      height: 1.15,
+      color: past ? SemColors.textMuted : SemColors.textSecondary,
+    );
     final teacherStyle = TextStyle(fontSize: 9.5, color: SemColors.textMuted);
 
     double nameAt(int lines) =>
         _textHeight(context, c.name, nameStyle, maxWidth: w, maxLines: lines);
     final codeH = placeCode.isEmpty
         ? 0.0
-        : _textHeight(context, placeCode, placeStyle, maxWidth: w, oneLine: true);
+        : _textHeight(
+            context,
+            placeCode,
+            placeStyle,
+            maxWidth: w,
+            oneLine: true,
+          );
     final prefixH1 = placePrefix.isEmpty
         ? 0.0
-        : _textHeight(context, placePrefix, placeStyle, maxWidth: w, maxLines: 1);
+        : _textHeight(
+            context,
+            placePrefix,
+            placeStyle,
+            maxWidth: w,
+            maxLines: 1,
+          );
     // 课名先给 3 行；地点放不下就降到 2/1 行，课名永远至少留一行。
     // 有教室号先保编号；只有汉字楼名（没有编号）时也留一行，别把地点整个藏掉。
     final reserveH = placeCode.isNotEmpty ? codeH : prefixH1;
@@ -2177,8 +2937,13 @@ class _TimetablePageState extends State<TimetablePage> {
     // 地点排在时间前面：左侧节次轴已经写着上课时间，教室号比重复的时间更该保。
     var prefixLines = 0;
     if (placePrefix.isNotEmpty) {
-      final h2 =
-          _textHeight(context, placePrefix, placeStyle, maxWidth: w, maxLines: 2);
+      final h2 = _textHeight(
+        context,
+        placePrefix,
+        placeStyle,
+        maxWidth: w,
+        maxLines: 2,
+      );
       if (used + h2 <= avail) {
         prefixLines = 2;
         used += h2;
@@ -2188,8 +2953,13 @@ class _TimetablePageState extends State<TimetablePage> {
       }
     }
     final timeText = TimetableStore.slotStarts[rowStart];
-    final timeH =
-        _textHeight(context, timeText, timeStyle, maxWidth: w, oneLine: true);
+    final timeH = _textHeight(
+      context,
+      timeText,
+      timeStyle,
+      maxWidth: w,
+      oneLine: true,
+    );
     var showTime = false;
     if (used + timeH <= avail) {
       showTime = true;
@@ -2197,7 +2967,13 @@ class _TimetablePageState extends State<TimetablePage> {
     }
     final teacherH = c.teachers.isEmpty
         ? 0.0
-        : _textHeight(context, c.teachers, teacherStyle, maxWidth: w, maxLines: 1);
+        : _textHeight(
+            context,
+            c.teachers,
+            teacherStyle,
+            maxWidth: w,
+            maxLines: 1,
+          );
     var showTeacher = false;
     if (c.teachers.isNotEmpty && used + teacherH <= avail) {
       showTeacher = true;
@@ -2210,28 +2986,42 @@ class _TimetablePageState extends State<TimetablePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (showTime)
-          Text(timeText,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: timeStyle),
-        Text(c.name,
-            maxLines: nameLines, overflow: TextOverflow.ellipsis, style: nameStyle),
+          Text(
+            timeText,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: timeStyle,
+          ),
+        Text(
+          c.name,
+          maxLines: nameLines,
+          overflow: TextOverflow.ellipsis,
+          style: nameStyle,
+        ),
         if (pushDown) const Spacer(),
         if (prefixLines > 0)
-          Text(placePrefix,
-              maxLines: prefixLines,
-              overflow: TextOverflow.ellipsis,
-              style: placeStyle),
+          Text(
+            placePrefix,
+            maxLines: prefixLines,
+            overflow: TextOverflow.ellipsis,
+            style: placeStyle,
+          ),
         if (showCode)
-          Text(placeCode,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: placeStyle),
+          Text(
+            placeCode,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: placeStyle,
+          ),
         if (showTeacher)
-          Text(c.teachers,
-              maxLines: 1, overflow: TextOverflow.ellipsis, style: teacherStyle),
+          Text(
+            c.teachers,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: teacherStyle,
+          ),
       ],
     );
   }
@@ -2248,7 +3038,9 @@ class _TimetablePageState extends State<TimetablePage> {
   }) {
     final tp = TextPainter(
       text: TextSpan(
-          text: text, style: DefaultTextStyle.of(context).style.merge(style)),
+        text: text,
+        style: DefaultTextStyle.of(context).style.merge(style),
+      ),
       maxLines: maxLines,
       textDirection: TextDirection.ltr,
       textScaler: MediaQuery.textScalerOf(context),
@@ -2261,7 +3053,9 @@ class _TimetablePageState extends State<TimetablePage> {
   static double _textWidth(BuildContext context, String text, TextStyle style) {
     final tp = TextPainter(
       text: TextSpan(
-          text: text, style: DefaultTextStyle.of(context).style.merge(style)),
+        text: text,
+        style: DefaultTextStyle.of(context).style.merge(style),
+      ),
       maxLines: 1,
       textDirection: TextDirection.ltr,
       textScaler: MediaQuery.textScalerOf(context),
@@ -2281,10 +3075,8 @@ class _TimetablePageState extends State<TimetablePage> {
     final m = matches.last;
     final code = m.group(0)!;
     if (code.length < 2 && !RegExp(r'[A-Za-z]').hasMatch(code)) return (p, '');
-    final prefix = p
-        .substring(0, m.start)
-        .replaceAll(RegExp(r'[\s·,，、/|-]+$'), '')
-        .trim();
+    final prefix =
+        p.substring(0, m.start).replaceAll(RegExp(r'[\s·,，、/|-]+$'), '').trim();
     return (prefix, code);
   }
 
@@ -2326,8 +3118,9 @@ class _TimetablePageState extends State<TimetablePage> {
                   color: _eventBg(isExam, solid),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: (isExam ? SemColors.danger : SemColors.accent)
-                          .withValues(alpha: 0.4)),
+                    color: (isExam ? SemColors.danger : SemColors.accent)
+                        .withValues(alpha: 0.4),
+                  ),
                 ),
                 child: MediaQuery.withClampedTextScaling(
                   maxScaleFactor: 1.15,
@@ -2369,8 +3162,9 @@ class _TimetablePageState extends State<TimetablePage> {
                 color: _eventBg(isExam, solid),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                    color: (isExam ? SemColors.danger : SemColors.accent)
-                        .withValues(alpha: 0.4)),
+                  color: (isExam ? SemColors.danger : SemColors.accent)
+                      .withValues(alpha: 0.4),
+                ),
               ),
               child: MediaQuery.withClampedTextScaling(
                 maxScaleFactor: 1.15,
@@ -2418,15 +3212,19 @@ class _TimetablePageState extends State<TimetablePage> {
     final w = box.maxWidth;
     final avail = box.maxHeight - 1;
     final nameStyle = TextStyle(
-        fontSize: compact ? 9.5 : 10.5,
-        fontWeight: FontWeight.w600,
-        height: 1.2,
-        color: isExam ? SemColors.danger : SemColors.textPrimary);
+      fontSize: compact ? 9.5 : 10.5,
+      fontWeight: FontWeight.w600,
+      height: 1.2,
+      color: isExam ? SemColors.danger : SemColors.textPrimary,
+    );
     final timeStyle = TextStyle(
-        fontSize: compact ? 8 : 9,
-        color: isExam ? SemColors.danger : SemColors.accent);
-    final placeStyle =
-        TextStyle(fontSize: compact ? 9 : 9.5, color: SemColors.textSecondary);
+      fontSize: compact ? 8 : 9,
+      color: isExam ? SemColors.danger : SemColors.accent,
+    );
+    final placeStyle = TextStyle(
+      fontSize: compact ? 9 : 9.5,
+      color: SemColors.textSecondary,
+    );
     final seatStyle = TextStyle(fontSize: 9, color: SemColors.textSecondary);
     final (placePrefix, placeCode) = _splitPlace(e.place);
 
@@ -2465,7 +3263,13 @@ class _TimetablePageState extends State<TimetablePage> {
 
     final codeH = placeCode.isEmpty
         ? 0.0
-        : _textHeight(context, placeCode, placeStyle, maxWidth: w, oneLine: true);
+        : _textHeight(
+            context,
+            placeCode,
+            placeStyle,
+            maxWidth: w,
+            oneLine: true,
+          );
     var showCode = false;
     if (placeCode.isNotEmpty && used + codeH <= avail) {
       showCode = true;
@@ -2473,10 +3277,20 @@ class _TimetablePageState extends State<TimetablePage> {
     }
     var prefixLines = 0;
     if (placePrefix.isNotEmpty) {
-      final h2 =
-          _textHeight(context, placePrefix, placeStyle, maxWidth: w, maxLines: 2);
-      final h1 =
-          _textHeight(context, placePrefix, placeStyle, maxWidth: w, maxLines: 1);
+      final h2 = _textHeight(
+        context,
+        placePrefix,
+        placeStyle,
+        maxWidth: w,
+        maxLines: 2,
+      );
+      final h1 = _textHeight(
+        context,
+        placePrefix,
+        placeStyle,
+        maxWidth: w,
+        maxLines: 1,
+      );
       if (used + h2 <= avail) {
         prefixLines = 2;
         used += h2;
@@ -2487,15 +3301,22 @@ class _TimetablePageState extends State<TimetablePage> {
     }
     final seatH = e.seat.isEmpty
         ? 0.0
-        : _textHeight(context, '座位 ${e.seat}', seatStyle,
-            maxWidth: w, maxLines: 1, oneLine: true);
+        : _textHeight(
+            context,
+            '座位 ${e.seat}',
+            seatStyle,
+            maxWidth: w,
+            maxLines: 1,
+            oneLine: true,
+          );
     var showSeat = false;
     if (e.seat.isNotEmpty && used + seatH <= avail) {
       showSeat = true;
       used += seatH;
     }
-    final pushDown =
-        !compact && avail - used >= 6 && (showCode || prefixLines > 0 || showSeat);
+    final pushDown = !compact &&
+        avail - used >= 6 &&
+        (showCode || prefixLines > 0 || showSeat);
 
     return Column(
       mainAxisAlignment:
@@ -2503,31 +3324,43 @@ class _TimetablePageState extends State<TimetablePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (showTime)
-          Text(timeText,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: timeStyle),
-        Text(e.name,
-            maxLines: nameLines, overflow: TextOverflow.ellipsis, style: nameStyle),
+          Text(
+            timeText,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: timeStyle,
+          ),
+        Text(
+          e.name,
+          maxLines: nameLines,
+          overflow: TextOverflow.ellipsis,
+          style: nameStyle,
+        ),
         if (pushDown) const Spacer(),
         if (prefixLines > 0)
-          Text(placePrefix,
-              maxLines: prefixLines,
-              overflow: TextOverflow.ellipsis,
-              style: placeStyle),
+          Text(
+            placePrefix,
+            maxLines: prefixLines,
+            overflow: TextOverflow.ellipsis,
+            style: placeStyle,
+          ),
         if (showCode)
-          Text(placeCode,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: placeStyle),
+          Text(
+            placeCode,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: placeStyle,
+          ),
         if (showSeat)
-          Text('座位 ${e.seat}',
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: seatStyle),
+          Text(
+            '座位 ${e.seat}',
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: seatStyle,
+          ),
       ],
     );
   }
@@ -2543,7 +3376,10 @@ class _TimetablePageState extends State<TimetablePage> {
 
   /// 这条日程是否和同一天的其他日程 / 课程在时间上真重叠。
   static bool _eventOverlaps(
-      TtEvent e, List<TtEvent> events, List<TtCourse> courses) {
+    TtEvent e,
+    List<TtEvent> events,
+    List<TtCourse> courses,
+  ) {
     final sm = _hm(e.start);
     final em = _hm(e.end);
     if (sm < 0 || em < 0) return false;

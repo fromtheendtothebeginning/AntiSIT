@@ -63,144 +63,162 @@ class _ToolsPageState extends State<ToolsPage> {
   @override
   Widget build(BuildContext context) {
     final tools = PluginRegistry.I.toolCards;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('工具'),
-        actions: [
-          if (_editing)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: TextButton(
-                onPressed: () => _setEditing(false),
-                style: TextButton.styleFrom(
-                  foregroundColor: SemColors.accent,
-                  textStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                child: const Text('完成'),
-              ),
-            )
-          else ...[
-            if (tools.length > 1 || PluginRegistry.I.hasCustomToolSizes)
-              IconButton(
-                onPressed: _openSorter,
-                icon: const Icon(Icons.swap_vert_rounded),
-                tooltip: '排序',
-              ),
-            if (tools.isNotEmpty)
-              IconButton(
-                onPressed: () => _setEditing(true),
-                icon: const Icon(Icons.dashboard_customize_outlined),
-                tooltip: '整理卡片',
-              ),
-          ],
-        ],
-      ),
-      // 自己监听注册表：启停插件 / 换顺序 / 改尺寸后立刻重排，不用等壳层来重建
-      body: ListenableBuilder(
-        listenable: PluginRegistry.I,
-        builder: (context, _) {
-          final entries = PluginRegistry.I.toolEntries;
-          final selectedId = entries.any((e) => e.$1 == _selectedCardId)
-              ? _selectedCardId
-              : null;
-          final selectedSize = selectedId == null
-              ? null
-              : PluginRegistry.I.toolSize(selectedId);
-          return LoginGate(
-            child: entries.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Text(
-                        '没有启用任何工具。到「我的 → 插件管理」里打开需要的工具即可。',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: SemColors.textMuted,
-                          height: 1.7,
-                        ),
+    // 整页监听 AppState：「悬浮玻璃顶栏」开关改完要连 Scaffold 一起重建
+    // （extendBodyBehindAppBar / appBar / 顶部留白都在 build 里定死）
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算：extendBodyBehindAppBar 之后 body 里的
+        // MediaQuery 已扣掉状态栏，放进 body 再算会少一个状态栏的高度
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，顶栏那层渐变模糊才有东西可糊。
+          // 首个滚动区的顶部留白按 glassTopInset 补（见下面的 FlexibleCardGrid padding）。
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('工具'),
+            actions: [
+              if (_editing)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: TextButton(
+                    onPressed: () => _setEditing(false),
+                    style: TextButton.styleFrom(
+                      foregroundColor: SemColors.accent,
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  )
-                : GestureDetector(
-                    // 点空白 / 列表下方退出整理。卡片自己在整理态里吸收点击，
-                    // 宫格也有一层空白点击（点卡片缝里也能退），这里补上整页范围。
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _editing ? () => _setEditing(false) : null,
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: ListView(
-                            // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：底部多让出底栏这一截。
-                            // 整理态时尺寸条就贴在底栏上方，这份留白交给它，别再重复叠一次。
-                            padding: EdgeInsets.only(
-                              bottom: _editing
-                                  ? 12
-                                  : 16 + MediaQuery.paddingOf(context).bottom,
+                    child: const Text('完成'),
+                  ),
+                )
+              else ...[
+                if (tools.length > 1 || PluginRegistry.I.hasCustomToolSizes)
+                  IconButton(
+                    onPressed: _openSorter,
+                    icon: const Icon(Icons.swap_vert_rounded),
+                    tooltip: '排序',
+                  ),
+                if (tools.isNotEmpty)
+                  IconButton(
+                    onPressed: () => _setEditing(true),
+                    icon: const Icon(Icons.dashboard_customize_outlined),
+                    tooltip: '整理卡片',
+                  ),
+              ],
+            ],
+          ),
+          // 自己监听注册表：启停插件 / 换顺序 / 改尺寸后立刻重排，不用等壳层来重建
+          body: ListenableBuilder(
+            listenable: Listenable.merge([PluginRegistry.I, AppState.I]),
+            builder: (context, _) {
+              final entries = PluginRegistry.I.toolEntries;
+              final selectedId = entries.any((e) => e.$1 == _selectedCardId)
+                  ? _selectedCardId
+                  : null;
+              final selectedSize = selectedId == null
+                  ? null
+                  : PluginRegistry.I.toolSize(selectedId);
+              return LoginGate(
+                child: entries.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text(
+                            '没有启用任何工具。到「我的 → 插件管理」里打开需要的工具即可。',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: SemColors.textMuted,
+                              height: 1.7,
                             ),
-                            children: [
-                              FlexibleCardGrid(
-                                padding: const EdgeInsets.fromLTRB(
+                          ),
+                        ),
+                      )
+                    : GestureDetector(
+                        // 点空白 / 列表下方退出整理。卡片自己在整理态里吸收点击，
+                        // 宫格也有一层空白点击（点卡片缝里也能退），这里补上整页范围。
+                        behavior: HitTestBehavior.translucent,
+                        onTap: _editing ? () => _setEditing(false) : null,
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: ListView(
+                                // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：底部多让出底栏这一截。
+                                // 整理态时尺寸条就贴在底栏上方，这份留白交给它，别再重复叠一次。
+                                padding: EdgeInsets.only(
+                                  bottom: _editing
+                                      ? 12
+                                      : 16 +
+                                            MediaQuery.paddingOf(
+                                              context,
+                                            ).bottom,
+                                ),
+                                children: [
+                                  FlexibleCardGrid(
+                                    // 顶部留白 = 悬浮顶栏（状态栏 + 标题栏）
+                                    padding: EdgeInsets.fromLTRB(
+                                      12,
+                                      4 + topInset,
+                                      12,
+                                      8,
+                                    ),
+                                    items: [
+                                      for (final (id, tool) in entries)
+                                        FlexibleGridItem(
+                                          id: id,
+                                          size: PluginRegistry.I.toolSize(id),
+                                          builder: (context, size, editing) =>
+                                              _toolCard(
+                                                context,
+                                                tool,
+                                                size,
+                                                editing,
+                                              ),
+                                        ),
+                                    ],
+                                    selectedId: selectedId,
+                                    onSelected: _selectCard,
+                                    editing: _editing,
+                                    onEditingChanged: _setEditing,
+                                    onOrderChanged: (ids) =>
+                                        PluginRegistry.I.setToolOrder(ids),
+                                    onSizeChanged: (id, size) =>
+                                        PluginRegistry.I.setToolSize(id, size),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // 尺寸条放在页面下方、底栏上方：顶部那块地方留给标题，
+                            // 单手握持时拇指正好够得着（顶栏那排按钮要伸上去）。
+                            if (_editing)
+                              Padding(
+                                padding: EdgeInsets.fromLTRB(
                                   12,
                                   4,
                                   12,
-                                  8,
+                                  8 + MediaQuery.paddingOf(context).bottom,
                                 ),
-                                items: [
-                                  for (final (id, tool) in entries)
-                                    FlexibleGridItem(
-                                      id: id,
-                                      size: PluginRegistry.I.toolSize(id),
-                                      builder: (context, size, editing) =>
-                                          _toolCard(
-                                            context,
-                                            tool,
-                                            size,
-                                            editing,
-                                          ),
-                                    ),
-                                ],
-                                selectedId: selectedId,
-                                onSelected: _selectCard,
-                                editing: _editing,
-                                onEditingChanged: _setEditing,
-                                onOrderChanged: (ids) =>
-                                    PluginRegistry.I.setToolOrder(ids),
-                                onSizeChanged: (id, size) =>
-                                    PluginRegistry.I.setToolSize(id, size),
+                                child: CardSizeBar(
+                                  size: selectedSize,
+                                  onChanged: (size) {
+                                    final id = selectedId;
+                                    if (id != null) {
+                                      PluginRegistry.I.setToolSize(id, size);
+                                    }
+                                  },
+                                ),
                               ),
-                            ],
-                          ),
+                          ],
                         ),
-                        // 尺寸条放在页面下方、底栏上方：顶部那块地方留给标题，
-                        // 单手握持时拇指正好够得着（顶栏那排按钮要伸上去）。
-                        if (_editing)
-                          Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              12,
-                              4,
-                              12,
-                              8 + MediaQuery.paddingOf(context).bottom,
-                            ),
-                            child: CardSizeBar(
-                              size: selectedSize,
-                              onChanged: (size) {
-                                final id = selectedId;
-                                if (id != null) {
-                                  PluginRegistry.I.setToolSize(id, size);
-                                }
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-          );
-        },
-      ),
+                      ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -407,83 +425,95 @@ class _ToolOrderPageState extends State<ToolOrderPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('工具排序'),
-        actions: [
-          if (PluginRegistry.I.hasCustomToolSizes)
-            TextButton(
-              onPressed: _resetSizes,
-              child: const Text('重置大小', style: TextStyle(fontSize: 13)),
-            ),
-          TextButton(
-            onPressed: _reset,
-            child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
-            child: Text(
-              '按住右侧手柄上下拖动，松手即生效；工具页里长按卡片进入整理后，顶部尺寸条可在 1×1 / 1×3 / 2×3 / 2×2 间切换，也能拖右下角弧线细调',
-              style: TextStyle(
-                fontSize: 12,
-                color: SemColors.textMuted,
-                height: 1.5,
+    // 排序页也要跟着 AppState 重建（「悬浮玻璃顶栏」开关改了 Scaffold 的取参）
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('工具排序'),
+            actions: [
+              if (PluginRegistry.I.hasCustomToolSizes)
+                TextButton(
+                  onPressed: _resetSizes,
+                  child: const Text('重置大小', style: TextStyle(fontSize: 13)),
+                ),
+              TextButton(
+                onPressed: _reset,
+                child: const Text('恢复默认', style: TextStyle(fontSize: 13)),
               ),
-            ),
+            ],
           ),
-          AppCard(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              buildDefaultDragHandles: false,
-              padding: EdgeInsets.zero,
-              itemCount: _items.length,
-              onReorder: _onReorder,
-              itemBuilder: (context, i) {
-                final (pluginId, tool) = _items[i];
-                return ListTile(
-                  key: ValueKey(pluginId),
-                  leading: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: tool.color.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Icon(tool.icon, color: tool.color, size: 20),
+          body: ListView(
+            // 顶部让出悬浮顶栏
+            padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 2, 6, 10),
+                child: Text(
+                  '按住右侧手柄上下拖动，松手即生效；工具页里长按卡片进入整理后，顶部尺寸条可在 1×1 / 1×3 / 2×3 / 2×2 间切换，也能拖右下角弧线细调',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: SemColors.textMuted,
+                    height: 1.5,
                   ),
-                  title: Text(
-                    tool.title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  subtitle: Text(
-                    tool.subtitle(),
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  trailing: ReorderableDragStartListener(
-                    index: i,
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Icon(
-                        Icons.drag_handle_rounded,
-                        color: SemColors.textMuted,
+                ),
+              ),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  padding: EdgeInsets.zero,
+                  itemCount: _items.length,
+                  onReorder: _onReorder,
+                  itemBuilder: (context, i) {
+                    final (pluginId, tool) = _items[i];
+                    return ListTile(
+                      key: ValueKey(pluginId),
+                      leading: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: tool.color.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Icon(tool.icon, color: tool.color, size: 20),
                       ),
-                    ),
-                  ),
-                );
-              },
-            ),
+                      title: Text(
+                        tool.title,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        tool.subtitle(),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: ReorderableDragStartListener(
+                        index: i,
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.drag_handle_rounded,
+                            color: SemColors.textMuted,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

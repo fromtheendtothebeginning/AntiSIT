@@ -416,6 +416,13 @@ ThemeData buildAppTheme(GlassPalette c) {
       centerTitle: true,
       foregroundColor: c.textPrimary,
       iconTheme: IconThemeData(color: c.textPrimary),
+      // 悬浮顶栏的标题：比正文略重一档，压在渐变模糊上也稳
+      titleTextStyle: TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.2,
+        color: c.textPrimary,
+      ),
       systemOverlayStyle: SystemUiOverlayStyle(
           statusBarIconBrightness: c.isDark ? Brightness.light : Brightness.dark),
     ),

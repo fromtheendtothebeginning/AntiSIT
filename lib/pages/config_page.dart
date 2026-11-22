@@ -41,10 +41,9 @@ class _ConfigPageState extends State<ConfigPage> {
     final text = wasBusy
         ? '已取消下载并清理'
         : (freed <= 0 ? '没有需要清理的安装包' : '已清理 ${formatBytes(freed)}');
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(text),
-      behavior: SnackBarBehavior.floating,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text), behavior: SnackBarBehavior.floating),
+    );
   }
 
   Future<void> _pickInterval(BuildContext context) async {
@@ -92,10 +91,13 @@ class _ConfigPageState extends State<ConfigPage> {
       listenable: Listenable.merge([AppState.I, PluginRegistry.I]),
       builder: (context, _) {
         final st = AppState.I;
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
         return Scaffold(
-          appBar: AppBar(title: const Text('配置')),
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('配置')),
           body: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+            padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
             children: [
               AppCard(
                 padding: const EdgeInsets.symmetric(vertical: 4),

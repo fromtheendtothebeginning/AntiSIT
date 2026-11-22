@@ -35,10 +35,10 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
   }
 
   int get _appearanceIndex => switch (AppState.I.themeMode) {
-        ThemeMode.light => 1,
-        ThemeMode.dark => 2,
-        _ => 0,
-      };
+    ThemeMode.light => 1,
+    ThemeMode.dark => 2,
+    _ => 0,
+  };
 
   /// 导入主题：粘贴一份主题 JSON（底色 / 面底 / 强调色 / 文字色的浅深两档），
   /// 校验通过即入列并切换过去；错误原因就地显示在输入框下面。
@@ -55,8 +55,10 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('粘贴主题 JSON（bg / surface / accent / gold / text 的浅深两档）：',
-                    style: TextStyle(fontSize: 12.5)),
+                const Text(
+                  '粘贴主题 JSON（bg / surface / accent / gold / text 的浅深两档）：',
+                  style: TextStyle(fontSize: 12.5),
+                ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: ctrl,
@@ -69,15 +71,23 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                 ),
                 if (error != null) ...[
                   const SizedBox(height: 8),
-                  Text(error!,
-                      style: TextStyle(
-                          fontSize: 12, color: SemColors.danger, height: 1.5)),
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: SemColors.danger,
+                      height: 1.5,
+                    ),
+                  ),
                 ],
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
             FilledButton(
               onPressed: () {
                 try {
@@ -97,92 +107,133 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
     );
     ctrl.dispose();
     if (ok == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('主题已导入并启用'), behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('主题已导入并启用'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
   /// 滑块每动一点就更新整站配色的预览（量化在 AppState 里做，避免每帧重建）。
   void _previewAppearance() {
     final systemDark =
-        WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
-    AppState.I
-        .setAppearancePreview(appearanceDarkness(_appearancePos.value, systemDark: systemDark));
+        WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+        Brightness.dark;
+    AppState.I.setAppearancePreview(
+      appearanceDarkness(_appearancePos.value, systemDark: systemDark),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final st = AppState.I;
-    return Scaffold(
-      appBar: AppBar(title: const Text('外观')),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([st, PluginRegistry.I]),
-        builder: (context, _) => ListView(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-          children: [
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('主题', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  const SizedBox(height: 8),
-                  const ThemePickerList(showDescriptions: false),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => _importTheme(context),
-                      icon: const Icon(Icons.file_open_outlined, size: 18),
-                      label: const Text('导入主题'),
+    // 整页监听 AppState：顶栏样式开关也在本页，改完要连 Scaffold 一起重建
+    // （extendBodyBehindAppBar / appBar / 顶部留白都在 build 里定死）
+    return ListenableBuilder(
+      listenable: Listenable.merge([st, PluginRegistry.I]),
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('外观')),
+          body: ListView(
+            // 顶部让出悬浮顶栏
+            padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
+            children: [
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '主题',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                     ),
+                    const SizedBox(height: 8),
+                    const ThemePickerList(showDescriptions: false),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _importTheme(context),
+                        icon: const Icon(Icons.file_open_outlined, size: 18),
+                        label: const Text('导入主题'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '夜间模式',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    GlassTabs(
+                      labels: const ['跟随系统', '浅色', '深色'],
+                      index: _appearanceIndex,
+                      position: _appearancePos,
+                      onChanged: (i) => st.setThemeMode(switch (i) {
+                        1 => ThemeMode.light,
+                        2 => ThemeMode.dark,
+                        _ => ThemeMode.system,
+                      }),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: SwitchListTile(
+                  secondary: const Icon(Icons.swipe_outlined),
+                  title: const Text('界面实时跟着滑块切换'),
+                  value: st.followSlider,
+                  onChanged: (v) => st.setFollowSlider(v),
+                ),
+              ),
+              const SizedBox(height: 10),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: SwitchListTile(
+                  secondary: const Icon(Icons.keyboard_backspace_rounded),
+                  title: const Text('预测式返回动画'),
+                  value: st.predictiveBack,
+                  onChanged: (v) => st.setPredictiveBack(v),
+                ),
+              ),
+              const SizedBox(height: 10),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: SwitchListTile(
+                  secondary: const Icon(Icons.blur_on_rounded),
+                  title: const Text('悬浮玻璃顶栏'),
+                  subtitle: const Text(
+                    '内容从顶栏底下穿过，靠近顶栏时渐变模糊；关闭则用普通顶栏',
+                    style: TextStyle(fontSize: 12),
                   ),
-                ],
+                  value: st.glassTopBar,
+                  onChanged: (v) => st.setGlassTopBar(v),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('夜间模式', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  const SizedBox(height: 12),
-                  GlassTabs(
-                    labels: const ['跟随系统', '浅色', '深色'],
-                    index: _appearanceIndex,
-                    position: _appearancePos,
-                    onChanged: (i) => st.setThemeMode(switch (i) {
-                      1 => ThemeMode.light,
-                      2 => ThemeMode.dark,
-                      _ => ThemeMode.system,
-                    }),
-                  ),
-                  const SizedBox(height: 6),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            AppCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: SwitchListTile(
-                secondary: const Icon(Icons.swipe_outlined),
-                title: const Text('界面实时跟着滑块切换'),
-                value: st.followSlider,
-                onChanged: (v) => st.setFollowSlider(v),
-              ),
-            ),
-            const SizedBox(height: 10),
-            AppCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: SwitchListTile(
-                secondary: const Icon(Icons.keyboard_backspace_rounded),
-                title: const Text('预测式返回动画'),
-                value: st.predictiveBack,
-                onChanged: (v) => st.setPredictiveBack(v),
-              ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

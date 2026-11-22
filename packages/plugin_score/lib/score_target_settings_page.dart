@@ -13,7 +13,8 @@ class ScoreTargetSettingsPage extends StatefulWidget {
   final String? cohort;
 
   @override
-  State<ScoreTargetSettingsPage> createState() => _ScoreTargetSettingsPageState();
+  State<ScoreTargetSettingsPage> createState() =>
+      _ScoreTargetSettingsPageState();
 }
 
 class _ScoreTargetSettingsPageState extends State<ScoreTargetSettingsPage> {
@@ -85,10 +86,12 @@ class _ScoreTargetSettingsPageState extends State<ScoreTargetSettingsPage> {
       _hasLocal = targets.localOverrideFor(cohort) != null;
       _total.text = _fmt(policy.total);
       _groups.addAll([
-        for (final g in policy.groups) TextEditingController(text: _fmt(g.target)),
+        for (final g in policy.groups)
+          TextEditingController(text: _fmt(g.target)),
       ]);
       _subs.addAll([
-        for (final s in policy.subs) TextEditingController(text: _fmt(s.target)),
+        for (final s in policy.subs)
+          TextEditingController(text: _fmt(s.target)),
       ]);
       if (mounted) setState(() => _loading = false);
     } catch (e) {
@@ -125,14 +128,24 @@ class _ScoreTargetSettingsPageState extends State<ScoreTargetSettingsPage> {
         ],
         subs: [
           for (var i = 0; i < _policy.subs.length; i++)
-            ScoreSubTarget(keywords: _policy.subs[i].keywords, target: _parse(_subs[i])),
+            ScoreSubTarget(
+              keywords: _policy.subs[i].keywords,
+              target: _parse(_subs[i]),
+            ),
         ],
       );
-      await ScoreTargets.saveLocalOverride(_cohort.isEmpty ? null : _cohort, policy);
+      await ScoreTargets.saveLocalOverride(
+        _cohort.isEmpty ? null : _cohort,
+        policy,
+      );
       if (!mounted) return;
       setState(() => _hasLocal = true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('已保存本机达标线'), behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已保存本机达标线'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } on FormatException catch (e) {
       if (mounted) setState(() => _err = e.message);
     } catch (e) {
@@ -141,168 +154,249 @@ class _ScoreTargetSettingsPageState extends State<ScoreTargetSettingsPage> {
   }
 
   Future<void> _reset() async {
-    await ScoreTargets.saveLocalOverride(_cohort.isEmpty ? null : _cohort, null);
+    await ScoreTargets.saveLocalOverride(
+      _cohort.isEmpty ? null : _cohort,
+      null,
+    );
     await _load();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('已恢复默认达标线'), behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已恢复默认达标线'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
   Future<void> _openConnect() async {
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const ConnectPage()));
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const ConnectPage()));
     if (mounted) _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('第二课堂达标线')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-              children: [
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_cohort.isEmpty ? '未填写年级' : '当前年级 $_cohort',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                      const SizedBox(height: 4),
-                      Text(
-                        _cohort.isEmpty
-                            ? '未填年级时，这里的调整作为默认自定义规则'
-                            : (_hasLocal ? '当前使用本机自定义达标线' : '当前使用默认 / 远端达标线'),
-                        style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6),
-                      ),
-                      if (_cohort.isEmpty)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: _openConnect,
-                            icon: const Icon(Icons.edit_outlined, size: 16),
-                            label: const Text('去直连设置填写年级'),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('实践学分总目标',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      const SizedBox(height: 4),
-                      Text('留空表示不比较总分',
-                          style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _total,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: const InputDecoration(
-                          suffixText: '分',
-                          hintText: '如 8',
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_policy.groups.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('一级板块目标',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        const SizedBox(height: 4),
-                        Text('留空表示该板块不比较',
-                            style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
-                        const SizedBox(height: 6),
-                        for (var i = 0; i < _policy.groups.length; i++)
-                          _targetRow(
-                            label: _policy.groups[i].keywords.join(' / '),
-                            controller: _groups[i],
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-                if (_policy.subs.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('二级条目目标',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        const SizedBox(height: 4),
-                        Text('留空表示该条目只显示实际值',
-                            style: TextStyle(fontSize: 11.5, color: SemColors.textMuted)),
-                        const SizedBox(height: 6),
-                        for (var i = 0; i < _policy.subs.length; i++)
-                          _targetRow(
-                            label: _policy.subs[i].keywords.join(' / '),
-                            controller: _subs[i],
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-                if (_err != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: Text(_err!,
-                        style: TextStyle(fontSize: 12, color: SemColors.danger, height: 1.6)),
-                  ),
-                const SizedBox(height: 14),
-                Row(
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('第二课堂达标线')),
+          body: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  // 顶部让出悬浮顶栏
+                  padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _hasLocal ? _reset : null,
-                        child: const Text('恢复默认'),
+                    AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _cohort.isEmpty ? '未填写年级' : '当前年级 $_cohort',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _cohort.isEmpty
+                                ? '未填年级时，这里的调整作为默认自定义规则'
+                                : (_hasLocal
+                                    ? '当前使用本机自定义达标线'
+                                    : '当前使用默认 / 远端达标线'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: SemColors.textSecondary,
+                              height: 1.6,
+                            ),
+                          ),
+                          if (_cohort.isEmpty)
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: _openConnect,
+                                icon: const Icon(Icons.edit_outlined, size: 16),
+                                label: const Text('去直连设置填写年级'),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton(onPressed: _save, child: const Text('保存')),
+                    const SizedBox(height: 10),
+                    AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '实践学分总目标',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '留空表示不比较总分',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: SemColors.textMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _total,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: const InputDecoration(
+                              suffixText: '分',
+                              hintText: '如 8',
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_policy.groups.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      AppCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '一级板块目标',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '留空表示该板块不比较',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: SemColors.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            for (var i = 0; i < _policy.groups.length; i++)
+                              _targetRow(
+                                label: _policy.groups[i].keywords.join(' / '),
+                                controller: _groups[i],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (_policy.subs.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      AppCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '二级条目目标',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '留空表示该条目只显示实际值',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: SemColors.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            for (var i = 0; i < _policy.subs.length; i++)
+                              _targetRow(
+                                label: _policy.subs[i].keywords.join(' / '),
+                                controller: _subs[i],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (_err != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(
+                          _err!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: SemColors.danger,
+                            height: 1.6,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _hasLocal ? _reset : null,
+                            child: const Text('恢复默认'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: _save,
+                            child: const Text('保存'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '只调整 App 的达标对比线，不改变学校返回的分数；修改只保存在本机。',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: SemColors.textMuted,
+                        height: 1.6,
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  '只调整 App 的达标对比线，不改变学校返回的分数；修改只保存在本机。',
-                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
-                ),
-              ],
-            ),
+        );
+      },
     );
   }
 
-  Widget _targetRow({required String label, required TextEditingController controller}) {
+  Widget _targetRow({
+    required String label,
+    required TextEditingController controller,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
           Expanded(
-            child: Text(label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: SemColors.textSecondary)),
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: SemColors.textSecondary),
+            ),
           ),
           const SizedBox(width: 12),
           SizedBox(
             width: 92,
             child: TextField(
               controller: controller,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               textAlign: TextAlign.end,
               decoration: const InputDecoration(
                 suffixText: '分',
@@ -317,5 +411,6 @@ class _ScoreTargetSettingsPageState extends State<ScoreTargetSettingsPage> {
   }
 }
 
-String _fmt(num? v) =>
-    v == null ? '' : (v == v.roundToDouble() ? v.round().toString() : v.toString());
+String _fmt(num? v) => v == null
+    ? ''
+    : (v == v.roundToDouble() ? v.round().toString() : v.toString());

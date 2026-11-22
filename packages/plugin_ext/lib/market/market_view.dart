@@ -20,10 +20,14 @@ import 'market_sources_view.dart';
 /// 目录必须**验签**通过才显示（见 [MarketSource]），装的时候还要对 sha256；
 /// 市场装的拓展按清单声明的权限放行（见 `ExtBridge`），安装弹窗把权限摊给用户看。
 class MarketView extends StatefulWidget {
-  const MarketView({super.key, this.onInstalled});
+  const MarketView({super.key, this.onInstalled, this.topPadding = 0});
 
   /// 装完 / 更新完说一句（拓展页拿它弹提示）。
   final void Function(String message)? onInstalled;
+
+  /// 列表顶部额外留白：市场页是悬浮玻璃顶栏，列表要从顶栏下方开始，
+  /// 但滚动时仍从顶栏底下穿过去（所以留白放在滚动内容里，而不是外面套 Padding）。
+  final double topPadding;
 
   @override
   State<MarketView> createState() => _MarketViewState();
@@ -320,6 +324,7 @@ class _MarketViewState extends State<MarketView> {
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
+
               SliverToBoxAdapter(child: _top()),
               // 官方目录拉不到时，第三方源照样要能列（一个源坏掉不该带崩整页）
               if (_visible.isNotEmpty)
@@ -339,7 +344,12 @@ class _MarketViewState extends State<MarketView> {
           ),
         ),
         if (_source.status == MarketStatus.loading)
-          const Positioned(top: 0, left: 0, right: 0, child: LinearProgressIndicator(minHeight: 2)),
+          Positioned(
+            top: widget.topPadding,
+            left: 0,
+            right: 0,
+            child: const LinearProgressIndicator(minHeight: 2),
+          ),
         if (_busy)
           Container(
             color: Colors.black.withValues(alpha: 0.18),
@@ -350,7 +360,7 @@ class _MarketViewState extends State<MarketView> {
   }
 
   Widget _top() => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+        padding: EdgeInsets.fromLTRB(12, 8 + widget.topPadding, 12, 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

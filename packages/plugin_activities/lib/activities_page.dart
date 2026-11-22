@@ -51,7 +51,9 @@ String marketStateText(Map<String, dynamic> a) {
 
 Color _marketStateColor(Map<String, dynamic> a) {
   final st = _stateOf(a);
-  return st == _ActState.signing && isFullSignup(a) ? SemColors.danger : _stateColor(st);
+  return st == _ActState.signing && isFullSignup(a)
+      ? SemColors.danger
+      : _stateColor(st);
 }
 
 /// 校区胶囊文字；「未标注」（学校没写校区）返回空串，调用方据此不画胶囊。
@@ -124,7 +126,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   /// 「我的报名」先读本机缓存；是否自动拉新同样看「工具页自动刷新」设置。
   Future<void> _restoreSigned() async {
     final cached = await ToolPageCache.read(_signedCacheKey);
-    final list = ((cached?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final list =
+        ((cached?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
     if (!mounted) return;
     if (list.isNotEmpty) {
       setState(() {
@@ -145,7 +148,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     });
     try {
       final r = await ApiClient.I.signedActivities();
-      final list = ((r['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      final list =
+          ((r['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
       _signed = list;
       _signedLoaded = true;
       _signedFromCache = false;
@@ -166,8 +170,9 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否后台拉新。
   Future<void> _restore() async {
     final cached = await ToolPageCache.read(_cacheKey);
-    final list = ((((cached?['data'] as Map?)?['activities'] as List?) ?? const []))
-        .cast<Map<String, dynamic>>();
+    final list =
+        ((((cached?['data'] as Map?)?['activities'] as List?) ?? const []))
+            .cast<Map<String, dynamic>>();
     if (!mounted) return;
     if (list.isNotEmpty) {
       setState(() {
@@ -190,7 +195,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     try {
       final r = await ApiClient.I.activities();
       final data = r['data'] as Map?;
-      _list = ((data?['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      _list = ((data?['activities'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>();
       _fromCache = false;
       await ToolPageCache.write(_cacheKey, {'data': data});
     } catch (e) {
@@ -218,7 +224,10 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     }).toList();
     // 搜索支持拼音：活动名 / 主办 / 类别都能用全拼或首字母命中
     list = filterByPinyin(
-        list, (a) => '${a['name']} ${a['host']} ${a['dlmc']} ${a['lbmc']}', _query);
+      list,
+      (a) => '${a['name']} ${a['host']} ${a['dlmc']} ${a['lbmc']}',
+      _query,
+    );
     list.sort((a, b) {
       final rank = switch (_stateOf(a)) {
         _ActState.signing => 0,
@@ -287,156 +296,203 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   @override
   Widget build(BuildContext context) {
     final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
-    return Scaffold(
-        appBar: AppBar(
-          title: const Text('第二课堂活动'),
-          actions: [
-            // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
-            if (scan != null)
-              IconButton(
-                tooltip: '扫一扫',
-                onPressed: () => scan.open(context),
-                icon: const Icon(Icons.qr_code_scanner_outlined),
-              ),
-          ],
-        ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: GlassTabs(
-                labels: const ['活动广场', '我的报名'],
-                index: _tab,
-                onChanged: (i) => _tabs.animateToPage(i,
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(
+            context,
+            title: const Text('第二课堂活动'),
+            actions: [
+              // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
+              if (scan != null)
+                IconButton(
+                  tooltip: '扫一扫',
+                  onPressed: () => scan.open(context),
+                  icon: const Icon(Icons.qr_code_scanner_outlined),
+                ),
+            ],
+          ),
+          body: Column(
+            children: [
+              Padding(
+                // 顶部让出悬浮顶栏
+                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 0),
+                child: GlassTabs(
+                  labels: const ['活动广场', '我的报名'],
+                  index: _tab,
+                  onChanged: (i) => _tabs.animateToPage(
+                    i,
                     duration: const Duration(milliseconds: 260),
-                    curve: Curves.easeOutCubic),
-                height: 32,
-                fontSize: 11.5,
+                    curve: Curves.easeOutCubic,
+                  ),
+                  height: 32,
+                  fontSize: 11.5,
+                ),
               ),
-            ),
-            Expanded(
-              child: PageView(
-                controller: _tabs,
-                onPageChanged: _switchTab,
-                children: [_marketView(), _signedView()],
+              Expanded(
+                child: PageView(
+                  controller: _tabs,
+                  onPageChanged: _switchTab,
+                  children: [_marketView(), _signedView()],
+                ),
               ),
-            ),
-          ],
-        ),
-      );
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget _marketView() {
     final list = _filtered;
     return PageStateView(
-        loading: _loading && _list.isEmpty,
-        error: _err,
-        empty: !_loading && _err == null && _list.isEmpty,
-        emptyText: '暂无活动',
-        onRetry: _load,
-        child: RefreshIndicator(
-          onRefresh: _load,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
-            children: [
-              ToolRefreshBar(
-                refreshing: _loading,
-                fromCache: _fromCache,
-                failed: _refreshFailed,
-                onRefresh: _load,
-              ),
-              TextField(
-                onChanged: (v) => setState(() => _query = v.trim()),
-                decoration: const InputDecoration(
-                  hintText: '搜索活动名称 / 主办 / 类别，支持拼音…',
-                  prefixIcon: Icon(Icons.search, size: 20),
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      loading: _loading && _list.isEmpty,
+      error: _err,
+      empty: !_loading && _err == null && _list.isEmpty,
+      emptyText: '暂无活动',
+      onRetry: _load,
+      child: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+          children: [
+            ToolRefreshBar(
+              refreshing: _loading,
+              fromCache: _fromCache,
+              failed: _refreshFailed,
+              onRefresh: _load,
+            ),
+            TextField(
+              onChanged: (v) => setState(() => _query = v.trim()),
+              decoration: const InputDecoration(
+                hintText: '搜索活动名称 / 主办 / 类别，支持拼音…',
+                prefixIcon: Icon(Icons.search, size: 20),
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
               ),
-              const SizedBox(height: 8),
-              GlassTabs(
-                labels: [
-                  for (final (i, label) in const [(0, '全部'), (1, '报名中'), (2, '即将报名'), (3, '已结束')])
-                    i == 0 ? label : '$label (${_countOf(i)})'
-                ],
-                index: _filter,
-                onChanged: (i) => setState(() => _filter = i),
-                height: 30,
-                fontSize: 10.5,
+            ),
+            const SizedBox(height: 8),
+            GlassTabs(
+              labels: [
+                for (final (i, label) in const [
+                  (0, '全部'),
+                  (1, '报名中'),
+                  (2, '即将报名'),
+                  (3, '已结束'),
+                ])
+                  i == 0 ? label : '$label (${_countOf(i)})',
+              ],
+              index: _filter,
+              onChanged: (i) => setState(() => _filter = i),
+              height: 30,
+              fontSize: 10.5,
+            ),
+            const SizedBox(height: 8),
+            TagFilterRow(
+              title: '一级类别',
+              labels: _dlOptions,
+              selected: _dl,
+              onSelected: _setDl,
+            ),
+            const SizedBox(height: 4),
+            TagFilterRow(
+              title: '二级类别',
+              labels: _lbOptions,
+              selected: _lb,
+              onSelected: (v) => setState(() => _lb = v),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '共 ${list.length} 个活动',
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted),
               ),
-              const SizedBox(height: 8),
-              TagFilterRow(
-                  title: '一级类别',
-                  labels: _dlOptions,
-                  selected: _dl,
-                  onSelected: _setDl),
-              const SizedBox(height: 4),
-              TagFilterRow(
-                  title: '二级类别',
-                  labels: _lbOptions,
-                  selected: _lb,
-                  onSelected: (v) => setState(() => _lb = v)),
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text('共 ${list.length} 个活动',
-                    style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
-              ),
-              const SizedBox(height: 6),
-              if (list.isEmpty && _list.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 28),
-                  child: Center(
-                      child: Text('没有符合条件的活动',
-                          style:
-                              TextStyle(fontSize: 13, color: SemColors.textMuted))),
-                ),
-              for (final a in list)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: AppCard(
-                    radius: 10,
-                    onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => ActivityDetailPage(id: '${a['id']}', activity: a))),
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Capsule(marketStateText(a), color: _marketStateColor(a)),
-                            if (a['backfill'] as bool? ?? false)
-                              Capsule('事后补录', color: SemColors.info),
-                            // 没标校区的活动不显示「未标注」胶囊
-                            if (campusTagOf(a).isNotEmpty) Capsule(campusTagOf(a)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text('${a['name']}',
-                            style: TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w600,
-                                color: SemColors.textPrimary)),
-                        const SizedBox(height: 4),
-                        if (categoryTextOf(a).isNotEmpty)
-                          Text(categoryTextOf(a),
-                              style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
-                        const SizedBox(height: 6),
-                        _row('主办：${a['host']}  ·  名额：${a['quota'] ?? '—'}'),
-                        const SizedBox(height: 2),
-                        _row('活动时间：${_short(a['start'])} ~ ${_short(a['end'])}'),
-                        _row('报名窗口：${_short(a['bm_start'])} ~ ${_short(a['bm_end'])}'),
-                      ],
-                    ),
+            ),
+            const SizedBox(height: 6),
+            if (list.isEmpty && _list.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 28),
+                child: Center(
+                  child: Text(
+                    '没有符合条件的活动',
+                    style: TextStyle(fontSize: 13, color: SemColors.textMuted),
                   ),
                 ),
-            ],
-          ),
+              ),
+            for (final a in list)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: AppCard(
+                  radius: 10,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          ActivityDetailPage(id: '${a['id']}', activity: a),
+                    ),
+                  ),
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Capsule(
+                            marketStateText(a),
+                            color: _marketStateColor(a),
+                          ),
+                          if (a['backfill'] as bool? ?? false)
+                            Capsule('事后补录', color: SemColors.info),
+                          // 没标校区的活动不显示「未标注」胶囊
+                          if (campusTagOf(a).isNotEmpty)
+                            Capsule(campusTagOf(a)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${a['name']}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: SemColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (categoryTextOf(a).isNotEmpty)
+                        Text(
+                          categoryTextOf(a),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: SemColors.textSecondary,
+                          ),
+                        ),
+                      const SizedBox(height: 6),
+                      _row('主办：${a['host']}  ·  名额：${a['quota'] ?? '—'}'),
+                      const SizedBox(height: 2),
+                      _row('活动时间：${_short(a['start'])} ~ ${_short(a['end'])}'),
+                      _row(
+                        '报名窗口：${_short(a['bm_start'])} ~ ${_short(a['bm_end'])}',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
+      ),
     );
   }
 
@@ -461,8 +517,10 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
               ),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('共 ${_signed.length} 个活动',
-                    style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+                child: Text(
+                  '共 ${_signed.length} 个活动',
+                  style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+                ),
               ),
               const SizedBox(height: 6),
               for (final a in _signed) _signedCard(a),
@@ -485,16 +543,22 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
       child: AppCard(
         radius: 10,
         padding: const EdgeInsets.all(14),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => ActivityDetailPage(id: '${a['id']}', activity: {
-                  'id': a['id'],
-                  'name': a['name'],
-                  'start': a['start'],
-                  'end': a['end'],
-                  'dlmc': a['dlmc'],
-                  'lbmc': a['lbmc'],
-                  'signed': true,
-                }))),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ActivityDetailPage(
+              id: '${a['id']}',
+              activity: {
+                'id': a['id'],
+                'name': a['name'],
+                'start': a['start'],
+                'end': a['end'],
+                'dlmc': a['dlmc'],
+                'lbmc': a['lbmc'],
+                'signed': true,
+              },
+            ),
+          ),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -508,12 +572,18 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
               ],
             ),
             const SizedBox(height: 8),
-            Text('${a['name']}',
-                style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600, color: SemColors.textPrimary)),
+            Text(
+              '${a['name']}',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: SemColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 6),
             _row('活动时间：${_short(a['start'])} ~ ${_short(a['end'])}'),
-            if ('${a['place'] ?? ''}'.trim().isNotEmpty) _row('地点：${a['place']}'),
+            if ('${a['place'] ?? ''}'.trim().isNotEmpty)
+              _row('地点：${a['place']}'),
           ],
         ),
       ),
@@ -522,10 +592,12 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
 
   Widget _row(String text) => Align(
         alignment: Alignment.centerLeft,
-        child: Text(text,
-            style: TextStyle(fontSize: 12, color: SemColors.textMuted),
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1),
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
       );
 
   String _short(Object? s) {
@@ -580,7 +652,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   @override
   void initState() {
     super.initState();
-    _data = widget.activity == null ? null : Map<String, dynamic>.from(widget.activity!);
+    _data = widget.activity == null
+        ? null
+        : Map<String, dynamic>.from(widget.activity!);
     _load();
   }
 
@@ -609,10 +683,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
   void _copy(String label, String value) {
     Clipboard.setData(ClipboardData(text: value));
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('已复制$label：$value'),
-      behavior: SnackBarBehavior.floating,
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已复制$label：$value'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   // ==================== 在线报名 ====================
@@ -624,13 +700,19 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('确认报名'),
-        content: Text('「${_data?['name'] ?? ''}」\n\n报名信息由学校系统自动填写，'
-            '提交后进入学校审批流。\n重复提交可能生成多条申请，请勿反复点击。'),
+        content: Text(
+          '「${_data?['name'] ?? ''}」\n\n报名信息由学校系统自动填写，'
+          '提交后进入学校审批流。\n重复提交可能生成多条申请，请勿反复点击。',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(dialogCtx).pop(false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('取消'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(true),
-              child: const Text('确认报名')),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('确认报名'),
+          ),
         ],
       ),
     );
@@ -655,10 +737,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       final block = signupBlockOfError(e.message);
       if (block != null) {
         setState(() => _blocked = block);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(e.message),
-          behavior: SnackBarBehavior.floating,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
         return null;
       }
       final uncertain = e.message.contains('超时') || e.message.contains('网络错误');
@@ -674,7 +758,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             ),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('知道了')),
+                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: const Text('知道了'),
+              ),
             ],
           ),
         );
@@ -692,23 +778,29 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('报名已提交'),
-        content: Text(iid.isEmpty
-            ? '申请已进入学校审批流。'
-            : '申请已进入学校审批流。\n\n申请编号：$iid\n（可在学工系统的「我的申请」中查看进度）'),
+        content: Text(
+          iid.isEmpty
+              ? '申请已进入学校审批流。'
+              : '申请已进入学校审批流。\n\n申请编号：$iid\n（可在学工系统的「我的申请」中查看进度）',
+        ),
         actions: [
           if (iid.isNotEmpty)
             TextButton(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: iid));
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('已复制申请编号'),
-                  behavior: SnackBarBehavior.floating,
-                ));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已复制申请编号'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
               },
               child: const Text('复制编号'),
             ),
           TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(), child: const Text('知道了')),
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('知道了'),
+          ),
         ],
       ),
     );
@@ -719,89 +811,129 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     final signup = (_data?['signup'] as Map<String, dynamic>?) ?? {};
     final a = _data;
     final state = a == null ? null : _stateOf(a);
-    return Scaffold(
-      appBar: AppBar(title: const Text('活动详情')),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-          child: _signupButton(state),
-        ),
-      ),
-      body: PageStateView(
-        loading: _loading,
-        error: _err,
-        onRetry: _load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-          children: [
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (a != null)
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('活动详情')),
+          bottomNavigationBar: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+              child: _signupButton(state),
+            ),
+          ),
+          body: PageStateView(
+            loading: _loading,
+            error: _err,
+            onRetry: _load,
+            child: ListView(
+              // 顶部让出悬浮顶栏
+              padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
+              children: [
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (a != null)
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            Capsule(
+                              _stateText(_stateOf(a)),
+                              color: _stateColor(_stateOf(a)),
+                            ),
+                            if (_signed)
+                              Capsule('已报名', color: SemColors.success),
+                            if (a['backfill'] as bool? ?? false)
+                              Capsule('事后补录', color: SemColors.info),
+                            // 大类 / 小类没标注就不画空胶囊
+                            if ('${a['dlmc'] ?? ''}'.trim().isNotEmpty)
+                              Capsule('${a['dlmc']}', color: SemColors.accent),
+                            if ('${a['lbmc'] ?? ''}'.trim().isNotEmpty)
+                              Capsule('${a['lbmc']}', color: SemColors.accent),
+                          ],
+                        ),
+                      if (a != null) const SizedBox(height: 10),
+                      Text(
+                        '${a?['name'] ?? ''}',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: SemColors.textPrimary,
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      _kv(
+                        '活动时间',
+                        '${a?['start'] ?? '-'} ~ ${a?['end'] ?? '-'}',
+                      ),
+                      _kv(
+                        '报名时间',
+                        '${a?['bm_start'] ?? '-'} ~ ${a?['bm_end'] ?? '-'}',
+                      ),
+                      _kv('名额', '${a?['quota'] ?? '-'}'),
+                      _kv('校区', '${a?['campus'] ?? '-'}'),
+                      _kv('主办方', '${a?['host'] ?? '-'}'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (signup.isNotEmpty)
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Capsule(_stateText(_stateOf(a)), color: _stateColor(_stateOf(a))),
-                        if (_signed) Capsule('已报名', color: SemColors.success),
-                        if (a['backfill'] as bool? ?? false) Capsule('事后补录', color: SemColors.info),
-                        // 大类 / 小类没标注就不画空胶囊
-                        if ('${a['dlmc'] ?? ''}'.trim().isNotEmpty)
-                          Capsule('${a['dlmc']}', color: SemColors.accent),
-                        if ('${a['lbmc'] ?? ''}'.trim().isNotEmpty)
-                          Capsule('${a['lbmc']}', color: SemColors.accent),
+                        const Text(
+                          '报名方式',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        for (final qq in ((signup['qq'] as List?) ?? const []))
+                          _contact('QQ群：', '$qq'),
+                        for (final ph
+                            in ((signup['phone'] as List?) ?? const []))
+                          _contact('电话：', '$ph'),
+                        for (final tips
+                            in ((signup['tips'] as List?) ?? const []))
+                          _bullet('$tips'),
+                        for (final line
+                            in ((signup['contact_lines'] as List?) ?? const []))
+                          _bullet('$line'),
                       ],
                     ),
-                  if (a != null) const SizedBox(height: 10),
-                  Text('${a?['name'] ?? ''}',
-                      style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold, color: SemColors.textPrimary)),
-                  const Divider(height: 24),
-                  _kv('活动时间', '${a?['start'] ?? '-'} ~ ${a?['end'] ?? '-'}'),
-                  _kv('报名时间', '${a?['bm_start'] ?? '-'} ~ ${a?['bm_end'] ?? '-'}'),
-                  _kv('名额', '${a?['quota'] ?? '-'}'),
-                  _kv('校区', '${a?['campus'] ?? '-'}'),
-                  _kv('主办方', '${a?['host'] ?? '-'}'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (signup.isNotEmpty)
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('报名方式', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    for (final qq in ((signup['qq'] as List?) ?? const []))
-                      _contact('QQ群：', '$qq'),
-                    for (final ph in ((signup['phone'] as List?) ?? const []))
-                      _contact('电话：', '$ph'),
-                    for (final tips in ((signup['tips'] as List?) ?? const []))
-                      _bullet('$tips'),
-                    for (final line in ((signup['contact_lines'] as List?) ?? const []))
-                      _bullet('$line'),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 10),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('活动说明', style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  SelectableText(
-                    '${_data?['hdms'] ?? '暂无活动说明'}',
-                    style: TextStyle(fontSize: 13, height: 1.7, color: SemColors.textSecondary),
                   ),
-                ],
-              ),
+                const SizedBox(height: 10),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '活动说明',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      SelectableText(
+                        '${_data?['hdms'] ?? '暂无活动说明'}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.7,
+                          color: SemColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -812,7 +944,10 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           children: [
             SizedBox(
               width: 68,
-              child: Text(k, style: TextStyle(fontSize: 13, color: SemColors.textMuted)),
+              child: Text(
+                k,
+                style: TextStyle(fontSize: 13, color: SemColors.textMuted),
+              ),
             ),
             Expanded(child: Text(v, style: const TextStyle(fontSize: 13))),
           ],
@@ -834,8 +969,11 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       return FilledButton.icon(
         onPressed: null,
         icon: Icon(
-            block == SignupBlock.full ? Icons.group_off_rounded : Icons.block_rounded,
-            size: 18),
+          block == SignupBlock.full
+              ? Icons.group_off_rounded
+              : Icons.block_rounded,
+          size: 18,
+        ),
         label: Text(block == SignupBlock.full ? '人满，不可报名' : '条件不符'),
       );
     }
@@ -844,16 +982,21 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       onPressed: enabled ? _confirmSignup : null,
       icon: _signingUp
           ? const SizedBox(
-              width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
           : const Icon(Icons.how_to_reg_rounded, size: 18),
-      label: Text(_signingUp
-          ? '提交中…'
-          : switch (state) {
-              _ActState.signing => '在线报名',
-              _ActState.upcoming => '未开始报名',
-              _ActState.ended => '报名已结束',
-              null => '在线报名',
-            }),
+      label: Text(
+        _signingUp
+            ? '提交中…'
+            : switch (state) {
+                _ActState.signing => '在线报名',
+                _ActState.upcoming => '未开始报名',
+                _ActState.ended => '报名已结束',
+                null => '在线报名',
+              },
+      ),
     );
   }
 
@@ -868,8 +1011,11 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             ),
             const SizedBox(width: 8),
             Expanded(
-                child: Text(text,
-                    style: TextStyle(fontSize: 12, color: SemColors.textSecondary))),
+              child: Text(
+                text,
+                style: TextStyle(fontSize: 12, color: SemColors.textSecondary),
+              ),
+            ),
           ],
         ),
       );
@@ -878,12 +1024,14 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           children: [
-            Text(label, style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+            Text(label,
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
             Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
             IconButton(
               visualDensity: VisualDensity.compact,
               onPressed: () => _copy(label, value),
-              icon: Icon(Icons.copy_rounded, size: 16, color: SemColors.textMuted),
+              icon: Icon(Icons.copy_rounded,
+                  size: 16, color: SemColors.textMuted),
             ),
           ],
         ),

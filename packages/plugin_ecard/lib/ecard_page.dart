@@ -85,8 +85,12 @@ class _EcardPageState extends State<EcardPage> {
     if (!mounted || _data == null || _loading) return;
     final interval = AppState.I.ecardRefreshSeconds;
     if (_countdown > interval) {
-      setState(() => _countdown =
-          ecardCountdownSeconds(asInt(_data?['refresh']), interval: interval));
+      setState(
+        () => _countdown = ecardCountdownSeconds(
+          asInt(_data?['refresh']),
+          interval: interval,
+        ),
+      );
     }
   }
 
@@ -120,7 +124,9 @@ class _EcardPageState extends State<EcardPage> {
         interval: AppState.I.ecardRefreshSeconds,
       );
       // 桌面「校园卡余额」卡片跟着更新：只放余额，动态码不进桌面
-      final widget = PluginRegistry.I.capability<HomeWidgetCapability>(PluginIds.homeWidget);
+      final widget = PluginRegistry.I.capability<HomeWidgetCapability>(
+        PluginIds.homeWidget,
+      );
       final balance = asDouble(_data?['card_balance']);
       if (widget != null && balance != null) {
         unawaited(widget.syncEcard(balance: balance.toStringAsFixed(2)));
@@ -157,7 +163,9 @@ class _EcardPageState extends State<EcardPage> {
             // 内容更高时让框长高，不裁不溢出。
             ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 220, minHeight: 220),
-              child: Center(child: _risk!.blockedNotice(context, feature: '校园码付款码')),
+              child: Center(
+                child: _risk!.blockedNotice(context, feature: '校园码付款码'),
+              ),
             ),
             const SizedBox(height: 10),
             Text(
@@ -180,15 +188,27 @@ class _EcardPageState extends State<EcardPage> {
         final b64 = img.contains(',') ? img.split(',').last : img;
         final bytes = base64Decode(b64);
         if (bytes.length > 64) {
-          return Image.memory(bytes, gaplessPlayback: true, fit: BoxFit.contain);
+          return Image.memory(
+            bytes,
+            gaplessPlayback: true,
+            fit: BoxFit.contain,
+          );
         }
       } catch (_) {}
     }
     if (code.isNotEmpty) {
       // 透明底落在下方 _qrPlate 上（深色主题才需要白底，浅色直接压在浅色卡面上）
-      return QrImageView(data: code, size: 220, backgroundColor: Colors.transparent);
+      return QrImageView(
+        data: code,
+        size: 220,
+        backgroundColor: Colors.transparent,
+      );
     }
-    return const SizedBox(width: 220, height: 220, child: Center(child: Text('二维码获取失败')));
+    return const SizedBox(
+      width: 220,
+      height: 220,
+      child: Center(child: Text('二维码获取失败')),
+    );
   }
 
   /// 二维码底板：浅色主题**不画白底**（否则玻璃卡上会露出一块白色方块），
@@ -197,35 +217,52 @@ class _EcardPageState extends State<EcardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('校园码')),
-      body: LoginGate(
-        child: Center(
-          child: SingleChildScrollView(
-            // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：小屏滚动时底部让出底栏这一截
-            padding: EdgeInsets.fromLTRB(
-                20, 20, 20, 20 + MediaQuery.paddingOf(context).bottom),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                children: [
-                  // 拦截 / 失败 / 正常三张卡片之间的切换走全站同一条高度过渡：
-                  // AnimatedSize 顶部锚定 + 220ms easeOutCubic（与「我的」页可收起内容一致；
-                  // 默认居中会让内容在高度动画期间整体上下漂移）。
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                    alignment: Alignment.topCenter,
-                    child: _blocked
-                        ? _blockedCard()
-                        : (_err != null && _data == null ? _errorCard() : _codeCard()),
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('校园码')),
+          body: LoginGate(
+            child: Center(
+              child: SingleChildScrollView(
+                // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：小屏滚动时底部让出底栏这一截
+                // 顶部再让出悬浮顶栏
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20 + topInset,
+                  20,
+                  20 + MediaQuery.paddingOf(context).bottom,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    children: [
+                      // 拦截 / 失败 / 正常三张卡片之间的切换走全站同一条高度过渡：
+                      // AnimatedSize 顶部锚定 + 220ms easeOutCubic（与「我的」页可收起内容一致；
+                      // 默认居中会让内容在高度动画期间整体上下漂移）。
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.topCenter,
+                        child: _blocked
+                            ? _blockedCard()
+                            : (_err != null && _data == null
+                                ? _errorCard()
+                                : _codeCard()),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -252,11 +289,17 @@ class _EcardPageState extends State<EcardPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text('卡余额 ', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+              Text(
+                '卡余额 ',
+                style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+              ),
               Text(
                 balance == null ? '—' : '¥${balance.toStringAsFixed(2)}',
                 style: TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600, color: SemColors.textPrimary),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: SemColors.textPrimary,
+                ),
               ),
               const SizedBox(width: 14),
               Text(

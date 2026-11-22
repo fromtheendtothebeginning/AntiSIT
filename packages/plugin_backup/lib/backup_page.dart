@@ -39,10 +39,12 @@ class _BackupPageState extends State<BackupPage> {
         final dir = await getTemporaryDirectory();
         final file = File('${dir.path}/$name');
         await file.writeAsString(json, flush: true);
-        await SharePlus.instance.share(ShareParams(
-          files: [XFile(file.path, mimeType: 'application/json')],
-          subject: 'AntiSIT 备份',
-        ));
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(file.path, mimeType: 'application/json')],
+            subject: 'AntiSIT 备份',
+          ),
+        );
         if (mounted) setState(() => _note = '备份已生成：$name（在分享面板里选择保存位置）');
       } else {
         final loc = await getSaveLocation(
@@ -65,9 +67,11 @@ class _BackupPageState extends State<BackupPage> {
   Future<void> _import() async {
     XFile? picked;
     try {
-      picked = await openFile(acceptedTypeGroups: const [
-        XTypeGroup(label: 'AntiSIT 备份', extensions: ['json']),
-      ]);
+      picked = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'AntiSIT 备份', extensions: ['json']),
+        ],
+      );
     } catch (e) {
       if (mounted) showErr(context, e, title: '打开文件选择器失败');
       return;
@@ -99,8 +103,14 @@ class _BackupPageState extends State<BackupPage> {
           style: const TextStyle(height: 1.6),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('覆盖导入')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('覆盖导入'),
+          ),
         ],
       ),
     );
@@ -120,7 +130,10 @@ class _BackupPageState extends State<BackupPage> {
             style: TextStyle(height: 1.6),
           ),
           actions: [
-            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('返回主页')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('返回主页'),
+            ),
           ],
         ),
       );
@@ -139,62 +152,75 @@ class _BackupPageState extends State<BackupPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('备份与恢复')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
-        children: [
-          if (_busy) ...[
-            const LinearProgressIndicator(minHeight: 2),
-            const SizedBox(height: 8),
-          ],
-          AppCard(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              children: [
-                ListTile(
-                  enabled: !_busy,
-                  leading: const Icon(Icons.upload_file_rounded),
-                  title: const Text('导出备份'),
-                  subtitle: const Text(
-                    '课表、学期与作息、设置、学校档案、插件偏好；不含账号密码 / 登录态 / AI Key',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _busy ? null : _export,
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        final topInset = glassTopInset(context);
+        return Scaffold(
+          extendBodyBehindAppBar: glassTopBarEnabled,
+          appBar: glassAppBar(context, title: const Text('备份与恢复')),
+          body: ListView(
+            padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
+            children: [
+              if (_busy) ...[
+                const LinearProgressIndicator(minHeight: 2),
+                const SizedBox(height: 8),
+              ],
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: [
+                    ListTile(
+                      enabled: !_busy,
+                      leading: const Icon(Icons.upload_file_rounded),
+                      title: const Text('导出备份'),
+                      subtitle: const Text(
+                        '课表、学期与作息、设置、学校档案、插件偏好；不含账号密码 / 登录态 / AI Key',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _busy ? null : _export,
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      enabled: !_busy,
+                      leading: const Icon(Icons.download_rounded),
+                      title: const Text('导入备份'),
+                      subtitle: const Text(
+                        '从 .json 备份恢复；会覆盖同名数据，导入后需要重新登录',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: _busy ? null : _import,
+                    ),
+                  ],
                 ),
-                const Divider(height: 1),
-                ListTile(
-                  enabled: !_busy,
-                  leading: const Icon(Icons.download_rounded),
-                  title: const Text('导入备份'),
-                  subtitle: const Text(
-                    '从 .json 备份恢复；会覆盖同名数据，导入后需要重新登录',
-                    style: TextStyle(fontSize: 12),
+              ),
+              if (_note != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _note!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: SemColors.textMuted,
+                    height: 1.5,
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _busy ? null : _import,
                 ),
               ],
-            ),
-          ),
-          if (_note != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              _note!,
-              style: TextStyle(fontSize: 12, color: SemColors.textMuted, height: 1.5),
-            ),
-          ],
-          const SizedBox(height: 12),
-          const PageNotes(
-            lines: [
-              '备份文件是明文 JSON，请自己保管好；里面不含账号密码、登录 token、AI Key、直连 Cookie。',
-              '拓展（网页插件）及其数据、课表自定义背景图不包含在备份里，需要重新添加 / 安装。',
-              '导入会覆盖本机同名数据；账号与 AI 配置不在备份中，导入后请重新登录并按需填写。',
+              const SizedBox(height: 12),
+              const PageNotes(
+                lines: [
+                  '备份文件是明文 JSON，请自己保管好；里面不含账号密码、登录 token、AI Key、直连 Cookie。',
+                  '拓展（网页插件）及其数据、课表自定义背景图不包含在备份里，需要重新添加 / 安装。',
+                  '导入会覆盖本机同名数据；账号与 AI 配置不在备份中，导入后请重新登录并按需填写。',
+                ],
+              ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
