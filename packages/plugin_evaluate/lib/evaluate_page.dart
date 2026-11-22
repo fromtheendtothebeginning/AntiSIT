@@ -95,7 +95,31 @@ class _EvaluatePageState extends State<EvaluatePage> {
       _refreshFailed = false;
     });
     if (AppState.I.demo) {
-      setState(() => _fail('演示模式没有真实教务数据'));
+      // 演示模式：本地假数据走一遍真实 UI（列表 / 汇总 / 打分表单），不发网络请求。
+      // 提交 / 保存仍然会被拦截（见 _saveTarget），只用于检查界面与滚动适配。
+      final demoTargets = [
+        for (var i = 0; i < 6; i++)
+          EvalTarget(
+            jxbId: 'DEMO_JXB_',
+            kchId: 'DEMO_KC_',
+            jghId: 'DEMO_JGH_',
+            sfcjlrjs: '1',
+            tjzt: i == 0 ? '0' : '-1',
+            course: ['高等数学(下)', '数据结构', '大学物理(二)', '线性代数', '大学英语(三)', '体育(四)'][i],
+            teacher: ['王建国', '陈强', '孙丽', '吴敏', '李芳', '张伟'][i],
+            className: '计科2501',
+            college: '计算机学院',
+            time: '周一 3-4 节',
+            place: '一教 A20',
+          ),
+      ];
+      setState(() {
+        _targets = demoTargets;
+        _summary = EvalSummary(pending: 5, saved: 1, submitted: 0);
+        _booting = false;
+        _refreshing = false;
+        _fromCache = false;
+      });
       return;
     }
     // 服务器模式：先要到校园隧道代理，否则设备根本到不了教务
@@ -496,12 +520,17 @@ class _EvaluatePageState extends State<EvaluatePage> {
           // 主体是整块内容（加载 / 出错 / 列表三态），用 Padding 统一顶出顶栏这一截
           body: GlassFadedBody(
             barHeight: topInset,
-            child: Padding(
-            padding: EdgeInsets.only(top: topInset),
             child: _booting
-                ? _loadingView()
-                : (_error != null ? _errorView(_error!) : _listView()),
-          ),
+                ? Padding(
+                    padding: EdgeInsets.only(top: topInset),
+                    child: _loadingView(),
+                  )
+                : (_error != null
+                      ? Padding(
+                          padding: EdgeInsets.only(top: topInset),
+                          child: _errorView(_error!),
+                        )
+                      : _listView(topInset)),
           ),
         );
       },
@@ -563,26 +592,21 @@ class _EvaluatePageState extends State<EvaluatePage> {
         ),
       );
 
-  Widget _listView() => Column(
-        children: [
-          // 与其它工具页一致的刷新条：转圈时继续展示旧数据，失败也只在这里提示
-          ToolRefreshBar(
-            refreshing: _refreshing,
-            fromCache: _fromCache,
-            failed: _refreshFailed,
-            onRefresh: _loadTargets,
-          ),
-          Expanded(
-            child: EvaluateListView(
-              targets: _targets,
-              summary: _summary,
-              connectionLabel: AppState.I.direct ? '直连' : '校园隧道',
-              onTapTarget: _openTarget,
-              onRefresh: _loadTargets,
-              onFillAll: _fillAllTargets,
-              onSubmitAll: _submitAll,
-            ),
-          ),
-        ],
+  // 刷新条放进列表内容里：跟内容一起滚，不再钉在顶部
+  Widget _listView(double topInset) => EvaluateListView(
+        targets: _targets,
+        summary: _summary,
+        topPadding: topInset,
+        header: ToolRefreshBar(
+          refreshing: _refreshing,
+          fromCache: _fromCache,
+          failed: _refreshFailed,
+          onRefresh: _loadTargets,
+        ),
+        connectionLabel: AppState.I.direct ? '直连' : '校园隧道',
+        onTapTarget: _openTarget,
+        onRefresh: _loadTargets,
+        onFillAll: _fillAllTargets,
+        onSubmitAll: _submitAll,
       );
 }

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_evaluate/plugin_evaluate.dart';
 
-/// 评教插件的接线：不再依赖 WebView 内核（原生界面），只在非演示模式出现入口。
+/// 评教插件的接线：不再依赖 WebView 内核（原生界面）；演示模式也给入口，\n/// 用本地假数据渲染列表，方便在模拟器里检查界面与滚动适配。
 void main() {
   const plugin = EvaluatePlugin();
 
@@ -23,8 +23,10 @@ void main() {
     expect(tools.single.open(), isA<EvaluatePage>());
   });
 
-  test('演示模式（本地假数据）不出现评教入口', () {
+  test('演示模式也给入口：用本地假数据走一遍界面（便于检查滚动 / 适配）', () {
     AppState.I.demo = true;
-    expect(plugin.tools(PluginRegistry(features: const [])), isEmpty);
+    final tools = plugin.tools(PluginRegistry(features: const []));
+    expect(tools, hasLength(1));
+    expect(tools.single.title, '学生评教');
   });
 }
