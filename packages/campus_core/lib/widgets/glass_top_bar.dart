@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 
 import 'theme_palette.dart';
 
-/// 悬浮玻璃顶栏向下的「渐变模糊」过渡段高度：模糊从标题栏下沿开始，
-/// 由最强（[kGlassBarBlurSigma]）线性衰减到 0——内容往顶栏滚的途中被逐级糊掉。
-const double kGlassBarFadeExtent = 44;
+/// 顶栏里「渐变段」占顶栏高度的比例：模糊只发生在顶栏自己的范围内，
+/// 上 60% 保持最强模糊，靠底部 40% 从最强线性降到 0——内容从顶栏底边露出时是清晰的。
+const double kGlassBarFadeFraction = 0.4;
 
 /// 背景（顶栏那条渐变模糊带）的最大模糊强度。**比按钮小一档**：
 /// 按钮是「隔着玻璃看内容」的强模糊，背景只把穿过去的内容压淡，太强会糊成一片色块。
-const double kGlassBarBlurSigma = 10;
+const double kGlassBarBlurSigma = 6;
 
 /// 按钮（悬浮圆钮）的模糊强度：不做渐变，直接复用玻璃底栏那一档（sigma 12）。
 const double kGlassOrbBlurSigma = 12;
@@ -21,11 +21,11 @@ const double kGlassOrbBlurSigma = 12;
 /// 层数越多过渡越顺，代价是每帧多几次 backdrop 采样——先取 4，卡再减。
 const int _fadeBands = 4;
 
-/// 顶栏（状态栏 + 标题栏 + 渐变模糊段）的总高度。
+/// 顶栏（状态栏 + 标题栏）的总高度。渐变段包含在顶栏内部，所以不再额外加高。
 double glassBarHeight(BuildContext context, {double toolbarHeight = kToolbarHeight}) =>
-    MediaQuery.viewPaddingOf(context).top + toolbarHeight + kGlassBarFadeExtent;
+    MediaQuery.viewPaddingOf(context).top + toolbarHeight;
 
-/// 页面第一个滚动区 / 内容的顶部内边距：躲开悬浮顶栏和它下方那段渐变模糊。
+/// 页面第一个滚动区 / 内容的顶部内边距：躲开悬浮顶栏。
 ///
 /// 注意必须用 `viewPadding`：开了 `Scaffold.extendBodyBehindAppBar` 之后 body 里的
 /// `MediaQuery.padding.top` 会被清零，用 `paddingOf` 会算出 0。
@@ -72,19 +72,15 @@ AppBar glassAppBar(
     toolbarHeight: toolbarHeight,
     titleSpacing: titleSpacing,
     title: title,
-    // flexibleSpace 铺满整个顶栏（含状态栏和下方那段渐变），模糊层借此延伸到标题栏之外；
-    // bottom 只用「留出高度」来给渐变段腾地方，本身不画东西
+    // flexibleSpace 铺满整个顶栏（含状态栏）：渐变模糊只发生在顶栏自己的范围里，
+    // 不向下延伸——内容从顶栏底边露出时已经是清晰的
     flexibleSpace: const IgnorePointer(child: GlassBarScrim()),
-    bottom: PreferredSize(
-      preferredSize: Size.fromHeight(bottomHeight + kGlassBarFadeExtent),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (bottom != null) SizedBox(height: bottomHeight, child: bottom),
-          const SizedBox(height: kGlassBarFadeExtent),
-        ],
-      ),
-    ),
+    bottom: bottom == null
+        ? null
+        : PreferredSize(
+            preferredSize: Size.fromHeight(bottomHeight),
+            child: bottom,
+          ),
   );
 }
 
@@ -145,14 +141,17 @@ ButtonStyle _orbStyle() => ButtonStyle(
 /// 模糊不能直接套 `ShaderMask` 做渐变——`ShaderMask` 会开 saveLayer，backdrop 就空了，
 /// 模糊采样不到页面内容。所以这里改用叠加：把渐变段切段，每段一层 `BackdropFilter`，
 /// 越靠上被越多的层糊过，累积效果就是「越靠近顶栏越模糊」。
+///
+/// 渐变段只占顶栏底部 [kGlassBarFadeFraction] 那一段：顶栏底边是 0（清晰），
+/// 往上到渐变段起点到达最大强度，再往上是均匀的最强模糊。
 class GlassBarScrim extends StatelessWidget {
   const GlassBarScrim({
     super.key,
-    this.fadeExtent = kGlassBarFadeExtent,
+    this.fadeFraction = kGlassBarFadeFraction,
     this.sigma = kGlassBarBlurSigma,
   });
 
-  final double fadeExtent;
+  final double fadeFraction;
   final double sigma;
 
   @override
@@ -160,6 +159,7 @@ class GlassBarScrim extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, cons) {
         final h = cons.maxHeight;
+        final fadeExtent = (h * fadeFraction).clamp(0.0, h);
         final fadeStart = (h - fadeExtent).clamp(0.0, h);
         final n = _fadeBands;
         final layers = <Widget>[];
@@ -199,7 +199,7 @@ class GlassBarScrim extends StatelessWidget {
 
   LinearGradient _tint(double fadeStart, double h) {
     final base = SemColors.bg;
-    final fade = h <= 0 ? 0.5 : (fadeStart / h).clamp(0.0, 0.95);
+    final fade = h <= 0 ? 0.6 : (fadeStart / h).clamp(0.0, 0.95);
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,

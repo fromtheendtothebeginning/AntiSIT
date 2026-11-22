@@ -30,11 +30,8 @@ void main() {
     await tester.pumpWidget(host(child: page()));
     expect(find.byType(AppBar), findsOneWidget);
     expect(find.text('标题'), findsOneWidget);
-    // toolbar(56) + 渐变段(44)
-    expect(
-      tester.getSize(find.byType(AppBar)).height,
-      kToolbarHeight + kGlassBarFadeExtent,
-    );
+    // 模糊区只占顶栏本身：顶栏高度 = 标题栏高度
+    expect(tester.getSize(find.byType(AppBar)).height, kToolbarHeight);
   });
 
   testWidgets('背景带是渐变模糊（多层 BackdropFilter 叠加）', (tester) async {
@@ -92,6 +89,6 @@ void main() {
         ),
       ),
     );
-    expect(inset, 24 + kToolbarHeight + kGlassBarFadeExtent);
+    expect(inset, 24 + kToolbarHeight);
   });
 }
