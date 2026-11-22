@@ -824,36 +824,21 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     ],
   );
 
+  /// 顶栏按钮：用全站统一的悬浮玻璃圆钮（40 直径、thumb 玻璃面 + 描边、无投影），
+  /// 不再自己画 42 的实心圆 + 投影——那样和别的页面大小、阴影都不一致。
   Widget _roundAction(
     IconData icon,
     String tooltip,
     VoidCallback? onPressed, {
     Color? color,
-  }) => Padding(
-    padding: const EdgeInsets.only(left: 8),
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        // card 本身带透明度，withValues 会覆盖掉 alpha（深色下变近白）：
-        // 先与页面底色合成，得到实底又不发白
-        color: Color.alphaBlend(SemColors.card, SemColors.bg),
-        border: Border.all(color: SemColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: SemColors.shadow,
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        icon: Icon(icon, size: 22, color: color ?? SemColors.textSecondary),
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints.tightFor(width: 42, height: 42),
-      ),
+  }) => glassTopBarAction(
+    IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(icon, size: 22, color: color ?? SemColors.textSecondary),
+      padding: EdgeInsets.zero,
     ),
+    edge: 4,
   );
 
   /// 市场里这条有没有新版：目录还没拉到时返回 false，拉到后监听会重建。
