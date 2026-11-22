@@ -6,7 +6,7 @@ import 'package:flutter/scheduler.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-import 'add_extension_page.dart';
+import 'market/market_page.dart';
 import 'bundle_import.dart';
 import 'cordis_bundle.dart';
 import 'ext_bridge.dart';
@@ -121,18 +121,73 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
       );
   }
 
-  /// 打开「添加拓展」页：三种加法（网址 / 压缩包 / JSON）+ 插件市场。
-  /// 市场不再和「我的拓展」并排，而是收进这一页里。
-  Future<void> _openAddPage() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AddExtensionPage(
-          onAddUrl: () => _edit(),
-          onImportBundle: _importBundle,
-          onImportJson: _importJson,
-          onInstalled: _toast,
+  /// 「添加拓展」：还是原来的底部菜单，三种加法；另加一项「插件市场」，
+  /// 点进去是市场自己的独立页（市场不和「我的拓展」并排）。
+  Future<void> _addMenu() async {
+    final pick = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.link_rounded),
+              title: const Text('填写网址'),
+              subtitle: const Text(
+                '给它起个名字，填一个 http(s) 网址',
+                style: TextStyle(fontSize: 12),
+              ),
+              onTap: () => Navigator.pop(ctx, 'url'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.folder_zip_outlined),
+              title: const Text('导入 Cordis 压缩包'),
+              subtitle: const Text(
+                'ext.json + main.js 打成 zip；导入后自动解压',
+                style: TextStyle(fontSize: 12),
+              ),
+              onTap: () => Navigator.pop(ctx, 'zip'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.data_object_rounded),
+              title: const Text('导入 JSON'),
+              subtitle: const Text(
+                '粘贴一份拓展 JSON（单条或数组）',
+                style: TextStyle(fontSize: 12),
+              ),
+              onTap: () => Navigator.pop(ctx, 'json'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.storefront_outlined),
+              title: const Text('插件市场'),
+              subtitle: const Text(
+                '从市场目录里发现并安装别人做的拓展',
+                style: TextStyle(fontSize: 12),
+              ),
+              onTap: () => Navigator.pop(ctx, 'market'),
+            ),
+          ],
         ),
       ),
+    );
+    if (!mounted) return;
+    switch (pick) {
+      case 'url':
+        await _edit();
+      case 'zip':
+        await _importBundle();
+      case 'json':
+        await _importJson();
+      case 'market':
+        await _openMarketPage();
+    }
+  }
+
+  /// 打开独立的插件市场页。
+  Future<void> _openMarketPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => MarketPage(onInstalled: _toast)),
     );
     if (mounted) setState(() {});
   }
@@ -616,7 +671,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                                 '排序拓展',
                                 _openSorter,
                               ),
-                            _roundAction(Icons.add, '添加拓展', _openAddPage),
+                            _roundAction(Icons.add, '添加拓展', _addMenu),
                           ],
                         ],
                       ),
@@ -694,7 +749,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                 alignment: WrapAlignment.center,
                 children: [
                   FilledButton.tonal(
-                    onPressed: _openAddPage,
+                    onPressed: _openMarketPage,
                     child: const Text('去市场看看'),
                   ),
                   OutlinedButton(
@@ -1173,7 +1228,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          onTap: _openAddPage,
+          onTap: _addMenu,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [

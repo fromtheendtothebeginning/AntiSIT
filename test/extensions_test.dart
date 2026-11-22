@@ -445,18 +445,18 @@ void main() {
     expect(tester.takeException(), isNull, reason: '简介 / 网址不能画出卡片外');
   });
 
-  testWidgets('「添加拓展」入口打开独立页面：市场在里面，不再和「我的拓展」并排', (tester) async {
+  testWidgets('「添加拓展」还是原来的底部菜单；另有一项进独立市场页', (tester) async {
     await PluginRegistry.I.enable('ext');
     await pumpPage(tester);
     expect(find.text('还没有拓展'), findsOneWidget);
 
-    // 右上角「添加拓展」圆钮 → 独立页
+    // 右上角「添加拓展」圆钮 → 底部菜单（三种加法 + 市场入口）
     await tester.tap(find.byTooltip('添加拓展'));
     await tester.pumpAndSettle();
-    expect(find.text('添加拓展'), findsWidgets, reason: '页面标题');
-    expect(find.text('填写网址'), findsOneWidget, reason: '三种加法在页内');
-    expect(find.text('插件市场'), findsOneWidget, reason: '市场是一个入口，不在这页平铺');
-    expect(find.text('还没有拓展'), findsNothing, reason: '「我的拓展」不在这一页里并排');
+    // 底部菜单出现后，空态页上的同名按钮也在树里，所以用 findsWidgets
+    expect(find.text('填写网址'), findsWidgets, reason: '三种加法照旧');
+    expect(find.text('导入 JSON'), findsWidgets);
+    expect(find.text('插件市场'), findsOneWidget, reason: '多了一项市场入口');
 
     // 点「插件市场」→ 独立的插件市场页
     await tester.tap(find.text('插件市场'));
@@ -464,11 +464,7 @@ void main() {
     expect(find.text('搜名称 / 简介 / 作者'), findsOneWidget, reason: '市场页有搜索框');
     await tester.pageBack();
     await tester.pumpAndSettle();
-
-    // 返回拓展页仍是自己的列表
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.text('还没有拓展'), findsOneWidget);
+    expect(find.text('还没有拓展'), findsOneWidget, reason: '回到拓展页');
   });
   testWidgets('总开关：一下隐藏全部网址，详情里仍能看全，再点一下恢复', (tester) async {
     await PluginRegistry.I.enable('ext');
