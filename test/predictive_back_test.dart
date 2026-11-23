@@ -39,31 +39,26 @@ void main() {
     ));
   }
 
-  testWidgets('普通 push：页面不做透明度淡入，且转场中垫不透明底色', (tester) async {
+  testWidgets('普通 push：只做位移、页面不做透明度淡入', (tester) async {
     await pumpApp(tester);
     // 半透明页面（玻璃顶栏 / 玻璃卡片）不能做淡入：上一页会从透明处透出来（残影），
-    // 低 alpha 叠层还会被抖成黑白噪点。所以转场期间给页面垫一层页面底色。
-    bool hasOpaquePad() => find
-        .byWidgetPredicate(
-            (w) => w is ColoredBox && w.color == SemColors.bg)
-        .evaluate()
-        .isNotEmpty;
-
-    expect(hasOpaquePad(), isFalse, reason: '静止时不该有不透明垫底，玻璃场景底要透出来');
-
+    // 低 alpha 叠层还会被抖成黑白噪点。所以入场页全程不透明，只从右侧滑入。
     await tester.tap(find.text('push'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 90)); // 过渡进行中
-    expect(hasOpaquePad(), isTrue, reason: '转场中必须垫不透明底色，否则上一页会透出来');
+
+    // 入场页不能有任何 FadeTransition 包裹（淡入会让上一页从透明处透出来）
+    expect(
+      find.ancestor(of: find.text('第二页'), matching: find.byType(FadeTransition)),
+      findsNothing,
+      reason: '入场页不能淡入，否则上一页会从透明处透出来',
+    );
     final mid = tester.getTopLeft(find.text('第二页'));
 
     await tester.pumpAndSettle();
-    expect(hasOpaquePad(), isFalse, reason: '转场结束后撤掉垫底');
     expect(mid.dx, greaterThan(tester.getTopLeft(find.text('第二页')).dx),
         reason: '入场页从右侧滑入，动画中还没落位');
-  });
-
-  testWidgets('位移 1:1 跟手：进度每涨 0.2，页面就多移 0.2 个屏宽', (tester) async {
+  });  testWidgets('位移 1:1 跟手：进度每涨 0.2，页面就多移 0.2 个屏宽', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
@@ -155,7 +150,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('拖动早期就能看见要回撤到的那一页（当前页淡得更早）', (tester) async {
+  testWidgets('拖一点点就能看见要回撤到的那一页（整页不淡出，上一页从左侧露出）', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
@@ -171,16 +166,18 @@ void main() {
       'progress': 0.2,
       'swipeEdge': 0,
     });
-    final fade = tester.widget<Opacity>(
-        find.ancestor(of: find.text('第二页'), matching: find.byType(Opacity)).first);
-    expect(fade.opacity, lessThan(0.9),
-        reason: '进度才 0.2 就该明显淡下去，后面那页要露得出来（原来 0.45 系数时还有 0.91）');
+    // 当前页整页不淡：只位移 + 缩放，上一页从左边被「揭」出来
+    expect(
+      find.ancestor(of: find.text('第二页'), matching: find.byType(Opacity)),
+      findsNothing,
+      reason: '跟手时不该给整页套 Opacity（每帧一层全屏合成 = 卡顿）',
+    );
+    expect(tester.getTopLeft(find.text('push')).dx, greaterThanOrEqualTo(0),
+        reason: '上一页应当已经在屏幕里露出来了');
 
     await backGesture(tester, 'cancelBackGesture');
     await tester.pumpAndSettle();
-  });
-
-  testWidgets('手势中途取消（松手回弹）不会返回，且动画不跳变', (tester) async {
+  });  testWidgets('手势中途取消（松手回弹）不会返回，且动画不跳变', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
@@ -203,16 +200,17 @@ void main() {
     expect(tester.getTopLeft(find.text('第二页')), isNotNull);
   });
 
-  testWidgets('下层页在手势前 1/3 就淡入到位：1/3 时已完整可见（模糊由模糊层负责）', (tester) async {
+  testWidgets('手势期间上一页露出来 + 叠磨砂遮罩，全程不套整页 Opacity', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
 
-    double underlyingOpacity() => tester
-        .widget<Opacity>(find
-            .ancestor(of: find.text('push'), matching: find.byType(Opacity))
-            .first)
-        .opacity;
+    double frostAlpha() {
+      final boxes = find.byWidgetPredicate((w) =>
+          w is ColoredBox && w.color.a > 0 && w.color.a < 0.5);
+      final found = boxes.evaluate();
+      return found.isEmpty ? 0 : (found.first.widget as ColoredBox).color.a;
+    }
 
     await backGesture(tester, 'startBackGesture', <String, Object?>{
       'touchOffset': <double>[5.0, 300.0],
@@ -226,26 +224,25 @@ void main() {
       'progress': 0.1,
       'swipeEdge': 0,
     });
-    expect(underlyingOpacity(), greaterThan(0.0),
-        reason: '手势一开始下层页就开始淡入（原来要拖过 2/3 才出现，「1/3 时完全看不到」的根因）');
-    expect(underlyingOpacity(), lessThan(1.0));
+    expect(frostAlpha(), greaterThan(0.0),
+        reason: '手势一开始上一层就该罩上磨砂，表示「隔着一层」');
 
     await backGesture(tester, 'updateBackGestureProgress', <String, Object?>{
-      'x': 40.0,
+      'x': 5.0 + 0.75 * (tester.view.physicalSize.width / tester.view.devicePixelRatio),
       'y': 300.0,
-      'progress': 0.4,
+      'progress': 0.75,
       'swipeEdge': 0,
     });
-    expect(underlyingOpacity(), 1.0, reason: '过了 1/3 下层页完整在场，之后只有模糊在退');
+    expect(frostAlpha(), 0.0, reason: '过了 2/3 之后磨砂退干净，上一页完全清晰');
 
     await backGesture(tester, 'cancelBackGesture');
     await tester.pumpAndSettle();
-    expect(find.ancestor(of: find.text('push'), matching: find.byType(Opacity)),
-        findsNothing,
-        reason: '取消后回到普通淡入淡出路径（被盖住时按旧曲线隐藏）');
-  });
-
-  testWidgets('关掉「预测式返回动画」：手势期间画面不动，松手按普通返回', (tester) async {
+    expect(
+      find.ancestor(of: find.text('push'), matching: find.byType(Opacity)),
+      findsNothing,
+      reason: '取消后回到普通转场路径，也不套 Opacity',
+    );
+  });  testWidgets('关掉「预测式返回动画」：手势期间画面不动，松手按普通返回', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await AppState.I.setPredictiveBack(false);
     addTearDown(() => AppState.I.predictiveBack = true);
@@ -273,11 +270,12 @@ void main() {
     expect(find.text('第二页'), findsNothing, reason: '松手提交仍要能返回（普通返回）');
   });
 
-  testWidgets('拖深后松手提交不闪回：从松手时的透明度继续淡出，不突然升回不透明', (tester) async {
+  testWidgets('拖深后松手提交：位移从松手处继续，不回弹、不跳变', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
     final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    final settled = tester.getTopLeft(find.text('第二页')).dx;
 
     await backGesture(tester, 'startBackGesture', <String, Object?>{
       'touchOffset': <double>[5.0, 300.0],
@@ -290,23 +288,18 @@ void main() {
       'progress': 0.7,
       'swipeEdge': 0,
     });
-    double topOpacity() => tester.widget<Opacity>(
-        find.ancestor(of: find.text('第二页'), matching: find.byType(Opacity)).first)
-        .opacity;
-    expect(topOpacity(), closeTo(0.3, 0.06), reason: '拖到 0.7 时当前页只剩 30% 不透明度');
+    final released = tester.getTopLeft(find.text('第二页')).dx;
+    expect(released, closeTo(settled + 0.7 * width, 25), reason: '拖到 0.7 就位移 0.7 个屏宽');
 
     await backGesture(tester, 'commitBackGesture');
     await tester.pump(const Duration(milliseconds: 16)); // commit 动画首帧
-    expect(topOpacity(), lessThan(0.5),
-        reason: '松手提交应从松手时的透明度（0.3）继续淡出；从 1 起算就会闪回不透明');
-    expect(topOpacity(), lessThan(0.35),
-        reason: '首帧透明度还要与松手瞬间连续（不能有可见的上升）');
+    expect(tester.getTopLeft(find.text('第二页')).dx,
+        greaterThanOrEqualTo(released - 1),
+        reason: '提交后位移必须从松手处继续往右，不能回弹');
 
     await tester.pumpAndSettle();
     expect(find.text('第二页'), findsNothing, reason: '提交后仍要正常返回');
-  });
-
-  testWidgets('松开提交后立刻继续往右滑出，不再先冻住再猛冲', (tester) async {
+  });  testWidgets('松开提交后立刻继续往右滑出，不再先冻住再猛冲', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
@@ -334,34 +327,27 @@ void main() {
     expect(tester.getTopLeft(find.text('第二页')).dx, greaterThan(released + 20),
         reason: '松手后要继续往右滑出去，不能先冻住不动');
 
-    // 加快后整个滑出只用框架窗口的前 60%（≈180ms）：208ms 时位移应已走完并淡透。
+    // 加快后整个滑出只用框架窗口的前 60%（≈180ms）：208ms 时位移应已走完。
     await tester.pump(const Duration(milliseconds: 176));
     expect(tester.getTopLeft(find.text('第二页')).dx, closeTo(settled + width, 40),
         reason: '比框架的 300ms 窗口更早滑完');
-    expect(
-        tester
-            .widget<Opacity>(find
-                .ancestor(of: find.text('第二页'), matching: find.byType(Opacity))
-                .first)
-            .opacity,
-        0,
-        reason: '淡出也应同时完成');
 
     await tester.pumpAndSettle();
     expect(find.text('第二页'), findsNothing, reason: '提交后仍要正常返回');
   });
 
-  testWidgets('提交瞬间下层页不闪：框架拉回 1.0 的跳变不会漏到下层页', (tester) async {
+  testWidgets('提交瞬间下层页不闪：磨砂不跳、下层页位置不动', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
     final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
 
-    double underOpacity() => tester
-        .widget<Opacity>(find
-            .ancestor(of: find.text('push'), matching: find.byType(Opacity))
-            .first)
-        .opacity;
+    double frostAlpha() {
+      final boxes = find.byWidgetPredicate(
+          (w) => w is ColoredBox && w.color.a > 0 && w.color.a < 0.5);
+      final found = boxes.evaluate();
+      return found.isEmpty ? 0 : (found.first.widget as ColoredBox).color.a;
+    }
 
     await backGesture(tester, 'startBackGesture', <String, Object?>{
       'touchOffset': <double>[5.0, 300.0],
@@ -374,20 +360,18 @@ void main() {
       'progress': 0.7,
       'swipeEdge': 0,
     });
-    expect(underOpacity(), 1.0, reason: '拖到 0.7 时下层页已完整在场');
+    // 拖到 0.7：磨砂早该退干净，下层页完全清晰
+    expect(frostAlpha(), 0.0, reason: '拖到 0.7 时下层页应完全清晰');
+    final underBefore = tester.getTopLeft(find.text('push'));
 
     await backGesture(tester, 'commitBackGesture');
-    // 旧写法这里把下层页的覆盖进度发布成 1.0（可见度 1 → 0）：下层页闪一下消失，
-    // 过一会儿再淡回来。提交后它应该贴着实际滑出进度继续收尾。
     await tester.pump(const Duration(milliseconds: 16));
-    expect(underOpacity(), 1.0, reason: '提交瞬间下层页不能闪一下消失');
-    await tester.pump(const Duration(milliseconds: 80));
-    expect(underOpacity(), 1.0, reason: '收尾过程中下层页也不能回退');
+    expect(frostAlpha(), lessThan(0.1), reason: '提交瞬间下层页不能突然被罩回磨砂（会闪）');
+    expect(tester.getTopLeft(find.text('push')), underBefore,
+        reason: '下层页在收尾过程中不该跟着动');
 
     await tester.pumpAndSettle();
-  });
-
-  testWidgets('拉到一半再拉回起点松手（取消）：覆盖率要清干净，之后不能留成空白页', (tester) async {
+  });  testWidgets('拉到一半再拉回起点松手（取消）：覆盖率要清干净，之后不能留成空白页', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
