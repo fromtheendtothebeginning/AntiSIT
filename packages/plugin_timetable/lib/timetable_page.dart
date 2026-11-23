@@ -2653,10 +2653,12 @@ class _TimetablePageState extends State<TimetablePage> {
                                 child: Container(
                                   decoration: BoxDecoration(
                                     border: Border(
+                                      // 和卡片边框（本卡片外层 Container 的 border）同色：
+                                      // 之前用 withValues(alpha: 0.7) 是**覆盖**调色板自带的
+                                      // 透明度——深色板边框本身才 15%、墨白/青竹浅色板 12%，
+                                      // 被强行拉到 70% 后白得刺眼，像一列分割线跳出来。
                                       left: BorderSide(
-                                        color: SemColors.border.withValues(
-                                          alpha: 0.7,
-                                        ),
+                                        color: SemColors.border,
                                         style: BorderStyle.solid,
                                       ),
                                     ),
