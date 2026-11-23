@@ -163,6 +163,54 @@ void main() {
     expect(find.text('push'), findsOneWidget);
   });
 
+  testWidgets('预测式返回：松手后从当前位置播完，不从头重播', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    final settled = tester.getTopLeft(find.text('第二页')).dx;
+
+    await startGesture(tester);
+    await dragTo(tester, 0.3); // 放大 2 倍 → 页面已推进 60%
+    final atRelease = tester.getTopLeft(find.text('第二页')).dx - settled;
+    expect(atRelease, closeTo(0.6 * width, 0.02 * width), reason: '松手时应推进 60% 屏宽');
+
+    await backGesture(tester, 'commitBackGesture');
+    await tester.pump(const Duration(milliseconds: 16));
+    final after = tester.getTopLeft(find.text('第二页', skipOffstage: false)).dx -
+        settled;
+    expect(after, greaterThanOrEqualTo(atRelease - 1),
+        reason: '松手后应当从当前位置继续往右播完，不能倒回起点重播');
+
+    await tester.pumpAndSettle();
+    expect(find.text('第二页'), findsNothing, reason: '收尾后完成返回');
+  });
+
+  testWidgets('预测式返回：松手取消后从当前位置回弹，不跳回起点重播', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    final settled = tester.getTopLeft(find.text('第二页')).dx;
+
+    await startGesture(tester);
+    await dragTo(tester, 0.3);
+    final atRelease = tester.getTopLeft(find.text('第二页')).dx - settled;
+
+    await backGesture(tester, 'cancelBackGesture');
+    await tester.pump(const Duration(milliseconds: 16));
+    final after = tester.getTopLeft(find.text('第二页')).dx - settled;
+    expect(after, lessThanOrEqualTo(atRelease + 1),
+        reason: '取消（回弹）时位移只能往回收，不会先跳到别的值');
+    expect(after, greaterThan(atRelease - 0.3 * width),
+        reason: '回弹也是连续的，不会一帧就回到 0');
+    expect(width, greaterThan(0));
+
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('第二页')).dx, closeTo(settled, 1),
+        reason: '取消后回到原位');
+  });
+
   testWidgets('关掉「预测式返回动画」：不接管手势，松手仍按普通返回', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await AppState.I.setPredictiveBack(false);

@@ -105,9 +105,18 @@ const Curve _popCurve = Cubic(0.30, 0.55, 0.35, 1.0);
 /// 被盖住的旧页：延后 22% 才开始退让，避免「闪一下就被推开」。
 const Curve _coveredCurve = Interval(0.22, 1.0, curve: _pushCurve);
 
-/// 按动画方向取曲线：正向（前进）用陡的，反向（返回）用缓的。
+/// 预测式返回手势是否进行中（含松手后的收尾动画）。
+///
+/// 拖动时 controller 的 value 是被直接赋值的，状态会停在 completed，只看状态会被
+/// 误判成「前进」。用手势标记兜住，顺带保证松手收尾阶段和拖动阶段用同一条曲线。
+/// 故意不做成 ValueNotifier：它只影响曲线选择，画面重建本来就由动画值驱动。
+bool predictiveBackGesturing = false;
+
+/// 按动画方向取曲线：正向（前进）用陡的，反向（返回 / 预测式手势）用缓的。
 Curve _curveFor(Animation<double> a) =>
-    a.status == AnimationStatus.reverse ? _popCurve : _pushCurve;
+    (a.status == AnimationStatus.reverse || predictiveBackGesturing)
+        ? _popCurve
+        : _pushCurve;
 
 class _SlidePageTransition extends StatelessWidget {
   const _SlidePageTransition({
@@ -123,12 +132,7 @@ class _SlidePageTransition extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([
-        animation,
-        secondaryAnimation,
-        topRouteIsPage,
-        predictiveBackTracking,
-      ]),
+      animation: Listenable.merge([animation, secondaryAnimation, topRouteIsPage]),
       child: child,
       builder: (context, child) {
         final width = MediaQuery.sizeOf(context).width;
@@ -143,17 +147,12 @@ class _SlidePageTransition extends StatelessWidget {
           // 关键：**延后这个动作**（前 22% 时长里旧页原地不动）。不延后的话新页
           // 一起步就把旧页推开、压低，观感是「旧页闪一下就被盖住」；延后之后旧页
           // 一直是完整、亮的状态，直到被新页盖住一部分才开始退让。
-          // 手势跟手期间走线性：手指拖多少、页面就让多少，不套缓动曲线
-          final s = predictiveBackTracking.value
-              ? secondaryAnimation.value
-              : _coveredCurve.transform(secondaryAnimation.value);
+          final s = _coveredCurve.transform(secondaryAnimation.value);
           shift = -_SlidePageTransitionsBuilder.oldShift * width * s;
           dim = _SlidePageTransitionsBuilder.oldDim * s;
         } else {
           // 自己进出：前进从右侧滑到 0；返回从 0 滑出到右侧（同一公式）。
-          final c = predictiveBackTracking.value
-              ? animation.value
-              : _curveFor(animation).transform(animation.value);
+          final c = _curveFor(animation).transform(animation.value);
           shift = (1 - c) * width;
           dim = 0;
         }
@@ -161,7 +160,7 @@ class _SlidePageTransition extends StatelessWidget {
         // 转场期间让页面不透明（垫一张与全局场景底一致的底），静止时再透明。
         //
         // 判断必须看**动画状态**而不是数值：用数值判断会漏掉转场的第一帧——
-        // 返回刚开始时 nimation.value 还是 1（还没开始降），于是这一帧不垫底，
+        // 返回刚开始时 animation.value 还是 1（还没开始降），于是这一帧不垫底，
         // 上层页是半透明的、下层页从玻璃里透出来；下一帧数值一降立刻垫上，下层页又被
         // 盖住 —— 观感就是「返回动画刚开始闪一下」。状态（forward / reverse）在第一帧
         // 就已经切换，所以按状态判断不会有这个空窗。
@@ -234,19 +233,14 @@ class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
   }
 }
 
-/// 预测式返回（Android 14+ 从屏幕边缘拖入）进行中。
-///
-/// 为 true 时转场按**线性**映射（手指走多少、页面就走多少，不套缓动曲线）；
-/// 松手提交 / 取消后保持到动画收尾，避免换曲线时画面跳一下。
-final ValueNotifier<bool> predictiveBackTracking = ValueNotifier<bool>(false);
-
 /// 预测式返回（Android 14+ 从屏幕边缘拖入）：**画面直接用默认返回动画**，
 /// 由手指驱动路由的动画值。
 ///
-/// * 手势只做一件事：把系统事件转给路由；
+/// * 手势只做一件事：把系统事件换算成路由的动画值；
 /// * 画面复用默认返回动画（同一个 PageTransitionsBuilder）；
-/// * 手势期间映射**严格线性**（见 [predictiveBackTracking]），并把作用区间放大
-///   ——手指划很小一段就能把页面推很远。
+/// * 跟手是线性的：手势进度先按 [_gain] 放大，再**反解返回曲线**成动画值——
+///   渲染仍走同一条 popCurve，算出来的位移就恰好是手指位移的固定倍数；
+/// * 松手后不重播：直接让路由从当前位置反向播完。
 class _PredictiveOrFadeThrough extends StatefulWidget {
   const _PredictiveOrFadeThrough({
     required this.route,
@@ -268,16 +262,34 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   /// 手指划过半个屏宽 = 页面走完全程（默认 1.0 需要划满一整屏）。
   static const double _gain = 2.0;
 
-  /// 把系统给的手势进度换算成路由动画值：1 = 完整在前，  = 已退出。
-  /// 线性 + 放大，不做缓动（缓动只用在「按返回键」那条路上）。
-  static double _routeProgress(double gestureProgress) =>
-      1 - (gestureProgress * _gain).clamp(0.0, 1.0);
+  /// 把系统给的手势进度换算成路由动画值。
+  ///
+  /// 目标位移 = `手势进度 × _gain`（线性放大）；渲染时位移 = `1 - popCurve(value)`，
+  /// 所以这里**反解**返回曲线：`value = popCurve⁻¹(1 - 目标位移)`。这样：
+  /// * 拖动期间位移与手指严格成正比（线性、无曲线加速段）；
+  /// * 渲染始终走同一条曲线，松手后接着往下走也不会跳变。
+  static double _routeProgress(double gestureProgress) {
+    final advanced = (gestureProgress * _gain).clamp(0.0, 1.0);
+    return _invertCurve(_popCurve, 1 - advanced);
+  }
 
-  bool _tracking = false;
-
-  /// 松手后（取消 / 提交）框架自己跑完收尾动画；跑完再切回缓动曲线。
-  /// 不能用「状态」判断收尾：拖动期间 controller.value 是直接赋值的，
-  /// 状态仍停在 completed，会把刚开始的拖动误判成「已经收尾」。
+  /// 单调曲线的数值反解（二分）：返回 x 使 `curve.transform(x) ≈ y`。
+  static double _invertCurve(Curve curve, double y) {
+    if (y <= 0) return 0;
+    if (y >= 1) return 1;
+    var lo = 0.0;
+    var hi = 1.0;
+    for (var i = 0; i < 30; i++) {
+      final mid = (lo + hi) / 2;
+      if (curve.transform(mid) < y) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return (lo + hi) / 2;
+  }
+  /// 松手后（取消 / 提交）框架自己跑完收尾动画；跑完再清掉手势标记。
   bool _settling = false;
 
   @override
@@ -291,28 +303,17 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   void dispose() {
     widget.animation.removeListener(_onAnimationTick);
     WidgetsBinding.instance.removeObserver(this);
-    _setTracking(false);
+    predictiveBackGesturing = false;
     super.dispose();
   }
 
-  /// 松手之后框架会把动画跑完；跑完再切回缓动曲线（此时页面已经出画，不会跳）。
+  /// 松手之后框架会把动画跑完；跑完再清掉手势标记（此时页面已经出画，不会跳）。
   void _onAnimationTick() {
     if (!_settling) return;
     if (!widget.animation.isAnimating) {
       _settling = false;
-      _setTracking(false);
+      predictiveBackGesturing = false;
     }
-  }
-
-  void _setTracking(bool value) {
-    if (_tracking == value) return;
-    _tracking = value;
-    // 手势回调可能发生在「树被锁住」的阶段（提交返回时 navigator.pop 就在回调里），
-    // 直接改 ValueNotifier 会触发 AnimatedBuilder 重建并撞上断言，
-    // 所以统一延到本帧结束再发通知。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) predictiveBackTracking.value = value;
-    });
   }
 
   // ===== WidgetsBindingObserver：接管系统返回手势，画面交给默认转场 =====
@@ -328,7 +329,7 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
         !widget.route.popGestureEnabled) {
       return false;
     }
-    _setTracking(true);
+    predictiveBackGesturing = true;
     widget.route.handleStartBackGesture(
         progress: _routeProgress(backEvent.progress));
     return true;
@@ -342,13 +343,17 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   @override
   void handleCancelBackGesture() {
     _settling = true;
+    // 取消：从当前位置正播回 1（框架内部 forward()，不吃掉已有进度）。
     widget.route.handleCancelBackGesture();
   }
 
   @override
   void handleCommitBackGesture() {
     _settling = true;
-    widget.route.handleCommitBackGesture();
+    // 提交：**不要**调 route.handleCommitBackGesture()——它内部先 pop() 再
+    // reverse(from: upperBound)，等于把动画拉回 1 从头重播一遍（松手后画面倒回去）。
+    // 这里直接 pop，让 TransitionRoute.didPop 自己 reverse()，即从当前位置继续播完。
+    widget.route.navigator?.pop();
   }
 
   /// 画面完全由外面的默认转场负责，这里只透传。
