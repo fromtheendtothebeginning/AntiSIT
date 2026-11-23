@@ -149,12 +149,18 @@ class _SlidePageTransition extends StatelessWidget {
           dim = 0;
         }
 
-        // 转场进行中才让上层页不透明，静止时透明：底图与全局场景底一致，
-        // 显隐切换看不出变化。
-        final animating = (animation.value > 0.001 && animation.value < 0.999) ||
+        // 转场期间让页面不透明（垫一张与全局场景底一致的底），静止时再透明。
+        //
+        // 判断必须看**动画状态**而不是数值：用数值判断会漏掉转场的第一帧——
+        // 返回刚开始时 nimation.value 还是 1（还没开始降），于是这一帧不垫底，
+        // 上层页是半透明的、下层页从玻璃里透出来；下一帧数值一降立刻垫上，下层页又被
+        // 盖住 —— 观感就是「返回动画刚开始闪一下」。状态（forward / reverse）在第一帧
+        // 就已经切换，所以按状态判断不会有这个空窗。
+        final busy = animation.status == AnimationStatus.forward ||
+            animation.status == AnimationStatus.reverse ||
             (topRouteIsPage.value &&
-                secondaryAnimation.value > 0.001 &&
-                secondaryAnimation.value < 0.999);
+                (secondaryAnimation.status == AnimationStatus.forward ||
+                    secondaryAnimation.status == AnimationStatus.reverse));
 
         return Transform.translate(
           offset: Offset(shift, 0),
@@ -165,7 +171,7 @@ class _SlidePageTransition extends StatelessWidget {
               Positioned.fill(
                 child: IgnorePointer(
                   child: Opacity(
-                    opacity: animating ? 1 : 0,
+                    opacity: busy ? 1 : 0,
                     child: GlassScenePaint(wells: GlassScene.wells),
                   ),
                 ),
