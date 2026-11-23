@@ -100,6 +100,34 @@ void main() {
     // 顶栏底边：色带已透明、内容渐隐 mask 也接近 1 → 应看得到红
     expect(red(cx, kToolbarHeight.round() - 3), greaterThan(200), reason: '顶栏底边应完全透明');
   });
+  testWidgets('应用内切深色/浅色：顶栏色带立即换色，不用重启', (tester) async {
+    addTearDown(() => SemColors.p = GlassPalette.light);
+    SemColors.p = GlassPalette.light;
+    await tester.pumpWidget(host(child: page()));
+
+    Color barTopColor() {
+      // 色带 = GlassBarScrim 里那层线性渐变（它在 AppBar 外面，铺满整个顶栏）
+      final boxes = find.descendant(
+        of: find.byType(GlassBarScrim),
+        matching: find.byWidgetPredicate(
+          (w) => w is DecoratedBox && w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).gradient is LinearGradient,
+        ),
+      );
+      final box = tester.widget<DecoratedBox>(boxes.first);
+      final g = (box.decoration as BoxDecoration).gradient! as LinearGradient;
+      return g.colors.first;
+    }
+
+    final light = barTopColor();
+    // 色带是 const 组件，页面重建时会被跳过——必须靠订阅色板自己重画，
+    // 否则应用内切深浅色后顶栏还是旧色，要重启才生效。
+    SemColors.p = GlassPalette.dark;
+    await tester.pump();
+    final dark = barTopColor();
+    expect(dark, isNot(light), reason: '切到深色后色带要立刻换成深色底');
+    expect(dark.a, greaterThan(0), reason: '色带仍要有底色（只是透明度较低）');
+  });
   testWidgets('图标按钮套成玻璃圆钮（不再叠第二层模糊）', (tester) async {
     await tester.pumpWidget(
       host(
