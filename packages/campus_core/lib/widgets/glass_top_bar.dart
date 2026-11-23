@@ -41,7 +41,8 @@ PreferredSizeWidget glassAppBar(
   required Widget title,
   List<Widget>? actions,
   Widget? leading,
-  bool centerTitle = true,
+  // 全站统一：标题靠左（与 iOS / 主流安卓一致）
+  bool centerTitle = false,
   bool automaticallyImplyLeading = true,
   double toolbarHeight = kToolbarHeight,
   PreferredSizeWidget? bottom,
@@ -104,8 +105,11 @@ PreferredSizeWidget glassAppBar(
 /// 把标题栏里的一个按钮套成悬浮玻璃圆钮（40 直径、更实一档的玻璃面 + 强描边）。
 /// [glassAppBar] 会自动处理 `IconButton` 类型的 action；包在 ListenableBuilder /
 /// PopupMenuButton 之类结构里的按钮不会被识别，页面要显式用这个包一下。
+///
+/// 悬浮顶栏关掉时**原样返回**：那是普通 AppBar，不该再有玻璃圆钮——否则同一个
+/// 开关下有的页面套圈、有的不套，观感不统一。
 Widget glassTopBarAction(Widget child, {double edge = 3}) =>
-    _orb(child, edge: edge);
+    glassTopBarEnabled ? _orb(child, edge: edge) : child;
 
 /// 悬浮圆钮：40 直径的玻璃圆片（更实一档的玻璃面 + 细描边）。
 Widget _orb(Widget child, {required double edge}) => Padding(
@@ -160,11 +164,19 @@ class GlassBarScrim extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, _) {
-        final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
-        return DecoratedBox(
-          decoration: BoxDecoration(gradient: _tint(fadeStart)),
+    // 色带颜色取自 SemColors.bg。AppBar 里的这层是 const 组件，
+    // 页面重建时 Flutter 会跳过它（同一个 const 实例），所以在应用内换主题 / 切深浅色
+    // 时它不会跟着变，必须重启才生效。这里订阅色板通知，色板一换就重画。
+    return ValueListenableBuilder<GlassPalette>(
+      valueListenable: SemColors.palette,
+      builder: (context, _, _) {
+        return LayoutBuilder(
+          builder: (context, _) {
+            final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
+            return DecoratedBox(
+              decoration: BoxDecoration(gradient: _tint(fadeStart)),
+            );
+          },
         );
       },
     );
@@ -182,9 +194,9 @@ class GlassBarScrim extends StatelessWidget {
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        base.withValues(alpha: 0.55),
-        base.withValues(alpha: 0.5),
-        base.withValues(alpha: 0.3),
+        base.withValues(alpha: 0.42),
+        base.withValues(alpha: 0.38),
+        base.withValues(alpha: 0.24),
         base.withValues(alpha: 0),
       ],
       stops: [0, solidEnd, (solidEnd + 0.12).clamp(0.0, 1.0), 1],
@@ -212,9 +224,11 @@ class GlassFadedBody extends StatelessWidget {
       builder: (context, cons) {
         final h = cons.maxHeight;
         if (!h.isFinite || h <= 0) return child;
-        final end = (barHeight / h).clamp(0.0, 1.0);
-        // 从顶栏约 55% 高度开始渐显：标题行一带内容基本不可见，越往下越清晰
-        final start = ((barHeight * 0.55) / h).clamp(0.0, end);
+        // 渐隐从上沿（状态栏顶部）就开始，一路过渡到顶栏底边再往下一点：
+        // 之前是「前 55% 全透明 → 45% 内渐变」，渐变的起止都落在顶栏内部，
+        // 看起来像在状态栏下面被切了一刀。现在整段都是连续过渡，没有硬边。
+        final end = ((barHeight * 1.15) / h).clamp(0.0, 1.0);
+        final mid = ((barHeight * 0.45) / h).clamp(0.0, end);
         return ShaderMask(
           blendMode: BlendMode.dstIn,
           shaderCallback: (rect) => LinearGradient(
@@ -222,11 +236,11 @@ class GlassFadedBody extends StatelessWidget {
             end: Alignment.bottomCenter,
             colors: const [
               Color(0x00000000),
-              Color(0x00000000),
+              Color(0x22000000),
               Color(0xFFFFFFFF),
               Color(0xFFFFFFFF),
             ],
-            stops: [0, start, end, 1],
+            stops: [0, mid, end, 1],
           ).createShader(rect),
           child: child,
         );

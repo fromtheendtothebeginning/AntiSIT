@@ -268,6 +268,49 @@ class SemColors {
   static Color get shadow => p.shadow;
 }
 
+/// 当前正在用的场景光斑（[GlassBackground] 每次构建时写入）。
+///
+/// 页面转场期间要在新页下面垫「同一张场景底」，否则垫底是纯色、转场一结束光斑
+/// 突然出现，背景会**跳一下**（默认主题光斑明显才看得出来，墨白极简 / 青竹这类
+/// 没有光斑的主题本来就看不出差别）。
+class GlassScene {
+  GlassScene._();
+
+  static List<GlassWell>? wells;
+}
+
+/// 只画场景底的一半（底色 + 光斑），不带任何内容：
+/// 给 [GlassBackground] 和「转场垫底」共用，保证两者像素一致。
+class GlassScenePaint extends StatelessWidget {
+  const GlassScenePaint({super.key, this.wells});
+
+  final List<GlassWell>? wells;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = SemColors.isDark;
+    final spots = wells ?? (dark ? kGlassWellsDark : kGlassWellsLight);
+    return Stack(
+      children: [
+        Positioned.fill(child: ColoredBox(color: SemColors.bg)),
+        for (final w in spots)
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: w.center,
+                  radius: w.radius,
+                  colors: [w.color, w.color.withValues(alpha: 0)],
+                  stops: const [0, 0.62],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// 全局场景底：底色 + 若干柔和光源光斑。玻璃主题传入自己的光斑
 /// （[GlassWell] 由主题插件给），不传就用液态玻璃的默认光井。
 class GlassBackground extends StatelessWidget {
@@ -279,7 +322,8 @@ class GlassBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = SemColors.isDark;
-    final spots = wells ?? (dark ? kGlassWellsDark : kGlassWellsLight);
+    // 记下当前光斑，转场垫底（见 main.dart 的 _OpaqueWhileAnimating）要复用同一份
+    GlassScene.wells = wells;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
@@ -287,20 +331,7 @@ class GlassBackground extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned.fill(child: ColoredBox(color: SemColors.bg)),
-          for (final w in spots)
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: w.center,
-                    radius: w.radius,
-                    colors: [w.color, w.color.withValues(alpha: 0)],
-                    stops: const [0, 0.62],
-                  ),
-                ),
-              ),
-            ),
+          Positioned.fill(child: GlassScenePaint(wells: wells)),
           child,
         ],
       ),
