@@ -353,7 +353,22 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     // 提交：**不要**调 route.handleCommitBackGesture()——它内部先 pop() 再
     // reverse(from: upperBound)，等于把动画拉回 1 从头重播一遍（松手后画面倒回去）。
     // 这里直接 pop，让 TransitionRoute.didPop 自己 reverse()，即从当前位置继续播完。
-    widget.route.navigator?.pop();
+    final nav = widget.route.navigator;
+    nav?.pop();
+    // 补上框架 _handleDragEnd 里的收尾记账：didStopUserGesture。
+    // 少了它 Navigator.userGestureInProgress 会一直停在 true —— 真机上表现为
+    // 「返回动画结束后整屏点不动」（按键还能用，触摸全丢）。
+    late final AnimationStatusListener stopGesture;
+    stopGesture = (AnimationStatus status) {
+      widget.animation.removeStatusListener(stopGesture);
+      nav?.didStopUserGesture();
+    };
+    if (widget.animation.status == AnimationStatus.dismissed) {
+      // 已经拖到底、pop 当场完成，不会再有一次状态变化
+      nav?.didStopUserGesture();
+    } else {
+      widget.animation.addStatusListener(stopGesture);
+    }
   }
 
   /// 画面完全由外面的默认转场负责，这里只透传。

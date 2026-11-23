@@ -143,6 +143,8 @@ void main() {
 
     await backGesture(tester, 'cancelBackGesture');
     await tester.pumpAndSettle();
+    expect(tester.state<NavigatorState>(find.byType(Navigator)).userGestureInProgress,
+        isFalse, reason: '取消收尾后同样不能留下 userGestureInProgress');
     expect(find.text('第二页'), findsOneWidget, reason: '取消手势应当留在原页');
     expect(tester.getTopLeft(find.text('第二页')).dx, closeTo(newSettled, 1),
         reason: '取消后回到原位');
@@ -161,6 +163,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('第二页'), findsNothing);
     expect(find.text('push'), findsOneWidget);
+    // 收尾必须把 userGestureInProgress 归零，否则真机上触摸会被一直吞掉
+    expect(tester.state<NavigatorState>(find.byType(Navigator)).userGestureInProgress,
+        isFalse, reason: '手势收尾后不能留下 userGestureInProgress，否则整屏点不动');
   });
 
   testWidgets('预测式返回：松手后从当前位置播完，不从头重播', (tester) async {
