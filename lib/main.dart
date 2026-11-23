@@ -41,20 +41,46 @@ class _FadeThroughTransitionsBuilder extends PageTransitionsBuilder {
       opacity: Tween<double>(begin: 1, end: 0).animate(CurvedAnimation(
           parent: secondaryAnimation,
           curve: const Interval(0, 0.35, curve: Curves.easeIn))),
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0.06, 0),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-            reverseCurve: Curves.easeInCubic)),
+      // 位移用 Transform 而不是 SlideTransition：后者内部是 FractionalTranslation，
+      // 它的 applyPaintTransform 要读 child.size；弹出菜单 / 对话框时
+      // PopupMenuButton 会调 localToGlobal 沿祖先链量位置，此刻页面若正在重新布局
+      // 就会抛「RenderBox was not laid out」断言，整屏变红卡死（课程表右上角「更多」）。
+      // Transform.translate 只乘矩阵、不读 size，观感与原来的 6% 滑入完全一致。
+      child: _SlideInByTransform(
+        animation: animation,
         child: _OpaqueWhileAnimating(animation: animation, child: child),
       ),
     );
   }
 }
 
+/// 按动画值做「从右侧 6% 屏宽滑入」的位移，用纯矩阵变换实现（不读子尺寸）。
+class _SlideInByTransform extends StatelessWidget {
+  const _SlideInByTransform({required this.animation, required this.child});
+
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return AnimatedBuilder(
+      animation: curved,
+      child: child,
+      builder: (context, child) {
+        final width = MediaQuery.sizeOf(context).width;
+        return Transform.translate(
+          offset: Offset((1 - curved.value) * 0.06 * width, 0),
+          child: child,
+        );
+      },
+    );
+  }
+}
 /// 转场进行中给页面垫一层不透明底色，避免上一页透过玻璃组件显形。
 class _OpaqueWhileAnimating extends StatelessWidget {
   const _OpaqueWhileAnimating({required this.animation, required this.child});
