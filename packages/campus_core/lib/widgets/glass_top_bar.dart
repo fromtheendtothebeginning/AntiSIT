@@ -182,9 +182,9 @@ class GlassBarScrim extends StatelessWidget {
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        base.withValues(alpha: 0.55),
-        base.withValues(alpha: 0.5),
-        base.withValues(alpha: 0.3),
+        base.withValues(alpha: 0.42),
+        base.withValues(alpha: 0.38),
+        base.withValues(alpha: 0.24),
         base.withValues(alpha: 0),
       ],
       stops: [0, solidEnd, (solidEnd + 0.12).clamp(0.0, 1.0), 1],
@@ -212,9 +212,11 @@ class GlassFadedBody extends StatelessWidget {
       builder: (context, cons) {
         final h = cons.maxHeight;
         if (!h.isFinite || h <= 0) return child;
-        final end = (barHeight / h).clamp(0.0, 1.0);
-        // 从顶栏约 55% 高度开始渐显：标题行一带内容基本不可见，越往下越清晰
-        final start = ((barHeight * 0.55) / h).clamp(0.0, end);
+        // 渐隐从上沿（状态栏顶部）就开始，一路过渡到顶栏底边再往下一点：
+        // 之前是「前 55% 全透明 → 45% 内渐变」，渐变的起止都落在顶栏内部，
+        // 看起来像在状态栏下面被切了一刀。现在整段都是连续过渡，没有硬边。
+        final end = ((barHeight * 1.15) / h).clamp(0.0, 1.0);
+        final mid = ((barHeight * 0.45) / h).clamp(0.0, end);
         return ShaderMask(
           blendMode: BlendMode.dstIn,
           shaderCallback: (rect) => LinearGradient(
@@ -222,11 +224,11 @@ class GlassFadedBody extends StatelessWidget {
             end: Alignment.bottomCenter,
             colors: const [
               Color(0x00000000),
-              Color(0x00000000),
+              Color(0x22000000),
               Color(0xFFFFFFFF),
               Color(0xFFFFFFFF),
             ],
-            stops: [0, start, end, 1],
+            stops: [0, mid, end, 1],
           ).createShader(rect),
           child: child,
         );
