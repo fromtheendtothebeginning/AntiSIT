@@ -454,7 +454,7 @@ ThemeData buildAppTheme(GlassPalette c) {
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
       scrolledUnderElevation: 0,
-      centerTitle: true,
+      centerTitle: false,
       foregroundColor: c.textPrimary,
       iconTheme: IconThemeData(color: c.textPrimary),
       // 悬浮顶栏的标题：比正文略重一档，压在渐变模糊上也稳

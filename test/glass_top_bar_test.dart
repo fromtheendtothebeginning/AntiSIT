@@ -156,6 +156,26 @@ void main() {
     );
   });
 
+  testWidgets('标题靠左对齐（不再居中）', (tester) async {
+    await tester.pumpWidget(host(child: page()));
+    final width = tester.getSize(find.byType(Scaffold)).width;
+    final titleLeft = tester.getTopLeft(find.text('标题')).dx;
+    expect(titleLeft, lessThan(width / 2 - 20), reason: '标题应靠左，不再是居中');
+    expect(titleLeft, lessThan(80), reason: '左对齐时标题应贴近左边距（约 titleSpacing）');
+  });
+
+  testWidgets('悬浮顶栏关掉：glassTopBarAction 不再套玻璃圆钮', (tester) async {
+    addTearDown(() => AppState.I.glassTopBar = true);
+    AppState.I.glassTopBar = false;
+    await tester.pumpWidget(
+      host(child: Builder(builder: (context) => glassTopBarAction(const Text('动作')))),
+    );
+    // 只剩页面底色，没有 40 圆片那层 Container
+    expect(find.byType(Text), findsOneWidget);
+    expect(tester.getSize(find.byType(Text)), isNot(const Size(40, 40)));
+    final container = find.ancestor(of: find.text('动作'), matching: find.byType(Container));
+    expect(container, findsNothing, reason: '关掉开关后不该再包圆钮');
+  });
   testWidgets('能 pop 的页面自动补圆钮返回键；根页面不给', (tester) async {
     await tester.pumpWidget(host(child: page()));
     expect(find.byType(BackButton), findsNothing);

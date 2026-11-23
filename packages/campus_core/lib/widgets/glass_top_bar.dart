@@ -41,7 +41,8 @@ PreferredSizeWidget glassAppBar(
   required Widget title,
   List<Widget>? actions,
   Widget? leading,
-  bool centerTitle = true,
+  // 全站统一：标题靠左（与 iOS / 主流安卓一致）
+  bool centerTitle = false,
   bool automaticallyImplyLeading = true,
   double toolbarHeight = kToolbarHeight,
   PreferredSizeWidget? bottom,
@@ -104,8 +105,11 @@ PreferredSizeWidget glassAppBar(
 /// 把标题栏里的一个按钮套成悬浮玻璃圆钮（40 直径、更实一档的玻璃面 + 强描边）。
 /// [glassAppBar] 会自动处理 `IconButton` 类型的 action；包在 ListenableBuilder /
 /// PopupMenuButton 之类结构里的按钮不会被识别，页面要显式用这个包一下。
+///
+/// 悬浮顶栏关掉时**原样返回**：那是普通 AppBar，不该再有玻璃圆钮——否则同一个
+/// 开关下有的页面套圈、有的不套，观感不统一。
 Widget glassTopBarAction(Widget child, {double edge = 3}) =>
-    _orb(child, edge: edge);
+    glassTopBarEnabled ? _orb(child, edge: edge) : child;
 
 /// 悬浮圆钮：40 直径的玻璃圆片（更实一档的玻璃面 + 细描边）。
 Widget _orb(Widget child, {required double edge}) => Padding(
