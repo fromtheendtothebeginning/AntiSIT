@@ -224,7 +224,9 @@ class _ProfilePageState extends State<ProfilePage> {
                     tooltip: '刷新状态'),
             ],
           ),
-          body: ListView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: ListView(
             // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：列表底部要多让出底栏这一截，
             // 最后一张设置卡才能滚到玻璃上方，而不是永远压在它下面
             // 顶部同理让出悬浮顶栏
@@ -570,6 +572,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
             ],
+          ),
           ),
         );
       },

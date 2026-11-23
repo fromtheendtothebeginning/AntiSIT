@@ -211,38 +211,33 @@ class _ScorePageState extends State<ScorePage> {
               ),
             ],
           ),
-          body: Column(
-            children: [
-              Padding(
-                // 顶部让出悬浮顶栏
-                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 0),
-                child: GlassTabs(
-                  labels: const ['分数概览', '加分明细'],
-                  index: _tab,
-                  onChanged: (i) => _tabs.animateToPage(
-                    i,
-                    duration: const Duration(milliseconds: 260),
-                    curve: Curves.easeOutCubic,
-                  ),
-                  height: 32,
-                  fontSize: 11.5,
-                ),
-              ),
-              Expanded(
-                child: PageView(
-                  controller: _tabs,
-                  onPageChanged: _switchTab,
-                  children: [_overviewView(), _creditsView()],
-                ),
-              ),
-            ],
+          body: GlassFadedBody(
+            barHeight: topInset,
+            // 分段切换器放进各页的滚动内容里：会和内容一起滚上去，不再钉在顶部
+            child: PageView(
+              controller: _tabs,
+              onPageChanged: _switchTab,
+              children: [_overviewView(topInset), _creditsView(topInset)],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _overviewView() {
+  Widget _tabsRow() => GlassTabs(
+        labels: const ['分数概览', '加分明细'],
+        index: _tab,
+        onChanged: (i) => _tabs.animateToPage(
+          i,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        ),
+        height: 32,
+        fontSize: 11.5,
+      );
+
+  Widget _overviewView(double topInset) {
     final data = _data;
     final groups =
         ((data?['groups'] as List?) ?? const []).cast<Map<String, dynamic>>();
@@ -259,8 +254,9 @@ class _ScorePageState extends State<ScorePage> {
         onRefresh: _load,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+          padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
           children: [
+            _tabsRow(),
             ToolRefreshBar(
               refreshing: _loading,
               fromCache: _fromCache,
@@ -358,7 +354,7 @@ class _ScorePageState extends State<ScorePage> {
   }
 
   /// 「加分明细」：每次活动参与记录（活动 / 学分 / 审批状态 / 时间）。
-  Widget _creditsView() {
+  Widget _creditsView(double topInset) {
     // 学分按「千分位整数」累加：double 直接相加会出现 0.1+0.2=0.30000000000000004
     // 这类二进制浮点尾巴（页面上曾显示 5.930000000000002），最后再换算回学分。
     final sum = sumCreditThousandths(_credits.map((r) => r['credit'])) / 1000;
@@ -376,8 +372,9 @@ class _ScorePageState extends State<ScorePage> {
         onRefresh: _loadCredits,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+          padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
           children: [
+            _tabsRow(),
             ToolRefreshBar(
               refreshing: _creditsLoading,
               fromCache: _creditsFromCache,

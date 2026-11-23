@@ -21,8 +21,11 @@ class MarketPage extends StatelessWidget {
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('插件市场')),
           // 列表顶部留白放进滚动内容里：内容从顶栏下方开始，但滚动时会穿过顶栏
-          // （顶栏那层渐变模糊才有东西可糊）。
-          body: MarketView(onInstalled: onInstalled, topPadding: topInset),
+          // （顶栏那层色带才有内容可淡出）。
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: MarketView(onInstalled: onInstalled, topPadding: topInset),
+          ),
         );
       },
     );

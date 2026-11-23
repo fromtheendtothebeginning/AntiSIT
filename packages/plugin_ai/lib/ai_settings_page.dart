@@ -298,7 +298,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('AI 设置')),
-          body: ListView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: ListView(
             // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
             children: [
@@ -500,6 +502,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 lines: ['Key 只保存在本机，直连模式下由 App 直接调用你填的 AI 服务（不经任何中转）。'],
               ),
             ],
+          ),
           ),
         );
       },

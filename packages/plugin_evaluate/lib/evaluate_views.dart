@@ -158,6 +158,8 @@ class EvaluateListView extends StatelessWidget {
     super.key,
     required this.targets,
     required this.summary,
+    this.header,
+    this.topPadding = 0,
     this.connectionLabel = '',
     this.onTapTarget,
     this.onRefresh,
@@ -167,6 +169,13 @@ class EvaluateListView extends StatelessWidget {
 
   final List<EvalTarget> targets;
   final EvalSummary summary;
+
+  /// 列表顶部随内容一起滚的条（刷新条等）。
+  final Widget? header;
+
+  /// 顶部给悬浮顶栏让出的高度。
+  final double topPadding;
+
   final String connectionLabel;
   final void Function(EvalTarget target, int index)? onTapTarget;
   final Future<void> Function()? onRefresh;
@@ -181,8 +190,10 @@ class EvaluateListView extends StatelessWidget {
   Widget build(BuildContext context) {
     final list = ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+      padding: EdgeInsets.fromLTRB(12, 8 + topPadding, 12, 24),
       children: [
+        if (header != null) header!,
+        if (header != null) const SizedBox(height: 8),
         EvaluateSummaryCard(summary: summary, connectionLabel: connectionLabel),
         const SizedBox(height: 12),
         if (onFillAll != null && onSubmitAll != null)

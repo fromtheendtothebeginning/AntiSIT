@@ -83,7 +83,9 @@ class _ExamsPageState extends State<ExamsPage> {
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('考试安排')),
-          body: PageStateView(
+          body: GlassFadedBody(
+            barHeight: topInset,
+            child: PageStateView(
             loading: _loading && _exams.isEmpty,
             error: _err,
             empty: !_loading && _err == null && _exams.isEmpty,
@@ -190,6 +192,7 @@ class _ExamsPageState extends State<ExamsPage> {
                 ],
               ),
             ),
+          ),
           ),
         );
       },
