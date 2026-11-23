@@ -112,7 +112,7 @@ void main() {
         closeTo(oldCovered + 0.2 * width, 2), reason: '落位后下层页回到原位');
   });
 
-  testWidgets('预测式返回：拖动时画面就是默认返回动画（当前页按曲线往右走）', (tester) async {
+  testWidgets('预测式返回：手势期间严格线性 + 放大（小幅度手指动作触发大幅度动画）', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
@@ -122,14 +122,18 @@ void main() {
     await startGesture(tester);
     expect(find.text('第二页'), findsOneWidget, reason: '手势开始还不能返回');
 
-    await dragTo(tester, 0.3);
-    final at30 = tester.getTopLeft(find.text('第二页')).dx - newSettled;
-    await dragTo(tester, 0.6);
-    final at60 = tester.getTopLeft(find.text('第二页')).dx - newSettled;
+    // 线性 + 放大 2 倍：手指划 25% 屏宽 → 页面走 50%；划 40% → 走 80%
+    await dragTo(tester, 0.25);
+    final at25 = tester.getTopLeft(find.text('第二页')).dx - newSettled;
+    await dragTo(tester, 0.40);
+    final at40 = tester.getTopLeft(find.text('第二页')).dx - newSettled;
 
-    expect(at30, greaterThan(0), reason: '拖动时当前页应当跟着往右走');
-    expect(at60, greaterThan(at30), reason: '继续拖应当继续往右');
-    expect(at60, lessThanOrEqualTo(width + 1), reason: '不会超过一个屏宽');
+    expect(at25, closeTo(0.50 * width, 0.02 * width),
+        reason: '手势 25% 应推进 50%（放大 2 倍、线性）');
+    expect(at40, closeTo(0.80 * width, 0.02 * width),
+        reason: '手势 40% 应推进 80%（线性无曲线加速段）');
+    expect(at40 - at25, closeTo(0.30 * width, 0.02 * width),
+        reason: '两段位移差应当与手指位移差成固定比例（严格线性）');
 
     // 与默认返回同一套观感：不做整页透明度淡出、不做圆角裁剪
     expect(find.ancestor(of: find.text('第二页'), matching: find.byType(Opacity)),

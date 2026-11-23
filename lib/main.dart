@@ -123,8 +123,12 @@ class _SlidePageTransition extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge(
-          [animation, secondaryAnimation, topRouteIsPage]),
+      animation: Listenable.merge([
+        animation,
+        secondaryAnimation,
+        topRouteIsPage,
+        predictiveBackTracking,
+      ]),
       child: child,
       builder: (context, child) {
         final width = MediaQuery.sizeOf(context).width;
@@ -139,12 +143,17 @@ class _SlidePageTransition extends StatelessWidget {
           // 关键：**延后这个动作**（前 22% 时长里旧页原地不动）。不延后的话新页
           // 一起步就把旧页推开、压低，观感是「旧页闪一下就被盖住」；延后之后旧页
           // 一直是完整、亮的状态，直到被新页盖住一部分才开始退让。
-          final s = _coveredCurve.transform(secondaryAnimation.value);
+          // 手势跟手期间走线性：手指拖多少、页面就让多少，不套缓动曲线
+          final s = predictiveBackTracking.value
+              ? secondaryAnimation.value
+              : _coveredCurve.transform(secondaryAnimation.value);
           shift = -_SlidePageTransitionsBuilder.oldShift * width * s;
           dim = _SlidePageTransitionsBuilder.oldDim * s;
         } else {
           // 自己进出：前进从右侧滑到 0；返回从 0 滑出到右侧（同一公式）。
-          final c = _curveFor(animation).transform(animation.value);
+          final c = predictiveBackTracking.value
+              ? animation.value
+              : _curveFor(animation).transform(animation.value);
           shift = (1 - c) * width;
           dim = 0;
         }
@@ -217,6 +226,7 @@ class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
       Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
     return _PredictiveOrFadeThrough(
       route: route,
+      animation: animation,
       // 画面沿用默认转场（同一个 builder），手势只驱动它的动画值
       child: _SlidePageTransitionsBuilder().buildTransitions(
           route, context, animation, secondaryAnimation, child),
@@ -224,23 +234,28 @@ class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
   }
 }
 
+/// 预测式返回（Android 14+ 从屏幕边缘拖入）进行中。
+///
+/// 为 true 时转场按**线性**映射（手指走多少、页面就走多少，不套缓动曲线）；
+/// 松手提交 / 取消后保持到动画收尾，避免换曲线时画面跳一下。
+final ValueNotifier<bool> predictiveBackTracking = ValueNotifier<bool>(false);
+
 /// 预测式返回（Android 14+ 从屏幕边缘拖入）：**画面直接用默认返回动画**，
 /// 由手指驱动路由的动画值。
 ///
-/// 早先这里自己算了一套手势画面（1:1 位移 + 缩放 + 整页淡出 + 圆角裁剪 + 下层磨砂），
-/// 和默认返回完全是两套观感，且每帧要开好几层全屏合成。现在只做一件事：
-/// 把系统手势转给路由（handleStartBackGesture / handleUpdateBackGestureProgress），
-/// 让 [PageTransitionsBuilder] 用和「按返回键」完全相同的动画去渲染——
-/// 手指拖多少，页面就按同一套曲线走到哪；松手提交/取消交给框架收尾。
-///
-/// 于是预测式返回与默认返回**天然一致**：旧页左移 20% + 轻微渐暗、上层页从右侧让出。
+/// * 手势只做一件事：把系统事件转给路由；
+/// * 画面复用默认返回动画（同一个 PageTransitionsBuilder）；
+/// * 手势期间映射**严格线性**（见 [predictiveBackTracking]），并把作用区间放大
+///   ——手指划很小一段就能把页面推很远。
 class _PredictiveOrFadeThrough extends StatefulWidget {
   const _PredictiveOrFadeThrough({
     required this.route,
+    required this.animation,
     required this.child,
   });
 
   final PageRoute<dynamic> route;
+  final Animation<double> animation;
   final Widget child;
 
   @override
@@ -249,16 +264,55 @@ class _PredictiveOrFadeThrough extends StatefulWidget {
 
 class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     with WidgetsBindingObserver {
+  /// 手势位移 → 页面进度的放大倍数：区间缩到原来的 1/2，
+  /// 手指划过半个屏宽 = 页面走完全程（默认 1.0 需要划满一整屏）。
+  static const double _gain = 2.0;
+
+  /// 把系统给的手势进度换算成路由动画值：1 = 完整在前，  = 已退出。
+  /// 线性 + 放大，不做缓动（缓动只用在「按返回键」那条路上）。
+  static double _routeProgress(double gestureProgress) =>
+      1 - (gestureProgress * _gain).clamp(0.0, 1.0);
+
+  bool _tracking = false;
+
+  /// 松手后（取消 / 提交）框架自己跑完收尾动画；跑完再切回缓动曲线。
+  /// 不能用「状态」判断收尾：拖动期间 controller.value 是直接赋值的，
+  /// 状态仍停在 completed，会把刚开始的拖动误判成「已经收尾」。
+  bool _settling = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.animation.addListener(_onAnimationTick);
   }
 
   @override
   void dispose() {
+    widget.animation.removeListener(_onAnimationTick);
     WidgetsBinding.instance.removeObserver(this);
+    _setTracking(false);
     super.dispose();
+  }
+
+  /// 松手之后框架会把动画跑完；跑完再切回缓动曲线（此时页面已经出画，不会跳）。
+  void _onAnimationTick() {
+    if (!_settling) return;
+    if (!widget.animation.isAnimating) {
+      _settling = false;
+      _setTracking(false);
+    }
+  }
+
+  void _setTracking(bool value) {
+    if (_tracking == value) return;
+    _tracking = value;
+    // 手势回调可能发生在「树被锁住」的阶段（提交返回时 navigator.pop 就在回调里），
+    // 直接改 ValueNotifier 会触发 AnimatedBuilder 重建并撞上断言，
+    // 所以统一延到本帧结束再发通知。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) predictiveBackTracking.value = value;
+    });
   }
 
   // ===== WidgetsBindingObserver：接管系统返回手势，画面交给默认转场 =====
@@ -274,19 +328,28 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
         !widget.route.popGestureEnabled) {
       return false;
     }
-    widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
+    _setTracking(true);
+    widget.route.handleStartBackGesture(
+        progress: _routeProgress(backEvent.progress));
     return true;
   }
 
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) =>
-      widget.route.handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
+      widget.route.handleUpdateBackGestureProgress(
+          progress: _routeProgress(backEvent.progress));
 
   @override
-  void handleCancelBackGesture() => widget.route.handleCancelBackGesture();
+  void handleCancelBackGesture() {
+    _settling = true;
+    widget.route.handleCancelBackGesture();
+  }
 
   @override
-  void handleCommitBackGesture() => widget.route.handleCommitBackGesture();
+  void handleCommitBackGesture() {
+    _settling = true;
+    widget.route.handleCommitBackGesture();
+  }
 
   /// 画面完全由外面的默认转场负责，这里只透传。
   @override
