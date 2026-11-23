@@ -69,14 +69,17 @@ class _SlidePageTransitionsBuilder extends PageTransitionsBuilder {
   /// 旧页最深压暗（只用来拉开层次）。
   static const double oldDim = 0.10;
 
-  /// 整体节奏：比框架默认的 300ms 慢一些，位移走完再收尾，观感更从容。
-  static const Duration duration = Duration(milliseconds: 460);
+  /// 前进：时长更长；曲线更陡（起步就走、尾巴收得慢）。
+  static const Duration pushDuration = Duration(milliseconds: 520);
+
+  /// 返回：时长更短；曲线更缓（起步柔和，不会「一闪而过」）。
+  static const Duration popDuration = Duration(milliseconds: 320);
 
   @override
-  Duration get transitionDuration => duration;
+  Duration get transitionDuration => pushDuration;
 
   @override
-  Duration get reverseTransitionDuration => duration;
+  Duration get reverseTransitionDuration => popDuration;
 
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
@@ -91,8 +94,20 @@ class _SlidePageTransitionsBuilder extends PageTransitionsBuilder {
   }
 }
 
-/// 「先快后慢、末尾缓慢停住」的缓动（expo-out 手感）。
-const Curve _slideCurve = Cubic(0.16, 1.0, 0.30, 1.0);
+/// 前进用的缓动：起步就动、末尾缓慢收住（相对「陡」）。
+/// 注意别用极端 expo-out（如 Cubic(0.16, 1, 0.3, 1)）：25% 时长就走完一半以上，
+/// 观感是「旧页闪一下就被盖住，后面几乎不动」。
+const Curve _pushCurve = Cubic(0.20, 0.85, 0.20, 1.0);
+
+/// 返回用的缓动：起步更柔和、整体更「缓」，配合更短的时长。
+const Curve _popCurve = Cubic(0.30, 0.55, 0.35, 1.0);
+
+/// 被盖住的旧页：延后 22% 才开始退让，避免「闪一下就被推开」。
+const Curve _coveredCurve = Interval(0.22, 1.0, curve: _pushCurve);
+
+/// 按动画方向取曲线：正向（前进）用陡的，反向（返回）用缓的。
+Curve _curveFor(Animation<double> a) =>
+    a.status == AnimationStatus.reverse ? _popCurve : _pushCurve;
 
 class _SlidePageTransition extends StatelessWidget {
   const _SlidePageTransition({
@@ -120,12 +135,16 @@ class _SlidePageTransition extends StatelessWidget {
         if (covered) {
           // 镜头在这里不动，只是被上层页推走：左移 20% + 渐暗。
           // 前进时 0 → -20%，返回时 -20% → 0（同一公式，动画值反向即可）。
-          final s = _slideCurve.transform(secondaryAnimation.value);
+          //
+          // 关键：**延后这个动作**（前 22% 时长里旧页原地不动）。不延后的话新页
+          // 一起步就把旧页推开、压低，观感是「旧页闪一下就被盖住」；延后之后旧页
+          // 一直是完整、亮的状态，直到被新页盖住一部分才开始退让。
+          final s = _coveredCurve.transform(secondaryAnimation.value);
           shift = -_SlidePageTransitionsBuilder.oldShift * width * s;
           dim = _SlidePageTransitionsBuilder.oldDim * s;
         } else {
           // 自己进出：前进从右侧滑到 0；返回从 0 滑出到右侧（同一公式）。
-          final c = _slideCurve.transform(animation.value);
+          final c = _curveFor(animation).transform(animation.value);
           shift = (1 - c) * width;
           dim = 0;
         }
@@ -182,10 +201,10 @@ class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
   // 本类，所以时长要在这里同步，否则 _SlidePageTransitionsBuilder 上改的时长对
   // 安卓不生效（真机/模拟器上仍是 300ms）。
   @override
-  Duration get transitionDuration => _SlidePageTransitionsBuilder.duration;
+  Duration get transitionDuration => _SlidePageTransitionsBuilder.pushDuration;
 
   @override
-  Duration get reverseTransitionDuration => _SlidePageTransitionsBuilder.duration;
+  Duration get reverseTransitionDuration => _SlidePageTransitionsBuilder.popDuration;
 
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
@@ -262,7 +281,7 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   /// 松手提交后滑出只用框架反向窗口的一小段（固定 ≈180ms）走完，与路由时长解耦：
   /// 路由整体放慢不影响「一松手就走」。比例按当前路由时长换算。
   static double get _commitSpan {
-    final ms = _SlidePageTransitionsBuilder.duration.inMilliseconds;
+    final ms = _SlidePageTransitionsBuilder.popDuration.inMilliseconds;
     return (180 / ms).clamp(0.15, 1.0);
   }
 

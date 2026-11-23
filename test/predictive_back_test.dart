@@ -46,12 +46,15 @@ void main() {
 
     await tester.tap(find.text('push'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 90)); // 过渡进行中
+    // 前 22% 时长：新页已经在推进，旧页**原地不动**（旧页「闪一下就被推开」的根因）
+    await tester.pump(const Duration(milliseconds: 90));
+    final early = tester.getTopLeft(find.text('第二页')).dx;
+    expect(early, greaterThan(0), reason: '入场页应当从右侧滑入，动画中还没到 0');
+    expect(tester.getTopLeft(find.text('push')).dx, settledOld,
+        reason: '旧页在前 22% 时长里应当原地不动，不能一上来就被推开');
 
-    // 新页还没落位：仍在右侧
-    final mid = tester.getTopLeft(find.text('第二页')).dx;
-    expect(mid, greaterThan(0), reason: '入场页应当从右侧滑入，动画中还没到 0');
-    // 旧页整体向左移了，并且没有变透明（只用压暗）
+    // 过半后：旧页才开始左移，且没有变透明（只用压暗）
+    await tester.pump(const Duration(milliseconds: 170));
     final midOld = tester.getTopLeft(find.text('push')).dx;
     expect(midOld, lessThan(settledOld), reason: '旧页应当整体左移');
     expect(midOld, greaterThan(settledOld - 0.21 * width), reason: '左移不超过 20% 屏宽');
@@ -60,7 +63,7 @@ void main() {
 
     await tester.pumpAndSettle();
     final settledNew = tester.getTopLeft(find.text('第二页')).dx;
-    expect(mid, greaterThan(settledNew), reason: '入场页从右侧滑入，动画中在落位点右边');
+    expect(early, greaterThan(settledNew), reason: '入场页从右侧滑入，动画中在落位点右边');
     // 收尾：新页落位，旧页仍在最左
     // 落位后旧页被 Navigator 置为 offstage（不绘制），查位置要带 skipOffstage: false
     expect(tester.getTopLeft(find.text('push', skipOffstage: false)).dx,
