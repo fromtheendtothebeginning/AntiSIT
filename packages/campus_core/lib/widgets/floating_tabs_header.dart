@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 /// 带「悬浮分段切换器」的页面容器：把切换器钉在玻璃顶栏下方，
@@ -92,7 +94,19 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
               curve: Curves.easeOutCubic,
               child: Padding(
                 padding: EdgeInsets.only(top: widget.topInset),
-                child: widget.header,
+                // 左右留白和页面内容对齐（内容列表都是 12），别贴屏幕边
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: BackdropFilter(
+                      // 和首页底栏同一套毛玻璃：把从切换器底下滚过去的内容糊掉，
+                      // 玻璃面再压在上面，切换器和内容才分成两层
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: widget.header,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
