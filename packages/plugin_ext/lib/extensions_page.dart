@@ -683,7 +683,18 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             barHeight: topInset,
             child: Column(
             children: [
-              Expanded(child: myPage),
+              Expanded(
+                // 编辑卡片大小时，点卡片以外的空白处也退出编辑模式：
+                // 编辑态卡片自己不吃点击（onTap 为 null），用 translucent 让点击
+                // 落到这一层，滑动手势不受影响。
+                child: _editing
+                    ? GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () => _setEditing(false),
+                        child: myPage,
+                      )
+                    : myPage,
+              ),
               // 尺寸条放在页面下方、底栏上方：单手握持时拇指正好够得着
               if (_editing && items.isNotEmpty)
                 Padding(

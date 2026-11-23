@@ -72,7 +72,9 @@ class _OpaqueWhileAnimating extends StatelessWidget {
         if (v <= 0.001 || v >= 0.999) return child;
         return Stack(
           children: [
-            Positioned.fill(child: ColoredBox(color: SemColors.bg)),
+            // 垫的是**同一张场景底**（底色 + 光斑），不是纯色：
+            // 纯色垫底在动画结束撤掉的一瞬间光斑冒出来，背景会跳一下。
+            Positioned.fill(child: GlassScenePaint(wells: GlassScene.wells)),
             child,
           ],
         );

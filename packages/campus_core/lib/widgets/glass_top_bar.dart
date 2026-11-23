@@ -160,11 +160,19 @@ class GlassBarScrim extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, _) {
-        final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
-        return DecoratedBox(
-          decoration: BoxDecoration(gradient: _tint(fadeStart)),
+    // 色带颜色取自 SemColors.bg。AppBar 里的这层是 const 组件，
+    // 页面重建时 Flutter 会跳过它（同一个 const 实例），所以在应用内换主题 / 切深浅色
+    // 时它不会跟着变，必须重启才生效。这里订阅色板通知，色板一换就重画。
+    return ValueListenableBuilder<GlassPalette>(
+      valueListenable: SemColors.palette,
+      builder: (context, _, _) {
+        return LayoutBuilder(
+          builder: (context, _) {
+            final fadeStart = (1 - fadeFraction).clamp(0.0, 1.0);
+            return DecoratedBox(
+              decoration: BoxDecoration(gradient: _tint(fadeStart)),
+            );
+          },
         );
       },
     );
