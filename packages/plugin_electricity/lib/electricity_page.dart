@@ -98,21 +98,35 @@ class _ElectricityPageState extends State<ElectricityPage> {
     } catch (_) {
       // 历史拉取失败保留已有曲线（查余额本身不受影响）
     } finally {
-      if (mounted) setState(() => _historyLoading = false);
+      // 期间又切了天数就别动 loading：那是新请求的状态
+      if (mounted && _days == days) {
+        setState(() => _historyLoading = false);
+      }
     }
   }
 
-  /// 切天数：先显示该天数的本地缓存，再拉新（缓存里没有就转圈等新数据）。
+  /// 切天数：先切（让 7/30/90 立刻响应、旧曲线先清掉），再读该天数的本地缓存，
+  /// 最后拉新数据。
+  ///
+  /// 注意别把「期间又切了天数」的判断放在 [_days] 赋值之前：那时 _days 还是旧值，
+  /// 判断恒不成立，整个切换会被直接 return（这正是之前 7/30/90 点了没反应的原因）。
   Future<void> _switchDays(int days) async {
     if (_days == days) return;
+    setState(() {
+      _days = days;
+      _history = const [];
+      _historyLoading = true;
+      _fromCache = false;
+      _refreshFailed = false;
+    });
     final cached = await ToolPageCache.read(_historyKey(days));
-    if (!mounted || _days != days) return;
+    if (!mounted || _days != days) return; // 期间又切了别的天数，丢弃这次结果
     final records = ((cached?['records'] as List?) ?? const [])
         .cast<Map<String, dynamic>>();
     setState(() {
-      _days = days;
       _history = records;
       _fromCache = records.isNotEmpty;
+      _historyLoading = records.isEmpty;
     });
     await _loadHistory();
   }

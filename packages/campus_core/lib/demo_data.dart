@@ -62,7 +62,14 @@ class DemoData {
           'data': {'balance': eleBalance, 'card_balance': cardBalance, 'remain': 102.3, 'dorm': '示例楼101'},
         };
       case '/api/campus-open/electricity/history':
-        return {'ok': true, 'records': _eleHistory()};
+        // 演示数据按请求的天数裁剪，否则 7/30/90 三个刻度看起来完全一样
+        final days = (int.tryParse(query?['days'] ?? '') ?? 90).clamp(1, 365);
+        final since = DateTime.now().subtract(Duration(days: days));
+        final records = _eleHistory().where((r) {
+          final t = DateTime.tryParse('${r['time']}'.replaceFirst(' ', 'T'));
+          return t != null && t.isAfter(since);
+        }).toList();
+        return {'ok': true, 'records': records};
       case '/api/campus-open/electricity/recharge':
         final amount = (body?['amount'] as num?) ?? 0;
         eleBalance += amount;
@@ -177,7 +184,8 @@ class DemoData {
     final now = DateTime.now();
     final list = <Map<String, dynamic>>[];
     var balance = 128.0;
-    for (var i = 89; i >= 0; i--) {
+    // 演示数据给 180 天：7 / 30 / 90 三个刻度是同一批记录的不同截取区间，能看出差别
+    for (var i = 179; i >= 0; i--) {
       final d = now.subtract(Duration(days: i));
       balance -= 1.2 + (i % 5) * 0.35;
       var recharge = 0.0;

@@ -213,17 +213,27 @@ class _ScorePageState extends State<ScorePage> {
           ),
           body: GlassFadedBody(
             barHeight: topInset,
-            // 分段切换器放进各页的滚动内容里：会和内容一起滚上去，不再钉在顶部
-            child: PageView(
-              controller: _tabs,
-              onPageChanged: _switchTab,
-              children: [_overviewView(topInset), _creditsView(topInset)],
+            // 分段切换器悬浮在顶栏下方：下划收起、上滑展开（见 FloatingTabsHeader）
+            child: FloatingTabsHeader(
+              topInset: topInset,
+              header: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _tabsRow(),
+              ),
+              child: PageView(
+                controller: _tabs,
+                onPageChanged: _switchTab,
+                children: [_overviewView(topInset), _creditsView(topInset)],
+              ),
             ),
           ),
         );
       },
     );
   }
+
+  /// 悬浮切换器占的高度（列表顶部要让出这么多，内容才不会被它压住）。
+  static const double _tabsRowHeight = 40;
 
   Widget _tabsRow() => GlassTabs(
         labels: const ['分数概览', '加分明细'],
@@ -254,9 +264,8 @@ class _ScorePageState extends State<ScorePage> {
         onRefresh: _load,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
+          padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
           children: [
-            _tabsRow(),
             ToolRefreshBar(
               refreshing: _loading,
               fromCache: _fromCache,
@@ -372,9 +381,8 @@ class _ScorePageState extends State<ScorePage> {
         onRefresh: _loadCredits,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
+          padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
           children: [
-            _tabsRow(),
             ToolRefreshBar(
               refreshing: _creditsLoading,
               fromCache: _creditsFromCache,
