@@ -66,7 +66,35 @@ void main() {
     expect(tester.getTopLeft(find.text('push', skipOffstage: false)).dx,
         closeTo(settledOld - 0.2 * width, 2), reason: '旧页最终停在左移 20% 处');
     expect(tester.getTopLeft(find.text('第二页')).dx, closeTo(settledNew, 1));
-  });  testWidgets('位移 1:1 跟手：进度每涨 0.2，页面就多移 0.2 个屏宽', (tester) async {
+  });  testWidgets('普通返回：当前页整块向右滑出，下层页从 −20% 滑回 0 并褪掉压暗', (tester) async {
+    await pumpApp(tester);
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+
+    final newSettled = tester.getTopLeft(find.text('第二页')).dx;
+    final oldCovered = tester.getTopLeft(find.text('push', skipOffstage: false)).dx;
+
+    // 触发一次普通返回（等价于按返回键）
+    final ctx = tester.element(find.text('第二页'));
+    Navigator.of(ctx).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120)); // 过渡进行中
+
+    // 当前页正在往右滑出（反向）
+    final popping = tester.getTopLeft(find.text('第二页', skipOffstage: false)).dx;
+    expect(popping, greaterThan(newSettled), reason: '返回时当前页应当向右滑出');
+    // 下层页正在从左移 20% 处滑回原位
+    final revealed = tester.getTopLeft(find.text('push')).dx;
+    expect(revealed, greaterThan(oldCovered), reason: '下层页应当往右滑回原位');
+    expect(revealed, lessThanOrEqualTo(oldCovered + 0.2 * width + 1),
+        reason: '下层页最多回到原位，不会越过去');
+
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('push')).dx, closeTo(oldCovered + 0.2 * width, 2),
+        reason: '落位后下层页回到原位（即恢复到未左移的状态）');
+  });
+  testWidgets('位移 1:1 跟手：进度每涨 0.2，页面就多移 0.2 个屏宽', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();

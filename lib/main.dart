@@ -40,36 +40,49 @@ class TopRouteKindObserver extends NavigatorObserver {
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
       topRouteIsPage.value = newRoute is PageRoute;
 }
-/// 页面转场（默认前进 / 返回）：**整页整体位移 + 旧页轻微渐暗**。
+/// 页面转场（默认前进 / 返回）：**整页整体位移 + 上层页不透明覆盖 + 旧页轻微渐暗**。
 ///
-/// 产品定的观感：
-/// * 旧页：整体向左平移 20% 屏宽（先快后慢），同时叠一层很浅的暗色；
-/// * 新页：整块从屏幕右侧滑入（先快后慢、末尾缓慢停住）；
-/// * 不做淡入淡出、不做圆角、不做缩放，也不在页面里垫任何底层——
-///   整个页面当成一个整体来搬。
+/// 前进（push）：
+/// * 新页整块从屏幕右侧滑入到 0（先快后慢、末尾缓慢停住），并**完整盖住**旧页；
+/// * 旧页整体向左平移 20% 屏宽，同时叠一层很浅的暗色。
 ///
-/// 实现上有两条硬约束（都是真机踩出来的）：
-/// 1. **不能用 SlideTransition / FractionalTranslation**：它的 applyPaintTransform
-///    要读 child.size，而弹出菜单 / 对话框时 localToGlobal 会沿祖先链量位置，此刻
-///    页面若正在重新布局就会抛「RenderBox was not laid out」，整屏变红卡死
-///    （课程表右上角「更多」）。这里用 Transform.translate（纯矩阵、不读 size）。
-/// 2. **不能按动画值增删子组件**：同样会触发整页重新布局。所以变暗层永远在树里，
-///    只改颜色 alpha（纯绘制、零布局变动）。
+/// 返回（pop）：上面这套的反向——
+/// * 当前页整块向右滑出屏幕；
+/// * 下层页从左移 20% 的位置滑回 0，同时把压暗褪掉。
+///
+/// 不做淡入淡出、不做圆角、不做缩放。
+///
+/// 三个关键实现细节：
+/// 1. **上层页要垫一张和全局场景底一模一样的底**：本 App 页面是半透明的（玻璃卡片、
+///    内容渐隐），不垫的话滑入时会把下层页透出来，看起来像「两个页面同时显示」。
+///    垫底常驻组件树、只改 Opacity（纯绘制），不做结构变化。
+/// 2. **不能用 SlideTransition / FractionalTranslation**：它的 applyPaintTransform
+///    要读 child.size，弹窗 localToGlobal 时页面正在布局会抛断言（课程表「更多」）。
+/// 3. **弹窗 / 菜单不算「新页」**：只有 PageRoute 盖上来才搬页面（[topRouteIsPage]），
+///    否则点开菜单整页会跟着左移变暗。
 class _SlidePageTransitionsBuilder extends PageTransitionsBuilder {
   const _SlidePageTransitionsBuilder();
 
-  /// 旧页最后被推走的距离（屏宽比例）。
+  /// 旧页被推走的距离（屏宽比例）。
   static const double oldShift = 0.20;
 
-  /// 旧页最深压暗（很小的值，只用来拉开层次）。
+  /// 旧页最深压暗（只用来拉开层次）。
   static const double oldDim = 0.10;
 
+  /// 整体节奏：比框架默认的 300ms 慢一些，位移走完再收尾，观感更从容。
+  static const Duration duration = Duration(milliseconds: 460);
+
+  @override
+  Duration get transitionDuration => duration;
+
+  @override
+  Duration get reverseTransitionDuration => duration;
 
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
       Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
-    // 首屏也包一层：它自己进场时动画值已经是 1（不位移），但**被上层页覆盖时要跟着左移**，
-    // 否则「旧页左移 20%」在第一个页面上不生效，前进观感左右不对称。
+    // 首屏也包一层：它自己进场时动画值已是 1（不位移），但被上层页覆盖时要跟着
+    // 左移变暗，否则前进观感左右不对称。
     return _SlidePageTransition(
       animation: animation,
       secondaryAnimation: secondaryAnimation,
@@ -81,7 +94,6 @@ class _SlidePageTransitionsBuilder extends PageTransitionsBuilder {
 /// 「先快后慢、末尾缓慢停住」的缓动（expo-out 手感）。
 const Curve _slideCurve = Cubic(0.16, 1.0, 0.30, 1.0);
 
-/// 一页在转场中的位移与压暗：位置和透明度都由动画值算出，只改绘制属性。
 class _SlidePageTransition extends StatelessWidget {
   const _SlidePageTransition({
     required this.animation,
@@ -101,39 +113,45 @@ class _SlidePageTransition extends StatelessWidget {
       child: child,
       builder: (context, child) {
         final width = MediaQuery.sizeOf(context).width;
+        final covered = topRouteIsPage.value && secondaryAnimation.value > 0.001;
+
         double shift;
         double dim;
-
-        if (secondaryAnimation.status == AnimationStatus.reverse &&
-            secondaryAnimation.value > 0.001) {
-          // 本页正被上层页「揭露」：从右侧滑入（1 → 0）
-          shift = secondaryAnimation.value * width;
-          dim = 0;
-        } else if (topRouteIsPage.value && secondaryAnimation.value > 0.001) {
-          // 本页正被新页覆盖：整体左移 + 轻微渐暗（弹窗 / 菜单盖上来不算）
-          final t = _slideCurve.transform(secondaryAnimation.value);
-          shift = -_SlidePageTransitionsBuilder.oldShift * width * t;
-          dim = _SlidePageTransitionsBuilder.oldDim * t;
-        } else if (animation.status == AnimationStatus.reverse) {
-          // 本页正在被返回：同样左移 + 渐暗（与「被覆盖」同一套观感）
-          final t = _slideCurve.transform(1 - animation.value);
-          shift = -_SlidePageTransitionsBuilder.oldShift * width * t;
-          dim = _SlidePageTransitionsBuilder.oldDim * t;
+        if (covered) {
+          // 镜头在这里不动，只是被上层页推走：左移 20% + 渐暗。
+          // 前进时 0 → -20%，返回时 -20% → 0（同一公式，动画值反向即可）。
+          final s = _slideCurve.transform(secondaryAnimation.value);
+          shift = -_SlidePageTransitionsBuilder.oldShift * width * s;
+          dim = _SlidePageTransitionsBuilder.oldDim * s;
         } else {
-          // 本页正在进入：整块从右侧滑入
-          shift = (1 - _slideCurve.transform(animation.value)) * width;
+          // 自己进出：前进从右侧滑到 0；返回从 0 滑出到右侧（同一公式）。
+          final c = _slideCurve.transform(animation.value);
+          shift = (1 - c) * width;
           dim = 0;
         }
+
+        // 转场进行中才让上层页不透明，静止时透明：底图与全局场景底一致，
+        // 显隐切换看不出变化。
+        final animating = (animation.value > 0.001 && animation.value < 0.999) ||
+            (topRouteIsPage.value &&
+                secondaryAnimation.value > 0.001 &&
+                secondaryAnimation.value < 0.999);
 
         return Transform.translate(
           offset: Offset(shift, 0),
           child: Stack(
             fit: StackFit.passthrough,
             children: [
+              // 场景底（常驻、只改显隐与压暗透明度，不触发布局）
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: animating ? 1 : 0,
+                    child: GlassScenePaint(wells: GlassScene.wells),
+                  ),
+                ),
+              ),
               child!,
-              // 变暗层始终在树里，只改 alpha：不触发布局、不额外开图层。
-              // 用 DecoratedBox 而不是 ColoredBox：测试里靠 ColoredBox 找「磨砂遮罩」，
-              // 换一种绘制组件就不会和它撞车。
               Positioned.fill(
                 child: IgnorePointer(
                   child: DecoratedBox(
@@ -158,6 +176,16 @@ class _SlidePageTransition extends StatelessWidget {
 /// 会把我们特意做的淡入淡出换掉。
 class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
   const _PredictiveOrFadeThroughBuilder();
+
+  // 路由的过渡时长取的是「当前平台这个 builder」的值（MaterialRouteTransitionMixin
+  // 里读 _getPageTransitionBuilder(context)?.transitionDuration），安卓这条链走的是
+  // 本类，所以时长要在这里同步，否则 _SlidePageTransitionsBuilder 上改的时长对
+  // 安卓不生效（真机/模拟器上仍是 300ms）。
+  @override
+  Duration get transitionDuration => _SlidePageTransitionsBuilder.duration;
+
+  @override
+  Duration get reverseTransitionDuration => _SlidePageTransitionsBuilder.duration;
 
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
@@ -231,11 +259,12 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   /// 2/3 时只剩 33%，配合模糊已清完，与模糊插值的节奏对齐。
   static const double _dragFade = 1.0;
 
-  /// 松手提交后，滑出 / 淡出只用框架反向窗口的前 60%（≈180ms）走完。
-  /// 不能等 controller 自己降回松手值：框架在提交时先把它拉回 1.0 再线性反向，
-  /// 拖得越深等得越久（实测拖到 0.8 松手要先冻 240ms 才动）——用户反馈
-  /// 「松开后没有继续滑，要先停一下」。用前 60% 则一松手就走，且整体更快。
-  static const double _commitSpan = 0.6;
+  /// 松手提交后滑出只用框架反向窗口的一小段（固定 ≈180ms）走完，与路由时长解耦：
+  /// 路由整体放慢不影响「一松手就走」。比例按当前路由时长换算。
+  static double get _commitSpan {
+    final ms = _SlidePageTransitionsBuilder.duration.inMilliseconds;
+    return (180 / ms).clamp(0.15, 1.0);
+  }
 
   _BackPhase _phase = _BackPhase.none;
 
