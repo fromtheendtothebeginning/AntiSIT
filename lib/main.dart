@@ -20,8 +20,16 @@ const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
   GlobalCupertinoLocalizations.delegate,
 ];
 
-/// fade-through 页面过渡：旧页在前 35% 快速淡出，新页在其后淡入；
-/// 被覆盖页不做位移缩放，玻璃透明面不会互相叠影。
+/// 页面过渡：**不做透明度淡入**，动画期间给页面垫一层不透明底色。
+///
+/// 早先是 fade-through（旧页前 35% 淡出、新页随后淡入）。但本 App 的页面是**半透明**的
+/// ——顶栏是渐变色带、卡片是半透明玻璃、内容顶部还有 alpha 渐隐——淡入的那几帧里
+/// 上一页会从新页的透明处透出来，看着就是「残影」；两层低 alpha 叠加在 Impeller 下
+/// 还会被抖动（dither）成细碎的**黑白噪点**。页面越重（工具页网格、拓展页的 WebView
+/// 与大卡片）这个窗口越明显，所以那几页每次打开必现；设置页内容轻，几乎看不出来。
+///
+/// 现在的做法：新页带一点从右侧滑入的位移、全程不透明；动画期间在页面下面垫一层
+/// 页面底色，旧页无从透出。被覆盖页仍保留原来的快速淡出（它已经被盖住，纯属保底）。
 class _FadeThroughTransitionsBuilder extends PageTransitionsBuilder {
   const _FadeThroughTransitionsBuilder();
 
@@ -33,13 +41,45 @@ class _FadeThroughTransitionsBuilder extends PageTransitionsBuilder {
       opacity: Tween<double>(begin: 1, end: 0).animate(CurvedAnimation(
           parent: secondaryAnimation,
           curve: const Interval(0, 0.35, curve: Curves.easeIn))),
-      child: FadeTransition(
-        // 本页作为新页进入时快速淡入；返回时对称淡出
-        opacity: CurvedAnimation(
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.06, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
             parent: animation,
-            curve: const Interval(0.15, 0.65, curve: Curves.easeOut)),
-        child: child,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic)),
+        child: _OpaqueWhileAnimating(animation: animation, child: child),
       ),
+    );
+  }
+}
+
+/// 转场进行中给页面垫一层不透明底色，避免上一页透过玻璃组件显形。
+class _OpaqueWhileAnimating extends StatelessWidget {
+  const _OpaqueWhileAnimating({required this.animation, required this.child});
+
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        // 只在动画真的在跑的时候垫底：起始帧和结束帧都不需要
+        final v = animation.value;
+        if (v <= 0.001 || v >= 0.999) return child;
+        return Stack(
+          children: [
+            // 垫的是**同一张场景底**（底色 + 光斑），不是纯色：
+            // 纯色垫底在动画结束撤掉的一瞬间光斑冒出来，背景会跳一下。
+            Positioned.fill(child: GlassScenePaint(wells: GlassScene.wells)),
+            child,
+          ],
+        );
+      },
+      child: child,
     );
   }
 }
@@ -410,10 +450,11 @@ ThemeData buildAppTheme(GlassPalette c) {
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: Colors.transparent, // 透出全局玻璃场景底
+
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
       scrolledUnderElevation: 0,
-      centerTitle: true,
+      centerTitle: false,
       foregroundColor: c.textPrimary,
       iconTheme: IconThemeData(color: c.textPrimary),
       // 悬浮顶栏的标题：比正文略重一档，压在渐变模糊上也稳

@@ -39,17 +39,28 @@ void main() {
     ));
   }
 
-  testWidgets('普通 push 仍是淡入淡出：内容不位移，只有透明度在变', (tester) async {
+  testWidgets('普通 push：页面不做透明度淡入，且转场中垫不透明底色', (tester) async {
     await pumpApp(tester);
+    // 半透明页面（玻璃顶栏 / 玻璃卡片）不能做淡入：上一页会从透明处透出来（残影），
+    // 低 alpha 叠层还会被抖成黑白噪点。所以转场期间给页面垫一层页面底色。
+    bool hasOpaquePad() => find
+        .byWidgetPredicate(
+            (w) => w is ColoredBox && w.color == SemColors.bg)
+        .evaluate()
+        .isNotEmpty;
+
+    expect(hasOpaquePad(), isFalse, reason: '静止时不该有不透明垫底，玻璃场景底要透出来');
+
     await tester.tap(find.text('push'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 90)); // 过渡进行中
+    expect(hasOpaquePad(), isTrue, reason: '转场中必须垫不透明底色，否则上一页会透出来');
     final mid = tester.getTopLeft(find.text('第二页'));
-    expect(find.byType(FadeTransition), findsWidgets, reason: '淡入淡出还在用');
 
     await tester.pumpAndSettle();
-    expect(mid, tester.getTopLeft(find.text('第二页')),
-        reason: '淡入淡出不该有位移（换成官方 FadeForwards 的横向滑动就会位移）');
+    expect(hasOpaquePad(), isFalse, reason: '转场结束后撤掉垫底');
+    expect(mid.dx, greaterThan(tester.getTopLeft(find.text('第二页')).dx),
+        reason: '入场页从右侧滑入，动画中还没落位');
   });
 
   testWidgets('位移 1:1 跟手：进度每涨 0.2，页面就多移 0.2 个屏宽', (tester) async {
