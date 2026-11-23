@@ -216,10 +216,7 @@ class _ScorePageState extends State<ScorePage> {
             // 分段切换器悬浮在顶栏下方：下划收起、上滑展开（见 FloatingTabsHeader）
             child: FloatingTabsHeader(
               topInset: topInset,
-              header: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _tabsRow(),
-              ),
+              header: _tabsRow(),
               child: PageView(
                 controller: _tabs,
                 onPageChanged: _switchTab,
@@ -233,7 +230,7 @@ class _ScorePageState extends State<ScorePage> {
   }
 
   /// 悬浮切换器占的高度（列表顶部要让出这么多，内容才不会被它压住）。
-  static const double _tabsRowHeight = 40;
+  static const double _tabsRowHeight = 48;
 
   Widget _tabsRow() => GlassTabs(
         labels: const ['分数概览', '加分明细'],
@@ -263,6 +260,8 @@ class _ScorePageState extends State<ScorePage> {
       child: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
+          // 记住本页滚动位置：切走再切回来仍停在原处
+          key: const PageStorageKey<String>('score_overview'),
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
           children: [
@@ -380,6 +379,7 @@ class _ScorePageState extends State<ScorePage> {
       child: RefreshIndicator(
         onRefresh: _loadCredits,
         child: ListView(
+          key: const PageStorageKey<String>('score_credits'),
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
           children: [

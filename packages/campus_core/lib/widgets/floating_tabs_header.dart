@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'theme_palette.dart';
+
 /// 带「悬浮分段切换器」的页面容器：把切换器钉在玻璃顶栏下方，
 /// 页面**向下滑动**（继续看内容）时自动收起藏到顶栏底下，**向上滑动**时重新展开。
 ///
@@ -48,6 +50,9 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
   /// 收起状态下的位移（相对自身高度）：-1 就整个移出屏幕。
   static const double _hiddenOffset = -1.05;
 
+  /// 玻璃胶囊的圆角（与首页底栏一致）。
+  static const double _radius = 22;
+
   /// 方向死区：单帧位移小于这个值先生效（手指轻微抖动不切换）。
   static const double _slop = 2.0;
 
@@ -55,8 +60,11 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
 
   bool _onScroll(ScrollNotification n) {
     if (n is! ScrollUpdateNotification) return false;
-    // 只看竖向滚动：PageView 自己切换页时也会发横向滚动通知，
-    // 不过滤的话「点一下切换器」就会被当成向下滑动，把切换器收起。
+    // 横向滚动 = PageView 在切页：把切换器展开（用户正在换页面，要看得见它）
+    if (n.metrics.axis == Axis.horizontal) {
+      if (_hidden) setState(() => _hidden = false);
+      return false;
+    }
     if (n.metrics.axis != Axis.vertical) return false;
     final metrics = n.metrics;
     // 到顶（含下拉回弹）一律展开
@@ -92,18 +100,37 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
               offset: Offset(0, _hidden ? _hiddenOffset : 0),
               duration: widget.showDuration,
               curve: Curves.easeOutCubic,
+              // 底部留白放在毛玻璃**外面**：否则模糊会拖到切换器下面那条空隙里
               child: Padding(
-                padding: EdgeInsets.only(top: widget.topInset),
+                padding: EdgeInsets.only(top: widget.topInset, bottom: 8),
                 // 左右留白和页面内容对齐（内容列表都是 12），别贴屏幕边
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(_radius),
                     child: BackdropFilter(
-                      // 和首页底栏同一套毛玻璃：把从切换器底下滚过去的内容糊掉，
-                      // 玻璃面再压在上面，切换器和内容才分成两层
+                      // 和首页底栏同一套毛玻璃：把从切换器底下滚过去的内容糊掉
                       filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                      child: widget.header,
+                      // 再压一层半透明玻璃面 + 描边（同 GlassNavBar 的 _face）
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(_radius),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Color.alphaBlend(
+                                  Colors.white.withValues(alpha: 0.10),
+                                  SemColors.card),
+                              SemColors.card,
+                            ],
+                            stops: const [0, 0.5],
+                          ),
+                          border: Border.all(color: SemColors.border),
+                        ),
+                        child: widget.header,
+                      ),
                     ),
                   ),
                 ),

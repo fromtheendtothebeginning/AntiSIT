@@ -323,10 +323,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
             // 分段切换器悬浮在顶栏下方：下划收起、上滑展开（见 FloatingTabsHeader）
             child: FloatingTabsHeader(
               topInset: topInset,
-              header: Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _tabsRow(),
-              ),
+              header: _tabsRow(),
               child: PageView(
                 controller: _tabs,
                 onPageChanged: _switchTab,
@@ -340,7 +337,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   /// 悬浮切换器占的高度（列表顶部要让出这么多，内容才不会被它压住）。
-  static const double _tabsRowHeight = 40;
+  static const double _tabsRowHeight = 48;
 
   Widget _tabsRow() => GlassTabs(
         labels: const ['活动广场', '我的报名'],
@@ -365,6 +362,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
       child: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
+          // 记住本页滚动位置：切走再切回来仍停在原处
+          key: const PageStorageKey<String>('activities_market'),
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(12, 4 + topInset + _tabsRowHeight, 12, 20),
           children: [
@@ -511,6 +510,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
         child: RefreshIndicator(
           onRefresh: _loadSigned,
           child: ListView(
+            key: const PageStorageKey<String>('activities_signed'),
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
             children: [
