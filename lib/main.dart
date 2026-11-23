@@ -102,8 +102,8 @@ const Curve _pushCurve = Cubic(0.20, 0.85, 0.20, 1.0);
 /// 返回用的缓动：起步更柔和、整体更「缓」，配合更短的时长。
 const Curve _popCurve = Cubic(0.30, 0.55, 0.35, 1.0);
 
-/// 被盖住的页：延后 22% 才开始左移 + 渐暗，避免「旧页一上来就被推开、闪一下」。
-const Curve _coveredPushCurve = Interval(0.22, 1.0, curve: _pushCurve);
+/// 被盖住的旧页：延后 22% 才开始退让，避免「闪一下就被推开」。
+const Curve _coveredCurve = Interval(0.22, 1.0, curve: _pushCurve);
 
 /// 按动画方向取曲线：正向（前进）用陡的，反向（返回）用缓的。
 Curve _curveFor(Animation<double> a) =>
@@ -133,21 +133,15 @@ class _SlidePageTransition extends StatelessWidget {
         double shift;
         double dim;
         if (covered) {
-          if (secondaryAnimation.status == AnimationStatus.reverse) {
-            // 本页正被「揭露」（返回）：**原地不动、也不压暗**。
-            //
-            // 这里不能沿用「被覆盖」的 -20% 偏移：上层页是往右滑走、逐步露出本页的，
-            // 本页若还停在 -20%，它右侧那 20% 就是空的，上层页滑过去会露出底下的空档
-            // ——观感就是「返回时底部页面闪现」。让它一开始就就位，露出来的每一寸都是本页。
-            shift = 0;
-            dim = 0;
-          } else {
-            // 本页正被上层页覆盖（前进）：延后 22% 再左移 + 渐暗，
-            // 避免「旧页一上来就被推开、闪一下」。
-            final s = _coveredPushCurve.transform(secondaryAnimation.value);
-            shift = -_SlidePageTransitionsBuilder.oldShift * width * s;
-            dim = _SlidePageTransitionsBuilder.oldDim * s;
-          }
+          // 镜头在这里不动，只是被上层页推走：左移 20% + 渐暗。
+          // 前进时 0 → -20%，返回时 -20% → 0（同一公式，动画值反向即可）。
+          //
+          // 关键：**延后这个动作**（前 22% 时长里旧页原地不动）。不延后的话新页
+          // 一起步就把旧页推开、压低，观感是「旧页闪一下就被盖住」；延后之后旧页
+          // 一直是完整、亮的状态，直到被新页盖住一部分才开始退让。
+          final s = _coveredCurve.transform(secondaryAnimation.value);
+          shift = -_SlidePageTransitionsBuilder.oldShift * width * s;
+          dim = _SlidePageTransitionsBuilder.oldDim * s;
         } else {
           // 自己进出：前进从右侧滑到 0；返回从 0 滑出到右侧（同一公式）。
           final c = _curveFor(animation).transform(animation.value);
