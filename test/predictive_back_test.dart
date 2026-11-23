@@ -39,31 +39,34 @@ void main() {
     ));
   }
 
-  testWidgets('普通 push：页面不做透明度淡入，且转场中垫不透明底色', (tester) async {
+  testWidgets('普通 push：新页从右侧滑入，旧页左移 20% 且轻微压暗', (tester) async {
     await pumpApp(tester);
-    // 半透明页面（玻璃顶栏 / 玻璃卡片）不能做淡入：上一页会从透明处透出来（残影），
-    // 低 alpha 叠层还会被抖成黑白噪点。所以转场期间给页面垫一层页面底色。
-    bool hasOpaquePad() => find
-        .byWidgetPredicate(
-            (w) => w is ColoredBox && w.color == SemColors.bg)
-        .evaluate()
-        .isNotEmpty;
-
-    expect(hasOpaquePad(), isFalse, reason: '静止时不该有不透明垫底，玻璃场景底要透出来');
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    final settledOld = tester.getTopLeft(find.text('push')).dx;
 
     await tester.tap(find.text('push'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 90)); // 过渡进行中
-    expect(hasOpaquePad(), isTrue, reason: '转场中必须垫不透明底色，否则上一页会透出来');
-    final mid = tester.getTopLeft(find.text('第二页'));
+
+    // 新页还没落位：仍在右侧
+    final mid = tester.getTopLeft(find.text('第二页')).dx;
+    expect(mid, greaterThan(0), reason: '入场页应当从右侧滑入，动画中还没到 0');
+    // 旧页整体向左移了，并且没有变透明（只用压暗）
+    final midOld = tester.getTopLeft(find.text('push')).dx;
+    expect(midOld, lessThan(settledOld), reason: '旧页应当整体左移');
+    expect(midOld, greaterThan(settledOld - 0.21 * width), reason: '左移不超过 20% 屏宽');
+    expect(find.ancestor(of: find.text('push'), matching: find.byType(Opacity)),
+        findsNothing, reason: '不做淡入淡出：旧页靠压暗分层，不是变透明');
 
     await tester.pumpAndSettle();
-    expect(hasOpaquePad(), isFalse, reason: '转场结束后撤掉垫底');
-    expect(mid.dx, greaterThan(tester.getTopLeft(find.text('第二页')).dx),
-        reason: '入场页从右侧滑入，动画中还没落位');
-  });
-
-  testWidgets('位移 1:1 跟手：进度每涨 0.2，页面就多移 0.2 个屏宽', (tester) async {
+    final settledNew = tester.getTopLeft(find.text('第二页')).dx;
+    expect(mid, greaterThan(settledNew), reason: '入场页从右侧滑入，动画中在落位点右边');
+    // 收尾：新页落位，旧页仍在最左
+    // 落位后旧页被 Navigator 置为 offstage（不绘制），查位置要带 skipOffstage: false
+    expect(tester.getTopLeft(find.text('push', skipOffstage: false)).dx,
+        closeTo(settledOld - 0.2 * width, 2), reason: '旧页最终停在左移 20% 处');
+    expect(tester.getTopLeft(find.text('第二页')).dx, closeTo(settledNew, 1));
+  });  testWidgets('位移 1:1 跟手：进度每涨 0.2，页面就多移 0.2 个屏宽', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();

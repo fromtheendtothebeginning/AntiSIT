@@ -20,97 +20,136 @@ const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
   GlobalCupertinoLocalizations.delegate,
 ];
 
-/// 页面过渡：**不做透明度淡入**，动画期间给页面垫一层不透明底色。
+/// 当前最顶层路由是不是「页面」（[PageRoute]）。
 ///
-/// 早先是 fade-through（旧页前 35% 淡出、新页随后淡入）。但本 App 的页面是**半透明**的
-/// ——顶栏是渐变色带、卡片是半透明玻璃、内容顶部还有 alpha 渐隐——淡入的那几帧里
-/// 上一页会从新页的透明处透出来，看着就是「残影」；两层低 alpha 叠加在 Impeller 下
-/// 还会被抖动（dither）成细碎的**黑白噪点**。页面越重（工具页网格、拓展页的 WebView
-/// 与大卡片）这个窗口越明显，所以那几页每次打开必现；设置页内容轻，几乎看不出来。
+/// 只有页面盖页面时才做「旧页左移 + 变暗」；弹窗 / 菜单 / 底部菜单也会驱动被盖页的
+/// secondaryAnimation，如果不过滤，点开右上角菜单整个页面就会往左跑、变暗。
+final ValueNotifier<bool> topRouteIsPage = ValueNotifier<bool>(true);
+
+/// 跟踪顶层路由类型（注册到 MaterialApp.navigatorObservers）。
+class TopRouteKindObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      topRouteIsPage.value = route is PageRoute;
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      topRouteIsPage.value = previousRoute is PageRoute;
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      topRouteIsPage.value = newRoute is PageRoute;
+}
+/// 页面转场（默认前进 / 返回）：**整页整体位移 + 旧页轻微渐暗**。
 ///
-/// 现在的做法：新页带一点从右侧滑入的位移、全程不透明；动画期间在页面下面垫一层
-/// 页面底色，旧页无从透出。被覆盖页仍保留原来的快速淡出（它已经被盖住，纯属保底）。
-class _FadeThroughTransitionsBuilder extends PageTransitionsBuilder {
-  const _FadeThroughTransitionsBuilder();
+/// 产品定的观感：
+/// * 旧页：整体向左平移 20% 屏宽（先快后慢），同时叠一层很浅的暗色；
+/// * 新页：整块从屏幕右侧滑入（先快后慢、末尾缓慢停住）；
+/// * 不做淡入淡出、不做圆角、不做缩放，也不在页面里垫任何底层——
+///   整个页面当成一个整体来搬。
+///
+/// 实现上有两条硬约束（都是真机踩出来的）：
+/// 1. **不能用 SlideTransition / FractionalTranslation**：它的 applyPaintTransform
+///    要读 child.size，而弹出菜单 / 对话框时 localToGlobal 会沿祖先链量位置，此刻
+///    页面若正在重新布局就会抛「RenderBox was not laid out」，整屏变红卡死
+///    （课程表右上角「更多」）。这里用 Transform.translate（纯矩阵、不读 size）。
+/// 2. **不能按动画值增删子组件**：同样会触发整页重新布局。所以变暗层永远在树里，
+///    只改颜色 alpha（纯绘制、零布局变动）。
+class _SlidePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _SlidePageTransitionsBuilder();
+
+  /// 旧页最后被推走的距离（屏宽比例）。
+  static const double oldShift = 0.20;
+
+  /// 旧页最深压暗（很小的值，只用来拉开层次）。
+  static const double oldDim = 0.10;
+
 
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
       Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
-    return FadeTransition(
-      // 本页被新页覆盖时（secondary 0→1）快速淡出；在上层时不衰减
-      opacity: Tween<double>(begin: 1, end: 0).animate(CurvedAnimation(
-          parent: secondaryAnimation,
-          curve: const Interval(0, 0.35, curve: Curves.easeIn))),
-      // 位移用 Transform 而不是 SlideTransition：后者内部是 FractionalTranslation，
-      // 它的 applyPaintTransform 要读 child.size；弹出菜单 / 对话框时
-      // PopupMenuButton 会调 localToGlobal 沿祖先链量位置，此刻页面若正在重新布局
-      // 就会抛「RenderBox was not laid out」断言，整屏变红卡死（课程表右上角「更多」）。
-      // Transform.translate 只乘矩阵、不读 size，观感与原来的 6% 滑入完全一致。
-      child: _SlideInByTransform(
-        animation: animation,
-        child: _OpaqueWhileAnimating(animation: animation, child: child),
-      ),
+    // 首屏也包一层：它自己进场时动画值已经是 1（不位移），但**被上层页覆盖时要跟着左移**，
+    // 否则「旧页左移 20%」在第一个页面上不生效，前进观感左右不对称。
+    return _SlidePageTransition(
+      animation: animation,
+      secondaryAnimation: secondaryAnimation,
+      child: child,
     );
   }
 }
 
-/// 按动画值做「从右侧 6% 屏宽滑入」的位移，用纯矩阵变换实现（不读子尺寸）。
-class _SlideInByTransform extends StatelessWidget {
-  const _SlideInByTransform({required this.animation, required this.child});
+/// 「先快后慢、末尾缓慢停住」的缓动（expo-out 手感）。
+const Curve _slideCurve = Cubic(0.16, 1.0, 0.30, 1.0);
+
+/// 一页在转场中的位移与压暗：位置和透明度都由动画值算出，只改绘制属性。
+class _SlidePageTransition extends StatelessWidget {
+  const _SlidePageTransition({
+    required this.animation,
+    required this.secondaryAnimation,
+    required this.child,
+  });
 
   final Animation<double> animation;
+  final Animation<double> secondaryAnimation;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final curved = CurvedAnimation(
-      parent: animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
     return AnimatedBuilder(
-      animation: curved,
+      animation: Listenable.merge(
+          [animation, secondaryAnimation, topRouteIsPage]),
       child: child,
       builder: (context, child) {
         final width = MediaQuery.sizeOf(context).width;
+        double shift;
+        double dim;
+
+        if (secondaryAnimation.status == AnimationStatus.reverse &&
+            secondaryAnimation.value > 0.001) {
+          // 本页正被上层页「揭露」：从右侧滑入（1 → 0）
+          shift = secondaryAnimation.value * width;
+          dim = 0;
+        } else if (topRouteIsPage.value && secondaryAnimation.value > 0.001) {
+          // 本页正被新页覆盖：整体左移 + 轻微渐暗（弹窗 / 菜单盖上来不算）
+          final t = _slideCurve.transform(secondaryAnimation.value);
+          shift = -_SlidePageTransitionsBuilder.oldShift * width * t;
+          dim = _SlidePageTransitionsBuilder.oldDim * t;
+        } else if (animation.status == AnimationStatus.reverse) {
+          // 本页正在被返回：同样左移 + 渐暗（与「被覆盖」同一套观感）
+          final t = _slideCurve.transform(1 - animation.value);
+          shift = -_SlidePageTransitionsBuilder.oldShift * width * t;
+          dim = _SlidePageTransitionsBuilder.oldDim * t;
+        } else {
+          // 本页正在进入：整块从右侧滑入
+          shift = (1 - _slideCurve.transform(animation.value)) * width;
+          dim = 0;
+        }
+
         return Transform.translate(
-          offset: Offset((1 - curved.value) * 0.06 * width, 0),
-          child: child,
+          offset: Offset(shift, 0),
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              child!,
+              // 变暗层始终在树里，只改 alpha：不触发布局、不额外开图层。
+              // 用 DecoratedBox 而不是 ColoredBox：测试里靠 ColoredBox 找「磨砂遮罩」，
+              // 换一种绘制组件就不会和它撞车。
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF000000).withValues(alpha: dim),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
   }
-}
-/// 转场进行中给页面垫一层不透明底色，避免上一页透过玻璃组件显形。
-class _OpaqueWhileAnimating extends StatelessWidget {
-  const _OpaqueWhileAnimating({required this.animation, required this.child});
-
-  final Animation<double> animation;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        // 只在动画真的在跑的时候垫底：起始帧和结束帧都不需要
-        final v = animation.value;
-        if (v <= 0.001 || v >= 0.999) return child;
-        return Stack(
-          children: [
-            // 垫的是**同一张场景底**（底色 + 光斑），不是纯色：
-            // 纯色垫底在动画结束撤掉的一瞬间光斑冒出来，背景会跳一下。
-            Positioned.fill(child: GlassScenePaint(wells: GlassScene.wells)),
-            child,
-          ],
-        );
-      },
-      child: child,
-    );
-  }
-}
-
-/// 安卓的返回动画：**普通前进/返回**仍用上面的 fade-through（保持玻璃观感），
+}/// 安卓的返回动画：**普通前进/返回**仍用上面的 fade-through（保持玻璃观感），
 /// 但**系统返回手势**（Android 14+ 可预测式返回）交给官方 [PredictiveBackPageTransitionsBuilder]：
 /// 拖动时当前页跟着手指缩小、露出上一页，松手前还能反悔取消。
 ///
@@ -181,7 +220,7 @@ double _coverFrost(double v) =>
 
 class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     with WidgetsBindingObserver {
-  static const _fade = _FadeThroughTransitionsBuilder();
+  static const _fade = _SlidePageTransitionsBuilder();
 
   /// 一律按「从左边返回」那套走：不论手指从哪条边划进来，当前页都往右滑出、
   /// 上一页从左面露出来（用户要求：不跟着手势边换方向）。
@@ -539,10 +578,10 @@ ThemeData buildAppTheme(GlassPalette c) {
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
       // 安卓：系统返回手势走官方预测式动画，其余仍是淡入淡出
       TargetPlatform.android: _PredictiveOrFadeThroughBuilder(),
-      TargetPlatform.iOS: _FadeThroughTransitionsBuilder(),
-      TargetPlatform.windows: _FadeThroughTransitionsBuilder(),
-      TargetPlatform.macOS: _FadeThroughTransitionsBuilder(),
-      TargetPlatform.linux: _FadeThroughTransitionsBuilder(),
+      TargetPlatform.iOS: _SlidePageTransitionsBuilder(),
+      TargetPlatform.windows: _SlidePageTransitionsBuilder(),
+      TargetPlatform.macOS: _SlidePageTransitionsBuilder(),
+      TargetPlatform.linux: _SlidePageTransitionsBuilder(),
     }),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -636,6 +675,8 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
           supportedLocales: appSupportedLocales,
           localizationsDelegates: appLocalizationsDelegates,
           onNavigationNotification: onNavigationNotification,
+          // 记录顶层路由是不是页面：只有页面盖页面才做「旧页左移 + 变暗」
+          navigatorObservers: [TopRouteKindObserver()],
           // 全局场景底：Scaffold 全透明，光斑（由主题插件给）透出玻璃「折射」感
           builder: (context, child) => GlassBackground(
               wells: theme.wells(preview == null ? brightness : (preview >= 0.5 ? Brightness.dark : Brightness.light)),
