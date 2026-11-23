@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:campus_core/campus_core.dart';
 import 'pages/home_page.dart';
+import 'predictive_back_fade.dart';
 import 'update_download.dart';
 import 'pages/plugin_manager_page.dart';
 import 'plugins/bootstrap.dart';
@@ -200,7 +201,9 @@ class _SlidePageTransition extends StatelessWidget {
       },
     );
   }
-}/// 安卓的返回动画：**普通前进/返回**仍用上面的 fade-through（保持玻璃观感），
+}
+
+/// 安卓的返回动画：**普通前进/返回**仍用上面的 fade-through（保持玻璃观感），
 /// 但**系统返回手势**（Android 14+ 可预测式返回）交给官方 [PredictiveBackPageTransitionsBuilder]：
 /// 拖动时当前页跟着手指缩小、露出上一页，松手前还能反悔取消。
 ///
@@ -210,9 +213,9 @@ class _SlidePageTransition extends StatelessWidget {
 class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
   const _PredictiveOrFadeThroughBuilder();
 
-  // 路由的过渡时长取的是「当前平台这个 builder」的值（MaterialRouteTransitionMixin
-  // 里读 _getPageTransitionBuilder(context)?.transitionDuration），安卓这条链走的是
-  // 本类，所以时长要在这里同步，否则 _SlidePageTransitionsBuilder 上改的时长对
+  // 路由的过渡时长取的是「当前平台这个 builder」的值（`MaterialRouteTransitionMixin`
+  // 里读 `_getPageTransitionBuilder(context)?.transitionDuration`），安卓这条链走的是
+  // 本类，所以时长要在这里同步，否则 `_SlidePageTransitionsBuilder` 上改的时长对
   // 安卓不生效（真机/模拟器上仍是 300ms）。
   @override
   Duration get transitionDuration => _SlidePageTransitionsBuilder.pushDuration;
@@ -223,12 +226,32 @@ class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
       Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
-    return _PredictiveOrFadeThrough(
-      route: route,
-      animation: animation,
-      // 画面沿用默认转场（同一个 builder），手势只驱动它的动画值
-      child: _SlidePageTransitionsBuilder().buildTransitions(
-          route, context, animation, secondaryAnimation, child),
+    // 监听 AppState：在外观设置里切「预测式返回样式」后，返回当前页时立刻生效
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 默认转场（同一个 builder）：没有手势、或手势样式为「位移 + 压暗」时用它
+        final transitions = _SlidePageTransitionsBuilder().buildTransitions(
+            route, context, animation, secondaryAnimation, child);
+        if (AppState.I.predictiveBackStyle == PredictiveBackStyle.fade) {
+          // 旧样式：整页淡化 + 缩小 + 圆角滑出，露出下层页
+          return PredictiveFadeBackGesture(
+            route: route,
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            fallbackTransitions: transitions,
+            commitSpan: (180 /
+                    _SlidePageTransitionsBuilder.popDuration.inMilliseconds)
+                .clamp(0.15, 1.0),
+            child: child,
+          );
+        }
+        return _PredictiveOrFadeThrough(
+          route: route,
+          animation: animation,
+          child: transitions,
+        );
+      },
     );
   }
 }

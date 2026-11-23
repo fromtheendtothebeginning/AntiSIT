@@ -216,6 +216,40 @@ void main() {
         reason: '取消后回到原位');
   });
 
+  testWidgets('淡化样式：拖动时整页淡化 + 1:1 跟手 + 圆角，松手提交才返回', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    AppState.I.predictiveBackStyle = PredictiveBackStyle.fade;
+    addTearDown(() => AppState.I.predictiveBackStyle = PredictiveBackStyle.slide);
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    final settled = tester.getTopLeft(find.text('第二页')).dx;
+
+    await startGesture(tester);
+    await dragTo(tester, 0.4);
+    // 旧样式是 1:1 跟手（没有新样式那个 2 倍放大）
+    final shift = tester.getTopLeft(find.text('第二页')).dx - settled;
+    expect(shift, closeTo(0.4 * width, 0.02 * width),
+        reason: '淡化样式按手指位移 1:1 移动');
+    expect(
+      find.ancestor(of: find.text('第二页'), matching: find.byType(Opacity)),
+      findsWidgets,
+      reason: '淡化样式要给整页套 Opacity',
+    );
+    expect(
+      find.ancestor(of: find.text('第二页'), matching: find.byType(ClipRRect)),
+      findsWidgets,
+      reason: '淡化样式带圆角裁剪',
+    );
+
+    await backGesture(tester, 'commitBackGesture');
+    await tester.pumpAndSettle();
+    expect(find.text('第二页'), findsNothing, reason: '松手提交后完成返回');
+    expect(tester.state<NavigatorState>(find.byType(Navigator)).userGestureInProgress,
+        isFalse, reason: '收尾后不能留下 userGestureInProgress');
+  });
+
   testWidgets('关掉「预测式返回动画」：不接管手势，松手仍按普通返回', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await AppState.I.setPredictiveBack(false);
