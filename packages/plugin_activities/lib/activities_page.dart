@@ -149,9 +149,16 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   void _onPageDragEnd(DragEndDetails d) {
+    const last = 1;
     final v = _dragPos.value ?? _tab.toDouble();
-    _dragPos.value = null; // 交还弹簧：滑块从当前位置弹到落点
-    _setTab(v.round().clamp(0, 1));
+    // 与首页底栏同一套：慢拖就近落位，快速甩动借动量多滑一格
+    final speed = (-d.velocity.pixelsPerSecond.dx / _screenW).clamp(-8.0, 8.0);
+    var target = v.round().clamp(0, last);
+    final next = target + (speed > 0 ? 1 : -1);
+    if (speed.abs() >= 5.0 && next >= 0 && next <= last) target = next;
+    _dragPos.value = null; // 交还弹簧：滑块从当前位置弹到落点（页面跟着同一条弹簧回弹）
+    if (target != _tab) HapticFeedback.selectionClick();
+    _setTab(target);
   }
 
   /// 切换器点选 / 拖动落位都走这里。
@@ -377,13 +384,17 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                 onHorizontalDragStart: _onPageDragStart,
                 onHorizontalDragUpdate: _onPageDragUpdate,
                 onHorizontalDragEnd: _onPageDragEnd,
+                onHorizontalDragCancel: () => _dragPos.value = null,
                 child: ValueListenableBuilder<double>(
                   valueListenable: _pos,
                   builder: (context, rawPos, _) {
                     // 位置兜底：NaN / 越界一律钳回合法范围，别把非法值喂给布局
+                    // 不夹到 0..1：首页底栏的弹簧本身带轻微过冲（欠阻尼），
+                    // 页面跟着它一起过冲再回正，才有「触底反弹」的手感；
+                    // 只兜一个安全范围，防止异常值把页面甩飞。
                     final safePos = rawPos.isFinite ? rawPos : _tab.toDouble();
                     final pos = AppState.I.followSlider
-                        ? safePos.clamp(0.0, 1.0)
+                        ? safePos.clamp(-0.25, 1.25)
                         : _tab.toDouble();
                     final w = MediaQuery.sizeOf(context).width;
                     return Stack(
