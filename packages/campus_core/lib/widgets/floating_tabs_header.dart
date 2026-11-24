@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../app_state.dart';
 import 'theme_palette.dart';
 
 /// 带「悬浮分段切换器」的页面容器：把切换器钉在玻璃顶栏下方，
@@ -27,17 +28,23 @@ class FloatingTabsHeader extends StatefulWidget {
     required this.topInset,
     required this.header,
     required this.child,
+    this.dragPosition,
     this.showDuration = const Duration(milliseconds: 200),
   });
 
   /// 悬浮玻璃顶栏占的高度（切换器就从这下面开始排）。
   final double topInset;
 
-  /// 切换器本体（通常是 GlassTabs）。
+  /// 切换器本体（通常是 `GlassTabs(flat: true, ...)`）。
   final Widget header;
 
   /// 页面内容（通常是 PageView / 列表）。它的滚动通知用来决定收起 / 展开。
   final Widget child;
+
+  /// 横滑切页时把「当前连续位置」写出去（单位 = 段，1.5 = 第 2、3 段中间），
+  /// 切换器据此实时跟手；置回 null（松手）时切换器自己弹到落点。
+  /// 只在「界面实时跟着滑块切换」打开时写。
+  final ValueNotifier<double?>? dragPosition;
 
   /// 收起 / 展开的动画时长。
   final Duration showDuration;
@@ -59,13 +66,27 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
   bool _hidden = false;
 
   bool _onScroll(ScrollNotification n) {
-    if (n is! ScrollUpdateNotification) return false;
-    // 横向滚动 = PageView 在切页：把切换器展开（用户正在换页面，要看得见它）
+    // 横向滚动 = PageView 在切页
     if (n.metrics.axis == Axis.horizontal) {
+      // 用户正在换页面：切换器要展开（收起状态下横滑换页也得看得见它）
       if (_hidden) setState(() => _hidden = false);
+      // 「界面实时跟着滑块切换」打开时，把连续位置写给切换器：拖动中滑块跟手，
+      // 松手（ScrollEnd）置空让切换器自己弹到落点。关掉开关就完全不跟，落位后再切换。
+      final drag = widget.dragPosition;
+      if (drag != null && AppState.I.followSlider) {
+        if (n is ScrollEndNotification) {
+          drag.value = null;
+        } else {
+          final m = n.metrics;
+          final pos = m.viewportDimension <= 0
+              ? 0.0
+              : (m.pixels / m.viewportDimension);
+          drag.value = pos.clamp(0.0, double.infinity);
+        }
+      }
       return false;
     }
-    if (n.metrics.axis != Axis.vertical) return false;
+    if (n is! ScrollUpdateNotification) return false;
     final metrics = n.metrics;
     // 到顶（含下拉回弹）一律展开
     if (metrics.pixels <= 0) {
@@ -113,7 +134,7 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
                       filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       // 再压一层半透明玻璃面 + 描边（同 GlassNavBar 的 _face）
                       child: Container(
-                        padding: const EdgeInsets.all(2),
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(_radius),
                           gradient: LinearGradient(

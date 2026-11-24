@@ -93,6 +93,10 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   // 左右滑动切换：0=活动广场，1=我的报名
   final PageController _tabs = PageController();
   int _tab = 0;
+
+  /// 横滑切页时的「连续位置」：受「界面实时跟着滑块切换」开关控制，
+  /// 打开时切换器滑块跟着手指走，关掉则落位后才跳。
+  final ValueNotifier<double?> _dragPos = ValueNotifier<double?>(null);
   bool _signedLoading = true;
   String? _signedErr;
   List<Map<String, dynamic>> _signed = [];
@@ -114,6 +118,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   @override
   void dispose() {
     _tabs.dispose();
+    _dragPos.dispose();
     super.dispose();
   }
 
@@ -324,6 +329,7 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
             child: FloatingTabsHeader(
               topInset: topInset,
               header: _tabsRow(),
+              dragPosition: _dragPos,
               child: PageView(
                 controller: _tabs,
                 onPageChanged: _switchTab,
@@ -337,9 +343,12 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   /// 悬浮切换器占的高度（列表顶部要让出这么多，内容才不会被它压住）。
-  static const double _tabsRowHeight = 48;
+  static const double _tabsRowHeight = 50;
 
   Widget _tabsRow() => GlassTabs(
+        // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底/描边
+        flat: true,
+        dragPosition: _dragPos,
         labels: const ['活动广场', '我的报名'],
         index: _tab,
         onChanged: (i) => _tabs.animateToPage(
