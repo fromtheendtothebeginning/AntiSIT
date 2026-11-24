@@ -31,16 +31,16 @@ _ActState _stateOf(Map<String, dynamic> a) {
 }
 
 String _stateText(_ActState s) => switch (s) {
-      _ActState.signing => '报名中',
-      _ActState.upcoming => '即将报名',
-      _ActState.ended => '报名已结束',
-    };
+  _ActState.signing => '报名中',
+  _ActState.upcoming => '即将报名',
+  _ActState.ended => '报名已结束',
+};
 
 Color _stateColor(_ActState s) => switch (s) {
-      _ActState.signing => SemColors.success,
-      _ActState.upcoming => SemColors.accent,
-      _ActState.ended => SemColors.textMuted,
-    };
+  _ActState.signing => SemColors.success,
+  _ActState.upcoming => SemColors.accent,
+  _ActState.ended => SemColors.textMuted,
+};
 
 /// 活动广场卡片的状态胶囊：报名窗口内且名额已满时直接标「已人满」，
 /// 不用等用户点进详情、提交报名才知道报不了。
@@ -64,9 +64,9 @@ String campusTagOf(Map a) {
 
 /// 「大类 · 小类」：缺哪项就不显示哪项，两个都没有返回空串（不画这一行）。
 String categoryTextOf(Map a) => [
-      '${a['dlmc'] ?? ''}'.trim(),
-      '${a['lbmc'] ?? ''}'.trim(),
-    ].where((s) => s.isNotEmpty && s != 'null').join(' · ');
+  '${a['dlmc'] ?? ''}'.trim(),
+  '${a['lbmc'] ?? ''}'.trim(),
+].where((s) => s.isNotEmpty && s != 'null').join(' · ');
 
 class ActivitiesPage extends StatefulWidget {
   const ActivitiesPage({super.key});
@@ -130,15 +130,16 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   /// 页面横滑：驱动切换器滑块（默认行为）；「界面实时跟着滑块切换」打开时
   /// 页面同时跟着手指走，关掉则松手落位后才换页。
   void _onPageDragStart(DragStartDetails _) {
-    _screenW = MediaQuery.sizeOf(context).width;
+    final w = MediaQuery.sizeOf(context).width;
+    _screenW = w <= 0 ? 1 : w;
     _dragFrom = _pos.value;
     _dragPos.value = _dragFrom;
   }
 
   void _onPageDragUpdate(DragUpdateDetails d) {
     const last = 1.0; // 两页：0..1
-    final next = ((_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW)
-        .clamp(0.0, last);
+    final raw = (_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW;
+    final next = raw.isFinite ? raw.clamp(0.0, last) : _dragFrom;
     _dragPos.value = next;
     if (AppState.I.followSlider) {
       _pos.value = next;
@@ -163,11 +164,12 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     setState(() => _tab = i);
     if (i == 1 && !_signedLoaded) _loadSigned();
   }
+
   /// 「我的报名」先读本机缓存；是否自动拉新同样看「工具页自动刷新」设置。
   Future<void> _restoreSigned() async {
     final cached = await ToolPageCache.read(_signedCacheKey);
-    final list =
-        ((cached?['items'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final list = ((cached?['items'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>();
     if (!mounted) return;
     if (list.isNotEmpty) {
       setState(() {
@@ -188,8 +190,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     });
     try {
       final r = await ApiClient.I.signedActivities();
-      final list =
-          ((r['activities'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      final list = ((r['activities'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>();
       _signed = list;
       _signedLoaded = true;
       _signedFromCache = false;
@@ -342,6 +344,9 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
       builder: (context, _) {
         // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
         final topInset = glassTopInset(context);
+        // 两页 Widget 只在本页 build 时建一次：拖动中每帧只挪 Positioned，
+        // 不重复构建两整页（真机上拖动才不卡）。
+        final pages = <Widget>[_marketView(topInset), _signedView(topInset)];
         return Scaffold(
           // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
@@ -375,28 +380,28 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
                 child: ValueListenableBuilder<double>(
                   valueListenable: _pos,
                   builder: (context, rawPos, _) {
+                    // 位置兜底：NaN / 越界一律钳回合法范围，别把非法值喂给布局
+                    final safePos = rawPos.isFinite ? rawPos : _tab.toDouble();
                     final pos = AppState.I.followSlider
-                        ? rawPos
+                        ? safePos.clamp(0.0, 1.0)
                         : _tab.toDouble();
                     final w = MediaQuery.sizeOf(context).width;
-                    final pages = [
-                      _marketView(topInset),
-                      _signedView(topInset),
-                    ];
                     return Stack(
                       children: [
                         for (var k = 0; k < pages.length; k++)
-                          Positioned.fill(
+                          // 用 Positioned 摆位而不是 Transform：少一层合成层，
+                          // 和上面的毛玻璃顶栏叠在一起更稳。
+                          Positioned(
+                            left: (k - pos) * w,
+                            top: 0,
+                            bottom: 0,
+                            width: w,
                             child: Offstage(
-                              // 只画当前页和拖动中露出的邻页
                               offstage: (k - pos).abs() >= 0.999,
                               // 隐藏的那页别跑动画（转圈、弹簧都不该在后台空转）
                               child: TickerMode(
                                 enabled: (k - pos).abs() < 0.999,
-                                child: Transform.translate(
-                                  offset: Offset((k - pos) * w, 0),
-                                  child: pages[k],
-                                ),
+                                child: pages[k],
                               ),
                             ),
                           ),
@@ -416,18 +421,18 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   static const double _tabsRowHeight = 50;
 
   Widget _tabsRow() => GlassTabs(
-        // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底/描边
-        flat: true,
-        // 滑块位置写出去（拖动 / 弹簧都会写）：页面据此实时跟手
-        position: _pos,
-        // 页面横滑时驱动滑块（默认行为）
-        dragPosition: _dragPos,
-        labels: const ['活动广场', '我的报名'],
-        index: _tab,
-        onChanged: _onTabChanged,
-        height: 32,
-        fontSize: 11.5,
-      );
+    // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底/描边
+    flat: true,
+    // 滑块位置写出去（拖动 / 弹簧都会写）：页面据此实时跟手
+    position: _pos,
+    // 页面横滑时驱动滑块（默认行为）
+    dragPosition: _dragPos,
+    labels: const ['活动广场', '我的报名'],
+    index: _tab,
+    onChanged: _onTabChanged,
+    height: 32,
+    fontSize: 11.5,
+  );
 
   Widget _marketView(double topInset) {
     final list = _filtered;
@@ -443,7 +448,12 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
           // 记住本页滚动位置：切走再切回来仍停在原处
           key: const PageStorageKey<String>('activities_market'),
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(12, 4 + topInset + _tabsRowHeight, 12, 20),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            4 + topInset + _tabsRowHeight,
+            12,
+            20,
+          ),
           children: [
             ToolRefreshBar(
               refreshing: _loading,
@@ -580,37 +590,37 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
 
   /// 「我的报名」：已报名的第二课堂活动（与活动广场左右滑动切换）。
   Widget _signedView(double topInset) => PageStateView(
-        loading: _signedLoading && _signed.isEmpty,
-        error: _signedErr,
-        empty: !_signedLoading && _signedErr == null && _signed.isEmpty,
-        emptyText: '还没有报名活动',
-        onRetry: _loadSigned,
-        child: RefreshIndicator(
-          onRefresh: _loadSigned,
-          child: ListView(
-            key: const PageStorageKey<String>('activities_signed'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
-            children: [
-              ToolRefreshBar(
-                refreshing: _signedLoading,
-                fromCache: _signedFromCache,
-                failed: _signedRefreshFailed,
-                onRefresh: _loadSigned,
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '共 ${_signed.length} 个活动',
-                  style: TextStyle(fontSize: 12, color: SemColors.textMuted),
-                ),
-              ),
-              const SizedBox(height: 6),
-              for (final a in _signed) _signedCard(a),
-            ],
+    loading: _signedLoading && _signed.isEmpty,
+    error: _signedErr,
+    empty: !_signedLoading && _signedErr == null && _signed.isEmpty,
+    emptyText: '还没有报名活动',
+    onRetry: _loadSigned,
+    child: RefreshIndicator(
+      onRefresh: _loadSigned,
+      child: ListView(
+        key: const PageStorageKey<String>('activities_signed'),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
+        children: [
+          ToolRefreshBar(
+            refreshing: _signedLoading,
+            fromCache: _signedFromCache,
+            failed: _signedRefreshFailed,
+            onRefresh: _loadSigned,
           ),
-        ),
-      );
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '共 ${_signed.length} 个活动',
+              style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final a in _signed) _signedCard(a),
+        ],
+      ),
+    ),
+  );
 
   Widget _signedCard(Map<String, dynamic> a) {
     final status = '${a['status_text'] ?? ''}'.trim();
@@ -674,14 +684,14 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   }
 
   Widget _row(String text) => Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          text,
-          style: TextStyle(fontSize: 12, color: SemColors.textMuted),
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-        ),
-      );
+    alignment: Alignment.centerLeft,
+    child: Text(
+      text,
+      style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+      overflow: TextOverflow.ellipsis,
+      maxLines: 1,
+    ),
+  );
 
   String _short(Object? s) {
     final str = '$s';
@@ -913,110 +923,118 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           body: GlassFadedBody(
             barHeight: topInset,
             child: PageStateView(
-            loading: _loading,
-            error: _err,
-            onRetry: _load,
-            child: ListView(
-              // 顶部让出悬浮顶栏
-              padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
-              children: [
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (a != null)
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          children: [
-                            Capsule(
-                              _stateText(_stateOf(a)),
-                              color: _stateColor(_stateOf(a)),
-                            ),
-                            if (_signed)
-                              Capsule('已报名', color: SemColors.success),
-                            if (a['backfill'] as bool? ?? false)
-                              Capsule('事后补录', color: SemColors.info),
-                            // 大类 / 小类没标注就不画空胶囊
-                            if ('${a['dlmc'] ?? ''}'.trim().isNotEmpty)
-                              Capsule('${a['dlmc']}', color: SemColors.accent),
-                            if ('${a['lbmc'] ?? ''}'.trim().isNotEmpty)
-                              Capsule('${a['lbmc']}', color: SemColors.accent),
-                          ],
+              loading: _loading,
+              error: _err,
+              onRetry: _load,
+              child: ListView(
+                // 顶部让出悬浮顶栏
+                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
+                children: [
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (a != null)
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              Capsule(
+                                _stateText(_stateOf(a)),
+                                color: _stateColor(_stateOf(a)),
+                              ),
+                              if (_signed)
+                                Capsule('已报名', color: SemColors.success),
+                              if (a['backfill'] as bool? ?? false)
+                                Capsule('事后补录', color: SemColors.info),
+                              // 大类 / 小类没标注就不画空胶囊
+                              if ('${a['dlmc'] ?? ''}'.trim().isNotEmpty)
+                                Capsule(
+                                  '${a['dlmc']}',
+                                  color: SemColors.accent,
+                                ),
+                              if ('${a['lbmc'] ?? ''}'.trim().isNotEmpty)
+                                Capsule(
+                                  '${a['lbmc']}',
+                                  color: SemColors.accent,
+                                ),
+                            ],
+                          ),
+                        if (a != null) const SizedBox(height: 10),
+                        Text(
+                          '${a?['name'] ?? ''}',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: SemColors.textPrimary,
+                          ),
                         ),
-                      if (a != null) const SizedBox(height: 10),
-                      Text(
-                        '${a?['name'] ?? ''}',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: SemColors.textPrimary,
+                        const Divider(height: 24),
+                        _kv(
+                          '活动时间',
+                          '${a?['start'] ?? '-'} ~ ${a?['end'] ?? '-'}',
                         ),
-                      ),
-                      const Divider(height: 24),
-                      _kv(
-                        '活动时间',
-                        '${a?['start'] ?? '-'} ~ ${a?['end'] ?? '-'}',
-                      ),
-                      _kv(
-                        '报名时间',
-                        '${a?['bm_start'] ?? '-'} ~ ${a?['bm_end'] ?? '-'}',
-                      ),
-                      _kv('名额', '${a?['quota'] ?? '-'}'),
-                      _kv('校区', '${a?['campus'] ?? '-'}'),
-                      _kv('主办方', '${a?['host'] ?? '-'}'),
-                    ],
+                        _kv(
+                          '报名时间',
+                          '${a?['bm_start'] ?? '-'} ~ ${a?['bm_end'] ?? '-'}',
+                        ),
+                        _kv('名额', '${a?['quota'] ?? '-'}'),
+                        _kv('校区', '${a?['campus'] ?? '-'}'),
+                        _kv('主办方', '${a?['host'] ?? '-'}'),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                if (signup.isNotEmpty)
+                  const SizedBox(height: 10),
+                  if (signup.isNotEmpty)
+                    AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '报名方式',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          for (final qq
+                              in ((signup['qq'] as List?) ?? const []))
+                            _contact('QQ群：', '$qq'),
+                          for (final ph
+                              in ((signup['phone'] as List?) ?? const []))
+                            _contact('电话：', '$ph'),
+                          for (final tips
+                              in ((signup['tips'] as List?) ?? const []))
+                            _bullet('$tips'),
+                          for (final line
+                              in ((signup['contact_lines'] as List?) ??
+                                  const []))
+                            _bullet('$line'),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 10),
                   AppCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          '报名方式',
+                          '活动说明',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 8),
-                        for (final qq in ((signup['qq'] as List?) ?? const []))
-                          _contact('QQ群：', '$qq'),
-                        for (final ph
-                            in ((signup['phone'] as List?) ?? const []))
-                          _contact('电话：', '$ph'),
-                        for (final tips
-                            in ((signup['tips'] as List?) ?? const []))
-                          _bullet('$tips'),
-                        for (final line
-                            in ((signup['contact_lines'] as List?) ?? const []))
-                          _bullet('$line'),
+                        SelectableText(
+                          '${_data?['hdms'] ?? '暂无活动说明'}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.7,
+                            color: SemColors.textSecondary,
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                const SizedBox(height: 10),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '活动说明',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      SelectableText(
-                        '${_data?['hdms'] ?? '暂无活动说明'}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1.7,
-                          color: SemColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
           ),
         );
       },
@@ -1024,21 +1042,21 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   }
 
   Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 68,
-              child: Text(
-                k,
-                style: TextStyle(fontSize: 13, color: SemColors.textMuted),
-              ),
-            ),
-            Expanded(child: Text(v, style: const TextStyle(fontSize: 13))),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 68,
+          child: Text(
+            k,
+            style: TextStyle(fontSize: 13, color: SemColors.textMuted),
+          ),
         ),
-      );
+        Expanded(child: Text(v, style: const TextStyle(fontSize: 13))),
+      ],
+    ),
+  );
 
   /// 底部报名按钮：只在报名窗口内可点；已报名 / 人满 / 条件不符 / 加载中禁用。
   Widget _signupButton(_ActState? state) {
@@ -1087,39 +1105,37 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   }
 
   Widget _bullet(String text) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: EdgeInsets.only(top: 7),
-              child: Icon(Icons.circle, size: 4, color: SemColors.textMuted),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(fontSize: 12, color: SemColors.textSecondary),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(top: 7),
+          child: Icon(Icons.circle, size: 4, color: SemColors.textMuted),
         ),
-      );
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(fontSize: 12, color: SemColors.textSecondary),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _contact(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Text(label,
-                style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
-            Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _copy(label, value),
-              icon: Icon(Icons.copy_rounded,
-                  size: 16, color: SemColors.textMuted),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      children: [
+        Text(label, style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+        Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _copy(label, value),
+          icon: Icon(Icons.copy_rounded, size: 16, color: SemColors.textMuted),
         ),
-      );
+      ],
+    ),
+  );
 }

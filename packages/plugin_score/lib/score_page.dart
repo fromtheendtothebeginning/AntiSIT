@@ -76,15 +76,16 @@ class _ScorePageState extends State<ScorePage> {
   /// 页面横滑：驱动切换器滑块（默认行为）；「界面实时跟着滑块切换」打开时
   /// 页面同时跟着手指走，关掉则松手落位后才换页。
   void _onPageDragStart(DragStartDetails _) {
-    _screenW = MediaQuery.sizeOf(context).width;
+    final w = MediaQuery.sizeOf(context).width;
+    _screenW = w <= 0 ? 1 : w;
     _dragFrom = _pos.value;
     _dragPos.value = _dragFrom;
   }
 
   void _onPageDragUpdate(DragUpdateDetails d) {
     const last = 1.0; // 两页：0..1
-    final next = ((_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW)
-        .clamp(0.0, last);
+    final raw = (_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW;
+    final next = raw.isFinite ? raw.clamp(0.0, last) : _dragFrom;
     _dragPos.value = next;
     if (AppState.I.followSlider) {
       _pos.value = next;
@@ -107,6 +108,7 @@ class _ScorePageState extends State<ScorePage> {
     setState(() => _tab = i);
     if (i == 1 && !_creditsLoaded) _loadCredits();
   }
+
   /// 「加分明细」先读本机缓存；是否自动拉新同样看「工具页自动刷新」设置。
   Future<void> _restoreCredits() async {
     final cached = await ToolPageCache.read(_creditsCacheKey);
@@ -132,8 +134,8 @@ class _ScorePageState extends State<ScorePage> {
     });
     try {
       final r = await ApiClient.I.creditRecords();
-      final list =
-          ((r['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
+      final list = ((r['records'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>();
       _credits = list;
       _creditsLoaded = true;
       _creditsFromCache = false;
@@ -236,6 +238,9 @@ class _ScorePageState extends State<ScorePage> {
       builder: (context, _) {
         // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
         final topInset = glassTopInset(context);
+        // 两页 Widget 只在本页 build 时建一次：拖动中每帧只挪 Positioned，
+        // 不重复构建两整页（真机上拖动才不卡）。
+        final pages = <Widget>[_overviewView(topInset), _creditsView(topInset)];
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
@@ -266,27 +271,28 @@ class _ScorePageState extends State<ScorePage> {
                 child: ValueListenableBuilder<double>(
                   valueListenable: _pos,
                   builder: (context, rawPos, _) {
+                    // 位置兜底：NaN / 越界一律钳回合法范围，别把非法值喂给布局
+                    final safePos = rawPos.isFinite ? rawPos : _tab.toDouble();
                     final pos = AppState.I.followSlider
-                        ? rawPos
+                        ? safePos.clamp(0.0, 1.0)
                         : _tab.toDouble();
                     final w = MediaQuery.sizeOf(context).width;
-                    final pages = [
-                      _overviewView(topInset),
-                      _creditsView(topInset),
-                    ];
                     return Stack(
                       children: [
                         for (var k = 0; k < pages.length; k++)
-                          Positioned.fill(
+                          // 用 Positioned 摆位而不是 Transform：少一层合成层，
+                          // 和上面的毛玻璃顶栏叠在一起更稳。
+                          Positioned(
+                            left: (k - pos) * w,
+                            top: 0,
+                            bottom: 0,
+                            width: w,
                             child: Offstage(
                               offstage: (k - pos).abs() >= 0.999,
                               // 隐藏的那页别跑动画（转圈、弹簧都不该在后台空转）
                               child: TickerMode(
                                 enabled: (k - pos).abs() < 0.999,
-                                child: Transform.translate(
-                                  offset: Offset((k - pos) * w, 0),
-                                  child: pages[k],
-                                ),
+                                child: pages[k],
                               ),
                             ),
                           ),
@@ -306,23 +312,23 @@ class _ScorePageState extends State<ScorePage> {
   static const double _tabsRowHeight = 50;
 
   Widget _tabsRow() => GlassTabs(
-        // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底/描边
-        flat: true,
-        // 滑块位置写出去（拖动 / 弹簧都会写）：页面据此实时跟手
-        position: _pos,
-        // 页面横滑时驱动滑块（默认行为）
-        dragPosition: _dragPos,
-        labels: const ['分数概览', '加分明细'],
-        index: _tab,
-        onChanged: _onTabChanged,
-        height: 32,
-        fontSize: 11.5,
-      );
+    // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底/描边
+    flat: true,
+    // 滑块位置写出去（拖动 / 弹簧都会写）：页面据此实时跟手
+    position: _pos,
+    // 页面横滑时驱动滑块（默认行为）
+    dragPosition: _dragPos,
+    labels: const ['分数概览', '加分明细'],
+    index: _tab,
+    onChanged: _onTabChanged,
+    height: 32,
+    fontSize: 11.5,
+  );
 
   Widget _overviewView(double topInset) {
     final data = _data;
-    final groups =
-        ((data?['groups'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final groups = ((data?['groups'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>();
     final total = asNum(data?['total']);
     final empty = total == null && groups.isEmpty;
 
@@ -338,7 +344,12 @@ class _ScorePageState extends State<ScorePage> {
           // 记住本页滚动位置：切走再切回来仍停在原处
           key: const PageStorageKey<String>('score_overview'),
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            8 + topInset + _tabsRowHeight,
+            12,
+            20,
+          ),
           children: [
             ToolRefreshBar(
               refreshing: _loading,
@@ -442,7 +453,8 @@ class _ScorePageState extends State<ScorePage> {
     // 这类二进制浮点尾巴（页面上曾显示 5.930000000000002），最后再换算回学分。
     final sum = sumCreditThousandths(_credits.map((r) => r['credit'])) / 1000;
     final filtered = _creditsFiltered;
-    final filtering = _creditsQuery.trim().isNotEmpty ||
+    final filtering =
+        _creditsQuery.trim().isNotEmpty ||
         _creditDl.isNotEmpty ||
         _creditLb.isNotEmpty;
     return PageStateView(
@@ -456,7 +468,12 @@ class _ScorePageState extends State<ScorePage> {
         child: ListView(
           key: const PageStorageKey<String>('score_credits'),
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(12, 8 + topInset + _tabsRowHeight, 12, 20),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            8 + topInset + _tabsRowHeight,
+            12,
+            20,
+          ),
           children: [
             ToolRefreshBar(
               refreshing: _creditsLoading,
@@ -751,19 +768,19 @@ class _ScorePageState extends State<ScorePage> {
   }
 
   BoxDecoration _groupDecoration() => BoxDecoration(
-        color: SemColors.stripe,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: SemColors.border),
-      );
+    color: SemColors.stripe,
+    borderRadius: BorderRadius.circular(10),
+    border: Border.all(color: SemColors.border),
+  );
 
   Widget _groupName(String name) => Text(
-        name,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: SemColors.textPrimary,
-        ),
-      );
+    name,
+    style: TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: SemColors.textPrimary,
+    ),
+  );
 
   /// 组达标胶囊：默认蓝；有目标时达标绿 / 未达标红（cs-group-sub）。
   Widget _groupCapsule(num actual, double? targetVal) {
@@ -852,8 +869,8 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
                       soft: targetVal == null
                           ? SemColors.accentSoft
                           : (reached
-                              ? SemColors.successSoft
-                              : SemColors.dangerSoft),
+                                ? SemColors.successSoft
+                                : SemColors.dangerSoft),
                     ),
                     const SizedBox(width: 8),
                   ],
@@ -873,8 +890,9 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
             sizeCurve: Curves.easeOut,
-            crossFadeState:
-                _open ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            crossFadeState: _open
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
             firstChild: const SizedBox(width: double.infinity),
             secondChild: Container(
               width: double.infinity,
@@ -924,8 +942,9 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
       decoration: BoxDecoration(
-        border:
-            last ? null : Border(bottom: BorderSide(color: SemColors.border)),
+        border: last
+            ? null
+            : Border(bottom: BorderSide(color: SemColors.border)),
       ),
       child: Row(
         children: [
