@@ -210,19 +210,36 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   void _jumpTo(int zs, {bool animate = true}) {
-    if (!_pc.hasClients) return;
     final target = zs.clamp(1, _weekCount) - 1;
-    if (animate) {
-      _pc.animateToPage(
-        target,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-      );
-    } else {
-      _pc.jumpToPage(target);
-    }
+    // PageView 尚未挂载（冷启动 _booting 壳期 / 页签刚切进来）时 hasClients=false，
+    // 老实现直接 return——跳页静默丢失后 _shownWeek 已指向目标周，于是出现
+    // 「指示器第 11 周、内容却是第 1 周」的分裂。改为每帧重试直到挂载再跳。
+    _jumpWhenReady(_pc, target, animate: animate);
     _shownWeek = target + 1;
     if (mounted) setState(() {});
+  }
+
+  /// 等 PageView 挂载后跳到目标页（最多等 60 帧 ≈ 1 秒，防无限等）。
+  void _jumpWhenReady(PageController pc, int targetPage, {bool animate = false}) {
+    void attempt(int tries) {
+      if (!mounted) return;
+      if (pc.hasClients) {
+        if (animate) {
+          pc.animateToPage(
+            targetPage,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+          );
+        } else {
+          pc.jumpToPage(targetPage);
+        }
+        return;
+      }
+      if (tries >= 60) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) => attempt(tries + 1));
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => attempt(0));
   }
 
   /// 拉取某周教务课表并入本地 store（登录后懒加载；未登录跳过）。
@@ -1420,25 +1437,17 @@ class _TimetablePageState extends State<TimetablePage> {
               IconButton(
                 onPressed: () {
                   if (!_dayView) {
-                    // 切到日视图：目标页 = 当前显示的周/日；跳转后显式同步状态，
-                    // 不依赖 onPageChanged（attach 到新 PageView 时可能不触发）
+                    // 切到日视图：目标页 = 当前显示的周/日；跳转改为挂载就绪后执行
+                    // （同 _jumpTo 的修复：PageView 未挂载时不再静默丢失）。
                     final target = (_shownWeek - 1) * 7 + _shownDay;
                     setState(() => _dayView = true);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (!mounted || !_dayPc.hasClients) return;
-                      _dayPc.jumpToPage(target);
-                      setState(() {
-                        _shownWeek = target ~/ 7 + 1;
-                        _shownDay = target % 7;
-                      });
-                    });
+                    _jumpWhenReady(_dayPc, target);
+                    _shownWeek = target ~/ 7 + 1;
+                    _shownDay = target % 7;
+                    if (mounted) setState(() {});
                   } else {
                     setState(() => _dayView = false);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted && _pc.hasClients) {
-                        _pc.jumpToPage(_shownWeek - 1);
-                      }
-                    });
+                    _jumpWhenReady(_pc, _shownWeek - 1);
                   }
                 },
                 icon: Icon(
