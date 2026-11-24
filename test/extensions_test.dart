@@ -2259,6 +2259,7 @@ class _FakeNotifier implements ExtNotificationService {
   @override
   Future<void> show({
     required String extId,
+    String? extName,
     String? key,
     required String title,
     String? body,
@@ -2296,6 +2297,9 @@ class _FakeNotifier implements ExtNotificationService {
     calls.add('cancelAll');
     this.extId = extId;
   }
+
+  @override
+  void watchForeground() {}
 }
 
 ExtensionItem _marketItem({List<String> permissions = const []}) =>

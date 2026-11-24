@@ -10,6 +10,7 @@ export 'ext_background.dart';
 export 'ext_consent.dart';
 export 'ext_cookie_bridge.dart';
 export 'ext_files.dart';
+export 'ext_foreground_notice.dart';
 export 'ext_icon.dart';
 export 'ext_login_page.dart';
 export 'ext_net.dart';

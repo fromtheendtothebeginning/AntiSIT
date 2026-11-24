@@ -24,6 +24,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.47.3',
+    date: '2026-11-24',
+    notes: [
+      '修：插件提醒「切到后台能收到、正开着 App 反而收不到」——Android 会压掉前台应用自己的横幅通知，现在开着 App 时改为在页面顶部弹一条横幅',
+      '到点的定时提醒如果那一刻 App 正好开着，几秒内会补成页内横幅，不再只剩通知栏一条',
+      '修：插件要在后台弹窗时，授权框弹不出来却被记成「已拒绝」，之后再也恢复不了；现在问不到用户就不记录，下次能问时再问',
+      '升级后会自动清掉旧版留下的这类假「已拒绝」，拓展的弹窗提醒开关可以重新打开',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.47.2',
     date: '2026-11-23',
     notes: [

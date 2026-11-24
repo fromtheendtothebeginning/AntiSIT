@@ -7,6 +7,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:campus_core/campus_core.dart';
+
 class ExtConsentService {
   ExtConsentService._();
 
@@ -18,6 +20,28 @@ class ExtConsentService {
   final Map<String, Future<bool>> _pending = <String, Future<bool>>{};
 
   String _key(String extId, String capability) => '$_prefix$extId.$capability';
+
+  /// 授权记录的结构版本：2 起「没问过用户」不再被存成 false。
+  static const String _schemaKey = 'plugin.ext.consent.schema';
+  static const int _schema = 2;
+
+  /// 一次性迁移：把旧版留下的**假拒绝**清掉。
+  ///
+  /// 旧版 `ensure` 在「弹不出来」（页面已关 / 在后台 / 没有 context）时也把 false
+  /// 写进偏好，和用户真的点了「拒绝」长得一模一样。结果这些能力在权限页显示
+  /// 「已拒绝」，插件那边 `status().granted === false`，于是自己把弹窗通知关了——
+  /// 用户既没见过那个框，也没法在一次点击里恢复。
+  ///
+  /// 迁移只清掉 false 这一种：真拒绝的用户下次用到时会**再问一次**（就一次，
+  /// 点了拒绝就照常记住），比留着一个他从未见过的「已拒绝」划算。
+  static Future<void> migrateLegacyDenials() async {
+    final prefs = await SharedPreferences.getInstance();
+    if ((prefs.getInt(_schemaKey) ?? 1) >= _schema) return;
+    for (final key in prefs.getKeys().where((k) => k.startsWith(_prefix)).toList()) {
+      if (prefs.getBool(key) == false) await prefs.remove(key);
+    }
+    await prefs.setInt(_schemaKey, _schema);
+  }
 
   Future<Map<String, bool>> grants(String extId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -55,6 +79,12 @@ class ExtConsentService {
   }
 
   /// 已授权返回 true；已拒绝返回 false；没记录就弹框问一次并记住结果。
+  ///
+  /// **问不到用户时（页面已关 / App 在后台 / 弹不出来）不落盘**：只返回 false，
+  /// 下次真正能问的时候再问。早先这里把「问不到」当成用户点了「拒绝」存了下来，
+  /// 于是后台定时器第一次触发（或页面刚好被关掉）就把这项能力**永久拒绝**了——
+  /// 用户再也没见过那个框，permissions.status 一直报 false，插件只好把弹窗通知
+  /// 关掉。这正是「插件用不了系统弹窗」的来源。
   Future<bool> ensure(
     BuildContext context, {
     required String extId,
@@ -83,11 +113,17 @@ class ExtConsentService {
     }
   }
 
+  /// 弹框问一次。**问不到用户时返回 null**（调用方据此不落盘）：
+  /// * 两个 context 都失效了（页面已经关掉，比如后台定时器触发的那一刻）；
+  /// * App 不在前台——框弹出来了用户也看不见，等他回来就成了一条卡住的挂起请求。
   Future<bool?> _ask(
       BuildContext context, String extName, String capability) async {
-    if (!context.mounted) return false;
+    final target = _dialogContext(context);
+    if (target == null) return null;
+    final lifecycle = _lifecycleState();
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return null;
     return showDialog<bool>(
-      context: context,
+      context: target,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: Text(title(capability)),
@@ -104,6 +140,33 @@ class ExtConsentService {
         ],
       ),
     );
+  }
+
+  /// 弹框挂在哪个 context 上：全局 navigator 优先（拓展页自己的 context 可能正好
+  /// 在转场 / 已经失效，但那并不代表用户拒绝），退一步才用传进来的那个。
+  /// 拿不到就返回 null——**不许**把「没有 context」当成拒绝。
+  static BuildContext? _dialogContext(BuildContext context) {
+    try {
+      final host = navKey.currentContext;
+      if (host != null) return host;
+    } catch (_) {
+      // 测试 / 还没有 MaterialApp：继续看调用方的 context
+    }
+    try {
+      return context.mounted ? context : null;
+    } catch (_) {
+      // 失效的 context（页面已关）：它的 mounted 自己就会抛
+      return null;
+    }
+  }
+
+  /// 当前是否在前台。取不到（没有 binding 的测试环境）按「能问」处理。
+  static AppLifecycleState? _lifecycleState() {
+    try {
+      return WidgetsBinding.instance.lifecycleState;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 弹窗标题（App 文案，拓展不能改）。
