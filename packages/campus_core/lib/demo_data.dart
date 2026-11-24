@@ -1,4 +1,6 @@
 
+import 'direct/course_select.dart';
+
 /// 演示模式假数据：按请求路径路由，响应结构与 campus-api.md 保持一致。
 class DemoData {
   DemoData._();
@@ -33,6 +35,8 @@ class DemoData {
         return {'ok': true, 'data': _score};
       case '/api/campus-open/grades':
         return {'ok': true, 'data': _grades(query: query)};
+      case '/api/campus-open/academic':
+        return {'ok': true, 'data': _academic()};
       case '/api/campus-open/activities':
         return {'ok': true, 'data': {'student_id': '25110001', 'activities': _demoActivities()}};
       case '/api/campus-open/activities/signed':
@@ -360,6 +364,243 @@ class DemoData {
     };
   }
 
+  // ==================== 学业情况（演示） ====================
+
+  /// 学业情况：整体统计（含绩点）+ 培养方案类别树 + 类别课程明细。
+  static Map<String, dynamic> _academic() {
+    Map<String, dynamic> course(String name, String code, String score,
+            String nature, String term, String status, num credit) =>
+        {
+          'name': name,
+          'code': code,
+          'score': score,
+          'nature': nature,
+          'term': term,
+          'statusText': status,
+          'credit': credit,
+        };
+    Map<String, dynamic> cat(String id, String name, String parent,
+            num required, num earned, List<Map<String, dynamic>> courses) =>
+        {
+          'id': id,
+          'name': name,
+          'parent': parent,
+          'required': required,
+          'earned': earned,
+          'courses': courses,
+        };
+
+    return {
+      'sid': '25110001',
+      'statistics': {
+        'gpa': 3.62,
+        'planed': {'total': 46, 'passed': 31, 'failed': 1, 'missed': 9, 'in': 5},
+        'unplaned': {'passed': 3, 'failed': 0},
+      },
+      'categories': [
+        cat('c-root-main', '主修课程', '', 160, 62.5, const <Map<String, dynamic>>[]),
+        cat('c-general', '通识必修课', 'c-root-main', 45, 28, [
+          course('高等数学(下)', 'B122001', '86', '必修', '2026-2027-1', '通过', 5),
+          course('大学英语(二)', 'B131002', '91', '必修', '2026-2027-1', '通过', 3),
+          course('思想道德与法治', 'B121003', '88', '必修', '2026-2027-1', '通过', 3),
+          course('体育(二)', 'B141004', '—', '必修', '2026-2027-1', '在读', 1),
+        ]),
+        cat('c-basic', '学科基础课', 'c-root-main', 32, 18.5, [
+          course('C语言程序设计', 'B211101', '92', '必修', '2026-2027-1', '通过', 4),
+          course('离散数学', 'B211102', '79', '必修', '2026-2027-1', '通过', 3.5),
+          course('数据结构', 'B211103', '—', '必修', '2026-2027-1', '在读', 3),
+        ]),
+        cat('c-major', '专业核心课', 'c-root-main', 40, 16, [
+          course('计算机组成原理', 'B221201', '83', '必修', '2026-2027-1', '通过', 4),
+          course('操作系统', 'B221202', '—', '必修', '2026-2027-1', '在读', 4),
+          course('计算机网络', 'B221203', '—', '必修', '2026-2027-2', '未修', 3),
+        ]),
+        cat('c-practice', '集中实践环节', 'c-root-main', 43, 0, [
+          course('程序设计实践', 'B231301', '—', '必修', '2026-2027-1', '在读', 2),
+          course('军事训练', 'B231302', '—', '必修', '2026-2027-2', '未修', 2),
+        ]),
+        cat('c-elective', '通识选修课', 'c-root-other', 10, 2, [
+          course('艺术鉴赏', 'B311401', '优秀的', '选修', '2026-2027-1', '通过', 1),
+          course('创新创业基础', 'B311402', '良好', '选修', '2026-2027-1', '通过', 1),
+        ]),
+        cat('c-root-other', '其他课程', '', 10, 2, const <Map<String, dynamic>>[]),
+      ],
+    };
+  }
+
+  // ==================== 抢课（演示） ====================
+
+  /// 选课轮次（演示）。
+  static List<CourseScope> courseScopes() => const [
+        CourseScope(
+          id: 'demo-scope-1',
+          name: '第二轮选课',
+          term: '2026-2027-1',
+          params: {'xkkz_id': 'demo-xkkz-1', 'xkkz_xh': '1'},
+        ),
+        CourseScope(
+          id: 'demo-scope-2',
+          name: '补选 / 退选',
+          term: '2026-2027-1',
+          params: {'xkkz_id': 'demo-xkkz-2', 'xkkz_xh': '1'},
+        ),
+      ];
+
+  /// 演示用可选课程：名称 / 教师 / 时间 / 地点 / 学分 / 容量。
+  static const List<Map<String, Object>> _demoOffers = [
+    {
+      'id': 'o-python',
+      'name': 'Python 数据分析',
+      'teacher': '李明',
+      'time': '周三 第 5-6 节',
+      'location': '实验楼 402',
+      'credit': '2.0',
+      'capacity': 60,
+      'selected': 41,
+    },
+    {
+      'id': 'o-ai',
+      'name': '人工智能导论',
+      'teacher': '王芳',
+      'time': '周四 第 3-4 节',
+      'location': '二教 E201',
+      'credit': '2.0',
+      'capacity': 50,
+      'selected': 50,
+    },
+    {
+      'id': 'o-web',
+      'name': 'Web 前端开发',
+      'teacher': '张伟',
+      'time': '周二 第 7-8 节',
+      'location': '实验楼 506',
+      'credit': '1.5',
+      'capacity': 45,
+      'selected': 12,
+    },
+    {
+      'id': 'o-robot',
+      'name': '机器人创新实践',
+      'teacher': '陈强',
+      'time': '周五 第 5-6 节',
+      'location': '工程训练中心',
+      'credit': '2.0',
+      'capacity': 30,
+      'selected': 27,
+    },
+    {
+      'id': 'o-music',
+      'name': '音乐鉴赏',
+      'teacher': '刘敏',
+      'time': '周一 第 9-10 节',
+      'location': '艺术楼 201',
+      'credit': '1.0',
+      'capacity': 80,
+      'selected': 63,
+    },
+  ];
+
+  static int _offerCap(Object? v) => v is int ? v : int.tryParse('$v') ?? 0;
+
+  /// 可选课程列表（演示）：按轮次 / 关键词过滤，支持分页。
+  static List<CourseOffer> courseOffers(
+    CourseScope scope, {
+    String keyword = '',
+    int start = 0,
+    int pageSize = 50,
+  }) {
+    final kw = keyword.trim().toLowerCase();
+    final all = [
+      for (final o in _demoOffers)
+        CourseOffer(
+          id: '${o['id']}',
+          name: '${o['name']}',
+          teacher: '${o['teacher']}',
+          time: '${o['time']}',
+          location: '${o['location']}',
+          credit: '${o['credit']}',
+          capacity: _offerCap(o['capacity']),
+          selected: _offerCap(o['selected']),
+          scopeId: scope.id,
+          raw: {'kch_id': '${o['id']}', 'kcmc': '${o['name']}'},
+        ),
+    ].where((o) {
+      if (kw.isEmpty) return true;
+      return o.name.toLowerCase().contains(kw) ||
+          o.teacher.toLowerCase().contains(kw) ||
+          o.location.toLowerCase().contains(kw);
+    }).toList();
+    if (start >= all.length) return const [];
+    final end = (start + pageSize).clamp(0, all.length);
+    return all.sublist(start, end);
+  }
+
+  /// 某门课的教学班（演示）：每门给两个班，方便看展开效果。
+  static List<CourseSection> courseSections(CourseOffer offer) {
+    final cap = offer.capacity ?? 50;
+    final sel = offer.selected ?? 0;
+    return [
+      CourseSection(
+        id: '${offer.id}-s1',
+        courseId: offer.id,
+        name: '${offer.name} 01 班',
+        teacher: offer.teacher,
+        time: offer.time,
+        location: offer.location,
+        capacity: cap,
+        selected: sel,
+        raw: {'jxb_id': '${offer.id}-s1', 'do_jxb_id': '${offer.id}-s1'},
+      ),
+      CourseSection(
+        id: '${offer.id}-s2',
+        courseId: offer.id,
+        name: '${offer.name} 02 班',
+        teacher: offer.teacher.isEmpty ? '待定' : '${offer.teacher}等',
+        time: '${offer.time}（另一时段）',
+        location: '${offer.location}（分班）',
+        capacity: cap,
+        selected: (sel - 6).clamp(0, cap),
+        raw: {'jxb_id': '${offer.id}-s2', 'do_jxb_id': '${offer.id}-s2'},
+      ),
+    ];
+  }
+
+  /// 演示模式下「已选课程」（先放一门，方便看列表不是空的）。
+  static final Map<String, SelectedCourse> _demoSelected = {
+    'o-music|o-music-s1': const SelectedCourse(
+      id: 'sel-o-music',
+      name: '音乐鉴赏',
+      teacher: '刘敏',
+      courseId: 'o-music',
+      sectionId: 'o-music-s1',
+    ),
+  };
+
+  /// 提交选课（演示）：满员 / 已选走对应状态，其余一律成功并记进「已选」。
+  static CourseSelectResult selectCourse(
+      CourseOffer offer, CourseSection section) {
+    final key = '${offer.id}|${section.id}';
+    if (_demoSelected.containsKey(key)) {
+      return const CourseSelectResult(
+          CourseSelectStatus.alreadySelected, '这门课已经选过了（演示）');
+    }
+    if (section.isFull) {
+      return const CourseSelectResult(CourseSelectStatus.noCapacity, '教学班名额已满（演示）');
+    }
+    _demoSelected[key] = SelectedCourse(
+      id: 'sel-${section.id}',
+      name: offer.name,
+      teacher: section.teacher,
+      courseId: offer.id,
+      sectionId: section.id,
+    );
+    return CourseSelectResult(
+        CourseSelectStatus.success, '选课成功：${offer.name}（演示）');
+  }
+
+  /// 已选课程列表（演示）。
+  static List<SelectedCourse> selectedCourses(CourseScope scope) =>
+      _demoSelected.values.toList();
   static const _exams = [
     {'name': '高等数学(下)', 'ksmc': '期末考试', 'date': '2027-01-10', 'start': '08:00', 'end': '09:40', 'place': '二教E101', 'seat': '12', 'ksfs': '笔试'},
     {'name': '数据结构', 'ksmc': '期末考试', 'date': '2027-01-12', 'start': '10:00', 'end': '11:40', 'place': '一教A203', 'seat': '05', 'ksfs': '笔试'},

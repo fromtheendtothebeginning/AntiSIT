@@ -51,7 +51,8 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
       ? null
       : _scopes[_scopeIndex];
 
-  bool get _isDirect => AppState.I.direct && !AppState.I.demo;
+  /// 能拿选课数据：直连模式，或演示模式（演示走本地假数据）。
+  bool get _isDirect => AppState.I.direct || AppState.I.demo;
 
   @override
   void initState() {
