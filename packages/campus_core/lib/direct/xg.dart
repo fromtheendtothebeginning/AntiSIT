@@ -414,8 +414,10 @@ class XgClient {
     return out;
   }
 
-  /// 第二课堂加分明细：POST /bizFlow/result/group/list.zf `groupCode=xshd`。
-  /// 每条 = 一次活动参与记录（活动名 / 大类 / 学分 / 审批状态 / 时间）。
+  /// 第二课堂加分明细：POST /bizFlow/result/group/list.zf `groupCode=xsrd`
+  /// （学工「第二课堂 → 学分认定管理」的**学分认定**结果，即「学分明细查询」板块；
+  /// 每条 = 一次活动参与记录，学分在 `rdxs`（认定学分）——
+  /// 报名结果查询（groupCode=xshd）里没有学分字段，别从那边取）。
   Future<List<Map<String, dynamic>>> creditRecords({int maxPages = 10}) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final out = <Map<String, dynamic>>[];
@@ -424,7 +426,7 @@ class XgClient {
     for (var page = 1; page <= maxPages; page++) {
       final resp = await _http.postForm(
         '$_api/bizFlow/result/group/list.zf',
-        {'groupCode': 'xshd', 'currentPage': '$page', 'showCount': '100'},
+        {'groupCode': 'xsrd', 'currentPage': '$page', 'showCount': '100'},
         headers: _xgHeaders,
         redirect: false,
       );
@@ -447,11 +449,12 @@ class XgClient {
             '${it['INSTANCE_ID'] ?? it['ID'] ?? ''}'.trim();
         if (instanceId.isNotEmpty && !seen.add(instanceId)) continue;
         out.add({
-          'id': '${it['INSTANCE_ID'] ?? it['ID'] ?? it['hdid'] ?? name}',
+          'id': '${it['INSTANCE_ID'] ?? it['ID'] ?? name}',
           'name': name,
           'dldm': (it['dldm'] ?? '').toString(),
           'lbdm': (it['lbdm'] ?? '').toString(),
-          'credit': '${it['hdxf'] ?? it['jcxsxf'] ?? ''}',
+          // 认定学分：xsrd 组在 rdxs（认定学分）/ xss；旧字段链兜底，取到为止。
+          'credit': '${it['rdxs'] ?? it['xss'] ?? it['hdxf'] ?? it['jcxsxf'] ?? ''}',
           'status': (it['flowstatusmc'] ?? it['FLOWSTATUS'] ?? '').toString(),
           'start': it['hdkssj'],
           'end': it['hdjssj'],

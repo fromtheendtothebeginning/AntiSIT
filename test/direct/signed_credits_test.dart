@@ -55,17 +55,19 @@ void main() {
     });
   });
 
-  group('加分明细（groupCode=xshd）', () {
-    test('每条 = 活动 + 学分 + 审批状态', () async {
+  group('加分明细（groupCode=xsrd 学分认定）', () {
+    test('每条 = 活动 + 认定学分 + 审批状态', () async {
       final c = await login();
       final rows = await c.creditRecords();
       expect(rows.length, 2);
       expect(rows.first['name'], 'AI 赋能学习效率提升讲座');
-      expect(rows.first['credit'], '0.20');
-      expect(rows.first['dldm'], '德育');
-      expect(rows.first['lbdm'], '讲座报告');
+      expect(rows.first['credit'], '0.20'); // rdxs 认定学分
+      expect(rows.first['dldm'], '美育');
+      expect(rows.first['lbdm'], '校园文化活动');
       expect(rows.first['status'], '通过');
-      expect(rows.first['start'], '2026-10-10 14:00:00');
+      // xsrd 组没有活动起止时间，页面回退用 CREATE_TIME（认定/提交时间）
+      expect(rows.first['start'], null);
+      expect(rows.first['date'], '2026-10-11 09:00:00');
       expect(rows[1]['credit'], '0.50');
     });
   });
