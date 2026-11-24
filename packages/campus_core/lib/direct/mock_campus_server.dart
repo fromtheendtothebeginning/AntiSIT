@@ -691,7 +691,7 @@ $casErrorSkeleton
           },
         });
 
-      // 我的报名：all=0 只回本人已报名（bm=1）；all=1 是全部活动。
+      // （2026-11 起真实接口 hdgl/list.zf 被确认为匿名公共池，「我的报名」已改走下方 bizFlow；此 case 保留作协议兼容。）
       case '/zftal-xgxt-web/hdgl/list.zf':
         if (!s.xg) return _redirect(res, _casLoginUrl(path));
         final signedOnly = (form['all'] ?? '1') == '0';
@@ -736,6 +736,7 @@ $casErrorSkeleton
             'rows': [
               {
                 'INSTANCE_ID': 'inst-1',
+                'hdid': 'm001',
                 'hdmc': 'AI 赋能学习效率提升讲座',
                 'dldm': '德育', 'lbdm': '讲座报告',
                 'hdxf': '0.20', 'jcxsxf': '0.2', 'zzxsxf': '0.2',
@@ -745,6 +746,7 @@ $casErrorSkeleton
               },
               {
                 'INSTANCE_ID': 'inst-2',
+                'hdid': 'm002',
                 'hdmc': '秋季校园马拉松志愿者',
                 'dldm': '劳育', 'lbdm': '志愿公益',
                 'hdxf': '0.50', 'jcxsxf': '0.5', 'zzxsxf': '0.5',
