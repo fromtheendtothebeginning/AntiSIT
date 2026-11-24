@@ -125,11 +125,31 @@ class _ScorePageState extends State<ScorePage> {
     if (!mounted) return;
     if (list.isNotEmpty) {
       setState(() {
-        _credits = list;
+        _credits = _sortCreditsNewestFirst(list);
         _creditsLoading = false;
         _creditsFromCache = true;
       });
     }
+  }
+
+  /// 加分明细按时间**从最新开始**排：优先活动开始时间（start），
+  /// 没有就用记录时间（date，认定/提交时间）；都没有的排最后。
+  /// 两类时间都是 `yyyy-MM-dd HH:mm:ss` 格式，字典序即时间序。
+  static List<Map<String, dynamic>> _sortCreditsNewestFirst(
+    List<Map<String, dynamic>> list,
+  ) {
+    String key(Map<String, dynamic> r) =>
+        '${(r['start'] ?? '').toString().trim().isNotEmpty ? r['start'] : r['date'] ?? ''}'
+            .trim();
+    final sorted = [...list]..sort((a, b) {
+        final ka = key(a);
+        final kb = key(b);
+        if (ka == kb) return 0;
+        if (ka.isEmpty) return 1; // 没有时间的排最后
+        if (kb.isEmpty) return -1;
+        return kb.compareTo(ka); // 降序 = 最新在前
+      });
+    return sorted;
   }
 
   Future<void> _loadCredits() async {
@@ -144,7 +164,7 @@ class _ScorePageState extends State<ScorePage> {
       final r = await ApiClient.I.creditRecords();
       final list = ((r['records'] as List?) ?? const [])
           .cast<Map<String, dynamic>>();
-      _credits = list;
+      _credits = _sortCreditsNewestFirst(list);
       _creditsLoaded = true;
       _creditsFromCache = false;
       await ToolPageCache.write(_creditsCacheKey, {'records': list});
