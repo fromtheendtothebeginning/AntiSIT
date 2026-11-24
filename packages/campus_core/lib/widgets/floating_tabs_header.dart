@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-import '../app_state.dart';
 import 'theme_palette.dart';
 
 /// 带「悬浮分段切换器」的页面容器：把切换器钉在玻璃顶栏下方，
@@ -70,10 +69,10 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
     if (n.metrics.axis == Axis.horizontal) {
       // 用户正在换页面：切换器要展开（收起状态下横滑换页也得看得见它）
       if (_hidden) setState(() => _hidden = false);
-      // 「界面实时跟着滑块切换」打开时，把连续位置写给切换器：拖动中滑块跟手，
-      // 松手（ScrollEnd）置空让切换器自己弹到落点。关掉开关就完全不跟，落位后再切换。
+      // 把连续位置写给切换器：拖动页面时滑块实时跟随（默认行为，不受开关控制）。
+      // 松手（ScrollEnd）置空，让切换器自己弹到落点。
       final drag = widget.dragPosition;
-      if (drag != null && AppState.I.followSlider) {
+      if (drag != null) {
         if (n is ScrollEndNotification) {
           drag.value = null;
         } else {

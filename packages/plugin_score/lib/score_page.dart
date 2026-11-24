@@ -32,12 +32,17 @@ class _ScorePageState extends State<ScorePage> {
   String _cohort = '';
 
   // 左右滑动切换：0=分数概览，1=加分明细
-  final PageController _tabs = PageController();
   int _tab = 0;
 
-  /// 横滑切页时的「连续位置」：受「界面实时跟着滑块切换」开关控制，
-  /// 打开时切换器滑块跟着手指走，关掉则落位后才跳。
+  /// 连续位置（单位 = 页）：滑块自己的弹簧、用户拖滑块都会写到这里，
+  /// 页面据此实时平移；「界面实时跟着滑块切换」关掉时页面按落位页显示。
+  final ValueNotifier<double> _pos = ValueNotifier<double>(0);
+
+  /// 页面横滑时驱动切换器滑块的位置（默认行为，不受开关控制）；
+  /// null = 交还滑块自己的弹簧。
   final ValueNotifier<double?> _dragPos = ValueNotifier<double?>(null);
+  double _dragFrom = 0;
+  double _screenW = 1;
   bool _creditsLoading = true;
   String? _creditsErr;
   List<Map<String, dynamic>> _credits = [];
@@ -63,17 +68,45 @@ class _ScorePageState extends State<ScorePage> {
 
   @override
   void dispose() {
-    _tabs.dispose();
+    _pos.dispose();
     _dragPos.dispose();
     super.dispose();
   }
 
-  void _switchTab(int i) {
+  /// 页面横滑：驱动切换器滑块（默认行为）；「界面实时跟着滑块切换」打开时
+  /// 页面同时跟着手指走，关掉则松手落位后才换页。
+  void _onPageDragStart(DragStartDetails _) {
+    _screenW = MediaQuery.sizeOf(context).width;
+    _dragFrom = _pos.value;
+    _dragPos.value = _dragFrom;
+  }
+
+  void _onPageDragUpdate(DragUpdateDetails d) {
+    const last = 1.0; // 两页：0..1
+    final next = ((_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW)
+        .clamp(0.0, last);
+    _dragPos.value = next;
+    if (AppState.I.followSlider) {
+      _pos.value = next;
+      final nearest = next.round();
+      if (nearest != _tab) _setTab(nearest);
+    }
+  }
+
+  void _onPageDragEnd(DragEndDetails d) {
+    final v = _dragPos.value ?? _tab.toDouble();
+    _dragPos.value = null; // 交还弹簧：滑块从当前位置弹到落点
+    _setTab(v.round().clamp(0, 1));
+  }
+
+  /// 切换器点选 / 拖动落位都走这里。
+  void _onTabChanged(int i) => _setTab(i);
+
+  void _setTab(int i) {
     if (i == _tab) return;
     setState(() => _tab = i);
     if (i == 1 && !_creditsLoaded) _loadCredits();
   }
-
   /// 「加分明细」先读本机缓存；是否自动拉新同样看「工具页自动刷新」设置。
   Future<void> _restoreCredits() async {
     final cached = await ToolPageCache.read(_creditsCacheKey);
@@ -223,10 +256,44 @@ class _ScorePageState extends State<ScorePage> {
               topInset: topInset,
               header: _tabsRow(),
               dragPosition: _dragPos,
-              child: PageView(
-                controller: _tabs,
-                onPageChanged: _switchTab,
-                children: [_overviewView(topInset), _creditsView(topInset)],
+              // 不用 PageView：它和切换器滑块互相抢手势/回弹。改成和首页底栏同一套做法——
+              // 一个连续位置 _pos 驱动两页平移，横滑手势只改位置。
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragStart: _onPageDragStart,
+                onHorizontalDragUpdate: _onPageDragUpdate,
+                onHorizontalDragEnd: _onPageDragEnd,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _pos,
+                  builder: (context, rawPos, _) {
+                    final pos = AppState.I.followSlider
+                        ? rawPos
+                        : _tab.toDouble();
+                    final w = MediaQuery.sizeOf(context).width;
+                    final pages = [
+                      _overviewView(topInset),
+                      _creditsView(topInset),
+                    ];
+                    return Stack(
+                      children: [
+                        for (var k = 0; k < pages.length; k++)
+                          Positioned.fill(
+                            child: Offstage(
+                              offstage: (k - pos).abs() >= 0.999,
+                              // 隐藏的那页别跑动画（转圈、弹簧都不该在后台空转）
+                              child: TickerMode(
+                                enabled: (k - pos).abs() < 0.999,
+                                child: Transform.translate(
+                                  offset: Offset((k - pos) * w, 0),
+                                  child: pages[k],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -241,14 +308,13 @@ class _ScorePageState extends State<ScorePage> {
   Widget _tabsRow() => GlassTabs(
         // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底/描边
         flat: true,
+        // 滑块位置写出去（拖动 / 弹簧都会写）：页面据此实时跟手
+        position: _pos,
+        // 页面横滑时驱动滑块（默认行为）
         dragPosition: _dragPos,
         labels: const ['分数概览', '加分明细'],
         index: _tab,
-        onChanged: (i) => _tabs.animateToPage(
-          i,
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-        ),
+        onChanged: _onTabChanged,
         height: 32,
         fontSize: 11.5,
       );
