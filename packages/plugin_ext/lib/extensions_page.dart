@@ -448,6 +448,15 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
               ),
               onTap: () => Navigator.pop(ctx, 'consent'),
             ),
+            if (AppState.I.demo && e.id == 'demo-note') ...[
+              ListTile(
+                leading: const Icon(Icons.restart_alt_rounded),
+                title: const Text('降级到 v1.0.0（重测演示）'),
+                subtitle: const Text('把这条假拓展降回旧版，重走「可更新 → 跳市场」流程',
+                    style: TextStyle(fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, 'demo-downgrade'),
+              ),
+            ],
             if (!builtin) ...[
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
@@ -466,6 +475,9 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     );
     if (!mounted) return;
     switch (pick) {
+      case 'demo-downgrade':
+        await _store.demoResetNote();
+        _toast('演示记事本已降回 v1.0.0，点它重走跳转流程');
       case 'detail':
         await _edit(item: e, isNew: false, readOnly: true);
       case 'consent':
