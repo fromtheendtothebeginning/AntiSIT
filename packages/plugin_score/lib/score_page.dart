@@ -87,10 +87,10 @@ class _ScorePageState extends State<ScorePage> {
     final raw = (_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW;
     final next = raw.isFinite ? raw.clamp(0.0, last) : _dragFrom;
     _dragPos.value = next;
+    // 拖动过程中只动位置、不切页（不 setState）：跟着手指走的视觉由 _pos 驱动，
+    // 中途重建整页既卡又容易在模拟器上撞到框架断言；落位在松手时一次定。
     if (AppState.I.followSlider) {
       _pos.value = next;
-      final nearest = next.round();
-      if (nearest != _tab) _setTab(nearest);
     }
   }
 
