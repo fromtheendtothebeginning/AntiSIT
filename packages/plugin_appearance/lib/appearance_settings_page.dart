@@ -218,6 +218,44 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                   onChanged: (v) => st.setPredictiveBack(v),
                 ),
               ),
+              if (st.predictiveBack) ...[
+                const SizedBox(height: 10),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.animation_rounded, size: 20),
+                          const SizedBox(width: 10),
+                          const Text('预测式返回样式',
+                              style: TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '「位移」与默认返回动画一致：整页往右让出、下层页就位；'
+                        '「淡化」是旧样式：当前页整页淡出并轻微缩小、露出下层页',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 12),
+                      GlassTabs(
+                        labels: const ['位移 + 压暗', '淡化 + 透明'],
+                        index:
+                            st.predictiveBackStyle == PredictiveBackStyle.fade
+                                ? 1
+                                : 0,
+                        onChanged: (i) => st.setPredictiveBackStyle(
+                            i == 1
+                                ? PredictiveBackStyle.fade
+                                : PredictiveBackStyle.slide),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               AppCard(
                 padding: const EdgeInsets.symmetric(vertical: 4),

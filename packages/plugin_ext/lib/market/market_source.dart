@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:campus_core/campus_core.dart';
+
 import 'market_entry.dart';
 
 /// 市场目录的**签名公钥**（写死在 App 里 = 信任根）。
@@ -118,6 +120,11 @@ class MarketSource extends ChangeNotifier {
   /// 目录只有几 KB、一次会话拉一次，绕开边缘缓存换来「发了就能看到」是划算的。
   /// 拓展包本身按版本号分路径，不受影响。
   Future<void> load({bool force = false}) async {
+    // 演示模式：目录是内置假数据，不打网络（安装/更新也走捷径，见 MarketInstaller）。
+    if (AppState.I.demo) {
+      _use(_demoEntries(), base: 'demo://local', cached: false, at: DateTime.now());
+      return;
+    }
     if (status == MarketStatus.loading) return;
     if (ready && !force) return;
 
@@ -178,6 +185,47 @@ class MarketSource extends ChangeNotifier {
     error = problems.isEmpty ? '拉不到市场目录' : problems.join('\n');
     notifyListeners();
   }
+
+  /// 演示模式专用的假目录：一条装着旧版（演示「可更新 → 跳市场」），一条没装过。
+  static List<MarketEntry> _demoEntries() => const [
+    MarketEntry(
+      id: 'demo-note',
+      name: '演示记事本',
+      desc: '演示模式专用的假拓展：装着 v1.0.0，目录里是 v2.0.0，用来演示'
+          '「有更新 → 跳转插件市场 → 更新」的完整流程。',
+      author: '演示',
+      category: '工具',
+      icon: '📒',
+      type: 'bundle',
+      version: '2.0.0',
+      url: '',
+      homepage: '',
+      zip: 'demo/demo-note-2.0.0.zip',
+      sha256: 'demo-note-2',
+      size: 0,
+      permissions: ['storage'],
+      minAppVersion: '',
+      runtime: 'cordis',
+    ),
+    MarketEntry(
+      id: 'demo-clock',
+      name: '演示时钟',
+      desc: '演示模式专用的假拓展（还没装）：用来看市场里普通条目的安装入口。',
+      author: '演示',
+      category: '工具',
+      icon: '⏰',
+      type: 'bundle',
+      version: '1.0.0',
+      url: '',
+      homepage: '',
+      zip: 'demo/demo-clock-1.0.0.zip',
+      sha256: 'demo-clock-1',
+      size: 0,
+      permissions: [],
+      minAppVersion: '',
+      runtime: 'cordis',
+    ),
+  ];
 
   /// 验签不通过的原因（通过返回 null）。
   Future<String?> _verifyProblem(List<int> catalog, String signature) async {

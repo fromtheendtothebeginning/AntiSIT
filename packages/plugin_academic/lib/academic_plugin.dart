@@ -23,17 +23,15 @@ class AcademicPlugin extends FeaturePlugin {
   List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 
   @override
-  List<PluginTool> tools(PluginRegistry registry) => AppState.I.demo
-      ? const [] // 演示模式是本地假数据，学业情况没有对应假数据，不显示入口
-      : [
-          PluginTool(
-            icon: Icons.school_outlined,
-            color: Colors.teal,
-            title: '学业情况',
-            subtitle: () => '学分要求、已修情况与类别课程明细',
-            open: () => const AcademicPage(),
-          ),
-        ];
+  List<PluginTool> tools(PluginRegistry registry) => [
+        PluginTool(
+          icon: Icons.school_outlined,
+          color: Colors.teal,
+          title: '学业情况',
+          subtitle: () => '学分要求、已修情况与类别课程明细',
+          open: () => const AcademicPage(),
+        ),
+      ];
 }
 
 /// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。

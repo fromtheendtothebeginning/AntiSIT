@@ -9,7 +9,7 @@ import 'package:plugin_timetable/plugin_timetable.dart';
 void main() {
   // 与页面里 _slotEndTimes 一致的节次下课时刻
   const ends = <String>[
-    '09:05', '09:55', '10:55', '11:45', '13:45',
+    '09:05', '09:55', '11:00', '11:50', '13:45',
     '14:35', '15:40', '16:30', '18:45', '19:35', '20:25',
   ];
 
@@ -23,12 +23,12 @@ void main() {
 
     test('正好在下课那一刻：已经不算「下一个」，轮到再下一节', () {
       expect(TimetablePage.nextSlotEndAfter(DateTime(2026, 10, 9, 9, 55), ends),
-          DateTime(2026, 10, 9, 10, 55));
+          DateTime(2026, 10, 9, 11, 0));
     });
 
     test('下课刚过 1 秒：同样轮到下一节（这一刻已经重绘过了）', () {
       expect(TimetablePage.nextSlotEndAfter(DateTime(2026, 10, 9, 9, 55, 1), ends),
-          DateTime(2026, 10, 9, 10, 55));
+          DateTime(2026, 10, 9, 11, 0));
     });
 
     test('跨过午休与晚上的节次也连续', () {

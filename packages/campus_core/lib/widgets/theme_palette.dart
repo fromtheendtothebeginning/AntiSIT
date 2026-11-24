@@ -270,15 +270,13 @@ class SemColors {
 
 /// 当前正在用的场景光斑（[GlassBackground] 每次构建时写入）。
 ///
-/// 页面转场期间要在新页下面垫「同一张场景底」，否则垫底是纯色、转场一结束光斑
-/// 突然出现，背景会**跳一下**（默认主题光斑明显才看得出来，墨白极简 / 青竹这类
-/// 没有光斑的主题本来就看不出差别）。
+/// 页面转场期间要给「上层页」垫一张和全局场景底**完全一样**的底（见 main.dart），
+/// 否则页面是半透明的，滑入时会把下层页透出来（看到两个页面叠在一起）。
 class GlassScene {
   GlassScene._();
 
   static List<GlassWell>? wells;
 }
-
 /// 只画场景底的一半（底色 + 光斑），不带任何内容：
 /// 给 [GlassBackground] 和「转场垫底」共用，保证两者像素一致。
 class GlassScenePaint extends StatelessWidget {
@@ -322,7 +320,7 @@ class GlassBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = SemColors.isDark;
-    // 记下当前光斑，转场垫底（见 main.dart 的 _OpaqueWhileAnimating）要复用同一份
+    // 记下当前光斑：转场垫底要复用同一份，撤掉时才不会跳
     GlassScene.wells = wells;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(

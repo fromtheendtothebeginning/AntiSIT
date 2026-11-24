@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:campus_core/campus_core.dart';
 import 'pages/home_page.dart';
+import 'predictive_back_fade.dart';
 import 'update_download.dart';
 import 'pages/plugin_manager_page.dart';
 import 'plugins/bootstrap.dart';
@@ -20,66 +21,184 @@ const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
   GlobalCupertinoLocalizations.delegate,
 ];
 
-/// 页面过渡：**不做透明度淡入**，动画期间给页面垫一层不透明底色。
+/// 当前最顶层路由是不是「页面」（[PageRoute]）。
 ///
-/// 早先是 fade-through（旧页前 35% 淡出、新页随后淡入）。但本 App 的页面是**半透明**的
-/// ——顶栏是渐变色带、卡片是半透明玻璃、内容顶部还有 alpha 渐隐——淡入的那几帧里
-/// 上一页会从新页的透明处透出来，看着就是「残影」；两层低 alpha 叠加在 Impeller 下
-/// 还会被抖动（dither）成细碎的**黑白噪点**。页面越重（工具页网格、拓展页的 WebView
-/// 与大卡片）这个窗口越明显，所以那几页每次打开必现；设置页内容轻，几乎看不出来。
+/// 只有页面盖页面时才做「旧页左移 + 变暗」；弹窗 / 菜单 / 底部菜单也会驱动被盖页的
+/// secondaryAnimation，如果不过滤，点开右上角菜单整个页面就会往左跑、变暗。
+final ValueNotifier<bool> topRouteIsPage = ValueNotifier<bool>(true);
+
+/// 跟踪顶层路由类型（注册到 MaterialApp.navigatorObservers）。
+class TopRouteKindObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      topRouteIsPage.value = route is PageRoute;
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      topRouteIsPage.value = previousRoute is PageRoute;
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      topRouteIsPage.value = newRoute is PageRoute;
+}
+/// 页面转场（默认前进 / 返回）：**整页整体位移 + 上层页不透明覆盖 + 旧页轻微渐暗**。
 ///
-/// 现在的做法：新页带一点从右侧滑入的位移、全程不透明；动画期间在页面下面垫一层
-/// 页面底色，旧页无从透出。被覆盖页仍保留原来的快速淡出（它已经被盖住，纯属保底）。
-class _FadeThroughTransitionsBuilder extends PageTransitionsBuilder {
-  const _FadeThroughTransitionsBuilder();
+/// 前进（push）：
+/// * 新页整块从屏幕右侧滑入到 0（先快后慢、末尾缓慢停住），并**完整盖住**旧页；
+/// * 旧页整体向左平移 20% 屏宽，同时叠一层很浅的暗色。
+///
+/// 返回（pop）：上面这套的反向——
+/// * 当前页整块向右滑出屏幕；
+/// * 下层页从左移 20% 的位置滑回 0，同时把压暗褪掉。
+///
+/// 不做淡入淡出、不做圆角、不做缩放。
+///
+/// 三个关键实现细节：
+/// 1. **上层页要垫一张和全局场景底一模一样的底**：本 App 页面是半透明的（玻璃卡片、
+///    内容渐隐），不垫的话滑入时会把下层页透出来，看起来像「两个页面同时显示」。
+///    垫底常驻组件树、只改 Opacity（纯绘制），不做结构变化。
+/// 2. **不能用 SlideTransition / FractionalTranslation**：它的 applyPaintTransform
+///    要读 child.size，弹窗 localToGlobal 时页面正在布局会抛断言（课程表「更多」）。
+/// 3. **弹窗 / 菜单不算「新页」**：只有 PageRoute 盖上来才搬页面（[topRouteIsPage]），
+///    否则点开菜单整页会跟着左移变暗。
+class _SlidePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _SlidePageTransitionsBuilder();
+
+  /// 旧页被推走的距离（屏宽比例）。
+  static const double oldShift = 0.20;
+
+  /// 旧页最深压暗（只用来拉开层次）。
+  static const double oldDim = 0.10;
+
+  /// 前进：时长更长；曲线更陡（起步就走、尾巴收得慢）。
+  static const Duration pushDuration = Duration(milliseconds: 520);
+
+  /// 返回：时长更短；曲线更缓（起步柔和，不会「一闪而过」）。
+  static const Duration popDuration = Duration(milliseconds: 320);
+
+  @override
+  Duration get transitionDuration => pushDuration;
+
+  @override
+  Duration get reverseTransitionDuration => popDuration;
 
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
       Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
-    return FadeTransition(
-      // 本页被新页覆盖时（secondary 0→1）快速淡出；在上层时不衰减
-      opacity: Tween<double>(begin: 1, end: 0).animate(CurvedAnimation(
-          parent: secondaryAnimation,
-          curve: const Interval(0, 0.35, curve: Curves.easeIn))),
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0.06, 0),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-            reverseCurve: Curves.easeInCubic)),
-        child: _OpaqueWhileAnimating(animation: animation, child: child),
-      ),
+    // 首屏也包一层：它自己进场时动画值已是 1（不位移），但被上层页覆盖时要跟着
+    // 左移变暗，否则前进观感左右不对称。
+    return _SlidePageTransition(
+      animation: animation,
+      secondaryAnimation: secondaryAnimation,
+      child: child,
     );
   }
 }
 
-/// 转场进行中给页面垫一层不透明底色，避免上一页透过玻璃组件显形。
-class _OpaqueWhileAnimating extends StatelessWidget {
-  const _OpaqueWhileAnimating({required this.animation, required this.child});
+/// 前进用的缓动：起步就动、末尾缓慢收住（相对「陡」）。
+/// 注意别用极端 expo-out（如 Cubic(0.16, 1, 0.3, 1)）：25% 时长就走完一半以上，
+/// 观感是「旧页闪一下就被盖住，后面几乎不动」。
+const Curve _pushCurve = Cubic(0.20, 0.85, 0.20, 1.0);
+
+/// 返回用的缓动：起步更柔和、整体更「缓」，配合更短的时长。
+const Curve _popCurve = Cubic(0.30, 0.55, 0.35, 1.0);
+
+/// 被盖住的旧页：延后 22% 才开始退让，避免「闪一下就被推开」。
+const Curve _coveredCurve = Interval(0.22, 1.0, curve: _pushCurve);
+
+/// 预测式返回手势是否进行中（含松手后的收尾动画）。
+///
+/// 拖动时 controller 的 value 是被直接赋值的，状态会停在 completed，只看状态会被
+/// 误判成「前进」。用手势标记兜住，顺带保证松手收尾阶段和拖动阶段用同一条曲线。
+/// 故意不做成 ValueNotifier：它只影响曲线选择，画面重建本来就由动画值驱动。
+bool predictiveBackGesturing = false;
+
+/// 按动画方向取曲线：正向（前进）用陡的，反向（返回 / 预测式手势）用缓的。
+Curve _curveFor(Animation<double> a) =>
+    (a.status == AnimationStatus.reverse || predictiveBackGesturing)
+        ? _popCurve
+        : _pushCurve;
+
+class _SlidePageTransition extends StatelessWidget {
+  const _SlidePageTransition({
+    required this.animation,
+    required this.secondaryAnimation,
+    required this.child,
+  });
 
   final Animation<double> animation;
+  final Animation<double> secondaryAnimation;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        // 只在动画真的在跑的时候垫底：起始帧和结束帧都不需要
-        final v = animation.value;
-        if (v <= 0.001 || v >= 0.999) return child;
-        return Stack(
-          children: [
-            // 垫的是**同一张场景底**（底色 + 光斑），不是纯色：
-            // 纯色垫底在动画结束撤掉的一瞬间光斑冒出来，背景会跳一下。
-            Positioned.fill(child: GlassScenePaint(wells: GlassScene.wells)),
-            child,
-          ],
+      animation: Listenable.merge([animation, secondaryAnimation, topRouteIsPage]),
+      child: child,
+      builder: (context, child) {
+        final width = MediaQuery.sizeOf(context).width;
+        final covered = topRouteIsPage.value && secondaryAnimation.value > 0.001;
+
+        double shift;
+        double dim;
+        if (covered) {
+          // 镜头在这里不动，只是被上层页推走：左移 20% + 渐暗。
+          // 前进时 0 → -20%，返回时 -20% → 0（同一公式，动画值反向即可）。
+          //
+          // 关键：**延后这个动作**（前 22% 时长里旧页原地不动）。不延后的话新页
+          // 一起步就把旧页推开、压低，观感是「旧页闪一下就被盖住」；延后之后旧页
+          // 一直是完整、亮的状态，直到被新页盖住一部分才开始退让。
+          final s = _coveredCurve.transform(secondaryAnimation.value);
+          shift = -_SlidePageTransitionsBuilder.oldShift * width * s;
+          dim = _SlidePageTransitionsBuilder.oldDim * s;
+        } else {
+          // 自己进出：前进从右侧滑到 0；返回从 0 滑出到右侧（同一公式）。
+          final c = _curveFor(animation).transform(animation.value);
+          shift = (1 - c) * width;
+          dim = 0;
+        }
+
+        // 转场期间让页面不透明（垫一张与全局场景底一致的底），静止时再透明。
+        //
+        // 判断必须看**动画状态**而不是数值：用数值判断会漏掉转场的第一帧——
+        // 返回刚开始时 animation.value 还是 1（还没开始降），于是这一帧不垫底，
+        // 上层页是半透明的、下层页从玻璃里透出来；下一帧数值一降立刻垫上，下层页又被
+        // 盖住 —— 观感就是「返回动画刚开始闪一下」。状态（forward / reverse）在第一帧
+        // 就已经切换，所以按状态判断不会有这个空窗。
+        final busy = animation.status == AnimationStatus.forward ||
+            animation.status == AnimationStatus.reverse ||
+            (topRouteIsPage.value &&
+                (secondaryAnimation.status == AnimationStatus.forward ||
+                    secondaryAnimation.status == AnimationStatus.reverse));
+
+        return Transform.translate(
+          offset: Offset(shift, 0),
+          child: Stack(
+            fit: StackFit.passthrough,
+            children: [
+              // 场景底（常驻、只改显隐与压暗透明度，不触发布局）
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: busy ? 1 : 0,
+                    child: GlassScenePaint(wells: GlassScene.wells),
+                  ),
+                ),
+              ),
+              child!,
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF000000).withValues(alpha: dim),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
-      child: child,
     );
   }
 }
@@ -94,310 +213,191 @@ class _OpaqueWhileAnimating extends StatelessWidget {
 class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
   const _PredictiveOrFadeThroughBuilder();
 
+  // 路由的过渡时长取的是「当前平台这个 builder」的值（`MaterialRouteTransitionMixin`
+  // 里读 `_getPageTransitionBuilder(context)?.transitionDuration`），安卓这条链走的是
+  // 本类，所以时长要在这里同步，否则 `_SlidePageTransitionsBuilder` 上改的时长对
+  // 安卓不生效（真机/模拟器上仍是 300ms）。
+  @override
+  Duration get transitionDuration => _SlidePageTransitionsBuilder.pushDuration;
+
+  @override
+  Duration get reverseTransitionDuration => _SlidePageTransitionsBuilder.popDuration;
+
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
       Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
-    return _PredictiveOrFadeThrough(
-      route: route,
-      animation: animation,
-      secondaryAnimation: secondaryAnimation,
-      child: child,
+    // 监听 AppState：在外观设置里切「预测式返回样式」后，返回当前页时立刻生效
+    return ListenableBuilder(
+      listenable: AppState.I,
+      builder: (context, _) {
+        // 默认转场（同一个 builder）：没有手势、或手势样式为「位移 + 压暗」时用它
+        final transitions = _SlidePageTransitionsBuilder().buildTransitions(
+            route, context, animation, secondaryAnimation, child);
+        if (AppState.I.predictiveBackStyle == PredictiveBackStyle.fade) {
+          // 旧样式：整页淡化 + 缩小 + 圆角滑出，露出下层页
+          return PredictiveFadeBackGesture(
+            route: route,
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            fallbackTransitions: transitions,
+            commitSpan: (180 /
+                    _SlidePageTransitionsBuilder.popDuration.inMilliseconds)
+                .clamp(0.15, 1.0),
+            child: child,
+          );
+        }
+        return _PredictiveOrFadeThrough(
+          route: route,
+          animation: animation,
+          child: transitions,
+        );
+      },
     );
   }
 }
 
+/// 预测式返回（Android 14+ 从屏幕边缘拖入）：**画面直接用默认返回动画**，
+/// 由手指驱动路由的动画值。
+///
+/// * 手势只做一件事：把系统事件换算成路由的动画值；
+/// * 画面复用默认返回动画（同一个 PageTransitionsBuilder）；
+/// * 跟手是线性的：手势进度先按 [_gain] 放大，再**反解返回曲线**成动画值——
+///   渲染仍走同一条 popCurve，算出来的位移就恰好是手指位移的固定倍数；
+/// * 松手后不重播：直接让路由从当前位置反向播完。
 class _PredictiveOrFadeThrough extends StatefulWidget {
   const _PredictiveOrFadeThrough({
     required this.route,
     required this.animation,
-    required this.secondaryAnimation,
     required this.child,
   });
 
   final PageRoute<dynamic> route;
   final Animation<double> animation;
-  final Animation<double> secondaryAnimation;
   final Widget child;
 
   @override
   State<_PredictiveOrFadeThrough> createState() => _PredictiveOrFadeThroughState();
 }
 
-/// 返回手势所处的阶段（决定画面由谁驱动）。
-enum _BackPhase {
-  /// 没参与这次手势：普通导航，走淡入淡出。
-  none,
-
-  /// 手指还在屏幕上：位移 1:1 跟手。
-  drag,
-
-  /// 松手提交：从松手位置继续滑出屏幕并淡出。
-  commit,
-
-  /// 松手取消：从松手位置滑回原位。
-  return_,
-}
-
-/// 预测式返回手势期间的「覆盖率」（1 = 顶层页全盖住下层页，0 = 已滑走；
-/// null = 没有手势在进行）。被盖住的页据此做**渐进磨砂**：
-/// 手势前 1/3 隔着重磨砂，1/3 → 2/3 之间线性变清楚（插值），之后完全清晰。
-/// 拖动时它就是顶层页的动画值；提交后按实际滑出进度提前归零（见 [_commitT]）。
-final ValueNotifier<double?> predictiveBackCover = ValueNotifier(null);
-
-/// 覆盖进度 → 下层页的磨砂遮罩不透明度（0..0.45）。手势进度 g = 1 - v：
-/// g ≤ 1/3 时最「糊」（下层刚要露面），1/3 → 2/3 线性减到 0，之后不再磨砂。
-///
-/// **为什么是遮罩不是高斯模糊**：全屏 ImageFiltered 逐帧 saveLayer，
-/// 中低端机收尾掉帧、滤镜卸载时还会跳一帧（实测「最后卡顿一下、割裂」）；
-/// 磨砂遮罩是纯色填充，零合成层开销，观感同为「隔着一层看不清」。
-double _coverFrost(double v) =>
-    0.45 * (1 - (((1 - v) - 1 / 3) / (1 / 3)).clamp(0.0, 1.0));
-
 class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     with WidgetsBindingObserver {
-  static const _fade = _FadeThroughTransitionsBuilder();
+  /// 手势位移 → 页面进度的放大倍数：区间缩到原来的 1/2，
+  /// 手指划过半个屏宽 = 页面走完全程（默认 1.0 需要划满一整屏）。
+  static const double _gain = 2.0;
 
-  /// 一律按「从左边返回」那套走：不论手指从哪条边划进来，当前页都往右滑出、
-  /// 上一页从左面露出来（用户要求：不跟着手势边换方向）。
-  static const double _dir = 1;
+  /// 把系统给的手势进度换算成路由动画值。
+  ///
+  /// 目标位移 = `手势进度 × _gain`（线性放大）；渲染时位移 = `1 - popCurve(value)`，
+  /// 所以这里**反解**返回曲线：`value = popCurve⁻¹(1 - 目标位移)`。这样：
+  /// * 拖动期间位移与手指严格成正比（线性、无曲线加速段）；
+  /// * 渲染始终走同一条曲线，松手后接着往下走也不会跳变。
+  static double _routeProgress(double gestureProgress) {
+    final advanced = (gestureProgress * _gain).clamp(0.0, 1.0);
+    return _invertCurve(_popCurve, 1 - advanced);
+  }
 
-  /// 拖动期间当前页最多淡掉多少：见 [_gestureView]。1.0 = 进度 1/3 时顶层页只剩
-  /// 67% 不透明度——下层页（前 1/3 已淡入到位）隔着这层半透明 + 模糊刚好「看得见」，
-  /// 2/3 时只剩 33%，配合模糊已清完，与模糊插值的节奏对齐。
-  static const double _dragFade = 1.0;
-
-  /// 松手提交后，滑出 / 淡出只用框架反向窗口的前 60%（≈180ms）走完。
-  /// 不能等 controller 自己降回松手值：框架在提交时先把它拉回 1.0 再线性反向，
-  /// 拖得越深等得越久（实测拖到 0.8 松手要先冻 240ms 才动）——用户反馈
-  /// 「松开后没有继续滑，要先停一下」。用前 60% 则一松手就走，且整体更快。
-  static const double _commitSpan = 0.6;
-
-  _BackPhase _phase = _BackPhase.none;
-
-  /// 松手那一刻的动画值（= 1 - 手势进度）。提交 / 取消后的动画都从它续上，
-  /// 保证松手前后画面的位移、缩放是连续的，不会跳。
-  double _releaseV = 1;
-
-  /// 提交后 controller 反弹到的最大值（正常就是 1.0，见 [_commitT]）。
-  double _commitFrom = 0;
+  /// 单调曲线的数值反解（二分）：返回 x 使 `curve.transform(x) ≈ y`。
+  static double _invertCurve(Curve curve, double y) {
+    if (y <= 0) return 0;
+    if (y >= 1) return 1;
+    var lo = 0.0;
+    var hi = 1.0;
+    for (var i = 0; i < 30; i++) {
+      final mid = (lo + hi) / 2;
+      if (curve.transform(mid) < y) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return (lo + hi) / 2;
+  }
+  /// 松手后（取消 / 提交）框架自己跑完收尾动画；跑完再清掉手势标记。
+  bool _settling = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // 手势期间把覆盖率发布给被盖住的页（渐进磨砂 / 揭露用）。
-    // 动画监听在帧调度阶段触发，不在 build 里改 ValueNotifier（会撞上 build 期重建）。
-    widget.animation.addListener(_publishCover);
-  }
-
-  void _publishCover() {
-    if (_phase == _BackPhase.none) return;
-    final v = widget.animation.value.clamp(0.0, 1.0);
-    final done = (_phase == _BackPhase.return_ && v >= 1.0) ||
-        (_phase == _BackPhase.commit && v <= 0.0);
-    if (done) {
-      predictiveBackCover.value = null;
-    } else if (_phase == _BackPhase.commit) {
-      if (v > _commitFrom) _commitFrom = v;
-      // 下层页的揭露按「实际滑出进度」（1 - 位移/屏宽）走：等于拖动时的 v，
-      // 提交后又跟着加快后的滑出一起归零。框架把动画值拉回 1.0 的那一跳
-      // 不能外漏——漏出去下层页会先瞬间消失再罩上磨砂，闪一下。
-      predictiveBackCover.value = _releaseV * (1 - _commitT(v));
-    } else {
-      predictiveBackCover.value = v;
-    }
-  }
-
-  /// 提交后滑出的进度（0 = 刚松手，1 = 滑完）：起点取 [_commitFrom]——
-  /// 框架提交时把 controller 拉回 1.0，它就是 1.0；若哪天框架改成从松手值
-  /// 反向，起点自然是松手值，公式同样从 0 起算。只用窗口前 [_commitSpan] 走完。
-  double _commitT(double v) {
-    if (_commitFrom <= 0) return 0;
-    final u = ((_commitFrom - v) / _commitFrom).clamp(0.0, 1.0);
-    return (u / _commitSpan).clamp(0.0, 1.0);
+    widget.animation.addListener(_onAnimationTick);
   }
 
   @override
   void dispose() {
-    widget.animation.removeListener(_publishCover);
-    if (_phase != _BackPhase.none) predictiveBackCover.value = null;
+    widget.animation.removeListener(_onAnimationTick);
     WidgetsBinding.instance.removeObserver(this);
+    predictiveBackGesturing = false;
     super.dispose();
   }
 
-  // ===== WidgetsBindingObserver：接管系统返回手势，其余交给 Flutter 自己的路由实现 =====
+  /// 松手之后框架会把动画跑完；跑完再清掉手势标记（此时页面已经出画，不会跳）。
+  void _onAnimationTick() {
+    if (!_settling) return;
+    if (!widget.animation.isAnimating) {
+      _settling = false;
+      predictiveBackGesturing = false;
+    }
+  }
+
+  // ===== WidgetsBindingObserver：接管系统返回手势，画面交给默认转场 =====
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     // 按键返回不接管；不能返回的页（首页 / 被压住的页）也返回 false，
     // 让事件继续往后传——观察者按注册顺序通知，只有当前那一页该接。
-    // 「预测式返回动画」关掉时同样不接管：框架对没人接的手势会在松手提交时
-    // 按普通返回 pop（走淡入淡出），手势期间画面不动。
+    // 「预测式返回动画」关掉时同样不接管：系统会按普通返回处理（走默认动画）。
     if (backEvent.isButtonEvent ||
         !AppState.I.predictiveBack ||
         !widget.route.isCurrent ||
         !widget.route.popGestureEnabled) {
       return false;
     }
-    widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
-    if (mounted) {
-      setState(() => _phase = _BackPhase.drag);
-    }
+    predictiveBackGesturing = true;
+    widget.route.handleStartBackGesture(
+        progress: _routeProgress(backEvent.progress));
     return true;
   }
 
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) =>
-      widget.route.handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
+      widget.route.handleUpdateBackGestureProgress(
+          progress: _routeProgress(backEvent.progress));
 
   @override
   void handleCancelBackGesture() {
-    _releaseV = widget.animation.value;
-    // 松手回弹：路由自己把动画走回去
+    _settling = true;
+    // 取消：从当前位置正播回 1（框架内部 forward()，不吃掉已有进度）。
     widget.route.handleCancelBackGesture();
-    if (mounted) setState(() => _phase = _BackPhase.return_);
-    // 兜底收尾：拖回起点才松手时动画值已经是 1.0，框架不会再跑回位动画、
-    // 动画通知也就不会再来——覆盖率会停在被盖时那个旧值上。之后这页（或被盖的
-    // 那一页）一旦成为当前页，就会按「被盖住」渲染成全透明，用户看到的是空白界面。
-    _publishCover();
   }
 
   @override
   void handleCommitBackGesture() {
-    _releaseV = widget.animation.value;
-    _commitFrom = 0;
-    // 相位要先切：route.handleCommitBackGesture() 内部会把动画值拉回 1.0，
-    // 那一跳会同步通知 [_publishCover]，相位还是 drag 的话会被当成拖动值发布。
-    if (mounted) setState(() => _phase = _BackPhase.commit);
-    widget.route.handleCommitBackGesture();
-    // 兜底收尾：松手时动画值已经在终点（拖到底才松手）时框架不会再跑动画，
-    // 通知也不会再来一次，覆盖率就得在这里自己清掉。
-    _publishCover();
+    _settling = true;
+    // 提交：**不要**调 route.handleCommitBackGesture()——它内部先 pop() 再
+    // reverse(from: upperBound)，等于把动画拉回 1 从头重播一遍（松手后画面倒回去）。
+    // 这里直接 pop，让 TransitionRoute.didPop 自己 reverse()，即从当前位置继续播完。
+    final nav = widget.route.navigator;
+    nav?.pop();
+    // 补上框架 _handleDragEnd 里的收尾记账：didStopUserGesture。
+    // 少了它 Navigator.userGestureInProgress 会一直停在 true —— 真机上表现为
+    // 「返回动画结束后整屏点不动」（按键还能用，触摸全丢）。
+    late final AnimationStatusListener stopGesture;
+    stopGesture = (AnimationStatus status) {
+      widget.animation.removeStatusListener(stopGesture);
+      nav?.didStopUserGesture();
+    };
+    if (widget.animation.status == AnimationStatus.dismissed) {
+      // 已经拖到底、pop 当场完成，不会再有一次状态变化
+      nav?.didStopUserGesture();
+    } else {
+      widget.animation.addStatusListener(stopGesture);
+    }
   }
 
-  static double _mix(double a, double b, double t) => a + (b - a) * t;
-
+  /// 画面完全由外面的默认转场负责，这里只透传。
   @override
-  Widget build(BuildContext context) {
-    // 回位动画走完（动画回到 1）就交还给淡入淡出，之后这页被盖住时还能正常淡出
-    if (_phase == _BackPhase.return_ && widget.animation.value >= 1.0) {
-      _phase = _BackPhase.none;
-    }
-    if (_phase == _BackPhase.none) {
-      // 被盖住的页：预测式返回手势的另一面。手势进行中（cover 非 null）
-      // 下层页在**手势前 1/3** 就淡入到位并按覆盖进度模糊——
-      // 原来走淡入淡出的旧曲线，要到手势走完约 2/3 才开始出现，
-      // 用户实测「1/3 时完全看不到」。没有手势（null）时用普通淡入淡出。
-      //
-      // 「手势还在进行」也要走这条：提交后本页立刻变成 current（route 已被 pop），
-      // 但手势的退场动画还在放。若此刻切回旧淡入淡出曲线，secondary 还是 1
-      // （被盖住的起点）→ 该曲线直接给整页不可见，画面会闪一下（实测有）。
-      if (!widget.route.isCurrent || predictiveBackCover.value != null) {
-        return ValueListenableBuilder<double?>(
-          valueListenable: predictiveBackCover,
-          builder: (context, cover, _) {
-            if (cover == null) {
-              return _fade.buildTransitions(widget.route, context, widget.animation,
-                  widget.secondaryAnimation, widget.child);
-            }
-            // 覆盖率 cover（1 = 全盖住，0 = 已滑走）。
-            // 下层页透明度：cover 1 → 2/3 之间淡入（手势前 1/3），之后保持全可见，
-            // 隔着顶层页的半透明 + 磨砂露出；磨砂同前：前 1/3 最重，1/3 → 2/3 变清楚。
-            final visible = 1 - ((cover - 2 / 3) / (1 / 3)).clamp(0.0, 1.0);
-            final frost = _coverFrost(cover);
-            final content = frost > 0.01
-                ? Stack(children: [
-                    widget.child,
-                    // 磨砂遮罩：页面底色的半透明填充，纯色无合成层开销
-                    Positioned.fill(
-                      child: ColoredBox(
-                          color: SemColors.bg.withValues(alpha: frost)),
-                    ),
-                  ])
-                : widget.child;
-            return Opacity(opacity: visible.clamp(0.0, 1.0), child: content);
-          },
-        );
-      }
-      // 当前页（没参与手势）：沿用自家淡入淡出，玻璃观感不变
-      return _fade.buildTransitions(widget.route, context, widget.animation,
-          widget.secondaryAnimation, widget.child);
-    }
-    return AnimatedBuilder(
-      animation: widget.animation,
-      builder: (context, _) => _gestureView(context),
-    );
-  }
-
-  /// 手势期间的画面。关键是位移：系统给的 progress 就是「手指从边缘走到对边的比例」，
-  /// 乘上屏宽即手指走过的距离，所以进度 × 屏宽 = 1:1 跟手（这也是之前不跟手的原因：
-  /// 只乘了 0.18）。缩放 / 圆角仍按手势进度走，提交与取消都从松手瞬间续上、不跳变。
-  Widget _gestureView(BuildContext context) {
-    final v = widget.animation.value.clamp(0.0, 1.0); // 1 = 完整在前，0 = 已退出
-    final width = MediaQuery.sizeOf(context).width;
-    const dir = _dir;
-
-    // 松手瞬间的状态（取消 / 提交后的动画都从这里插值，避免跳变）
-    final released = 1 - _releaseV;
-    final releaseShift = dir * released * width;
-    final releaseScale = 1 - 0.05 * released;
-    final releaseRadius = 16 * released;
-
-    final double shift;
-    final double opacity;
-    final double scale;
-    final double radius;
-    switch (_phase) {
-      case _BackPhase.drag:
-        final gone = 1 - v;
-        shift = dir * gone * width; // 1:1 跟手
-        // 不整页淡掉：拖动时要像「被手指推走」。玻璃页半透明，稍带一点淡出，
-        // 两页叠在一起时不至于互相透得太花；淡得多一点是为了让「回撤到的那一页」
-        // 早点露出来（原来 0.45 基本看不见后面那页）。
-        opacity = 1 - _dragFade * gone;
-        scale = 1 - 0.05 * gone;
-        radius = 16 * gone;
-      case _BackPhase.commit:
-        // 松手后继续往右滑出去：一松手就走（[_commitT] 从 0 起算），
-        // 并在框架窗口的前 [_commitSpan] 内滑完，比原来的 300ms 窗口快。
-        final t = _commitT(v);
-        shift = _mix(releaseShift, dir * width, t);
-        // 从松手那一刻的实际透明度（= _releaseV）继续淡出，不能从 1 拉回：
-        // 拖得深时松手页面已接近全透明，跳回 1 用户会看到「不透明度突然上升」。
-        // 仍按 t≈0.7 提前淡完：滑完前上一页已经完整在场。
-        opacity = (_releaseV * (1 - t * 1.45)).clamp(0.0, 1.0);
-        scale = _mix(releaseScale, 0.96, t);
-        radius = _mix(releaseRadius, 12, t);
-      case _BackPhase.return_:
-        final span = 1 - _releaseV;
-        final t = span <= 0 ? 1.0 : ((v - _releaseV) / span).clamp(0.0, 1.0);
-        shift = _mix(releaseShift, 0, t);
-        opacity = _mix(1 - _dragFade * released, 1, t);
-        scale = _mix(releaseScale, 1, t);
-        radius = _mix(releaseRadius, 0, t);
-      case _BackPhase.none:
-        shift = 0;
-        opacity = 1;
-        scale = 1;
-        radius = 0;
-    }
-
-    return Opacity(
-      opacity: opacity,
-      child: Transform.translate(
-        offset: Offset(shift, 0),
-        child: Transform.scale(
-          scale: scale,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: widget.child,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => widget.child;
 }
-
 /// 告诉引擎：返回事件交给 Flutter 处理（Android 预测式返回的前提）。
 ///
 /// 引擎只有收到这句话才会注册带进度的返回回调，我们才能收到
@@ -513,10 +513,10 @@ ThemeData buildAppTheme(GlassPalette c) {
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
       // 安卓：系统返回手势走官方预测式动画，其余仍是淡入淡出
       TargetPlatform.android: _PredictiveOrFadeThroughBuilder(),
-      TargetPlatform.iOS: _FadeThroughTransitionsBuilder(),
-      TargetPlatform.windows: _FadeThroughTransitionsBuilder(),
-      TargetPlatform.macOS: _FadeThroughTransitionsBuilder(),
-      TargetPlatform.linux: _FadeThroughTransitionsBuilder(),
+      TargetPlatform.iOS: _SlidePageTransitionsBuilder(),
+      TargetPlatform.windows: _SlidePageTransitionsBuilder(),
+      TargetPlatform.macOS: _SlidePageTransitionsBuilder(),
+      TargetPlatform.linux: _SlidePageTransitionsBuilder(),
     }),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -610,6 +610,8 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
           supportedLocales: appSupportedLocales,
           localizationsDelegates: appLocalizationsDelegates,
           onNavigationNotification: onNavigationNotification,
+          // 记录顶层路由是不是页面：只有页面盖页面才做「旧页左移 + 变暗」
+          navigatorObservers: [TopRouteKindObserver()],
           // 全局场景底：Scaffold 全透明，光斑（由主题插件给）透出玻璃「折射」感
           builder: (context, child) => GlassBackground(
               wells: theme.wells(preview == null ? brightness : (preview >= 0.5 ? Brightness.dark : Brightness.light)),

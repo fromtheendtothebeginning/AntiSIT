@@ -691,7 +691,7 @@ $casErrorSkeleton
           },
         });
 
-      // 我的报名：all=0 只回本人已报名（bm=1）；all=1 是全部活动。
+      // （2026-11 起真实接口 hdgl/list.zf 被确认为匿名公共池，「我的报名」已改走下方 bizFlow；此 case 保留作协议兼容。）
       case '/zftal-xgxt-web/hdgl/list.zf':
         if (!s.xg) return _redirect(res, _casLoginUrl(path));
         final signedOnly = (form['all'] ?? '1') == '0';
@@ -722,9 +722,39 @@ $casErrorSkeleton
           'data': {'items': items, 'totalCount': items.length, 'pageNo': 0, 'pageSize': 15},
         });
 
-      // 第二课堂加分明细：每条 = 一次活动参与记录 + 学分。
+      // bizFlow 结果组：groupCode=xshd = 报名结果（我的报名）；xsrd = 学分认定（加分明细，学分在 rdxs）。
       case '/zftal-xgxt-web/bizFlow/result/group/list.zf':
         if (!s.xg) return _redirect(res, _casLoginUrl(path));
+        if ((form['groupCode'] ?? '') == 'xsrd') {
+          return _json(res, {
+            'code': 0,
+            'msg': '操作成功',
+            'data': {
+              'bizName': '学分认定',
+              'formCode': 'xsrd',
+              'formName': '学分认定',
+              'totalCount': 2,
+              'rows': [
+                {
+                  'INSTANCE_ID': 'inst-1',
+                  'hdmc': 'AI 赋能学习效率提升讲座',
+                  'dldm': '美育', 'lbdm': '校园文化活动',
+                  'rdxs': '0.20',
+                  'flowstatusmc': '通过', 'FLOWSTATUS': 'finish',
+                  'CREATE_TIME': '2026-10-11 09:00:00',
+                },
+                {
+                  'INSTANCE_ID': 'inst-2',
+                  'hdmc': '秋季校园马拉松志愿者',
+                  'dldm': '劳育', 'lbdm': '志愿公益',
+                  'rdxs': '0.50',
+                  'flowstatusmc': '通过', 'FLOWSTATUS': 'finish',
+                  'CREATE_TIME': '2026-10-19 10:00:00',
+                },
+              ],
+            },
+          });
+        }
         return _json(res, {
           'code': 0,
           'msg': '操作成功',
@@ -736,18 +766,18 @@ $casErrorSkeleton
             'rows': [
               {
                 'INSTANCE_ID': 'inst-1',
+                'hdid': 'm001',
                 'hdmc': 'AI 赋能学习效率提升讲座',
                 'dldm': '德育', 'lbdm': '讲座报告',
-                'hdxf': '0.20', 'jcxsxf': '0.2', 'zzxsxf': '0.2',
                 'flowstatusmc': '通过', 'FLOWSTATUS': 'finish',
                 'hdkssj': '2026-10-10 14:00:00', 'hdjssj': '2026-10-10 16:00:00',
                 'CREATE_TIME': '2026-10-11 09:00:00',
               },
               {
                 'INSTANCE_ID': 'inst-2',
+                'hdid': 'm002',
                 'hdmc': '秋季校园马拉松志愿者',
                 'dldm': '劳育', 'lbdm': '志愿公益',
-                'hdxf': '0.50', 'jcxsxf': '0.5', 'zzxsxf': '0.5',
                 'flowstatusmc': '通过', 'FLOWSTATUS': 'finish',
                 'hdkssj': '2026-10-18 07:00:00', 'hdjssj': '2026-10-18 13:00:00',
                 'CREATE_TIME': '2026-10-19 10:00:00',

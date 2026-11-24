@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:campus_core/campus_core.dart';
 import 'package:crypto/crypto.dart';
 
 import '../bundle_import.dart';
@@ -63,6 +64,28 @@ class MarketInstaller {
   /// 与内置冲突）。市场卡片的「装不了」只是 UI 层，安装器这里再拦一道——
   /// 「全部更新」之类的批量路径不该绕过版本门。
   Future<ExtensionItem> install(MarketEntry entry) async {
+    // 演示模式：假拓展没有真实包可下，直接把「已装版本」推进到目录版本。
+    // 内容路径写成 demo:// 标记（真去打开会提示不存在，演示流程不依赖它）。
+    if (AppState.I.demo && entry.id.startsWith('demo-')) {
+      final have = installed(entry.id);
+      final item = (have ?? ExtensionItem(id: entry.id, name: entry.name, url: '', bundled: true)).copyWith(
+        url: 'demo:///main.js',
+        bundled: true,
+        runtime: ExtensionItem.runtimeCordis,
+        version: entry.version,
+        sha256: entry.sha256,
+        permissions: entry.permissions,
+        fromMarket: true,
+        sourceId: entry.sourceId,
+        minAppVersion: entry.minAppVersion,
+      );
+      if (have == null) {
+        await store.add(item);
+      } else {
+        await store.update(item);
+      }
+      return item;
+    }
     final app = await ExtensionItem.appVersionLoader();
     if (entry.needsNewerApp(app)) {
       throw StateError('「${entry.name}」需要 App ≥${entry.minAppVersion}，请先升级 App');

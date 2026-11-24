@@ -125,6 +125,15 @@ enum AppMode { server, direct }
 
 /// 全局登录态与设置（内存态 + SharedPreferences 持久化）。
 /// 服务器模式登录 = 服务器账号换 30 天 JWT；直连模式登录 = 本机保存的校园凭据。
+/// 预测式返回（系统返回手势）的视觉样式。
+enum PredictiveBackStyle {
+  /// 默认：手势跟手就用默认返回动画的那一套观感（整页位移 + 旧页压暗）。
+  slide,
+
+  /// 旧样式：当前页整页**淡化**并轻微缩小、带圆角滑出，露出下层页（透明背景），
+  /// 下层页在手势前 1/3 逐步淡入并隔着磨砂露出。
+  fade,
+}
 class AppState extends ChangeNotifier {
   AppState._();
   static final AppState I = AppState._();
@@ -161,6 +170,11 @@ class AppState extends ChangeNotifier {
   /// 预测式返回动画开关：开（默认）= 系统返回手势跟手预览、松手可反悔；
   /// 关 = 手势期间画面不动，松手按普通返回（淡入淡出）。开关在「我的 → 设置 → 外观」里。
   bool predictiveBack = true;
+
+  /// 预测式返回的视觉样式（见 [PredictiveBackStyle]）：默认 [PredictiveBackStyle.slide]
+  /// ——手势跟手就是用默认返回动画（斗位移 + 旧页压暗）；[PredictiveBackStyle.fade]
+  /// 是早先那套「整页淡化 + 露出下层页」的观感。选择器在「我的 → 设置 → 外观」里。
+  PredictiveBackStyle predictiveBackStyle = PredictiveBackStyle.slide;
 
   /// 顶栏是否用「悬浮玻璃」样式：开（默认）= 顶栏浮在内容上、内容从它底下穿过去，
   /// 靠近顶栏的内容被渐变高斯模糊糊掉；关 = 普通 AppBar，内容排在它下面。
@@ -206,6 +220,10 @@ class AppState extends ChangeNotifier {
     courseNotifyMode = cn == 'none' || cn == 'cloud' ? cn! : 'popup';
     followSlider = sp.getBool('follow_slider') ?? true;
     predictiveBack = sp.getBool('predictive_back') ?? true;
+    predictiveBackStyle = PredictiveBackStyle.values.firstWhere(
+      (v) => v.name == sp.getString('predictive_back_style'),
+      orElse: () => PredictiveBackStyle.slide,
+    );
     glassTopBar = sp.getBool('glass_top_bar') ?? true;
     autoRefreshTools = sp.getBool('tool_auto_refresh') ?? true;
     ecardRefreshSeconds = (sp.getInt('ecard_refresh_seconds') ?? 10).clamp(
@@ -277,6 +295,7 @@ class AppState extends ChangeNotifier {
     await sp.setString('course_notify_mode', courseNotifyMode);
     await sp.setBool('follow_slider', followSlider);
     await sp.setBool('predictive_back', predictiveBack);
+    await sp.setString('predictive_back_style', predictiveBackStyle.name);
     await sp.setBool('glass_top_bar', glassTopBar);
     await sp.setBool('tool_auto_refresh', autoRefreshTools);
     await sp.setInt('ecard_refresh_seconds', ecardRefreshSeconds);
@@ -425,6 +444,14 @@ class AppState extends ChangeNotifier {
   /// 预测式返回动画开关（见 [predictiveBack]）。
   Future<void> setPredictiveBack(bool v) async {
     predictiveBack = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 预测式返回样式（见 [predictiveBackStyle]）。
+  Future<void> setPredictiveBackStyle(PredictiveBackStyle v) async {
+    if (predictiveBackStyle == v) return;
+    predictiveBackStyle = v;
     await _persist();
     notifyListeners();
   }

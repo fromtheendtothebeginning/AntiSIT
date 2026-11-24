@@ -41,7 +41,7 @@ void main() {
             place: '二教E101',
             day: 0,
             slotStart: 2, // 默认 10:15 上课
-            slotEnd: 2, // 10:55 下课
+            slotEnd: 2, // 11:00 下课
             weekType: 'all',
             weekStart: 1,
             weekEnd: 20,
@@ -59,16 +59,16 @@ void main() {
       final w = windows.first;
       expect(w.title, '高等数学');
       expect(w.startAt, DateTime(2026, 9, 7, 10, 15).millisecondsSinceEpoch);
-      expect(w.endAt, DateTime(2026, 9, 7, 10, 55).millisecondsSinceEpoch);
+      expect(w.endAt, DateTime(2026, 9, 7, 11, 0).millisecondsSinceEpoch);
       expect(w.leadMinutes, CourseCloudService.leadMinutes);
-      expect(w.subtitle, '二教E101 · 10:15–10:55');
+      expect(w.subtitle, '二教E101 · 10:15–11:00');
     });
 
     test('已经在上的课也收进来（切到流体云模式能立刻亮）', () {
       TimetableStore.instance.semesters = {'2026-3': semesterWithCourse()};
       final windows = CourseCloudService.planWindows(
           TimetableStore.instance, DateTime(2026, 9, 7, 10, 30), horizon: 1);
-      expect(windows.single.endAt, DateTime(2026, 9, 7, 10, 55).millisecondsSinceEpoch);
+      expect(windows.single.endAt, DateTime(2026, 9, 7, 11, 0).millisecondsSinceEpoch);
     });
 
     test('改过上课时间就按新作息算（不再写死 10:10）', () {

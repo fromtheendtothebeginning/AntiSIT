@@ -20,10 +20,14 @@ import 'market_sources_view.dart';
 /// 目录必须**验签**通过才显示（见 [MarketSource]），装的时候还要对 sha256；
 /// 市场装的拓展按清单声明的权限放行（见 `ExtBridge`），安装弹窗把权限摊给用户看。
 class MarketView extends StatefulWidget {
-  const MarketView({super.key, this.onInstalled, this.topPadding = 0});
+  const MarketView({super.key, this.onInstalled, this.focusId, this.topPadding = 0});
 
   /// 装完 / 更新完说一句（拓展页拿它弹提示）。
   final void Function(String message)? onInstalled;
+
+  /// 要定位的拓展 id：从拓展页「可更新」卡片跳进来时带上。
+  /// 目录就绪后自动把搜索框设为它的名字（列表只剩它和同名项），卡片加「已定位」标。
+  final String? focusId;
 
   /// 列表顶部额外留白：市场页是悬浮玻璃顶栏，列表要从顶栏下方开始，
   /// 但滚动时仍从顶栏底下穿过去（所以留白放在滚动内容里，而不是外面套 Padding）。
@@ -38,6 +42,7 @@ class _MarketViewState extends State<MarketView> {
   String _category = '全部';
   String _appVersion = '';
   bool _busy = false;
+  bool _focusApplied = false;
 
   MarketSource get _source => MarketSource.I;
 
@@ -64,6 +69,20 @@ class _MarketViewState extends State<MarketView> {
 
   void _onChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// 定位只做一次：目录（官方 + 第三方源）里找到目标后，把搜索框设为它的名字。
+  /// 用户随时可以点搜索框的 ✕ 清掉过滤，看完整市场。
+  void _applyFocus() {
+    if (_focusApplied || widget.focusId == null) return;
+    for (final e in _all) {
+      if (e.id == widget.focusId) {
+        _focusApplied = true;
+        _category = '全部';
+        _search.text = e.name;
+        return;
+      }
+    }
   }
 
   /// 本机版本号：判「需要升级 App」。读不到就当没要求（软门，不挡人）。
@@ -317,6 +336,7 @@ class _MarketViewState extends State<MarketView> {
 
   @override
   Widget build(BuildContext context) {
+    _applyFocus();
     return Stack(
       children: [
         RefreshIndicator(
@@ -581,6 +601,10 @@ class _MarketViewState extends State<MarketView> {
                           if (update) ...[
                             const SizedBox(width: 6),
                             Capsule('有新版', color: SemColors.accent),
+                          ],
+                          if (e.id == widget.focusId) ...[
+                            const SizedBox(width: 6),
+                            Capsule('已定位', color: SemColors.warning),
                           ],
                         ],
                       ),

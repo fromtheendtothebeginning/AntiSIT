@@ -26,7 +26,8 @@ void main() {
     expect(find.text('我的报名'), findsOneWidget);
 
     // 左滑切到「我的报名」
-    await tester.drag(find.byType(PageView), const Offset(-400, 0));
+    // 页面横滑：现在不是 PageView，而是整页手势驱动（和首页底栏同一套）
+    await tester.drag(find.byType(ListView).first, const Offset(-400, 0));
     await tester.pumpAndSettle(const Duration(milliseconds: 500));
 
     expect(find.text('AI 赋能学习效率提升讲座'), findsOneWidget);

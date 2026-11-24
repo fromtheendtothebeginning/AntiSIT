@@ -63,3 +63,4 @@ export 'widgets/captcha_dialog.dart';
 export 'widgets/common.dart';
 export 'widgets/flexible_grid.dart';
 export 'widgets/theme_picker.dart';
+export 'widgets/floating_tabs_header.dart';

@@ -167,6 +167,7 @@ class GlassTabs extends StatefulWidget {
     this.fontSize = 12.5,
     this.position,
     this.dragPosition,
+    this.flat = false,
   });
 
   final List<String> labels;
@@ -182,6 +183,11 @@ class GlassTabs extends StatefulWidget {
   /// 页面区域（不是滑块本身）横滑时，调用方通过它驱动同一个位置：
   /// 非 null（拖动中）滑块跟手、不跑自己的弹簧；置回 null（松手）时从当前位置弹到落点。
   final ValueListenable<double?>? dragPosition;
+
+  /// 去掉自身的底板与描边（由外层玻璃胶囊提供）：用于「悬浮切换器」——外层已经有
+  /// 毛玻璃面 + 描边时，再画一层就会「一层套一层」。
+  final bool flat;
+
 
   @override
   State<GlassTabs> createState() => _GlassTabsState();
@@ -245,12 +251,14 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     final n = widget.labels.length;
     return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: SemColors.cardElevated,
-        borderRadius: BorderRadius.circular(widget.height / 2 + 3),
-        border: Border.all(color: SemColors.border),
-      ),
+      padding: widget.flat ? EdgeInsets.zero : const EdgeInsets.all(3),
+      decoration: widget.flat
+          ? null
+          : BoxDecoration(
+              color: SemColors.cardElevated,
+              borderRadius: BorderRadius.circular(widget.height / 2 + 3),
+              border: Border.all(color: SemColors.border),
+            ),
       child: LayoutBuilder(
         builder: (context, cons) {
           final segW = cons.maxWidth / n;
@@ -299,6 +307,7 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
                               onTap: () {
                                 if (i != widget.index) {
                                   _springTo(i.toDouble());
+                                  HapticFeedback.selectionClick();
                                   widget.onChanged(i);
                                 }
                               },
@@ -317,7 +326,10 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
                                   target = next;
                                 }
                                 _springTo(target.toDouble(), v);
-                                if (target != widget.index) widget.onChanged(target);
+                                if (target != widget.index) {
+                                  HapticFeedback.selectionClick();
+                                  widget.onChanged(target);
+                                }
                               },
                               child: Center(
                                 child: Text(

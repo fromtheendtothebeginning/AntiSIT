@@ -413,6 +413,8 @@ class ApiClient {
   // 直连需要设备在校园网 / 校内 VPN 内（或在系统层把流量转进校园网）。
 
   void _requireDirectSelection() {
+    // 演示模式用本地假数据，不算「直连」，不拦
+    if (AppState.I.demo) return;
     if (!_useDirect) {
       throw ApiError('抢课目前只支持直连模式：请到「我的 → 连接设置」切换到直连模式，'
           '并在校园网 / 校内 VPN 下使用');
@@ -420,6 +422,7 @@ class ApiClient {
   }
 
   Future<List<CourseScope>> courseScopes() {
+    if (AppState.I.demo) return Future.value(DemoData.courseScopes());
     _requireDirectSelection();
     return CampusDirect.I.courseScopes();
   }
@@ -430,23 +433,34 @@ class ApiClient {
     int start = 0,
     int pageSize = 50,
   }) {
+    if (AppState.I.demo) {
+      return Future.value(DemoData.courseOffers(scope,
+          keyword: keyword, start: start, pageSize: pageSize));
+    }
     _requireDirectSelection();
     return CampusDirect.I.courseOffers(scope,
         keyword: keyword, start: start, pageSize: pageSize);
   }
 
   Future<List<CourseSection>> courseSections(CourseOffer offer) {
+    if (AppState.I.demo) return Future.value(DemoData.courseSections(offer));
     _requireDirectSelection();
     return CampusDirect.I.courseSections(offer);
   }
 
   Future<CourseSelectResult> selectCourse(
       CourseOffer offer, CourseSection section) {
+    if (AppState.I.demo) {
+      return Future.value(DemoData.selectCourse(offer, section));
+    }
     _requireDirectSelection();
     return CampusDirect.I.selectCourse(offer, section);
   }
 
   Future<List<SelectedCourse>> selectedCourses(CourseScope scope) {
+    if (AppState.I.demo) {
+      return Future.value(DemoData.selectedCourses(scope));
+    }
     _requireDirectSelection();
     return CampusDirect.I.selectedCourses(scope);
   }

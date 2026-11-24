@@ -23,17 +23,15 @@ class CourseSelectPlugin extends FeaturePlugin {
   List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 
   @override
-  List<PluginTool> tools(PluginRegistry registry) => AppState.I.demo
-      ? const [] // 演示模式没有真实选课数据
-      : [
-          PluginTool(
-            icon: Icons.bolt_outlined,
-            color: Colors.orange,
-            title: '抢课',
-            subtitle: () => '选课轮次 / 余量 / 自动抢课',
-            open: () => const CourseSelectPage(),
-          ),
-        ];
+  List<PluginTool> tools(PluginRegistry registry) => [
+        PluginTool(
+          icon: Icons.bolt_outlined,
+          color: Colors.orange,
+          title: '抢课',
+          subtitle: () => '选课轮次 / 余量 / 自动抢课',
+          open: () => const CourseSelectPage(),
+        ),
+      ];
 }
 
 /// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。

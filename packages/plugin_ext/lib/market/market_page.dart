@@ -5,10 +5,13 @@ import 'market_view.dart';
 
 /// 插件市场独立页：从「添加拓展」里的「插件市场」进来。
 class MarketPage extends StatelessWidget {
-  const MarketPage({super.key, this.onInstalled});
+  const MarketPage({super.key, this.onInstalled, this.focusId});
 
   /// 装完 / 更新完说一句。
   final void Function(String message)? onInstalled;
+
+  /// 从拓展页「有更新的卡片」跳进来时带上：市场自动过滤并高亮这条。
+  final String? focusId;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +27,11 @@ class MarketPage extends StatelessWidget {
           // （顶栏那层色带才有内容可淡出）。
           body: GlassFadedBody(
             barHeight: topInset,
-            child: MarketView(onInstalled: onInstalled, topPadding: topInset),
+            child: MarketView(
+            onInstalled: onInstalled,
+            focusId: focusId,
+            topPadding: topInset,
+          ),
           ),
         );
       },

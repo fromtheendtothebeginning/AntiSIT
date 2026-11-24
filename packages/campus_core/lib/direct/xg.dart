@@ -351,50 +351,14 @@ class XgClient {
         _ => '',
       };
 
-  /// 已报名的第二课堂活动：POST /hdgl/list.zf `all=0`（`all=1` 是全部活动）。
-  /// 返回精简字段（名称/类别/时间/地点/报名状态），直接给「我的报名」列表用。
-  Future<List<Map<String, dynamic>>> signedActivities({int maxPages = 5}) async {
-    if (!loggedIn) throw ApiError('未登录学工系统');
-    final out = <Map<String, dynamic>>[];
-    for (var page = 1; page <= maxPages; page++) {
-      final resp = await _http.postForm(
-        '$_api/hdgl/list.zf',
-        {'all': '0', 'currentPage': '$page', 'showCount': '50'},
-        headers: _xgHeaders,
-        redirect: false,
-      );
-      if (resp.status >= 300 && resp.status < 400) _sessionLost();
-      final j = _parse(resp);
-      final data = j is Map ? j['data'] : null;
-      final items = data is Map ? data['items'] as List? : null;
-      if (items == null) {
-        if (j == null) _sessionLost();
-        throw ApiError('我的活动查询失败（${resp.status}）');
-      }
-      for (final raw in items) {
-        final it = raw is Map ? raw : const {};
-        final id = '${it['id'] ?? ''}';
-        if (id.isEmpty) continue;
-        out.add({
-          'id': id,
-          'name': (it['hdmc'] ?? '').toString(),
-          'dlmc': (it['dlmc'] ?? '').toString(),
-          'lbmc': (it['lbmc'] ?? '').toString(),
-          'start': it['hdkssj'],
-          'end': it['hdjssj'],
-          'place': (it['hddd'] ?? '').toString(),
-          'status_text': hdStatusText(it['hdbmzt']),
-          'signed': '${it['bm']}' == '1',
-        });
-      }
-      if (items.length < 50) break;
-    }
-    return out;
-  }
-
-  /// 第二课堂加分明细：POST /bizFlow/result/group/list.zf `groupCode=xshd`。
-  /// 每条 = 一次活动参与记录（活动名 / 大类 / 学分 / 审批状态 / 时间）。
-  Future<List<Map<String, dynamic>>> creditRecords({int maxPages = 10}) async {
+  /// 已报名的第二课堂活动：POST /bizFlow/result/group/list.zf `groupCode=xshd`
+  /// （学工菜单「第二课堂 → 活动管理 → 报名结果查询」用的就是它，返回**本人**的报名记录）。
+  ///
+  /// ⚠️ 不要用 hdgl/list.zf（`all=0`）：那个接口**匿名可访问**，返回的是公共活动池，
+  /// 与登录身份无关 —— 当「我的报名」用会看到一堆全校活动、且看不到本人新报的
+  /// （2026-11 实测：400 条里没有一条本人已报名；本人 49 条报名全在 bizFlow 里）。
+  /// 返回字段保持页面契约（id/name/dlmc/lbmc/start/end/place/status_text/signed）。
+  Future<List<Map<String, dynamic>>> signedActivities({int maxPages = 10}) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final out = <Map<String, dynamic>>[];
     final seen = <String>{};
@@ -403,6 +367,66 @@ class XgClient {
       final resp = await _http.postForm(
         '$_api/bizFlow/result/group/list.zf',
         {'groupCode': 'xshd', 'currentPage': '$page', 'showCount': '100'},
+        headers: _xgHeaders,
+        redirect: false,
+      );
+      if (resp.status >= 300 && resp.status < 400) _sessionLost();
+      final j = _parse(resp);
+      final data = j is Map ? j['data'] : null;
+      final rows = data is Map ? data['rows'] as List? : null;
+      if (rows == null) {
+        if (j == null) _sessionLost();
+        throw ApiError('我的报名查询失败（${resp.status}）');
+      }
+      final reportedTotal = int.tryParse('${data is Map ? data['totalCount'] ?? '' : ''}');
+      if (reportedTotal != null && reportedTotal > 0) total = reportedTotal;
+      for (final raw in rows) {
+        final it = raw is Map ? raw : const {};
+        final name = (it['hdmc'] ?? '').toString().trim();
+        final activityId = '${it['hdid'] ?? ''}';
+        if (name.isEmpty || activityId.isEmpty) continue;
+        // 翻页期间同一报名实例可能跨页重复：按流程实例 ID 去重。
+        final instanceId = '${it['INSTANCE_ID'] ?? it['ID'] ?? ''}'.trim();
+        if (instanceId.isNotEmpty && !seen.add(instanceId)) continue;
+        // 审批流状态 → 页面报名状态语义：通过 = 已报名（绿色胶囊），其余透传原文。
+        final flow = (it['flowstatusmc'] ?? it['FLOWSTATUS'] ?? '').toString().trim();
+        final statusText = flow == '通过' ? '已报名' : flow;
+        out.add({
+          'id': activityId,
+          'name': name,
+          'dlmc': (it['dldm'] ?? '').toString(),
+          'lbmc': (it['lbmc'] ?? '').toString(),
+          'start': it['hdkssj'],
+          'end': it['hdjssj'],
+          'place': (it['hddd'] ?? '').toString(),
+          'status_text': statusText,
+          'signed': true,
+        });
+      }
+      // 学校若把 showCount 截到更小：有 totalCount 按总数续页，否则「不满一页即结束」。
+      if (rows.isEmpty) break;
+      if (total > 0) {
+        if (out.length >= total) break;
+      } else if (rows.length < 100) {
+        break;
+      }
+    }
+    return out;
+  }
+
+  /// 第二课堂加分明细：POST /bizFlow/result/group/list.zf `groupCode=xsrd`
+  /// （学工「第二课堂 → 学分认定管理」的**学分认定**结果，即「学分明细查询」板块；
+  /// 每条 = 一次活动参与记录，学分在 `rdxs`（认定学分）——
+  /// 报名结果查询（groupCode=xshd）里没有学分字段，别从那边取）。
+  Future<List<Map<String, dynamic>>> creditRecords({int maxPages = 10}) async {
+    if (!loggedIn) throw ApiError('未登录学工系统');
+    final out = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    var total = 0;
+    for (var page = 1; page <= maxPages; page++) {
+      final resp = await _http.postForm(
+        '$_api/bizFlow/result/group/list.zf',
+        {'groupCode': 'xsrd', 'currentPage': '$page', 'showCount': '100'},
         headers: _xgHeaders,
         redirect: false,
       );
@@ -425,11 +449,12 @@ class XgClient {
             '${it['INSTANCE_ID'] ?? it['ID'] ?? ''}'.trim();
         if (instanceId.isNotEmpty && !seen.add(instanceId)) continue;
         out.add({
-          'id': '${it['INSTANCE_ID'] ?? it['ID'] ?? it['hdid'] ?? name}',
+          'id': '${it['INSTANCE_ID'] ?? it['ID'] ?? name}',
           'name': name,
           'dldm': (it['dldm'] ?? '').toString(),
           'lbdm': (it['lbdm'] ?? '').toString(),
-          'credit': '${it['hdxf'] ?? it['jcxsxf'] ?? ''}',
+          // 认定学分：xsrd 组在 rdxs（认定学分）/ xss；旧字段链兜底，取到为止。
+          'credit': '${it['rdxs'] ?? it['xss'] ?? it['hdxf'] ?? it['jcxsxf'] ?? ''}',
           'status': (it['flowstatusmc'] ?? it['FLOWSTATUS'] ?? '').toString(),
           'start': it['hdkssj'],
           'end': it['hdjssj'],

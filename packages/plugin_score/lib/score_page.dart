@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:campus_core/campus_core.dart';
 
@@ -32,8 +33,17 @@ class _ScorePageState extends State<ScorePage> {
   String _cohort = '';
 
   // 左右滑动切换：0=分数概览，1=加分明细
-  final PageController _tabs = PageController();
   int _tab = 0;
+
+  /// 连续位置（单位 = 页）：滑块自己的弹簧、用户拖滑块都会写到这里，
+  /// 页面据此实时平移；「界面实时跟着滑块切换」关掉时页面按落位页显示。
+  final ValueNotifier<double> _pos = ValueNotifier<double>(0);
+
+  /// 页面横滑时驱动切换器滑块的位置（默认行为，不受开关控制）；
+  /// null = 交还滑块自己的弹簧。
+  final ValueNotifier<double?> _dragPos = ValueNotifier<double?>(null);
+  double _dragFrom = 0;
+  double _screenW = 1;
   bool _creditsLoading = true;
   String? _creditsErr;
   List<Map<String, dynamic>> _credits = [];
@@ -59,11 +69,49 @@ class _ScorePageState extends State<ScorePage> {
 
   @override
   void dispose() {
-    _tabs.dispose();
+    _pos.dispose();
+    _dragPos.dispose();
     super.dispose();
   }
 
-  void _switchTab(int i) {
+  /// 页面横滑：驱动切换器滑块（默认行为）；「界面实时跟着滑块切换」打开时
+  /// 页面同时跟着手指走，关掉则松手落位后才换页。
+  void _onPageDragStart(DragStartDetails _) {
+    final w = MediaQuery.sizeOf(context).width;
+    _screenW = w <= 0 ? 1 : w;
+    _dragFrom = _pos.value;
+    _dragPos.value = _dragFrom;
+  }
+
+  void _onPageDragUpdate(DragUpdateDetails d) {
+    const last = 1.0; // 两页：0..1
+    final raw = (_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW;
+    final next = raw.isFinite ? raw.clamp(0.0, last) : _dragFrom;
+    _dragPos.value = next;
+    // 拖动过程中只动位置、不切页（不 setState）：跟着手指走的视觉由 _pos 驱动，
+    // 中途重建整页既卡又容易在模拟器上撞到框架断言；落位在松手时一次定。
+    if (AppState.I.followSlider) {
+      _pos.value = next;
+    }
+  }
+
+  void _onPageDragEnd(DragEndDetails d) {
+    const last = 1;
+    final v = _dragPos.value ?? _tab.toDouble();
+    // 与首页底栏同一套：慢拖就近落位，快速甩动借动量多滑一格
+    final speed = (-d.velocity.pixelsPerSecond.dx / _screenW).clamp(-8.0, 8.0);
+    var target = v.round().clamp(0, last);
+    final next = target + (speed > 0 ? 1 : -1);
+    if (speed.abs() >= 5.0 && next >= 0 && next <= last) target = next;
+    _dragPos.value = null; // 交还弹簧：滑块从当前位置弹到落点（页面跟着同一条弹簧回弹）
+    if (target != _tab) HapticFeedback.selectionClick();
+    _setTab(target);
+  }
+
+  /// 切换器点选 / 拖动落位都走这里。
+  void _onTabChanged(int i) => _setTab(i);
+
+  void _setTab(int i) {
     if (i == _tab) return;
     setState(() => _tab = i);
     if (i == 1 && !_creditsLoaded) _loadCredits();
@@ -77,11 +125,31 @@ class _ScorePageState extends State<ScorePage> {
     if (!mounted) return;
     if (list.isNotEmpty) {
       setState(() {
-        _credits = list;
+        _credits = _sortCreditsNewestFirst(list);
         _creditsLoading = false;
         _creditsFromCache = true;
       });
     }
+  }
+
+  /// 加分明细按时间**从最新开始**排：优先活动开始时间（start），
+  /// 没有就用记录时间（date，认定/提交时间）；都没有的排最后。
+  /// 两类时间都是 `yyyy-MM-dd HH:mm:ss` 格式，字典序即时间序。
+  static List<Map<String, dynamic>> _sortCreditsNewestFirst(
+    List<Map<String, dynamic>> list,
+  ) {
+    String key(Map<String, dynamic> r) =>
+        '${(r['start'] ?? '').toString().trim().isNotEmpty ? r['start'] : r['date'] ?? ''}'
+            .trim();
+    final sorted = [...list]..sort((a, b) {
+        final ka = key(a);
+        final kb = key(b);
+        if (ka == kb) return 0;
+        if (ka.isEmpty) return 1; // 没有时间的排最后
+        if (kb.isEmpty) return -1;
+        return kb.compareTo(ka); // 降序 = 最新在前
+      });
+    return sorted;
   }
 
   Future<void> _loadCredits() async {
@@ -94,9 +162,9 @@ class _ScorePageState extends State<ScorePage> {
     });
     try {
       final r = await ApiClient.I.creditRecords();
-      final list =
-          ((r['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
-      _credits = list;
+      final list = ((r['records'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>();
+      _credits = _sortCreditsNewestFirst(list);
       _creditsLoaded = true;
       _creditsFromCache = false;
       await ToolPageCache.write(_creditsCacheKey, {'records': list});
@@ -198,6 +266,9 @@ class _ScorePageState extends State<ScorePage> {
       builder: (context, _) {
         // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
         final topInset = glassTopInset(context);
+        // 两页 Widget 只在本页 build 时建一次：拖动中每帧只挪 Positioned，
+        // 不重复构建两整页（真机上拖动才不卡）。
+        final pages = <Widget>[_overviewView(topInset), _creditsView(topInset)];
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
@@ -213,11 +284,55 @@ class _ScorePageState extends State<ScorePage> {
           ),
           body: GlassFadedBody(
             barHeight: topInset,
-            // 分段切换器放进各页的滚动内容里：会和内容一起滚上去，不再钉在顶部
-            child: PageView(
-              controller: _tabs,
-              onPageChanged: _switchTab,
-              children: [_overviewView(topInset), _creditsView(topInset)],
+            // 分段切换器悬浮在顶栏下方：下划收起、上滑展开（见 FloatingTabsHeader）
+            child: FloatingTabsHeader(
+              topInset: topInset,
+              header: _tabsRow(),
+              dragPosition: _dragPos,
+              // 不用 PageView：它和切换器滑块互相抢手势/回弹。改成和首页底栏同一套做法——
+              // 一个连续位置 _pos 驱动两页平移，横滑手势只改位置。
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragStart: _onPageDragStart,
+                onHorizontalDragUpdate: _onPageDragUpdate,
+                onHorizontalDragEnd: _onPageDragEnd,
+                onHorizontalDragCancel: () => _dragPos.value = null,
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _pos,
+                  builder: (context, rawPos, _) {
+                    // 位置兜底：NaN / 越界一律钳回合法范围，别把非法值喂给布局
+                    // 不夹到 0..1：首页底栏的弹簧本身带轻微过冲（欠阻尼），
+                    // 页面跟着它一起过冲再回正，才有「触底反弹」的手感；
+                    // 只兜一个安全范围，防止异常值把页面甩飞。
+                    final safePos = rawPos.isFinite ? rawPos : _tab.toDouble();
+                    final pos = AppState.I.followSlider
+                        ? safePos.clamp(-0.25, 1.25)
+                        : _tab.toDouble();
+                    final w = MediaQuery.sizeOf(context).width;
+                    return Stack(
+                      children: [
+                        for (var k = 0; k < pages.length; k++)
+                          // 用 Positioned 摆位而不是 Transform：少一层合成层，
+                          // 和上面的毛玻璃顶栏叠在一起更稳。
+                          Positioned(
+                            left: (k - pos) * w,
+                            top: 0,
+                            bottom: 0,
+                            width: w,
+                            child: Offstage(
+                              offstage: (k - pos).abs() >= 0.999,
+                              // 隐藏的那页别跑动画（转圈、弹簧都不该在后台空转）
+                              child: TickerMode(
+                                enabled: (k - pos).abs() < 0.999,
+                                child: pages[k],
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         );
@@ -225,22 +340,27 @@ class _ScorePageState extends State<ScorePage> {
     );
   }
 
+  /// 悬浮切换器占的高度（列表顶部要让出这么多，内容才不会被它压住）。
+  static const double _tabsRowHeight = 50;
+
   Widget _tabsRow() => GlassTabs(
-        labels: const ['分数概览', '加分明细'],
-        index: _tab,
-        onChanged: (i) => _tabs.animateToPage(
-          i,
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-        ),
-        height: 32,
-        fontSize: 11.5,
-      );
+    // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底/描边
+    flat: true,
+    // 滑块位置写出去（拖动 / 弹簧都会写）：页面据此实时跟手
+    position: _pos,
+    // 页面横滑时驱动滑块（默认行为）
+    dragPosition: _dragPos,
+    labels: const ['分数概览', '加分明细'],
+    index: _tab,
+    onChanged: _onTabChanged,
+    height: 32,
+    fontSize: 11.5,
+  );
 
   Widget _overviewView(double topInset) {
     final data = _data;
-    final groups =
-        ((data?['groups'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final groups = ((data?['groups'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>();
     final total = asNum(data?['total']);
     final empty = total == null && groups.isEmpty;
 
@@ -253,10 +373,16 @@ class _ScorePageState extends State<ScorePage> {
       child: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
+          // 记住本页滚动位置：切走再切回来仍停在原处
+          key: const PageStorageKey<String>('score_overview'),
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            8 + topInset + _tabsRowHeight,
+            12,
+            20,
+          ),
           children: [
-            _tabsRow(),
             ToolRefreshBar(
               refreshing: _loading,
               fromCache: _fromCache,
@@ -359,7 +485,8 @@ class _ScorePageState extends State<ScorePage> {
     // 这类二进制浮点尾巴（页面上曾显示 5.930000000000002），最后再换算回学分。
     final sum = sumCreditThousandths(_credits.map((r) => r['credit'])) / 1000;
     final filtered = _creditsFiltered;
-    final filtering = _creditsQuery.trim().isNotEmpty ||
+    final filtering =
+        _creditsQuery.trim().isNotEmpty ||
         _creditDl.isNotEmpty ||
         _creditLb.isNotEmpty;
     return PageStateView(
@@ -371,10 +498,15 @@ class _ScorePageState extends State<ScorePage> {
       child: RefreshIndicator(
         onRefresh: _loadCredits,
         child: ListView(
+          key: const PageStorageKey<String>('score_credits'),
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            8 + topInset + _tabsRowHeight,
+            12,
+            20,
+          ),
           children: [
-            _tabsRow(),
             ToolRefreshBar(
               refreshing: _creditsLoading,
               fromCache: _creditsFromCache,
@@ -668,19 +800,19 @@ class _ScorePageState extends State<ScorePage> {
   }
 
   BoxDecoration _groupDecoration() => BoxDecoration(
-        color: SemColors.stripe,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: SemColors.border),
-      );
+    color: SemColors.stripe,
+    borderRadius: BorderRadius.circular(10),
+    border: Border.all(color: SemColors.border),
+  );
 
   Widget _groupName(String name) => Text(
-        name,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: SemColors.textPrimary,
-        ),
-      );
+    name,
+    style: TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: SemColors.textPrimary,
+    ),
+  );
 
   /// 组达标胶囊：默认蓝；有目标时达标绿 / 未达标红（cs-group-sub）。
   Widget _groupCapsule(num actual, double? targetVal) {
@@ -769,8 +901,8 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
                       soft: targetVal == null
                           ? SemColors.accentSoft
                           : (reached
-                              ? SemColors.successSoft
-                              : SemColors.dangerSoft),
+                                ? SemColors.successSoft
+                                : SemColors.dangerSoft),
                     ),
                     const SizedBox(width: 8),
                   ],
@@ -790,8 +922,9 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
             sizeCurve: Curves.easeOut,
-            crossFadeState:
-                _open ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            crossFadeState: _open
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
             firstChild: const SizedBox(width: double.infinity),
             secondChild: Container(
               width: double.infinity,
@@ -841,8 +974,9 @@ class _ScoreGroupTileState extends State<_ScoreGroupTile> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
       decoration: BoxDecoration(
-        border:
-            last ? null : Border(bottom: BorderSide(color: SemColors.border)),
+        border: last
+            ? null
+            : Border(bottom: BorderSide(color: SemColors.border)),
       ),
       child: Row(
         children: [

@@ -159,9 +159,47 @@ class ExtensionStore extends ChangeNotifier {
     _sizes = _parseSizes(sp.getString(_kSizes))
       ..removeWhere((id, size) =>
           !alive.contains(id) || size == GridCardSize.standard);
+    // 演示模式：种一条「市场装的旧版」假拓展，配合市场里的演示目录演示
+    // 「可更新 → 点卡片跳市场 → 更新」全流程；退出演示时清掉 demo-* 条目。
+    if (AppState.I.demo) {
+      // 没装过就种一条旧版；已经更新到目录版本（v2.0.0）后**不再降回去**，
+      // 但提供「演示记事本」长按菜单里的「降级演示」来手动重置，见 demoResetNote。
+      if (!_items.any((e) => e.id == 'demo-note')) {
+        _items = [..._items, _demoInstalledNote()];
+        await _persist();
+      }
+    } else if (_items.any((e) => e.id.startsWith('demo-'))) {
+      _items = [for (final e in _items) if (!e.id.startsWith('demo-')) e];
+      await _persist();
+    }
     loaded = true;
     notifyListeners();
   }
+
+  /// 手动把演示记事本降回 v1.0.0（演示模式重测「可更新 → 跳市场」用）。
+  Future<void> demoResetNote() async {
+    if (!AppState.I.demo) return;
+    final have = _items.where((e) => e.id == 'demo-note').toList();
+    if (have.isEmpty) return;
+    _items = [for (final e in _items) e.id == 'demo-note' ? _demoInstalledNote() : e];
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 演示用的「已装 v1.0.0」记事本（市场目录里是 v2.0.0，所以显示可更新）。
+  static ExtensionItem _demoInstalledNote() => const ExtensionItem(
+        id: 'demo-note',
+        name: '演示记事本',
+        url: 'demo://demo-note/main.js',
+        desc: '演示模式专用的假拓展（市场里有 v2.0.0 更新）',
+        icon: '📒',
+        bundled: true,
+        runtime: ExtensionItem.runtimeCordis,
+        version: '1.0.0',
+        sha256: 'demo-note-1',
+        permissions: ['storage'],
+        fromMarket: true,
+      );
 
   Future<void> setHideUrls(bool v) async {
     if (hideUrls == v) return;
