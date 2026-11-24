@@ -307,6 +307,7 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
                               onTap: () {
                                 if (i != widget.index) {
                                   _springTo(i.toDouble());
+                                  HapticFeedback.selectionClick();
                                   widget.onChanged(i);
                                 }
                               },
@@ -325,7 +326,10 @@ class _GlassTabsState extends State<GlassTabs> with SingleTickerProviderStateMix
                                   target = next;
                                 }
                                 _springTo(target.toDouble(), v);
-                                if (target != widget.index) widget.onChanged(target);
+                                if (target != widget.index) {
+                                  HapticFeedback.selectionClick();
+                                  widget.onChanged(target);
+                                }
                               },
                               child: Center(
                                 child: Text(
