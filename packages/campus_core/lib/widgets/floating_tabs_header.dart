@@ -42,7 +42,7 @@ class FloatingTabsHeader extends StatefulWidget {
 
   /// 横滑切页时把「当前连续位置」写出去（单位 = 段，1.5 = 第 2、3 段中间），
   /// 切换器据此实时跟手；置回 null（松手）时切换器自己弹到落点。
-  /// 只在「界面实时跟着滑块切换」打开时写。
+  /// 非 null 也代表「页面正在横滑」，收起中的切换器会因此展开。
   final ValueNotifier<double?>? dragPosition;
 
   /// 收起 / 展开的动画时长。
@@ -63,6 +63,26 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
   static const double _slop = 2.0;
 
   bool _hidden = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 页面横滑（自管手势，不走滚动通知）开始时 dragPosition 会从 null 变非 null：
+    // 借这个信号把收起中的切换器展开，保证「换页时看得见切换器」。
+    widget.dragPosition?.addListener(_onPageDrag);
+  }
+
+  @override
+  void dispose() {
+    widget.dragPosition?.removeListener(_onPageDrag);
+    super.dispose();
+  }
+
+  void _onPageDrag() {
+    if (widget.dragPosition?.value != null && _hidden) {
+      setState(() => _hidden = false);
+    }
+  }
 
   bool _onScroll(ScrollNotification n) {
     // 横向滚动 = PageView 在切页
