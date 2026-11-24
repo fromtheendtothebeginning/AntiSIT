@@ -67,6 +67,11 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     MarketSource.I.addListener(_onChanged);
     ExtSourceStore.I.addListener(_onChanged);
     if (!_store.loaded) unawaited(_store.load());
+    // 演示模式的目录是本地假数据（不打网络）：进页面就拉，
+    // 「可更新」角标和点击跳市场才能立刻工作（真实模式仍等市场页打开时再拉）。
+    if (AppState.I.demo && MarketSource.I.status == MarketStatus.idle) {
+      unawaited(MarketSource.I.load());
+    }
     unawaited(_readAppVersion());
   }
 
@@ -104,8 +109,17 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   // ==================== 打开 ====================
 
-  Future<void> _open(ExtensionItem e) =>
-      openExtension(context, e, onMessage: _toast);
+  Future<void> _open(ExtensionItem e) async {
+    // 有新版：直接跳到插件市场并定位到这条，用户在那儿更新
+    // （要继续用旧版可以长按卡片 → 详情，或装完新版再打开）。
+    if (_isUpdatable(e)) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => MarketPage(focusId: e.id)),
+      );
+      return;
+    }
+    openExtension(context, e, onMessage: _toast);
+  }
 
   // ==================== 添加 ====================
 
