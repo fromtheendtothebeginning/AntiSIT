@@ -9,13 +9,10 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-/// 校园码刷新间隔的上限（秒）。默认 10 秒换一张，用户可在「我的 → 配置」调整；
-/// 服务端 `refresh` 标的是**码的有效期**（现在回 55），客户端按配置间隔更频繁地
-/// 重取，扫码慢一点、截图转发也不会扫到快过期的码。
+/// 校园码刷新间隔上限（秒）；服务端 `refresh` 标的是码的有效期，客户端按配置间隔更频繁地重取。
 const int ecardMaxRefreshSeconds = 30;
 
-/// 校园码的刷新倒计时（秒）：按配置的 [interval] 换码；服务端给的有效期更短时
-/// 听服务端的，再提前 3 秒换码（别把过期码留在屏幕上）。
+/// 刷新倒计时：取配置间隔与服务端有效期的较小值，服务端更短时再提前 3 秒换码。
 int ecardCountdownSeconds(int? fromServer, {int interval = 10}) {
   final server = fromServer ?? interval;
   final base = math.min(interval, server);
@@ -23,8 +20,7 @@ int ecardCountdownSeconds(int? fromServer, {int interval = 10}) {
   return left < 5 ? 5 : left;
 }
 
-/// 校园码：复刻网站「校园卡动态码」排版
-/// （绿徽章 + 220px 二维码 + 余额/倒计时/立即刷新 + 防转发提示），亮码期间屏幕常亮。
+/// 校园码：复刻网站「校园卡动态码」排版，亮码期间屏幕常亮。
 class EcardPage extends StatefulWidget {
   const EcardPage({super.key, this.activeTab, this.myTab = 1});
 
@@ -44,13 +40,12 @@ class _EcardPageState extends State<EcardPage> {
   Timer? _ticker;
   bool _active = true;
 
-  /// 风险提醒（默认开启）拦在付款码前面：开着就**不请求**、不显示码，原位给引导
-  /// （引导里可跳插件管理关掉它）。没装 / 被停用时取不到能力 = 没有这道闸。
+  /// 风险提醒（默认开启）拦在付款码前：开着就不请求、不显示码，原位给引导。
   RiskNoticeCapability? get _risk =>
       PluginRegistry.I.capability<RiskNoticeCapability>(PluginIds.risk);
   bool get _blocked => _risk != null;
 
-  /// 上一次看到的拦截状态：注册表一变就回调，只在「拦 ↔ 放行」翻转时动手。
+  /// 上次看到的拦截状态，只在「拦 ↔ 放行」翻转时动手。
   bool _blockedSeen = false;
 
   @override
@@ -68,19 +63,19 @@ class _EcardPageState extends State<EcardPage> {
     }
   }
 
-  /// 风险提醒被关掉 / 开回来：立刻恢复取码或停下刷新（用户从管理页关完返回就该生效）。
+  /// 风险提醒被关掉 / 开回来：立刻恢复取码或停止刷新。
   void _onRegistryChanged() {
     if (!mounted || _blocked == _blockedSeen) return;
     _blockedSeen = _blocked;
     if (_blocked) {
-      WakelockPlus.disable(); // 不再亮着屏等一张不会显示的码
+      WakelockPlus.disable();
     } else if (_active && !_loading) {
       _fetch();
     }
     setState(() {});
   }
 
-  /// 「配置」里改了换码间隔：倒计时立刻按新间隔收敛，不用等下一轮取码。
+  /// 「配置」里改了换码间隔：倒计时立刻按新间隔收敛，不等下一轮取码。
   void _onSettingsChanged() {
     if (!mounted || _data == null || _loading) return;
     final interval = AppState.I.ecardRefreshSeconds;
@@ -123,7 +118,7 @@ class _EcardPageState extends State<EcardPage> {
         asInt(_data?['refresh']),
         interval: AppState.I.ecardRefreshSeconds,
       );
-      // 桌面「校园卡余额」卡片跟着更新：只放余额，动态码不进桌面
+      // 桌面卡片只同步余额，动态码不进桌面。
       final widget = PluginRegistry.I.capability<HomeWidgetCapability>(
         PluginIds.homeWidget,
       );
@@ -150,7 +145,7 @@ class _EcardPageState extends State<EcardPage> {
     super.dispose();
   }
 
-  /// 风险提醒开着时的卡片：二维码区域换成引导，这一页**不请求**任何付款码数据。
+  /// 拦截态卡片：二维码区换成引导，本页不请求任何付款码数据。
   Widget _blockedCard() => AppCard(
         child: Column(
           children: [
@@ -159,8 +154,7 @@ class _EcardPageState extends State<EcardPage> {
               child: Capsule('校园卡动态码', color: SemColors.textMuted),
             ),
             const SizedBox(height: 14),
-            // 引导放在二维码原来的位置：至少 220×220（与二维码同尺寸），
-            // 内容更高时让框长高，不裁不溢出。
+            // 引导占二维码原位：至少 220×220，内容更高时让框长高，不裁不溢出。
             ConstrainedBox(
               constraints: const BoxConstraints(minWidth: 220, minHeight: 220),
               child: Center(
@@ -184,7 +178,7 @@ class _EcardPageState extends State<EcardPage> {
     final code = (d['code'] as String?) ?? '';
     if (img != null && img.isNotEmpty) {
       try {
-        // 兼容 dataURI 前缀（data:image/png;base64,xxx）
+        // 兼容 dataURI 前缀（data:image/png;base64,xxx）。
         final b64 = img.contains(',') ? img.split(',').last : img;
         final bytes = base64Decode(b64);
         if (bytes.length > 64) {
@@ -197,7 +191,7 @@ class _EcardPageState extends State<EcardPage> {
       } catch (_) {}
     }
     if (code.isNotEmpty) {
-      // 透明底落在下方 _qrPlate 上（深色主题才需要白底，浅色直接压在浅色卡面上）
+      // 透明底交给下方 _qrPlate。
       return QrImageView(
         data: code,
         size: 220,
@@ -211,20 +205,18 @@ class _EcardPageState extends State<EcardPage> {
     );
   }
 
-  /// 二维码底板：浅色主题**不画白底**（否则玻璃卡上会露出一块白色方块），
-  /// 深色主题才给一块圆角白底——深色卡面上深色模块无法辨认，必须垫亮底才能扫。
+  /// 二维码底板：浅色不画白底，深色垫圆角白底（否则深色模块无法辨认）。
   Widget _qrPlate(Widget child) => QrPlate(child: child);
 
   @override
   Widget build(BuildContext context) {
-    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('校园码')),
           body: GlassFadedBody(
@@ -232,8 +224,7 @@ class _EcardPageState extends State<EcardPage> {
             child: LoginGate(
             child: Center(
               child: SingleChildScrollView(
-                // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：小屏滚动时底部让出底栏这一截
-                // 顶部再让出悬浮顶栏
+                // 顶部让出悬浮顶栏，底部让出玻璃浮层底栏。
                 padding: EdgeInsets.fromLTRB(
                   20,
                   20 + topInset,
@@ -244,9 +235,7 @@ class _EcardPageState extends State<EcardPage> {
                   constraints: const BoxConstraints(maxWidth: 420),
                   child: Column(
                     children: [
-                      // 拦截 / 失败 / 正常三张卡片之间的切换走全站同一条高度过渡：
-                      // AnimatedSize 顶部锚定 + 220ms easeOutCubic（与「我的」页可收起内容一致；
-                      // 默认居中会让内容在高度动画期间整体上下漂移）。
+                      // 拦截 / 失败 / 正常三张卡片切换走统一高度过渡：顶部锚定，内容不上下漂移。
                       AnimatedSize(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,

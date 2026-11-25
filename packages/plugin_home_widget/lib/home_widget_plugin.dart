@@ -2,13 +2,7 @@ import 'package:campus_core/campus_core.dart';
 
 import 'home_widget_capability_impl.dart';
 
-/// 桌面卡片 + 长按图标的快捷方式。
-///
-/// * **桌面卡片**：主屏小组件「今日课程」「校园卡余额」，标准 Android App Widget，
-///   ColorOS / OriginOS / 澎湃OS 等桌面都支持；数据由 App 同步过去，点卡片回到对应页面。
-/// * **长按图标**：快捷方式（static shortcuts）直接跳「校园码 / 课程表」——
-///   菜单由系统桌面绘制，App 只声明动作。
-///
+/// 桌面卡片 + 长按图标快捷方式：主屏小组件（今日课程 / 校园卡余额）与 static shortcuts。
 /// 本插件只做通道与转发，不占底栏、不弹通知。
 class HomeWidgetPlugin extends FeaturePlugin {
   const HomeWidgetPlugin();
@@ -28,7 +22,7 @@ class HomeWidgetPlugin extends FeaturePlugin {
 
   @override
   Future<void> init() async {
-    // 点卡片 / 长按快捷方式进来：把原生动作转给主界面（切到对应底栏页）。
+    // 点卡片 / 快捷方式进来：把原生动作转给主界面（切到对应底栏页）。
     HomeWidgetCapabilityImpl.channel.setMethodCallHandler((call) async {
       if (call.method != 'launchAction') return null;
       final action = '${call.arguments ?? ''}'.trim();
@@ -41,11 +35,8 @@ class HomeWidgetPlugin extends FeaturePlugin {
   }
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 能力挂在本插件 id 上：课表保存后由 [TimetableStore] 同步今日课程；
-/// 校园码拿到余额后由它同步余额。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_HOME_WIDGET=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉（卡片仍留在桌面上，但不再更新）。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；能力挂在 PluginIds.homeWidget 上，
+/// 课表保存后同步今日课程、校园码拿到余额后同步余额；EXCLUDE_HOME_WIDGET 为真时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(
   features: [HomeWidgetPlugin()],
   capabilities: {PluginIds.homeWidget: HomeWidgetCapabilityImpl()},

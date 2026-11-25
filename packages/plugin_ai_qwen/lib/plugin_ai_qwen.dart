@@ -28,12 +28,10 @@ class QwenProvider extends AiProviderPlugin {
   @override
   String get logo => 'packages/plugin_ai_qwen/assets/qwen.svg';
 
-  /// 官方兼容模式用 `enable_thinking`（与 index `apply_thinking` 一致）。
+  /// 兼容模式关思考用 `enable_thinking: false`。
   @override
   Map<String, dynamic> thinkingOff(String model) => const {'enable_thinking': false};
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_AI_QWEN=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_QWEN=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(providers: [QwenProvider()]);

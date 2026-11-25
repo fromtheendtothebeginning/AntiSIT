@@ -1,8 +1,7 @@
 import 'package:campus_core/campus_core.dart';
 
-/// AI 提供商插件：OpenCode Go（opencode.ai 的聚合订阅）。
-/// 一个 Key 能调多家模型，端点仍是一个 OpenAI 兼容地址；部分模型内部走 Anthropic /
-/// responses 端点（那是聚合服务自己的事），这里只按 OpenAI 兼容协议调用。
+/// AI 提供商插件：OpenCode Go（opencode.ai 聚合订阅），一个 Key 调多家模型。
+/// 部分模型在聚合侧内部走 Anthropic / responses 端点，此处仍只按 OpenAI 兼容协议调用。
 class OpenCodeGoProvider extends AiProviderPlugin {
   const OpenCodeGoProvider();
 
@@ -33,13 +32,10 @@ class OpenCodeGoProvider extends AiProviderPlugin {
   @override
   String get logo => 'packages/plugin_ai_opencode_go/assets/opencode-go.svg';
 
-  /// 不关思考：这家按模型路由到不同上游（thinking / reasoning_effort / enable_thinking
-  /// 三种写法混在一起），统一加字段很可能 400，交给模型默认行为。
+  /// 不关思考：各上游 thinking / reasoning_effort / enable_thinking 写法混杂，统一加易 400。
   @override
   Map<String, dynamic> thinkingOff(String model) => const {};
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_AI_OPENCODE_GO=true），这一条连同包内
-/// 代码一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_OPENCODE_GO=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(providers: [OpenCodeGoProvider()]);

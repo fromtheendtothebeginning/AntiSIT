@@ -5,19 +5,18 @@ import 'package:campus_core/campus_core.dart';
 import 'risk_notice_page.dart';
 import 'risk_terms.dart';
 
-/// 风险提醒能力的实现：拦截界面 + 停用前的条款确认。
-/// 文案与条款都留在本包里，被拦的插件（校园码 / 电费）只拿 campus_core 的
-/// [RiskNoticeCapability] 接口，不 import 本包。
+/// 风险提醒能力实现：拦截界面 + 停用前的条款确认。
+/// 文案与条款留在本包，被拦插件只拿 campus_core 的 [RiskNoticeCapability] 接口。
 class RiskNoticeCapabilityImpl extends RiskNoticeCapability {
   const RiskNoticeCapabilityImpl();
 
-  /// 跳插件管理：那页属于宿主包，插件不认识它，只能走宿主注入的构建器
-  /// （见 campus_core 的 `hostPluginManagerBuilder`）。
+  /// 跳插件管理：该页属宿主包，只能走宿主注入的 hostPluginManagerBuilder。
   void _openPluginManager(BuildContext context) {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => hostPluginManagerBuilder()));
   }
 
+  /// 打开条款全文页。
   void _openNotice(BuildContext context) {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const RiskNoticePage()));
@@ -29,8 +28,7 @@ class RiskNoticeCapabilityImpl extends RiskNoticeCapability {
 
   @override
   Future<void> warnBlocked(BuildContext context, {required String feature}) async {
-    // 弹窗自带 Material 进出场动画（与全站其他弹窗一致）；标题由弹窗承担，
-    // 内容里不再重复一行。
+    // 标题由弹窗承担，内容里不再重复一行。
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -40,7 +38,7 @@ class RiskNoticeCapabilityImpl extends RiskNoticeCapability {
           feature: feature,
           showTitle: false,
           onOpenManager: () {
-            Navigator.pop(ctx); // 先关弹窗，别把管理页叠在弹窗上
+            Navigator.pop(ctx); // 先关弹窗，别把管理页叠在弹窗上。
             if (context.mounted) _openPluginManager(context);
           },
         ),
@@ -53,17 +51,14 @@ class RiskNoticeCapabilityImpl extends RiskNoticeCapability {
 
   @override
   Future<bool> confirmDisable(BuildContext context) async {
-    // 与别的二级页走同一条普通路由：进出动画、返回手势（含预测式返回）都跟全站一致。
     // 返回 null（返回键 / 手势 / 点了「不同意」）→ 未作出同意，本组件维持启用。
     final ok = await Navigator.of(context).push<bool>(
         MaterialPageRoute(builder: (_) => const RiskNoticePage(confirmMode: true)));
     return ok ?? false;
   }
 
-  /// 拦截内容：一行结论（受拦截行为不予执行）+ 一行后果 + 两个出口（前往停用 / 查条款）。
-  /// 按告知同意的排法：先把后果说清，再给并列的出口，不做诱导。
-  /// [feature] 是被拦行为的名称（第二条第（五）项 / 第（六）项的定义）。
-  /// [showTitle] = 弹窗里由弹窗标题承担，内容里不再重复。
+  /// 拦截内容：结论 + 后果 + 两个并列出口（前往停用 / 查条款），不做诱导。
+  /// [feature] 为被拦行为名称；[showTitle] = false 时标题由弹窗承担。
   Widget _notice(BuildContext context,
       {required String feature,
       required VoidCallback onOpenManager,

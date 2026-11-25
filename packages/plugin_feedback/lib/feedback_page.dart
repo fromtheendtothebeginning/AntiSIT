@@ -6,12 +6,11 @@ import 'package:campus_core/campus_core.dart';
 
 const String _repo = 'https://github.com/fromtheendtothebeginning/AntiSIT';
 
-/// 提交反馈：Issue（报问题/提建议）、PR（贡献代码）、Fork（GPL-3.0 自建分支），
-/// 三种方式都跳转 GitHub 对应页面；打不开时复制链接兜底。
+/// 提交反馈：Issue / PR / Fork 三种方式都跳 GitHub，打不开时复制链接兜底。
 class FeedbackPage extends StatelessWidget {
   const FeedbackPage({super.key});
 
-  /// 打开链接；打不开（无浏览器/网络受限）时复制到剪贴板兜底。
+  /// 打开链接；打不开（无浏览器 / 网络受限）时复制到剪贴板兜底。
   Future<void> _open(String url, BuildContext context) async {
     try {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
@@ -30,20 +29,18 @@ class FeedbackPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('提交反馈')),
           body: GlassFadedBody(
             barHeight: topInset,
             child: ListView(
-            // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
             children: [
               AppCard(
@@ -147,6 +144,7 @@ class FeedbackPage extends StatelessWidget {
         ],
       );
 
+  /// 一行「图标 + 标题 + 说明」的跳转卡片。
   Widget _way(
     BuildContext context, {
     required IconData icon,

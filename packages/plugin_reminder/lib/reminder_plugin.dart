@@ -30,7 +30,7 @@ class ReminderPlugin extends FeaturePlugin {
   @override
   Future<void> init() async {
     await ClassReminderService.I.loadEnabled();
-    // 排期要初始化通知插件再排最多 64 条定时通知，别挡着进主页
+    // 初始化通知插件 + 排最多 64 条定时通知，别挡着进主页。
     unawaited(_rescheduleQuietly());
   }
 
@@ -42,15 +42,13 @@ class ReminderPlugin extends FeaturePlugin {
     }
   }
 
-  /// 提醒是课表的一部分，设置收在「课程表设置」二级页里（课表页 → 更多 → 课程表设置，
-  /// 或「我的 → 设置 → 课程表设置」），不再单独占「我的」的一行。
+  /// 提醒是课表的一部分，设置收在「课程表设置」二级页里，不单独占「我的」的一行。
   @override
   List<Widget> timetableSettingsTiles(BuildContext context, PluginRegistry registry) =>
       const [_ReminderTile()];
 }
 
-/// 开关 + 一行自检摘要。状态详情与「去系统设置」的引导都在二级页
-/// （[ReminderGuidePage]），设置列表只留一行，不占地方。
+/// 开关 + 一行自检摘要；状态详情与系统设置引导在 [ReminderGuidePage]。
 class _ReminderTile extends StatefulWidget {
   const _ReminderTile();
 
@@ -159,12 +157,9 @@ class _ReminderTileState extends State<_ReminderTile> with WidgetsBindingObserve
   }
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// `capabilities` 的 key 就是本插件 id：课表页（AppBar 铃铛）与课表存储（课表变更后
-/// 重排期）按「接口 + 这个 id」取用提醒能力，都不 import 本包；本插件被停用时查不到，
-/// 铃铛消失、也不再排期。通知权限自检与引导页属于本包自己的 UI，不进能力接口。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_REMINDER=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；能力 key 就是本插件 id，课表页（铃铛）与
+/// 课表存储（课表变更后重排期）按「接口 + id」取用，被停用时铃铛消失、不再排期；
+/// EXCLUDE_REMINDER 为真时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(
   features: [ReminderPlugin()],
   capabilities: {PluginIds.reminder: ReminderCapabilityImpl()},

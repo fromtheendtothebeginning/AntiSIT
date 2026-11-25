@@ -91,25 +91,22 @@ class _ElectricityPageState extends State<ElectricityPage> {
     });
     try {
       final r = await ApiClient.I.electricityHistory(days: days);
-      if (_days != days) return; // 期间切了天数，别把旧请求的结果盖上去
+      if (_days != days) return; // 期间切了天数，别把旧请求的结果盖上去。
       _history =
           ((r['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
       await ToolPageCache.write(_historyKey(days), {'records': _history});
     } catch (_) {
-      // 历史拉取失败保留已有曲线（查余额本身不受影响）
+      // 历史拉取失败保留已有曲线（查余额本身不受影响）。
     } finally {
-      // 期间又切了天数就别动 loading：那是新请求的状态
+      // 期间又切了天数就别动 loading：那是新请求的状态。
       if (mounted && _days == days) {
         setState(() => _historyLoading = false);
       }
     }
   }
 
-  /// 切天数：先切（让 7/30/90 立刻响应、旧曲线先清掉），再读该天数的本地缓存，
-  /// 最后拉新数据。
-  ///
-  /// 注意别把「期间又切了天数」的判断放在 [_days] 赋值之前：那时 _days 还是旧值，
-  /// 判断恒不成立，整个切换会被直接 return（这正是之前 7/30/90 点了没反应的原因）。
+  /// 切天数：先切（让按钮立刻响应、旧曲线先清掉），再读该天数缓存，最后拉新。
+  /// 「期间又切了天数」的判断必须放在 [_days] 赋值之后，否则恒不成立、切换会被直接 return。
   Future<void> _switchDays(int days) async {
     if (_days == days) return;
     setState(() {
@@ -120,7 +117,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
       _refreshFailed = false;
     });
     final cached = await ToolPageCache.read(_historyKey(days));
-    if (!mounted || _days != days) return; // 期间又切了别的天数，丢弃这次结果
+    if (!mounted || _days != days) return; // 期间又切了别的天数，丢弃这次结果。
     final records = ((cached?['records'] as List?) ?? const [])
         .cast<Map<String, dynamic>>();
     setState(() {
@@ -132,8 +129,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
   }
 
   Future<void> _recharge() async {
-    // 风险提醒（默认开启）拦在充值前面：点击只弹提醒，引导去插件管理关掉它
-    // （查余额、看历史不受影响）。没装 / 被停用时取不到能力 = 没有这道闸。
+    // 风险提醒（默认开启）拦在充值前：只弹提醒，查余额与历史不受影响；停用后无此闸。
     final risk = PluginRegistry.I.capability<RiskNoticeCapability>(
       PluginIds.risk,
     );
@@ -281,11 +277,11 @@ class _ElectricityPageState extends State<ElectricityPage> {
     final remain = asDouble(_data?['remain']);
     final low = balance != null && balance < 10;
     final usage = _usageStats();
-    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
@@ -297,7 +293,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
             error: _err,
             onRetry: _refreshAll,
             child: RefreshIndicator(
-              // 下拉刷新圈从悬浮顶栏底边开始，别贴着屏幕最上沿（issue #14）
+              // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
               edgeOffset: topInset,
               onRefresh: _refreshAll,
               child: ListView(
@@ -396,7 +392,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // 历史余额折线图（新接口 /electricity/history）
+                  // 历史余额折线图（接口 /electricity/history）。
                   AppCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

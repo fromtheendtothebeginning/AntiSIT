@@ -26,7 +26,7 @@ class KimiProvider extends AiProviderPlugin {
   @override
   String get logo => 'packages/plugin_ai_kimi/assets/kimi.svg';
 
-  /// k3 用 `reasoning_effort`，K2.x 用 `thinking`（与 index `apply_thinking` 一致）。
+  /// k3 用 `reasoning_effort`，K2.x 用 `thinking: {type: disabled}`。
   @override
   Map<String, dynamic> thinkingOff(String model) => model.startsWith('kimi-k3')
       ? const {'reasoning_effort': 'none'}
@@ -35,7 +35,5 @@ class KimiProvider extends AiProviderPlugin {
         };
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_AI_KIMI=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_KIMI=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(providers: [KimiProvider()]);

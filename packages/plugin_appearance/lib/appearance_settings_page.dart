@@ -2,12 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-/// 外观二级页：与外观有关的选项都收在这里——
-/// 主题（主题插件单选）、深浅色（跟随系统 / 浅色 / 深色）、界面是否实时跟着滑块切换。
-///
-/// 深浅色滑块拖到中间时整站配色会在浅色板与深色板之间插值（见 [appearanceDarkness] /
-/// [GlassPalette.lerp]）；「跟随滑块」开关控制的是**界面跟着滑块切换**这件事本身
-/// （主界面底栏切页、连接设置那两套设置），关掉就回到「松手落位后才切」的旧行为。
+/// 外观二级页：主题单选、深浅色（跟随系统 / 浅色 / 深色）与若干界面开关。
+/// 滑块拖到中间时配色在浅深色板间插值；「跟随滑块」控制界面是否实时跟着切，关掉则松手才切。
 class AppearanceSettingsPage extends StatefulWidget {
   const AppearanceSettingsPage({super.key});
 
@@ -16,7 +12,7 @@ class AppearanceSettingsPage extends StatefulWidget {
 }
 
 class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
-  /// 深浅色滑块的连续位置（0=跟随系统 / 1=浅色 / 2=深色）：拖动时整站配色跟着插值。
+  /// 深浅色滑块的连续位置：0=跟随系统 / 1=浅色 / 2=深色。
   final ValueNotifier<double> _appearancePos = ValueNotifier<double>(1);
 
   @override
@@ -30,7 +26,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
   void dispose() {
     _appearancePos.removeListener(_previewAppearance);
     _appearancePos.dispose();
-    AppState.I.setAppearancePreview(null); // 离开页面就别留着预览
+    AppState.I.setAppearancePreview(null);
     super.dispose();
   }
 
@@ -40,8 +36,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
     _ => 0,
   };
 
-  /// 导入主题：粘贴一份主题 JSON（底色 / 面底 / 强调色 / 文字色的浅深两档），
-  /// 校验通过即入列并切换过去；错误原因就地显示在输入框下面。
+  /// 导入主题：粘贴主题 JSON，校验通过即入列并切换，错误就地显示。
   Future<void> _importTheme(BuildContext context) async {
     final ctrl = TextEditingController();
     String? error;
@@ -116,7 +111,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
     }
   }
 
-  /// 滑块每动一点就更新整站配色的预览（量化在 AppState 里做，避免每帧重建）。
+  /// 滑块每动一点就更新整站配色预览（量化在 AppState 里做，避免每帧重建）。
   void _previewAppearance() {
     final systemDark =
         WidgetsBinding.instance.platformDispatcher.platformBrightness ==
@@ -129,21 +124,18 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final st = AppState.I;
-    // 整页监听 AppState：顶栏样式开关也在本页，改完要连 Scaffold 一起重建
-    // （extendBodyBehindAppBar / appBar / 顶部留白都在 build 里定死）
+    // 整页监听 AppState：顶栏样式开关也在本页，改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: Listenable.merge([st, PluginRegistry.I]),
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('外观')),
           body: GlassFadedBody(
             barHeight: topInset,
             child: ListView(
-            // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
             children: [
               AppCard(

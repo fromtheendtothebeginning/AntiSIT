@@ -29,11 +29,8 @@ class CourseCloudSyncImpl implements CourseCloudCapability {
   Future<void> sync() => CourseCloudService.I.sync();
 }
 
-/// 「流体云课程通知」的调度中心。
-///
-/// 三选一里的**流体云**模式由它负责：从课程表算出未来 7 天的课程窗口，
-/// 整批交给 [FluidCloudCapability] 用原生闹钟排期；其它模式把已排的窗口清掉。
-/// 课程通知的**弹窗**模式仍归「上课提醒」插件，两边靠 [AppState.courseNotifyMode] 互斥。
+/// 「流体云课程通知」的调度中心：算出未来 7 天的课程窗口，整批交给 [FluidCloudCapability] 排期，
+/// 其它模式把已排窗口清掉；弹窗模式仍归上课提醒插件，两边靠 [AppState.courseNotifyMode] 互斥。
 class CourseCloudService with WidgetsBindingObserver {
   CourseCloudService._();
   static final CourseCloudService I = CourseCloudService._();
@@ -75,8 +72,8 @@ class CourseCloudService with WidgetsBindingObserver {
   Future<void> sync() async {
     final cloud = _cloud;
     if (cloud == null) return;
-    // 启动早期插件先于课表加载跑：这时 semesters 为空不代表「用户没有课」，
-    // 拿它去 schedule([]) 会把上一次排好的原生闹钟全清掉，流体云就再也不亮了。
+    // 启动早期插件先于课表加载：此时 semesters 为空不代表没课，schedule([]) 会清掉
+    // 上一次排好的原生闹钟，流体云就再也不亮了。
     if (!TimetableStore.instance.loaded) return;
     if (AppState.I.courseNotifyMode != CourseNotifyMode.cloud) {
       await cloud.clear();
@@ -97,7 +94,7 @@ class CourseCloudService with WidgetsBindingObserver {
       await _cloud?.requestPermission();
     }
     await sync();
-    // 上课提醒按新模式重排：不通知 / 流体云时它跳过课程通知，只留日程与考试
+    // 上课提醒按新模式重排：不通知 / 流体云时它跳过课程通知，只留日程与考试。
     await _reminder?.reschedule();
   }
 
@@ -108,8 +105,7 @@ class CourseCloudService with WidgetsBindingObserver {
     if (cloud == null) return false;
     final info = await cloud.info();
     if (!info.notificationsEnabled) {
-      // 权限弹窗是异步的：授完权 info 可能还没刷新，仍然尝试发一次，
-      // 成功了就成功，失败了调用方会给提示。
+      // 授权弹窗是异步的：授完权 info 可能还没刷新，仍尝试发一次，失败由调用方提示。
       await cloud.requestPermission();
     }
     final now = DateTime.now();
@@ -120,17 +116,15 @@ class CourseCloudService with WidgetsBindingObserver {
       startAt: now.millisecondsSinceEpoch,
       endAt: now.add(const Duration(minutes: 1)).millisecondsSinceEpoch,
       leadMinutes: 0,
-      // 预览固定带一条「下节课」，让用户看清正文长什么样
+      // 预览固定带一条「下节课」，让用户看清正文长什么样。
       nextPlace: '二教E201',
       nextTitle: '大学物理',
     ));
   }
 
   /// 未来 [horizonDays] 天内的课程窗口（纯函数，便于测试）。
-  ///
-  /// 与课表页 / 上课提醒同一套规则：按调休换算后的实际上课日、单双周、节次起止
-  /// （[TimetableStore.slotStarts] / [slotEnds]，用户改过作息就用改过的）。
-  /// 已经开始但还没下课的课也会收进来——切到流体云模式时能立刻亮当前这节。
+  /// 与课表页 / 上课提醒同规则：调休换算后的实际上课日、单双周、节次起止（用户改过作息用改过的）。
+  /// 已开始但未下课的课也收进来，切到流体云模式时能立刻亮当前这节。
   static List<FluidCloudWindow> planWindows(
     TimetableStore store,
     DateTime now, {

@@ -18,8 +18,7 @@ class ElectricityPlugin extends FeaturePlugin {
   @override
   List<String> get dependencies => const [PluginIds.network, PluginIds.tools];
 
-  /// 软依赖（不联动启停）：风险提醒开着时本插件的充值入口被拦下（见 [RiskNoticeCapability]），
-  /// 关掉它立即恢复；没装风险提醒则等同没有这道闸。
+  /// 软依赖（不联动启停）：风险提醒开着时充值入口被拦下，关掉立即恢复；没装则无此闸。
   @override
   List<String> get optionalDependencies => const [PluginIds.risk];
 
@@ -34,13 +33,14 @@ class ElectricityPlugin extends FeaturePlugin {
         ),
       ];
 
+  /// 卡面副标题：有上次查询结果就显示余额。
   static String _subtitle() {
     final e = ToolCache.electricity;
     if (e == null) return '余额查询与充值';
     return '余额 ¥${e.balance}';
   }
 
-  /// 卡面速览与电费二级页共用同一份数据：落盘后进页面先显示上次余额。
+  /// 卡面速览与二级页共用同一份数据：落盘后进页面先显示上次余额。
   @override
   Future<void> prefetch() async {
     final r = await ApiClient.I.electricityQuery();
@@ -49,7 +49,5 @@ class ElectricityPlugin extends FeaturePlugin {
   }
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_XXX=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_ELECTRICITY=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(features: [ElectricityPlugin()]);

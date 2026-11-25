@@ -4,11 +4,8 @@ import 'package:campus_core/campus_core.dart';
 
 import 'class_reminder_service.dart';
 
-/// 上课提醒能力的实现：把本包内的 [ClassReminderService] 暴露给课表页（铃铛）与
-/// 课表存储（改完课表重排期）用。
-///
-/// 声明在 `pluginBundle.capabilities` 里（key = 本插件 id）；消费方只拿到 campus_core
-/// 里的 [ReminderCapability] 接口。本插件被停用时注册表查不到它 → 铃铛消失、不再排期。
+/// 上课提醒能力实现：把本包的 [ClassReminderService] 暴露给课表页（铃铛）与课表存储（重排期）。
+/// 消费方只拿到 campus_core 的 [ReminderCapability] 接口；本插件停用时注册表查不到 → 铃铛消失、不再排期。
 class ReminderCapabilityImpl implements ReminderCapability {
   const ReminderCapabilityImpl();
 

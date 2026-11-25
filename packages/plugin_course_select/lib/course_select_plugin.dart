@@ -5,9 +5,7 @@ import 'package:campus_core/campus_core.dart';
 import 'course_select_page.dart';
 
 /// 抢课：正方教务 9.0「学生选课」——选课轮次、课程余量、教学班展开与自动抢课。
-///
-/// 选课是写操作，目前只支持直连模式（设备在校园网 / 校内 VPN 内）；
-/// 服务器模式的开放接口暂未提供选课端点。
+/// 选课是写操作，只支持直连模式（设备在校园网 / 校内 VPN 内），服务器模式暂无选课端点。
 class CourseSelectPlugin extends FeaturePlugin {
   const CourseSelectPlugin();
 
@@ -34,5 +32,5 @@ class CourseSelectPlugin extends FeaturePlugin {
       ];
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_COURSE_SELECT=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(features: [CourseSelectPlugin()]);

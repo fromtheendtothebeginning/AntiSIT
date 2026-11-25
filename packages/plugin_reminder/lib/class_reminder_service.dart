@@ -7,9 +7,8 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'package:campus_core/campus_core.dart';
 
-/// 「上课提醒」插件的 id（见 lib/plugins/features/reminder_plugin.dart）。
-/// 用字面量而不是 import 插件文件：插件可删，服务是基础设施。
-/// 用户下课时表页要用它判断「提醒按钮该不该出现」，所以是公开的。
+/// 「上课提醒」插件的 id；用字面量而不是 import 插件文件（插件可删，服务是基础设施）。
+/// 课表页要用它判断「提醒按钮该不该出现」，所以是公开的。
 const String reminderPluginId = PluginIds.reminder;
 
 /// 一条待排期的上课提醒（纯数据，便于单测）。
@@ -47,11 +46,8 @@ class ClassReminder {
 }
 
 /// 上课提醒：把课表里的每节课换算成「上课前 N 分钟」的本地定时通知。
-///
-/// 为什么用本地通知而不是后台轮询：定时通知由系统闹钟（AlarmManager）在到点时拉起，
-/// App 被杀掉 / 在后台 / 没联网都能弹；进程内定时器做不到这一点。
-/// 排期在每次打开 App、课表改动后重排（未来的课是有限的，重排即幂等覆盖）；
-/// 重启后由 ScheduledNotificationBootReceiver 恢复（清单里已声明）。
+/// 用本地通知而非后台轮询：系统闹钟到点拉起，App 被杀 / 在后台 / 断网都能弹。
+/// 排期在每次打开 App、课表改动后重排（幂等覆盖），重启后由 ScheduledNotificationBootReceiver 恢复。
 class ClassReminderService extends ChangeNotifier {
   ClassReminderService._();
   static final ClassReminderService I = ClassReminderService._();
@@ -76,7 +72,7 @@ class ClassReminderService extends ChangeNotifier {
 
   bool get enabled => _enabled;
 
-  /// 记忆开关集中放这里（只有通知一件事要存），避免动 AppState 的持久化结构。
+  /// 读记在 SharedPreferences 里的开关（只有通知一件事要存，不动 AppState 的结构）。
   Future<void> loadEnabled() async {
     final sp = await SharedPreferences.getInstance();
     _enabled = sp.getBool(_spKey) ?? false;
@@ -88,8 +84,6 @@ class ClassReminderService extends ChangeNotifier {
     await sp.setBool(_spKey, v);
     notifyListeners();
   }
-
-  // ==================== 纯计算：课表 → 提醒时刻 ====================
 
   /// 单次课的开始时刻（含日期）。[startDate] 为第 1 周周一（yyyy-MM-dd）。
   static DateTime? classStart(String startDate, int week, TtCourse c) {
@@ -114,20 +108,16 @@ class ClassReminderService extends ChangeNotifier {
     };
   }
 
-  /// 该课的上课时刻（分钟）——直接读课表当前生效的作息：
-  /// 用户在「课程表设置 → 上课时间」里改过，提醒就跟着变，不再另存一份写死的表。
+  /// 该课的上课时刻（分钟）：读课表当前生效的作息，用户改过作息提醒就跟着变。
   static int classStartMinutes(TtCourse c) {
     final starts = TimetableStore.slotStarts;
     if (starts.isEmpty) return 0;
     return hhmm(starts[c.slotStart.clamp(0, starts.length - 1)]);
   }
 
-  /// 生成 [from, from+horizonDays) 内所有未到期的提醒，按时间升序，最多 [maxScheduled] 条。
-  /// [store] 里每个学期都算（同一节课被多学期收录时按「名称+时刻」去重）。
-  ///
-  /// 排期按**调休规则换算后的实际上课日**走（与课表页渲染同一套规则）：
-  /// off 的那天不排（放假不该提醒），follow 的那天按被借星期的课表排
-  /// （周六补周二的课，提醒的当然是周二那几门）。
+  /// 生成 [from, from+horizonDays) 内未到期的提醒，按时间升序，最多 [maxScheduled] 条；
+  /// 多学期重复收录的课按「名称 + 时刻」去重。
+  /// 排期按调休换算后的实际上课日走（与课表页同规则）：off 不排，follow 按被借星期的课表排。
   static List<ClassReminder> plan(
     TimetableStore store,
     DateTime from, {
@@ -144,7 +134,7 @@ class ClassReminderService extends ChangeNotifier {
       final courses = TimetableStore.deriveImported(tt).followedBy(tt.courses).toList();
       for (var w = 1; w <= tt.weekCount; w++) {
         for (var di = 0; di < 7; di++) {
-          // 这一天实际按星期几的课表上课；放假（off）返回 null
+          // 这一天实际按星期几的课表上课；放假（off）返回 null。
           final eff = effectiveDay(tt, w, di);
           if (eff == null) continue;
           for (final c in courses) {
@@ -160,8 +150,8 @@ class ClassReminderService extends ChangeNotifier {
           }
         }
       }
-      // 日程 / 考试：有日期的按那天排一次；date 为空的按每周的 day 重复排。
-      // 没写开始时刻的（全天日程）不排——没有「提前多少分钟」可算。
+      // 日程 / 考试：有日期的按那天排一次，date 为空的按每周的 day 重复排；
+      // 没写开始时刻的全天日程不排（没有「提前多少分钟」可算）。
       for (final e in tt.events) {
         if (e.name.trim().isEmpty) continue;
         final sm = hhmm(e.start);
@@ -191,8 +181,8 @@ class ClassReminderService extends ChangeNotifier {
     return out.length > maxScheduled ? out.sublist(0, maxScheduled) : out;
   }
 
-  /// 第 [week] 周第 [dayIndex] 列（0=周一）实际按星期几的课表上课；
-  /// 该列被调休设为放假时返回 null。与课表页 _colEffDay 同规则，两边必须一致。
+  /// 第 [week] 周第 [dayIndex] 列（0=周一）实际按星期几上课；调休放假返回 null。
+  /// 与课表页 _colEffDay 同规则，两边必须一致。
   static int? effectiveDay(SemesterTt tt, int week, int dayIndex) {
     if (tt.startDate.isEmpty) return dayIndex;
     final iso = TimetableStore.iso(TimetableStore.dateOfWeekDay(tt.startDate, week, dayIndex));
@@ -217,8 +207,6 @@ class ClassReminderService extends ChangeNotifier {
     }
     return h;
   }
-
-  // ==================== 初始化 / 排期 ====================
 
   /// 初始化插件（幂等）。失败只记日志，不让提醒功能影响启动。
   Future<void> init() async {
@@ -245,8 +233,8 @@ class ClassReminderService extends ChangeNotifier {
     }
   }
 
-  /// 本机时区：优先用设备时区名，取不到就按当前 UTC 偏移量匹配等价时区
-  /// （中国是固定 +08:00，无夏令时，偏移量足够准确）。
+  /// 本机时区：优先设备时区名，取不到就按当前 UTC 偏移量匹配等价时区。
+  /// 中国固定 +08:00、无夏令时，偏移量足够准确。
   static tz.Location _localLocation() {
     final name = DateTime.now().timeZoneName;
     for (final candidate in [name, if (name == 'CST') 'Asia/Shanghai']) {
@@ -262,19 +250,15 @@ class ClassReminderService extends ChangeNotifier {
   }
 
   /// 重新排期：清空本 App 排过的通知，再按当前课表排未来 [horizonDays] 天的提醒。
-  ///
-  /// 做之前先问 [actionFor] 该做什么——**课表还没读出来的时候不能清空**：
-  /// 启动早期提醒服务会先于课表加载跑一遍，那时 plan() 是空的，
-  /// 「先清空再排 0 条」会把用户上一次排好的提醒全删掉，而之后只有「保存课表」
-  /// 才会重排，于是不刷新课表的那次启动之后，提醒就再也不来了。
+  /// 课表还没读出来时不能清空：那次 plan() 为空，「清空 + 排 0 条」会删光用户已排好的提醒，
+  /// 而之后只有「保存课表」才重排，于是不刷新课表的那次启动之后提醒就再也不来了。
   Future<void> reschedule() async {
     await init();
     if (!_ready) return;
     try {
       final planned = plan(TimetableStore.instance, DateTime.now());
-      // 「不通知 / 流体云通知」模式下课程提醒由别人接管（或整体关闭）：
-      // 这里只留日程与考试，避免和流体云重复弹。模式存在 AppState 里，
-      // 本包不依赖那个插件包，直接比字符串（取值见「流体云课程通知」插件）。
+      // 「不通知 / 流体云通知」模式下课程提醒由别人接管：这里只留日程与考试，避免重复弹。
+      // 模式存在 AppState 里，本包不依赖那个插件包，直接比字符串。
       final reminders = forMode(planned, AppState.I.courseNotifyMode);
       final action = actionFor(
         enabled: _enabled,
@@ -288,9 +272,8 @@ class ClassReminderService extends ChangeNotifier {
       }
       await _plugin.cancelAll();
       if (action == ReminderAction.clearOnly) return;
-      // 精确闹钟（AlarmManager.setExactAndAllowWhileIdle）在未授权的机型上会直接抛异常，
-      // 结果是**一条都排不上**（原来只打日志，用户那边就是「提醒根本不弹」）。
-      // 这里先探一次权限：不允许就降级成不精确闹钟——差几分钟，但提醒能到。
+      // 精确闹钟（setExactAndAllowWhileIdle）在未授权机型上会直接抛异常、导致一条都排不上，
+      // 所以先探一次权限，不允许就降级成不精确闹钟——差几分钟，但提醒能到。
       final mode = await _scheduleMode();
       for (final r in reminders) {
         await _plugin.zonedSchedule(
@@ -314,7 +297,7 @@ class ClassReminderService extends ChangeNotifier {
       debugPrint('[上课提醒] 已排期 ${reminders.length} 条（未来 $horizonDays 天，'
           '${mode == AndroidScheduleMode.exactAllowWhileIdle ? '精确' : '不精确'}闹钟）');
     } catch (e) {
-      // 排期异常不让提醒功能炸掉页面
+      // 排期异常不让提醒功能炸掉页面。
       debugPrint('[上课提醒] 排期失败：$e');
     }
   }
@@ -333,10 +316,10 @@ class ClassReminderService extends ChangeNotifier {
     required bool storeHasSemesters,
     required int planned,
   }) {
-    // 关掉开关、或插件被停用/从清单删掉 → 只清空
+    // 关掉开关、或插件被停用 / 从清单删掉 → 只清空。
     if (!enabled || !pluginEnabled) return ReminderAction.clearOnly;
-    // 课表还没读出来（store 里一个学期都没有）：这时清空等于把用户已排好的提醒删光，
-    // 而且当场排不出新的。宁可什么都不做——store.load() 完会再调一次。
+    // 课表还没读出来（store 里一个学期都没有）：清空等于把用户已排好的提醒删光，
+    // 且当场排不出新的。宁可什么都不做——store.load() 完会再调一次。
     if (!storeHasSemesters && planned == 0) return ReminderAction.skip;
     return ReminderAction.reschedule;
   }
@@ -354,8 +337,8 @@ class ClassReminderService extends ChangeNotifier {
     return AndroidScheduleMode.inexactAllowWhileIdle;
   }
 
-  /// 通知正文：「HH:MM 上课 / 开始 · 地点 · 备注（N 分钟后）」。
-  /// 日程的备注也要带上（「日程提醒要把备注也放到提醒里面」）。公开供测试同源断言。
+  /// 通知正文：「HH:MM 上课 / 开始 · 地点 · 备注（N 分钟后）」，日程的备注也要带上。
+  /// 公开供测试同源断言。
   static String body(ClassReminder r, int lead) {
     final extra = [
       if (r.place.isNotEmpty) r.place,
@@ -378,8 +361,6 @@ class ClassReminderService extends ChangeNotifier {
     if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) return -1;
     return h * 60 + m;
   }
-
-  // ==================== 权限 + 开关 ====================
 
   /// 打开提醒：Android 13+ 需要通知权限，精确闹钟在部分机型需要用户授权。
   /// 返回 null 表示成功，否则返回要展示给用户的提示。
@@ -421,20 +402,15 @@ class ClassReminderService extends ChangeNotifier {
     await reschedule();
   }
 
-  // ==================== 自检 + 引导 ====================
-
   /// 跳设置页用的通道（原生侧见 android/.../MainActivity.kt）。非 Android 恒为 null。
   static const _systemChannel = MethodChannel('antisit/system');
 
-  /// 提醒自检：真要能弹出来，除了排期还依赖通知权限、精确闹钟、后台不被省电策略掐死。
-  /// 探测失败（非 Android / 模拟器缺页面）一律返回 null，界面上就不显示这一项。
-  ///
-  /// 这里**不初始化通知插件**：查权限只走平台实现，初始化与否都能查；
-  /// 而 `initialize()` 在测试环境（没有平台通道）会挂住，这类自检没必要绑上它。
+  /// 提醒自检：能弹出还依赖通知权限、精确闹钟、后台不被省电策略掐死；探测失败一律返回 null。
+  /// 这里不初始化通知插件：查权限只走平台实现，而 initialize() 在测试环境会挂住。
   Future<ReminderHealth> health() async {
     AndroidFlutterLocalNotificationsPlugin? android;
     try {
-      // 测试 / 桌面端没有注册平台实现，这个 getter 自己会抛，所以它也得在 try 里
+      // 测试 / 桌面端没有注册平台实现，这个 getter 自己会抛，所以它也得在 try 里。
       android = _plugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     } catch (_) {}

@@ -26,12 +26,10 @@ class GptProvider extends AiProviderPlugin {
   @override
   String get logo => 'packages/plugin_ai_gpt/assets/gpt.svg';
 
-  /// 官方用 `reasoning_effort`（off → none）。
+  /// 官方关思考用 `reasoning_effort: none`。
   @override
   Map<String, dynamic> thinkingOff(String model) => const {'reasoning_effort': 'none'};
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_AI_GPT=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_GPT=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(providers: [GptProvider()]);
