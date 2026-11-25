@@ -3,14 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-/// 连校园内网站点的两条路 + 一个 TLS 补丁。
+/// 连校园内网站点的两条路 + 一个 TLS 补丁：直连（[connectDirect]）或经服务器隧道代理（[connectViaProxy]）。
 ///
-/// * **直连**：设备本身在校园网 / 校内 VPN 里（[connectDirect]）；
-/// * **服务器模式**：经服务器给的校园隧道 HTTP 代理（`http://host:port`）打 CONNECT（[connectViaProxy]）。
-///
-/// 两种方式最后都要走 [startNoSniTls]：教务那台 Tengine 对带 SNI 的 Dart/BoringSSL
-/// 握手直接 reset（2026-11 实测），去掉 SNI 才握得上，代价是主机名要自己按证书核对
-/// （[verifyHost]）。
+/// 两种方式最后都走 [startNoSniTls]（带 SNI 会被教务的 Tengine reset），主机名由 [verifyHost] 自行核对。
 class TunnelException implements Exception {
   const TunnelException(this.message);
   final String message;
@@ -47,9 +42,6 @@ Future<Socket> connectDirect(String host, int port,
 }
 
 /// 经 HTTP 代理打 CONNECT 建隧道，返回**裸 TCP**（TLS 由调用方加）。
-///
-/// 服务器模式的校园隧道容器就是这个形态：`CONNECT jwxt.sit.edu.cn:443` →
-/// `HTTP/1.0 200 Connection established`，之后是纯字节流。
 Future<Socket> connectViaProxy(
   String proxyUrl,
   String targetHost,
@@ -86,10 +78,9 @@ Future<Socket> connectViaProxy(
   }
 }
 
-/// 从 socket 上读到 `\r\n\r\n` 为止（含），返回这段文本。
+/// 从 socket 上读到 `\r\n\r\n` 为止（含）并返回该段文本。
 ///
-/// 读到的多余字节由调用方从同一个 socket 继续读——CONNECT 应答之后紧接着就是 TLS 握手，
-/// 少一个字节都握不上。
+/// 只暂停订阅、不取消：取消会让后面的 TLS 握手收不到应答，多余字节由调用方继续读。
 Future<String> readUntilHeaderEnd(Socket socket,
     {Duration timeout = const Duration(seconds: 25)}) async {
   const separator = <int>[13, 10, 13, 10];
@@ -160,8 +151,7 @@ Future<SecureSocket> startNoSniTls(
 
 /// 校验证书是否属于 [expected]（CN / SAN 里出现该域名，或其父域通配）。
 ///
-/// [startNoSniTls] 走的是「不校验主机名」路径，这一步是它的补丁：
-/// 代理后面若不是学校（或证书被换掉），就拒绝继续，别把密码发给不明服务端。
+/// [startNoSniTls] 不校验主机名，这一步是它的补丁：证书对不上就拒绝继续，别把密码发给不明服务端。
 bool verifyHost(X509Certificate cert, String expected) {
   final want = expected.trim().toLowerCase();
   if (want.isEmpty) return true;

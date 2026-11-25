@@ -2,10 +2,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-// 调试用本地模拟服务的图形验证码：把 4 位数字画成 PNG。
-// 学校系统的 /kaptcha 与 /authserver/captcha.html 都返回图片，模拟服务得给出真图片，
-// App 的验证码弹窗才走得到「显示图片 → 手输 → 提交」这条正常路径。
-// 只用 dart:io 的 zlib 手写 PNG，不引入图像库。
+// 调试用本地模拟服务的图形验证码：把 4 位数字画成 PNG，供 App 走「显示图片 → 手输 → 提交」。
 
 /// 5x7 点阵数字（'#' 为笔画），按 0-9 顺序。
 const List<List<String>> _glyphs = [
@@ -82,8 +79,6 @@ Uint8List renderCaptchaPng(String code, {Random? rng}) {
   }
   return _encodePng(width, height, px);
 }
-
-// ==================== 最小 PNG 编码 ====================
 
 Uint8List _encodePng(int width, int height, Uint8List rgba) {
   final ihdr = BytesBuilder()

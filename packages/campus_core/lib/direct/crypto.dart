@@ -3,10 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:pointycastle/export.dart';
 
-// 校园系统登录/响应加解密：
-// - 金智统一认证（authserver）：AES-128-CBC + PKCS#7 加密密码（对齐 index 后端 campus/dekt.py 的 _wisedu_aes）
-// - 正方教务：RSA/PKCS#1 v1.5 加密密码（对齐 prepare_jwxt_login 的 modulus/exponent）
-// - 部分接口 isEncrypt 响应：AES-128-CBC（key=iv=配置密钥前 16 字节），raw 解密后去尾部 0x00
+// 校园系统加解密：金智统一认证密码（AES-CBC）、正方密码（RSA）、isEncrypt 响应（AES-CBC）。
 
 /// AES-CBC-PKCS7 加密 → 字节；[key]/[iv] 必须为 16 字节。
 Uint8List aesCbcPkcs7Encrypt(List<int> plain, List<int> key, List<int> iv) {

@@ -3,11 +3,9 @@ import 'dart:typed_data';
 import 'crypto.dart';
 import 'http_session.dart';
 
-/// 金智（Wisedu）统一身份认证 CAS：打开业务系统的「统一身份认证」入口 → 跟到 authserver
-/// 登录页 → AES 加密密码 + 图形验证码提交 → 带 ticket 跳回业务系统。
+/// 金智（Wisedu）统一身份认证 CAS 登录：打开入口 → 登录页 → 加密提交 → 带 ticket 跳回业务系统。
 ///
-/// 供需要走 SSO 的业务系统复用。Cookie 必须与业务系统共用同一个 [HttpSession]：
-/// ticket 回到业务系统时，业务会话 Cookie 是在这条重定向链里种下的，换一个 jar 就丢了。
+/// Cookie 必须与业务系统共用同一个 [HttpSession]，否则 ticket 回跳时种的业务会话会丢。
 class CasLogin {
   CasLogin({required this.http, required this.authBase});
 
@@ -25,8 +23,8 @@ class CasLogin {
 
   static int _ms() => DateTime.now().millisecondsSinceEpoch;
 
-  /// 打开 [serviceUrl]（业务系统登录页里的统一认证入口地址），跟随跳转直到 CAS 登录页。
-  /// 返回 false 表示最终拿到的不是 CAS 登录页（入口无效 / 已直接放行回业务系统）。
+  /// 打开 [serviceUrl]（业务系统登录页里的统一认证入口），跟随跳转直到 CAS 登录页；
+  /// false 表示最终拿到的不是 CAS 登录页（入口无效 / 已直接放行回业务系统）。
   Future<bool> open(String serviceUrl) async {
     final page = await http.get(serviceUrl);
     return adopt(page);
@@ -57,9 +55,7 @@ class CasLogin {
     return r.body;
   }
 
-  /// 提交登录（[password] 为用户的统一认证密码原文）。
-  /// 成功时 CAS 会带 ticket 302 回业务系统，[HttpSession] 自动跟随并收 Cookie；
-  /// 调用方仍需用自己的会话探活确认业务登录态。
+  /// 提交登录（[password] 为统一认证密码原文）；返回 CAS 的跳转响应，业务登录态由调用方自行探活。
   Future<HttpResult> submit(String studentId, String password, String captcha) {
     if (!ready) throw StateError('CAS 登录页尚未打开');
     final pwd = _salt.isEmpty ? password : wiseduEncryptPassword(password, _salt);
@@ -76,8 +72,8 @@ class CasLogin {
   }
 
   /// CAS 登录页上的可见错误文案（验证码错 / 密码错），取不到返回空串。
-  /// 隐藏骨架（`#passwordError` 等「请输入密码」）与脚本 / 注释都要跳过，
-  /// 否则会把静态提示当成学校对本次登录的判定结果。
+  ///
+  /// 隐藏骨架（`#passwordError` 等）与脚本 / 注释必须跳过，否则会把静态提示当成登录判定结果。
   static String errorTip(String html) {
     final clean = html
         .replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ')

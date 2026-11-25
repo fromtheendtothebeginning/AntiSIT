@@ -3,10 +3,10 @@ import 'package:flutter/foundation.dart';
 import '../api_error.dart';
 import 'activities_util.dart';
 import 'crypto.dart';
+import 'xg_parser.dart';
 import 'http_session.dart';
 
-/// 学工（zftal-xgxt）客户端：统一身份认证 CAS 登录（AES 加密密码 + 图形验证码）、
-/// 第二课堂分数、活动列表 / 详情。移植自 index 后端 campus/dekt.py；仅能在校园网 / 校内 VPN 下访问。
+/// 学工（zftal-xgxt）客户端：统一身份认证 CAS 登录、第二课堂分数、活动列表 / 详情 / 报名。
 class XgClient {
   XgClient({required String authBase, required String xgBase, bool allowSelfSigned = false})
       : authBase = authBase.replaceAll(RegExp(r'/+$'), ''),
@@ -64,84 +64,13 @@ class XgClient {
     return j;
   }
 
-  static String? _hiddenField(String html, String name) =>
-      RegExp('name="$name"[^>]*value="([^"]*)"').firstMatch(html)?.group(1);
-
-  /// 加密盐：`<input ... id="pwdDefaultEncryptSalt" value="...">` 或 JS 变量。
-  /// 不假设 id / value 的先后顺序（页面改版时 element 属性顺序并不稳定），引号单双都认。
-  static String _findSalt(String html) {
-    final tag = RegExp(r'<input[^>]*pwdDefaultEncryptSalt[^>]*>', caseSensitive: false)
-        .firstMatch(html)
-        ?.group(0);
-    if (tag != null) {
-      final v = RegExp('''value\\s*=\\s*["']([^"']+)["']''').firstMatch(tag)?.group(1);
-      if (v != null && v.isNotEmpty) return v;
-    }
-    return RegExp('''pwdDefaultEncryptSalt\\s*[:=]\\s*["']([^"']+)["']''').firstMatch(html)?.group(1) ??
-        '';
-  }
-
-  /// 取不到加密盐时的诊断：把「请求到了哪个页面、页面里有哪些要素」一并给出，
-  /// 一眼能分清是登录页改版，还是压根没到统一认证（把这段截图给开发者即可）。
-  static String _saltError(HttpResult page, String html, String loginUrl) {
-    const marks = {
-      'pwdDefaultEncryptSalt': '盐字段名',
-      'auth_login_btn': '登录按钮',
-      'captchaImg': '验证码图',
-      'execution': 'CAS 令牌',
-      'username': '用户名框',
-      'publicKey': '公钥',
-    };
-    final found = [for (final e in marks.entries) if (html.contains(e.key)) e.value];
-    final at = html.toLowerCase().indexOf('salt');
-    final snippet = at < 0
-        ? '（整页没有 salt 字样）'
-        : '…${html.substring((at - 80).clamp(0, html.length), (at + 80).clamp(0, html.length)).replaceAll(RegExp(r'\s+'), ' ')}…';
-    return '统一认证登录页异常（请求 $loginUrl → HTTP ${page.status} · ${page.url} · ${html.length} 字）：'
-        '${found.isEmpty ? '页面上没有登录表单要素' : '命中 ${found.join('/')}'}，'
-        '但取不到加密盐 pwdDefaultEncryptSalt。$snippet';
-  }
-
   /// 学工会话是否已建立（统一认证 SSO 完成后的确认）。
   Future<bool> _currentUserOk() async {
     final cu = await _http.get('$_api/teacher/xtgl/login/getCurrentUser.zf');
     return cu.text.contains('"code":0');
   }
 
-  static String _loginError(String html, String fallback) {
-    // 金智 authserver 的错误提示元素各校不一：SIT 实测用 .auth_error / #usernameError /
-    // #passwordError / #cpatchaError（页面里就这么拼的）/ #loginError，另有学校用 <span id="msg">。
-    // 解析不出就只能给笼统文案，分辨不出「验证码错」还是「密码错」，所以逐个试。
-    // 页面里还留着 `<!-- 滑块验证码：-->` 这类模板注释，尾巴 `验证码：-->` 含「验证码」，
-    // 被抓走会误触发验证码重试，所以先把注释剥掉再匹配。
-    // 服务端的判定结果固定在可见的 `#msg` / `*SpecificError`（SIT 实测：未填验证码 → #msg
-    // 「请输入验证码」、验证码无效 → #msg「无效的验证码」），而 `#usernameError` / `#passwordError`
-    // / `#cpatchaError` 是 `style="display:none"` 的静态骨架（「请输入用户名 / 请输入密码 /
-    // 请输入验证码」），只在屏幕上被 JS 改写前存在。抓隐藏元素会把「请输入密码」当成学校原文，
-    // 让用户以为账号密码错了——隐藏元素一律跳过。
-    // 注释与 <script> 同样剥掉：脚本里常有「请输入密码」这类静态提示文案，抓走又会误报。
-    final clean = html
-        .replaceAll(RegExp(r'<!--.*?-->', dotAll: true), ' ')
-        .replaceAll(RegExp(r'<script\b.*?</script>', dotAll: true, caseSensitive: false), ' ')
-        .replaceAll(RegExp(r'<style\b.*?</style>', dotAll: true, caseSensitive: false), ' ');
-    final hidden = RegExp(r'display\s*:\s*none|visibility\s*:\s*hidden', caseSensitive: false);
-    final rules = <RegExp>[
-      RegExp(r'<[^>]*id="msg"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
-      RegExp(r'<[^>]*id="(?:username|password|cpatcha|captcha|login)Error"[^>]*>(.*?)</(?:span|div)>',
-          dotAll: true),
-      RegExp(r'<[^>]*class="[^"]*auth_error[^"]*"[^>]*>(.*?)</(?:span|div)>', dotAll: true),
-    ];
-    for (final re in rules) {
-      for (final m in re.allMatches(clean)) {
-        if (hidden.hasMatch(m.group(0)!)) continue;
-        final msg = m.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim();
-        if (msg.isNotEmpty) return msg;
-      }
-    }
-    debugPrint('[统一认证登录] 学校页面没有可读错误文案（${html.length} 字）');
-    return fallback;
-  }
-
+  /// 相对路径补全为学工系统的绝对地址。
   String _absolute(String url) {
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
     if (url.startsWith('/')) return '${Uri.parse(_api).origin}$url';
@@ -171,23 +100,22 @@ class XgClient {
     final html = page.text;
     final fields = <String, String>{};
     for (final name in ['execution', '_eventId', 'lt', 'rmShown', 'dllt', 'geolocation']) {
-      final v = _hiddenField(html, name);
+      final v = xgHiddenField(html, name);
       if (v != null) fields[name] = v;
     }
     fields.putIfAbsent('dllt', () => 'userNamePasswordLogin');
     fields.putIfAbsent('_eventId', () => 'submit');
     _loginUrl = loginUrl;
     _fields = fields;
-    _salt = _findSalt(html);
+    _salt = xgFindSalt(html);
     if (_salt!.isEmpty) {
-      // 统一认证会话（CASTGC）还有效时 authserver 不给登录页，而是直接 302 回业务系统——
-      // 跟过去拿到的就是业务页，自然没有加密盐。这种「其实已经登录成功」的情形要认出来，
-      // 否则用户会卡在一个根本不是登录页的页面上反复重试。
+      // 统一认证会话（CASTGC）还有效时 authserver 会 302 回业务页、拿不到加密盐；
+      // 这种「其实已登录」的情形要认出来，否则用户会卡在业务页上反复重试。
       if (await _currentUserOk()) {
         loggedIn = true;
         return null;
       }
-      throw ApiError(_saltError(page, html, loginUrl));
+      throw ApiError(xgSaltError(page, html, loginUrl));
     }
     final cap = await _http.get('$authBase/captcha.html?ts=${_ms()}');
     return cap.body;
@@ -213,10 +141,8 @@ class XgClient {
     _loginUrl = null;
     final cu = await _http.get('$_api/teacher/xtgl/login/getCurrentUser.zf');
     if (!cu.text.contains('"code":0')) {
-      // 页面上的可见错误文案才是学校对本次登录的判定（验证码错 / 密码错 / 账号错）。
-      // 取不到文案时不要笼统说「账号密码错误」：POST 若被重定向（3xx）说明统一认证已经放行了
-      // 凭据，失败点更可能是票据回跳 / 业务会话没建立——凭据正确的同学会被这句话误导去改密码。
-      final tip = _loginError(resp.text, '');
+      // 可见错误文案才是学校对本次登录的判定；取不到时按 POST 是否被重定向区分票据回跳失败。
+      final tip = xgLoginErrorTip(resp.text, '');
       if (tip.isNotEmpty) throw ApiError(tip);
       final accepted = resp.status >= 300 && resp.status < 400;
       throw ApiError(accepted
@@ -225,8 +151,6 @@ class XgClient {
     }
     loggedIn = true;
   }
-
-  // ==================== 第二课堂分 ====================
 
   /// 查询第二课堂得分（德智体美劳细分）。
   Future<Map<String, dynamic>> score(String studentId) async {
@@ -241,52 +165,8 @@ class XgClient {
     final j = _parse(resp);
     if (j is! Map) _sessionLost();
     if (j['code'] != 0) throw ApiError((j['msg'] ?? '查询失败').toString());
-    return _buildScoreView(j);
+    return xgScoreView(j);
   }
-
-  static Map<String, dynamic> _buildScoreView(Map j) {
-    final queryModel = (j['queryModel'] as Map?) ?? const {};
-    final items = (queryModel['items'] as List?) ?? const [];
-    final header = (j['tableHeader'] as List?) ?? const [];
-    if (items.isEmpty) {
-      return {'student': {}, 'total': null, 'credit': null, 'groups': []};
-    }
-    final it = (items.first as Map?) ?? const {};
-    final groups = <String, Map<String, dynamic>>{};
-    for (final raw in header) {
-      final h = raw is Map ? raw : const {};
-      final fc = (h['fieldCode'] ?? '').toString();
-      final name = (h['fieldName'] ?? fc).toString();
-      final grp = (h['fieldTh'] ?? '其他').toString();
-      if (['xh', 'xm', 'nj', 'bmmc', 'zymc', 'bjmc', 'zxs', 'sjxf', 'sjxs'].contains(fc)) {
-        continue;
-      }
-      final g = groups.putIfAbsent(grp, () => {'subtotal': null, 'rows': []});
-      if (fc.startsWith('dlxs')) {
-        g['subtotal'] = it[fc];
-      } else if (fc.startsWith('rdxs')) {
-        (g['rows'] as List).add({'name': name, 'value': it[fc]});
-      }
-    }
-    return {
-      'student': {
-        'xh': it['xh'],
-        'xm': it['xm'],
-        'nj': it['nj'],
-        'bmmc': it['bmmc'],
-        'zymc': it['zymc'],
-        'bjmc': it['bjmc'],
-      },
-      'total': it['zxs'],
-      'credit': it['sjxf'],
-      'groups': [
-        for (final e in groups.entries)
-          {'name': e.key, 'subtotal': e.value['subtotal'], 'rows': e.value['rows']},
-      ],
-    };
-  }
-
-  // ==================== 第二课堂活动 ====================
 
   Map<String, String> get _xgHeaders => {
         'Origin': xgBase,
@@ -338,8 +218,6 @@ class XgClient {
     return {'activities': acts, 'student_id': _studentId};
   }
 
-  // ==================== 我的报名 / 加分明细（学生侧）====================
-
   /// 报名状态码（学校 `hdbmzt`）→ 中文；未知返回空串。
   static String hdStatusText(Object? code) => switch ('$code') {
         '1' => '流程设置中',
@@ -351,13 +229,9 @@ class XgClient {
         _ => '',
       };
 
-  /// 已报名的第二课堂活动：POST /bizFlow/result/group/list.zf `groupCode=xshd`
-  /// （学工菜单「第二课堂 → 活动管理 → 报名结果查询」用的就是它，返回**本人**的报名记录）。
+  /// 已报名的第二课堂活动（本人报名记录）。
   ///
-  /// ⚠️ 不要用 hdgl/list.zf（`all=0`）：那个接口**匿名可访问**，返回的是公共活动池，
-  /// 与登录身份无关 —— 当「我的报名」用会看到一堆全校活动、且看不到本人新报的
-  /// （2026-11 实测：400 条里没有一条本人已报名；本人 49 条报名全在 bizFlow 里）。
-  /// 返回字段保持页面契约（id/name/dlmc/lbmc/start/end/place/status_text/signed）。
+  /// ⚠️ 必须用 bizFlow `groupCode=xshd`：hdgl/list.zf 匿名可访问、返回的是公共活动池，不是本人报名。
   Future<List<Map<String, dynamic>>> signedActivities({int maxPages = 10}) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final out = <Map<String, dynamic>>[];
@@ -414,10 +288,7 @@ class XgClient {
     return out;
   }
 
-  /// 第二课堂加分明细：POST /bizFlow/result/group/list.zf `groupCode=xsrd`
-  /// （学工「第二课堂 → 学分认定管理」的**学分认定**结果，即「学分明细查询」板块；
-  /// 每条 = 一次活动参与记录，学分在 `rdxs`（认定学分）——
-  /// 报名结果查询（groupCode=xshd）里没有学分字段，别从那边取）。
+  /// 第二课堂加分明细（groupCode=xsrd 的学分认定结果，学分在 rdxs 字段）。
   Future<List<Map<String, dynamic>>> creditRecords({int maxPages = 10}) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final out = <Map<String, dynamic>>[];
@@ -473,15 +344,9 @@ class XgClient {
     return out;
   }
 
-  // ==================== 活动扫码签到 / 签退 ====================
-
-  /// 扫码签到 / 签退：POST /hdgl/flow/signInOrSignOut.zf {hdId, hdActId}
-  /// （urlencoded）。参数来自活动详情页的签到二维码
-  /// `https://xg.sit.edu.cn/hdgl/hdxq/qd/:hdId/:hdActId/:时间戳`——学校同一个
-  /// 接口按活动与当前状态判定这次算签到还是签退，返回 msg 即学校判定原文。
-  /// 返回 {'msg': 提示}；code != 0 抛 ApiError(学校原文)。
-  /// 写操作：只提交一次、绝不重试（会话失效时学校根本没见到这次提交，重登后
-  /// 重试一次是安全的，见 CampusDirect._withRelogin）。
+  /// 扫码签到 / 签退（hdId / hdActId 来自签到二维码路径段）。
+  ///
+  /// 写操作：只提交一次、绝不重试；会话失效时学校没见到提交，重登后重试一次是安全的。
   Future<Map<String, dynamic>> signInOrSignOut(Object hdId, Object hdActId) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final resp = await _http.postForm(
@@ -500,12 +365,9 @@ class XgClient {
     return {'msg': msg};
   }
 
-  // ==================== 报名 / 培训扫码签到 ====================
-
-  /// 报名（培训）二维码的扫码签到：POST /hdgl/shsj/qd.zf {hdid, pxid, qdsj}。
-  /// 参数来自报名管理页的报名二维码 `…/hdgl/pxqd/:hdId/:pxId`（无时间戳段），
-  /// 与签到 / 签退的 signInOrSignOut 是**不同接口**。返回 {'msg': 学校提示}；
-  /// code != 0 抛 ApiError(学校原文)。写操作：只提交一次、绝不重试。
+  /// 报名（培训）二维码的扫码签到（hdgl/shsj/qd.zf，与签到 / 签退是不同接口）。
+  ///
+  /// 写操作：只提交一次、绝不重试；code != 0 抛 ApiError(学校原文)。
   Future<Map<String, dynamic>> trainingSignIn(Object hdId, Object pxId) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final now = DateTime.now();
@@ -528,15 +390,12 @@ class XgClient {
     return {'msg': msg};
   }
 
-  // ==================== 活动报名（学工工作流 hdsq，2026-10 上线）====================
-
   static const String _signupUrlPath = '/hdgl/flow/apply/hdsq.zf';
   static const String _signupFormUrlPath = '/dynamic/form/find/hdsq/default.zf';
 
-  /// 活动报名：先 GET 动态表单定义（约 30 个预填字段全部来自学校 defaultValue——学籍、
-  /// 身份证、内部学期码、当前学分等只能由学校生成，绝不自行拼装），原样 urlencoded
-  /// 提交到 saveUrl。成功返回 {'instance_id': 工作流实例 ID}。
-  /// 写操作：只提交一次、绝不重试（重复提交可能生成多条申请记录）。
+  /// 活动报名：先 GET 学校动态表单定义（预填值全部来自 defaultValue），原样 urlencoded 提交。
+  ///
+  /// 写操作：只提交一次、绝不重试（重复提交会生成多条申请记录）。
   Future<Map<String, dynamic>> signupActivity(Object id) async {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final formResp = await _http.get(

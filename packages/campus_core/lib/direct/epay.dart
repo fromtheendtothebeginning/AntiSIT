@@ -30,9 +30,7 @@ String composeDorm(String building, String room) {
   return '$b号楼$r';
 }
 
-/// 校付宝（epeortal / openservice）客户端：校园码、电费查询/充值、校园卡余额。
-/// 公网可达：不需要校园网/VPN，也不需要验证码；支付密码用 SM4 加密提交。
-/// 移植自 index 后端 campus/electricity.py 与 campus/ecard.py。
+/// 校付宝（epeortal / openservice）客户端：校园码、电费查询/充值、校园卡余额（公网可达，支付密码 SM4 加密）。
 class EpayClient {
   EpayClient(String base, {bool allowSelfSigned = false})
       : base = base.replaceAll(RegExp(r'/+$'), '') {
