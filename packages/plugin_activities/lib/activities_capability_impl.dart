@@ -1,7 +1,7 @@
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 
-import 'activities_page.dart';
+import 'activities_detail_page.dart';
 
 /// [ActivitiesCapability] 的实现：推入本插件的活动详情页。
 class ActivitiesCapabilityImpl extends ActivitiesCapability {

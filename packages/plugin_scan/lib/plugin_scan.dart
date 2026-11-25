@@ -2,5 +2,7 @@
 library;
 
 export 'scan_capability_impl.dart';
+export 'scan_codes.dart';
 export 'scan_page.dart';
 export 'scan_plugin.dart';
+export 'scan_sheets.dart';

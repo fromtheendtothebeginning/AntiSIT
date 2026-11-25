@@ -6,7 +6,7 @@ import 'package:campus_core/campus_core.dart';
 
 import 'ai_vision.dart';
 
-/// 验证码自动识别：识别成功返回文字，失败返回 null（调用方回退到手动输入框）。
+/// 验证码自动识别：成功返回文字，失败返回 null（调用方回退到手动输入框）。
 /// 提示词与 index 后端 `campus_service._ai_solve_captcha` 一致。
 Future<String?> solveCaptcha(Uint8List image) async {
   if (!AiVision.I.available) return null;
@@ -15,8 +15,7 @@ Future<String?> solveCaptcha(Uint8List image) async {
       image,
       prompt: '请只输出图片中的验证码字符本身（区分大小写；不要空格、标点、引号，也不要任何解释或说明）。',
       timeout: const Duration(seconds: 30),
-      // 验证码只要几个字符：显式关掉思考，省时间也省 token
-      // （思考型模型默认会先生成一大段推理，既慢又可能把 max_tokens 吃光）
+      // 验证码只要几个字符：关思考省时间也省 token
       thinkingOff: true,
       maxTokens: 512,
     );
@@ -28,8 +27,7 @@ Future<String?> solveCaptcha(Uint8List image) async {
   }
 }
 
-/// 调休规则的类型 [HolidayRule] 定义在契约层（campus_core 的 ai_capability.dart）：
-/// 课表（消费方）也要用它，不能只藏在 AI 包里。
+/// 调休规则的类型 [HolidayRule] 定义在契约层（campus_core 的 ai_capability.dart）。
 
 /// 系统提示词（与 index 后端 timetable_holiday.PARSE_SYSTEM 同义）。
 const _holidaySystem = '你是校历解析助手。只输出 JSON，不要任何解释、前后缀或代码块标记。';
@@ -65,9 +63,7 @@ Future<List<HolidayRule>> parseHolidayImage(
     mime: mime,
     timeout: const Duration(seconds: 120),
     maxTokens: 4096,
-    // 关思考：这是「照图抄日期」，不是推理题。思考型模型默认开思考（官网：deepseek-flash
-    // 默认既开思考、档位还是 high），推理内容与正式回答共享 max_tokens——思考吃光预算就
-    // 只剩空 content，用户看到「AI 未返回内容（模型可能不支持识图）」，其实是 token 被思考占了。
+    // 这是「照图抄日期」不是推理题：关思考，免得推理吃光 max_tokens 只剩空 content。
     thinkingOff: true,
   );
 
@@ -95,7 +91,6 @@ Future<List<HolidayRule>> parseHolidayImage(
   return [for (final k in rules) out[k]!];
 }
 
-/// 从模型输出里抠出 JSON 数组（可能被 ```json 包裹或前后带解释）。
 /// 从模型输出里抠出 JSON 数组（可能被 ```json 包裹或前后带解释）。供测试直接调用。
 List<dynamic> extractJsonArray(String text) {
   final cleaned = text.replaceAll(RegExp(r'```(?:json)?', caseSensitive: false), '').trim();

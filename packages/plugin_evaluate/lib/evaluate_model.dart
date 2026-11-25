@@ -119,10 +119,8 @@ class EvalTarget {
 int notSavedCount(List<EvalTarget> targets) =>
     targets.where((t) => !t.submitted && !t.saved).length;
 
-/// 「全部提交」能不能按：**本轮每一条都保存过（或已提交）**，且还有没交的条目。
-///
-/// 这是整个批量提交的前提——提交发出去的是**已保存的那套分**，页面不再另设分数，
-/// 所以只要有哪怕一条没保存，就没有内容可交；全都交完了也就没什么可点的。
+/// 「全部提交」能不能按：本轮每一条都保存过（或已提交），且还有没交的条目。
+/// 提交发出去的是**已保存的那套分**，所以只要有一条没保存就没有内容可交。
 bool canSubmitAll(List<EvalTarget> targets) =>
     targets.any((t) => !t.submitted) && notSavedCount(targets) == 0;
 
@@ -184,8 +182,7 @@ class EvalItem {
   /// 二级权重（用于算总分预览）。
   final double weight;
 
-  /// 页面回填的已保存分数（没保存过就是 null）：
-  /// 打开一条「已保存」的评教时界面先显示上次打的分，而不是重新从满分开始。
+  /// 页面回填的已保存分数（没保存过就是 null），打开已保存的评教时先显示上次打的分。
   final double? savedValue;
 
   /// 界面上显示的序号由列表位置决定，这里只给题干。
@@ -407,9 +404,7 @@ class EvalForm {
 }
 
 /// 打开一条评教时的初始分数，优先级：**本机上次打的分** > 页面回填的分 > [fallback]。
-///
-/// 为什么本机那份排第一：教务对「已保存」的评教不会把分数回填进表单（实测 value 为空），
-/// 只有本机留的那份能让用户接着上次的分数改。
+/// 教务对「已保存」的评教不回填分数（实测 value 为空），只有本机那份能让用户接着改。
 Map<String, double> initialScoresFor(
   EvalForm form, {
   Map<String, double>? local,

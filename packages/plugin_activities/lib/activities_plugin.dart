@@ -35,9 +35,7 @@ class ActivitiesPlugin extends FeaturePlugin {
       ];
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_XXX=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：清单生成器按包名登记；EXCLUDE_ACTIVITIES 开关为真时整包被摇树丢掉。
 const PluginBundle pluginBundle = PluginBundle(
   features: [ActivitiesPlugin()],
   // 活动详情页也对外：扫码插件扫到活动码时按能力取用，不 import 本包

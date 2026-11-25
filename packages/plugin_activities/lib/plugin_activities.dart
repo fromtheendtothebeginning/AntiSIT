@@ -2,5 +2,8 @@
 library;
 
 export 'activities_capability_impl.dart';
+export 'activities_cards.dart';
+export 'activities_detail_page.dart';
 export 'activities_page.dart';
 export 'activities_plugin.dart';
+export 'activities_state.dart';
