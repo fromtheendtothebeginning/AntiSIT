@@ -64,6 +64,9 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
 
   bool _hidden = false;
 
+  /// 已经挂过一次「帧末重建」回调（同一帧里翻来覆去只挂一次）。
+  bool _rebuildScheduled = false;
+
   @override
   void initState() {
     super.initState();
@@ -79,44 +82,47 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
   }
 
   void _onPageDrag() {
-    if (widget.dragPosition?.value != null && _hidden) {
-      setState(() => _hidden = false);
-    }
+    if (widget.dragPosition?.value != null) _setHidden(false);
+  }
+
+  /// 收起 / 展开状态**只能延到帧末再重建**。
+  ///
+  /// 滚动通知是在 layout 阶段派发的（列表在 `performLayout` 里同步发出通知），
+  /// 回调里直接 `setState` 等于「在布局过程中给本帧再排一次构建」：页面里只要有
+  /// [LayoutBuilder]（切换器自己就有一个），就会撞上框架断言
+  /// `_RenderLayoutBuilder was mutated in ...performLayout` /
+  /// `'debugNeedsLayout': is not true` / `Build scheduled during frame`——
+  /// 真机上的红屏就是这么来的。挪到帧末只多一帧，肉眼看不出来。
+  void _setHidden(bool value) {
+    if (_hidden == value) return;
+    _hidden = value;
+    if (_rebuildScheduled) return;
+    _rebuildScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _rebuildScheduled = false;
+      if (mounted) setState(() {});
+    });
   }
 
   bool _onScroll(ScrollNotification n) {
-    // 横向滚动 = PageView 在切页
-    if (n.metrics.axis == Axis.horizontal) {
-      // 用户正在换页面：切换器要展开（收起状态下横滑换页也得看得见它）
-      if (_hidden) setState(() => _hidden = false);
-      // 把连续位置写给切换器：拖动页面时滑块实时跟随（默认行为，不受开关控制）。
-      // 松手（ScrollEnd）置空，让切换器自己弹到落点。
-      final drag = widget.dragPosition;
-      if (drag != null) {
-        if (n is ScrollEndNotification) {
-          drag.value = null;
-        } else {
-          final m = n.metrics;
-          final pos = m.viewportDimension <= 0
-              ? 0.0
-              : (m.pixels / m.viewportDimension);
-          drag.value = pos.clamp(0.0, double.infinity);
-        }
-      }
-      return false;
-    }
+    // **只认本页竖列表的滚动**。这里曾经有个「横向滚动 = PageView 在切页」的分支，
+    // PageView 换成自管位置之后它就是死代码，而且会误伤：页面里的搜索框
+    // （TextField 内部的 EditableText 本身就是横向可滚动的）一滚动就会把
+    // `pixels / viewportDimension` 写进 dragPosition，让两页跟着这个伪位置平移、
+    // 松手再弹回来——正是 issue #11「滑到顶部时两页自己跳一下又回来」。
+    if (n.metrics.axis != Axis.vertical) return false;
     if (n is! ScrollUpdateNotification) return false;
     final metrics = n.metrics;
     // 到顶（含下拉回弹）一律展开
     if (metrics.pixels <= 0) {
-      if (_hidden) setState(() => _hidden = false);
+      _setHidden(false);
       return false;
     }
     final delta = n.scrollDelta ?? 0;
-    if (delta > _slop && !_hidden) {
-      setState(() => _hidden = true); // 往下看内容 → 收起
-    } else if (delta < -_slop && _hidden) {
-      setState(() => _hidden = false); // 往回翻 → 展开
+    if (delta > _slop) {
+      _setHidden(true); // 往下看内容 → 收起
+    } else if (delta < -_slop) {
+      _setHidden(false); // 往回翻 → 展开
     }
     return false;
   }
