@@ -4,9 +4,7 @@ import 'package:campus_core/campus_core.dart';
 
 import '../update_download.dart';
 
-/// 「配置」页：刷新行为与需要长期调整的偏好（二课达标线由插件贡献到这里）。
-///
-/// 「我的 → 设置」里只留一个入口；插件停用 / 删掉时它贡献的条目自动消失。
+/// 「配置」页：刷新行为与需要长期调整的偏好（插件贡献的条目也挂在这里）。
 class ConfigPage extends StatefulWidget {
   const ConfigPage({super.key});
 
@@ -31,8 +29,7 @@ class _ConfigPageState extends State<ConfigPage> {
     if (mounted) setState(() => _apkBytes = bytes);
   }
 
-  /// 「清理更新安装包」：每升一版都会在缓存里留一个 80MB 上下的 APK，装完之后
-  /// 它在手机上没有任何用处，攒几次就能占掉几个 G。
+  /// 「清理更新安装包」：装完的安装包没有用处，攒几次就占掉几个 G。
   Future<void> _purgeApks() async {
     final wasBusy = UpdateDownloader.I.busy;
     final freed = await UpdateDownloader.I.purgeCache();
@@ -46,6 +43,7 @@ class _ConfigPageState extends State<ConfigPage> {
     );
   }
 
+  /// 选校园码刷新间隔的底部弹层。
   Future<void> _pickInterval(BuildContext context) async {
     final picked = await showModalBottomSheet<int>(
       context: context,
@@ -128,8 +126,7 @@ class _ConfigPageState extends State<ConfigPage> {
                     ),
                     // 二课达标线等长期偏好由各插件贡献（停用插件则自动消失）
                     ...PluginRegistry.I.configTiles(context),
-                    // 应用内更新每升一版都会在缓存里留一个 80MB 上下的 APK，
-                    // 装完就没用；这里给个能看到大小、能一键清掉的地方。
+                    // 应用内更新留下的安装包：这里能看到占用并一键清掉。
                     ListTile(
                       leading: const Icon(Icons.cleaning_services_outlined),
                       title: const Text('更新安装包'),

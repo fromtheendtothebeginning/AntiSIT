@@ -4,11 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../pages/profile_page.dart';
 
-/// 宿主自带的两个**核心插件**。它们不是独立包：核心插件要用宿主的页面
-/// （「我的」页同时是插件管理入口），放进包反而要来回注入回调。
-///
-/// 它们不可停用：`network` 是所有取数插件的硬依赖，「我的」是登录与恢复插件的唯一入口。
-/// 要让它们消失，改这个文件即可（插件清单里少了它们，依赖方会被自检标红）。
+/// 宿主自带的两个**核心插件**（不是独立包：它们要用宿主的页面，放进包反而要来回注入回调）。
+/// 都不可停用：`network` 是所有取数插件的硬依赖，「我的」是登录与恢复插件的唯一入口。
 const PluginBundle appCoreBundle = PluginBundle(
   features: [NetworkPlugin(), ProfilePlugin()],
 );
@@ -28,7 +25,7 @@ class NetworkPlugin extends FeaturePlugin {
 
   @override
   Future<void> init() async {
-    // 调试构建：学校档案指向本机回环时拉起本地模拟校园服务（直连模式无校园网也能测）
+    // 调试构建：学校档案指向本机回环时拉起本地模拟校园服务（无校园网也能测直连）
     await MockCampusServer.instance.ensureIfConfigured();
   }
 }

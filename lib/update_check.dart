@@ -6,25 +6,21 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 更新检查的来源：GitHub Release 与 Gitee 镜像同步发行（见 tool/release_gitee.sh）。
+/// GitHub 更新源仓库（Gitee 镜像的发行由 tool/release_gitee.sh 同步）。
 const String updateRepo = 'fromtheendtothebeginning/AntiSIT';
 
 /// Gitee 镜像仓库：国内直连更快，更新检查与下载都优先走它。
 const String giteeUpdateRepo = 'ender123/AntiSIT';
 
-/// 更新源：Gitee 优先（国内访问快，APK 也从这里下）；读不到再 GitHub；
-/// 两个都访问不了时退回自建镜像——`anticraft.top/apk/latest.json` 放一份**同结构**的
-/// Release JSON。所有源会并发查询，取版本最高的那份；同版本优先靠前的源，
-/// 这样 Gitee 镜像偶尔滞后也不会把 GitHub 上的新版藏起来。
+/// 更新源，按优先级排列：Gitee（国内快、APK 也从这里下）、GitHub、自建镜像
+/// （`anticraft.top/apk/latest.json` 放同结构的 Release JSON）。
 final List<Uri> latestReleaseApis = [
   Uri.parse('https://gitee.com/api/v5/repos/$giteeUpdateRepo/releases/latest'),
   Uri.parse('https://api.github.com/repos/$updateRepo/releases/latest'),
   Uri.parse('https://anticraft.top/apk/latest.json'),
 ];
 
-/// 允许下载安装包 / 校验文件的主机。Release JSON 由三个更新源之一返回，
-/// 任何一个源被替换都可以塞任意 `browser_download_url`；不限制主机的话，
-/// 一个被控的镜像就能把 APK 指到任意地址。只放行实际会用到的发布域及其 CDN。
+/// 允许下载安装包 / 校验文件的主机：Release JSON 来自可被替换的更新源，不限主机就能把 APK 指到任意地址。
 const Set<String> _allowedUpdateHosts = {
   'gitee.com',
   'github.com',
@@ -70,11 +66,10 @@ class UpdateInfo {
   /// 安装包直链（Release 资产里的 .apk）；没挂资产时为 null。
   final String? apkUrl;
 
-  /// 安装包的 sha256 校验文件（Release 资产里的 .apk.sha256）。
-  /// 应用内下载完成后会先对一遍哈希再交给系统安装器（见 UpdateDownloader）。
+  /// 安装包的 sha256 校验文件（Release 资产里的 .apk.sha256），下载后先对哈希再交给安装器。
   final String? sha256Url;
 
-  /// 能否应用内下载安装：APK 直链和 sha256 校验文件缺一不可，且都必须在发布域白名单内。
+  /// 能否应用内下载安装：APK 直链与 sha256 缺一不可且都在发布域白名单内。
   /// 发布页漏挂校验文件时退回浏览器下载，绝不在没有哈希的情况下自动安装。
   bool get canSelfInstall {
     final a = apkUrl == null ? null : Uri.tryParse(apkUrl!);
@@ -91,9 +86,7 @@ String normalizeVersion(String raw) {
 }
 
 /// 版本号比较：a 新于 b 返回正数、旧返回负数、等价返回 0。
-///
-/// 只比数字段（`1.13` 与 `1.13.0` 等价），构建号（`+92`）不参与——同一个版本号
-/// 重发一次不该提示更新；尾部的预发布标记（`1.14.0-rc1`）算「比正式版旧」。
+/// 只比数字段（`1.13` 与 `1.13.0` 等价），构建号不参与，尾部预发布标记算「比正式版旧」。
 int compareVersions(String a, String b) {
   final (na, pa) = _splitVersion(a);
   final (nb, pb) = _splitVersion(b);
@@ -117,8 +110,7 @@ int compareVersions(String a, String b) {
   return (nums, parts.length > 1 ? parts.sublist(1).join('-') : '');
 }
 
-/// Release JSON（GitHub / Gitee / 自建镜像同构）→ [UpdateInfo]；
-/// 没有 tag_name（出错时的返回体）返回 null。
+/// Release JSON（GitHub / Gitee / 自建镜像同构）→ [UpdateInfo]，没有 tag_name 返回 null。
 UpdateInfo? parseRelease(Map<String, dynamic> json) {
   final tag = '${json['tag_name'] ?? ''}'.trim();
   if (tag.isEmpty) return null;
@@ -139,8 +131,7 @@ UpdateInfo? parseRelease(Map<String, dynamic> json) {
   return UpdateInfo(
     version: normalizeVersion(tag),
     notes: releaseSummary('${json['body'] ?? ''}'),
-    // Gitee 的接口不返回 html_url（实测是 null），发布页回落到 Gitee 仓库页——
-    // 点「查看发布页」不该把国内用户带去打不开的 GitHub；非 https 的页面地址一律弃用。
+    // Gitee 接口不返回 html_url，发布页回落到 Gitee 仓库页；非 https 的页面地址一律弃用。
     pageUrl: pageUri != null && pageUri.scheme == 'https'
         ? page
         : 'https://gitee.com/$giteeUpdateRepo/releases',
@@ -149,8 +140,7 @@ UpdateInfo? parseRelease(Map<String, dynamic> json) {
   );
 }
 
-/// Release 说明 → 弹窗里的变更清单：有「### 本次更新」就只取它之后的内容
-/// （前面是安装说明模板，对升级的人来说是废话），去掉 markdown 记号与空行。
+/// Release 说明 → 弹窗里的变更清单：只取「### 本次更新」之后的内容，去掉 markdown 记号与空行。
 String releaseSummary(String body) {
   var text = body.replaceAll('\r\n', '\n');
   const marker = '### 本次更新';
@@ -168,9 +158,7 @@ String releaseSummary(String body) {
 }
 
 /// 更新检查：启动时静默查一次（见 HomePage），也能随时在「我的 → 检查更新」手动查。
-///
-/// 只发一个请求、不上报任何信息；结论放在 [available]，「稍后」过的版本记在
-/// [skipped] 里不再自动弹窗（手动检查照旧能看到）。
+/// 只发请求、不上报信息；「稍后」过的版本记在 [skipped]，不再自动弹窗。
 class UpdateChecker extends ChangeNotifier {
   UpdateChecker._();
   static final UpdateChecker I = UpdateChecker._();
@@ -190,6 +178,7 @@ class UpdateChecker extends ChangeNotifier {
   /// 用户点过「稍后」的版本：该版本不自动弹窗，等下一个版本再说。
   String? skipped;
 
+  /// 是否正在检查。
   bool checking = false;
 
   /// 有可用更新、且用户还没忽略过它——启动时该不该弹引导。
@@ -198,7 +187,6 @@ class UpdateChecker extends ChangeNotifier {
   /// 测试注入点：不为 null 时用它取 Release JSON，不联网。
   @visibleForTesting
   Future<Map<String, dynamic>> Function()? debugFetch;
-
   /// 读本机版本与「已忽略的版本」（启动时、「我的」页各一次）。
   Future<void> load() async {
     if (current.isEmpty) current = await _installedVersion();
@@ -283,9 +271,8 @@ class UpdateChecker extends ChangeNotifier {
   }
 }
 
-/// 并发查询所有更新源，取版本最高的那份；同版本优先靠前的源（Gitee 在前，
-/// 下载地址就走 Gitee）。全部失败抛出**最后一个源**的错误——先试的源报错
-/// 往往是限流/被墙，末尾镜像的错误更利于说明整体不可用。
+/// 并发查询所有更新源，取版本最高的那份；同版本优先靠前的源（下载地址跟着它走）。
+/// 全部失败时抛出**最后一个源**的错误：末尾镜像的错误更能说明整体不可用。
 Future<Map<String, dynamic>> fetchLatestFrom(
   Iterable<Uri> sources,
   Future<Map<String, dynamic>> Function(Uri) fetch,

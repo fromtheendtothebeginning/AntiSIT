@@ -9,8 +9,7 @@ import '../changelog.dart';
 import '../update_check.dart';
 import '../widgets/update_dialog.dart';
 
-/// 主导航壳：底栏与页面**全部由插件注册表组装**——插件被停用（或被构建期剔除）后，
-/// 这里既不会剩下空 tab，也不会引用到不存在的页面。
+/// 主导航壳：底栏与页面**全部由插件注册表组装**，插件停用或被构建期剔除后不会剩下空 tab。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -21,15 +20,14 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> implements NavSwipeHost {
   final ValueNotifier<int> tab = ValueNotifier(0);
 
-  /// 页面区域横滑中的连续位置（单位 = 底栏格）：底栏滑块跟着它走，松手置回 null
-  /// 把位置交还给底栏自己的弹簧。单独用 ValueNotifier 是为了不每帧重建整棵页面树。
+  /// 页面区域横滑中的连续位置（单位 = 底栏格），松手置回 null 把位置交还给底栏弹簧；
+  /// 单独用 ValueNotifier 是为了不每帧重建整棵页面树。
   final ValueNotifier<double?> _dragPos = ValueNotifier<double?>(null);
 
   /// 内页（[NavSwipeScope] 桥）越界拖动的锚点：起拖时的主界面格。null = 没在接。
   double? _bridgeFrom;
 
-  /// 底栏**写出来**的当前滑块位置（每帧更新，含弹簧过程）：页面照着它位移，
-  /// 于是页面和滑块是同一套弹簧、不会在切页时跳。
+  /// 底栏**写出来**的当前滑块位置（每帧更新，含弹簧过程）：页面照着它位移，于是两者同一套弹簧。
   final ValueNotifier<double> _pos = ValueNotifier<double>(0);
   double _dragFrom = 0;
 
@@ -64,13 +62,11 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
     if (index >= 0) tab.value = index;
   }
 
-  /// 启动后静默查一次新版本：有就弹一次引导更新（点过「稍后」的版本不再弹，
-  /// 手动检查照旧能看到）。检查失败 / 读不到本机版本都直接放过，不打扰启动。
+  /// 启动后静默查一次新版本：有就弹一次引导更新（点过「稍后」的不再弹，检查失败直接放过）。
   Future<void> _checkUpdateOnStart() async {
     await UpdateChecker.I.load();
     if (UpdateChecker.I.current.isEmpty) return; // 没有本机版本就没什么可比的
-    // 升级后首次打开：先讲这次装上了什么（更新日志），关掉后再查有没有更新的，
-    // 免得两个弹窗叠在一起
+    // 升级后首次打开：先讲更新日志，关掉后再查有没有更新的，免得两个弹窗叠在一起
     if (mounted) await showChangelogIfUpdated(context, UpdateChecker.I.current);
     if (!mounted) return;
     await UpdateChecker.I.check();
@@ -99,10 +95,8 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
     });
   }
 
-  // ── 页面区域左右滑动切页 ──
-  // 只在「页面内部没接住这次横滑」时生效：课表的周视图、任何横向滚动组件都会先抢走手势，
-  // 所以在那儿横滑是切周/滚内容，不会误切底栏（不冲突才切页）。
-  // 判据是滑块位置就近落格：拖过一半就换页，界面永远是「最贴近滑块的那一格」。
+  // 页面区域左右滑动切页：只在页面内部没接住这次横滑时生效（课表周视图等会先抢走手势，
+  // 所以在那儿横滑是滚内容，不会误切底栏）；判据是滑块位置就近落格。
 
   int get _tabCount => PluginRegistry.I.navPages(tab).length;
 
@@ -146,16 +140,12 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
     }
   }
 
-  // ── 内页（拓展页等）滑出自身边界后的拖动镜像 ──
-  // 内页手势在竞技场里赢过了外层，主界面自己的 onHorizontalDrag* 收不到那次
-  // 拖动；越界量由内页经 NavSwipeScope 转过来，位置机制（滑块跟手、松手弹到
-  // 落点）与主界面原生手势同一条路，观感上就是把内页接进了滑动链。
+  // 内页（拓展页等）滑出自身边界后的拖动镜像：内页手势在竞技场里赢过外层，
+  // 越界量经 NavSwipeScope 转过来，位置机制与主界面原生手势同一条路。
 
   @override
   void navDragOver(double over) {
-    // 界内拖动（over=0 且从未越界）不惊动主界面：起拖若恰逢切页弹簧
-    // （_pos 还在半路），锚定并写 _dragPos 会掐断弹簧、把 tab 拽回上一格。
-    // 一旦真的越界（_bridgeFrom 已锚定），拖回 0 也要照常同步回弹。
+    // 界内拖动（over=0 且从未越界）不惊动主界面：起拖若恰逢切页弹簧，会掐断弹簧、把 tab 拽回上一格。
     if (over == 0 && _bridgeFrom == null) return;
     if (_tabCount < 2) return;
     _bridgeFrom ??= _pos.value;
@@ -177,8 +167,7 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
     final last = _tabCount - 1;
     var target = p.round().clamp(0, last);
     final v = (-velocityDx / _screenW).clamp(-8.0, 8.0);
-    // 借一格只认「松手时还在界外（拖出一屏的 5% 以上）且甩动方向与越界一致」：
-    // 锚点的弹簧残差不算越界，界内的甩动是内页自己的事
+    // 借一格只认「松手时还在界外（拖出一屏 5% 以上）且甩动方向与越界一致」。
     final over = from == null ? 0.0 : p - from;
     if (over.abs() > 0.05 && over * v > 0 && v.abs() >= 5.0) {
       final next = target + (v > 0 ? 1 : -1);
@@ -197,15 +186,14 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
     _dragPos.value = null;
   }
 
+  /// 退出演示模式（留在主导航界面，不跳登录页）。
   Future<void> _exitDemo() async {
-    // 退出演示留在主导航界面（我的页显示未登录），不跳登录页
     await AppState.I.setDemo(false);
   }
 
   @override
   Widget build(BuildContext context) {
-    // 把主界面横滑桥挂到树上：内页（拓展页的子页）滑到自身边界后经它
-    // 把拖动转过来，见 [NavSwipeHost]。
+    // 把主界面横滑桥挂到树上，内页滑到自身边界后经它把拖动转过来（见 [NavSwipeHost]）。
     return NavSwipeScope(
       host: this,
       child: ValueListenableBuilder<int>(
@@ -216,17 +204,14 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
           final demo = AppState.I.demo;
           final pages = PluginRegistry.I.navPages(tab);
           final index = pages.isEmpty ? 0 : i.clamp(0, pages.length - 1);
-          // 页面做成静态子树：位置动画只动外面的 Transform，不每帧重建页面本身
-          // （不加这层的话，滑动时每帧都会 build 一次课表页，直接卡住）
+          // 页面做成静态子树：位置动画只动外面的 Transform，不每帧重建页面本身（否则滑动会卡）。
           final pageWidgets = [
             // key = 插件 id：增删插件时各页的 State 不会串位
             for (var k = 0; k < pages.length; k++)
               KeyedSubtree(key: ValueKey(pages[k].$1.id), child: pages[k].$2.build(k)),
           ];
           return Scaffold(
-            // 底栏是浮在页面上的玻璃条：页面铺满整屏、从它底下穿过去，玻璃才有「透」的
-            // 内容可折射。不给这行时 body 只排到底栏上沿，底栏背后永远是同一块底色，
-            // 再淡的玻璃也看着像一块不透明的板子。
+            // 底栏是浮在页面上的玻璃条：页面铺满整屏从它底下穿过，玻璃才有内容可折射；
             // 各页自己的滚动底距要按 MediaQuery.paddingOf(context).bottom（= 底栏高度）加。
             extendBody: true,
             body: pages.isEmpty
@@ -238,17 +223,14 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
                     ),
                   )
                 : GestureDetector(
-                    // translucent：页面空白处（底下没有可命中的组件）也要能起手势；
-                    // 页面内部真接住了横滑（课表周视图等）时，内层识别器在手势竞技场里先赢，
-                    // 所以那种滑动照旧滚内容，不会误切底栏（不冲突才切页）。
+                    // translucent：页面空白处也要能起手势；内部真接住横滑时内层识别器先赢。
                     behavior: HitTestBehavior.translucent,
                     onHorizontalDragStart: _onDragStart,
                     onHorizontalDragUpdate: _onDragUpdate,
                     onHorizontalDragEnd: _onDragEnd,
                     onHorizontalDragCancel: () => _dragPos.value = null,
-                    // 页面跟着底栏滑块的位置一起位移（同一套弹簧，弹簧仍藏在底栏里）。
-                    // 没用 PageView：那样没去过的 tab 不会建，启动时的并发预取、
-                    // 校园码计时器这些「常驻」前提就没了。
+                    // 页面跟着底栏滑块的位置一起位移（同一套弹簧）。没用 PageView：
+                    // 那样没去过的 tab 不会建，启动时的并发预取、校园码计时器这些「常驻」前提就没了。
                     child: ValueListenableBuilder<double>(
                       valueListenable: _pos,
                       builder: (context, rawPos, _) {
@@ -260,8 +242,7 @@ class _HomePageState extends State<HomePage> implements NavSwipeHost {
                           children: [
                             for (var k = 0; k < pageWidgets.length; k++)
                               Positioned.fill(
-                                // 只画当前这一页和拖动时露出来的邻页：更远的页不画，
-                                // 省得每帧把四页都渲染一遍（状态照旧保留）
+                                // 只画当前页和拖动时露出的邻页，更远的页不画（状态照旧保留）
                                 child: Offstage(
                                   offstage: (k - pos).abs() >= 0.999,
                                   child: Transform.translate(

@@ -10,13 +10,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'update_check.dart';
 
-/// 「去下载」的应用内实现：把 Release 的 APK 流式拉到本机缓存，**必须**对照发布页
-/// 同时挂的 `.apk.sha256` 校验（缺失即拒绝，不跳过），并让 native 确认下载包的包名/
-/// 签名与当前安装版本一致，才交给系统安装器覆盖安装（数据保留）。
-///
-/// 状态机：idle → downloading → verifying → ready（自动拉起安装器）；任何一步失败
-/// 进 error，弹窗里可以重试，也可以退回「浏览器打开下载链接」。安卓侧的授权与安装
-/// 见 `MainActivity.installApk`——缺「安装未知应用」授权时会先跳系统设置页。
+/// 应用内下载安装：APK 流式拉到本机缓存 → 校验发布页的 `.apk.sha256`（缺失即拒绝，不跳过）
+/// → native 确认包名 / 签名与当前版本一致 → 交给系统安装器覆盖安装（数据保留）。
 class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   UpdateDownloader._() {
     // 从「安装未知应用」授权页回来时自动续装（见 didChangeAppLifecycleState）
@@ -28,12 +23,13 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
 
   static const _channel = MethodChannel('antisit/system');
 
-  /// 进度通知的节流粒度：收满这么多字节才 notify 一次（最后一段总会通知），
-  /// 几万次 rebuild 就为了刷进度条不值当。测试里改小。
+  /// 进度通知的节流粒度：收满这么多字节才 notify 一次（最后一段总会通知）。
   int notifyEveryBytes = 256 * 1024;
 
   /// 当前状态：idle / downloading / verifying / ready / error。
   String status = 'idle';
+
+  /// 已收到的字节数。
   int received = 0;
 
   /// 服务端声明的总大小（0 = 没给 Content-Length，进度条转圈）。
@@ -51,13 +47,13 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   /// 跳去授权「安装未知应用」了：授权回来（app resumed）自动续装，不用再点一次。
   bool _awaitingSettings = false;
 
-  /// 本次 install 是否已收到 native 的异步安装状态。
-  /// 通道返回值与状态事件有先后竞争：收到了就别再用 `true` 把提示清空。
+  /// 本次 install 是否已收到 native 的异步安装状态（通道返回值与状态事件有先后竞争）。
   bool _nativeStatusSeen = false;
 
+  /// 是否正在下载 / 校验。
   bool get busy => status == 'downloading' || status == 'verifying';
 
-  // ---- 测试注入点（不联网跑完整个流程）----
+  // 测试注入点（不联网跑完整个流程）
   @visibleForTesting
   static Future<http.StreamedResponse> Function(Uri)? debugStream;
   @visibleForTesting
@@ -103,10 +99,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// 删掉下载过的安装包，返回释放的字节数。
-  ///
-  /// 每升一版这里都会留一个 80MB 上下的 APK，以前装完从不清理，缓存目录能一直涨。
-  /// [keepReady] 为 true 时保留还等着安装的那一份（点「重试安装」还要用），
-  /// 启动清扫与「清理更新安装包」传 false：装完 / 装不了都不需要它了。
+  /// [keepReady] 为 true 时保留还等着安装的那一份（「重试安装」要用）；启动清扫与手动清理传 false。
   Future<int> purgeCache({bool keepReady = false}) async {
     if (busy) await cancel(); // 正在下的那半截先收掉，否则删不掉（句柄还开着）
     if (keepReady && readyPath == null) return 0;
@@ -128,8 +121,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
       }
     } catch (_) {}
     final ready = readyPath;
-    // 比较时统一分隔符：Windows 上 dir.list() 给的是反斜杠路径，readyPath 可能来自
-    // 调用方手写（测试、或 native 回传），别因为斜杠方向不同就漏判「这份已被删掉」。
+    // 比较时统一分隔符：dir.list() 给的是反斜杠路径，readyPath 可能来自调用方手写，别漏判。
     String normal(String path) => path.replaceAll('\\', '/');
     final removed = removedReady.map(normal).toSet();
     if (ready != null && removed.contains(normal(ready)) && !File(ready).existsSync()) {
@@ -140,11 +132,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     return freed;
   }
 
-  /// 启动时清扫：把上次留下的安装包删掉。
-  ///
-  /// 典型场景：下载完成、拉到安装器、用户在系统确认页装完后回到 App（或直接重开），
-  /// 那份 80MB 的 APK 就一直躺在缓存里，每次更新都多一份。这里只在**空闲**时清扫——
-  /// 正在下载 / 就绪待装的那一轮交给 [purgeCache] 之外的分支处理，不能动它的文件。
+  /// 启动时清扫上次留下的安装包；只在空闲且没有待装文件时做，不动正在下载 / 就绪的那一轮。
   Future<void> sweepCache() async {
     if (busy || readyPath != null) return;
     await purgeCache();
@@ -180,8 +168,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     IOSink? sink;
     try {
       final dir = await cacheDir();
-      // 版本号来自更新源 JSON，不能直接拼进文件名（防 `../` 之类越界）；
-      // 正常版本号（1.26.0 / 1.14.0-rc1）原样保留，测试也依赖这个命名。
+      // 版本号来自更新源 JSON，不能直接拼进文件名（防 `../` 越界）；正常版本号原样保留。
       final safeVersion = info.version.replaceAll(RegExp(r'[^0-9A-Za-z._-]'), '_');
       final file = File('${dir.path}/AntiSIT-$safeVersion.apk');
       _partial = file;
@@ -242,8 +229,8 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 拉起系统安装器。下载校验通过后会自动调一次；缺「安装未知应用」授权时
-  /// native 会跳授权页，授权回来由 [didChangeAppLifecycleState] 自动续装。
+  /// 拉起系统安装器。下载校验通过后自动调一次；缺「安装未知应用」授权时由
+  /// [didChangeAppLifecycleState] 在授权回来后续装。
   Future<void> install() async {
     final path = readyPath;
     if (path == null) return;
@@ -256,14 +243,11 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     Object? r = 'error';
     try {
-      // 参数必须是 Map：native 侧用 call.argument("path") 取，MethodCall.argument 遇到
-      // 裸字符串会直接抛 ClassCastException（表现为「没能拉起安装器」）。
+      // 参数必须是 Map：native 侧用 call.argument("path") 取，裸字符串会抛 ClassCastException。
       r = await (debugInstall?.call(path) ??
           _channel.invokeMethod('installApk', {'path': path}));
     } catch (e) {
-      // 通道异常也带上原因：MissingPluginException（没实现）/ PlatformException
-      // （ROM 拒绝）各有不同修法，笼统一句没法定位；PlatformException 的 toString
-      // 带整段堆栈，只留第一行够定位
+      // 通道异常也带上原因（MissingPluginException / PlatformException 各有不同修法），只留第一行。
       r = 'error: ${'$e'.split('\n').first}';
     }
     _awaitingSettings = r == 'settings';
@@ -279,11 +263,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  /// native 回传的安装状态（PackageInstaller 的异步结果）。
-  ///
-  /// - pending：系统要求用户确认，MainActivity 已经把确认页拉起来了
-  /// - success：系统报告安装成功（覆盖安装时进程通常会被替换，未必能看到）
-  /// - failed：拦截 / 冲突 / 包损坏等；安装包还在，重试只需再点「重试安装」
+  /// native 回传的安装状态：pending（已拉起确认页）/ success（安装完成）/ failed（拦截、冲突、包损坏）。
   Future<Object?> _onNativeCall(MethodCall call) async {
     if (call.method != 'installResult') return null;
     final args = call.arguments is Map ? call.arguments as Map : const {};
@@ -299,9 +279,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
         break;
       case 'success':
         installNote = '安装完成，打开新版本即可';
-        // 装完就没用了：留着的 80MB 安装包每升一版多一份，缓存目录会一直涨。
-        // 原生安装是异步的、确认页还可能让本进程被杀，所以这里删失败也无所谓——
-        // 启动时的 [sweepCache] 还会扫一遍。
+        // 装完就没用了：删失败也无所谓，启动时的 sweepCache 还会扫一遍。
         unawaited(purgeCache());
         break;
       case 'failed':
@@ -336,8 +314,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 中止本次下载（弹窗点「稍后」、或重开下载前的清理）：关连接与写文件的 sink
-  /// （Windows 上句柄不关删不掉文件）、删半截文件、状态回 idle。
+  /// 中止本次下载：关连接与 sink（不关句柄 Windows 上删不掉）、删半截文件、状态回 idle；
   /// ready 状态的成品文件不动（重试「安装」还要用）。
   Future<void> cancel() async {
     _client?.close();
@@ -395,8 +372,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// 原生校验：下载的 APK 必须与当前安装版本的包名、签名一致（Android 安装器本身也会拦，
-  /// 但先在这里拦能给用户一句清楚的原因，别把可疑包送到安装确认页）。返回 null = 通过。
+  /// 原生校验：下载的 APK 必须与当前安装版本同包名、同签名（先在这里拦能给一句清楚的原因）。
   Future<String?> _verifyApkSignature(String path) async {
     try {
       final r = await _channel.invokeMethod<Object?>('verifyApkSignature', {'path': path});
@@ -443,8 +419,7 @@ String formatBytes(int bytes) {
   return '${(mb / 1024).toStringAsFixed(2)} GB';
 }
 
-/// [UpdateDownloader.cancel] 中止下载时抛给 start() 的退出信号
-/// （状态由 cancel 自己收拾，start 直接退出就行）。
+/// [UpdateDownloader.cancel] 中止下载时抛给 start() 的退出信号（状态由 cancel 自己收拾）。
 class _Cancelled implements Exception {
   const _Cancelled();
 }

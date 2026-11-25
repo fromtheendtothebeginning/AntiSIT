@@ -6,10 +6,8 @@ import 'package:campus_core/campus_core.dart';
 class PluginGraph {
   const PluginGraph({required this.nodes, required this.edges});
 
-  /// 从注册表取：功能插件 + 主题插件都做节点；
-  /// 硬依赖画实线（启停联动），软依赖画虚线（可选增强）。
-  /// 另有**挂载边**：贡献工具卡片的插件都「挂」在工具中心页上（卡片只在那一页显示，
-  /// 工具中心停用卡片就没地方出现）——通过注册表的 tools() 贡献点推出的隐式依附。
+  /// 从注册表取节点与边：功能插件 + 主题插件都做节点。
+  /// 硬依赖画实线（启停联动），软依赖画虚线；工具卡片对工具中心的挂载边也是虚线。
   factory PluginGraph.fromRegistry(PluginRegistry registry) => PluginGraph(
         nodes: [
           for (final p in registry.features)
@@ -50,6 +48,8 @@ class PluginGraphNode {
 
   /// 核心插件（不可停用）。
   final bool core;
+
+  /// 是否主题插件。
   final bool theme;
 }
 
@@ -62,7 +62,7 @@ class PluginGraphEdge {
   final String to;
   final bool optional;
 
-  /// 挂载边（工具卡片 → 工具中心），与可选依赖一样画虚线、不联动启停。
+  /// 挂载边（工具卡片 → 工具中心），画虚线、不联动启停。
   final bool host;
 
   /// 虚线边（可选依赖 / 挂载）不参与分层与启停联动。
@@ -79,19 +79,14 @@ class PluginGraphLayout {
   /// 每个节点的依赖深度（0 = 不依赖任何插件）。
   final Map<String, int> depth;
 
-  // 尺寸按最长的中文节点名（网络与登录 = 5 字）定，留一点余量即可；
-  // 做小一点是为了让整张图能缩放进手机宽度（适配由 PluginGraphView 的 FittedBox 做）。
+  // 尺寸按最长的中文节点名（5 字）定，做小一点才能整张图缩放进手机宽度。
   static const double nodeW = 92;
   static const double nodeH = 38;
   static const double colGap = 28;
   static const double rowGap = 10;
 
-  /// 布局规则：
-  /// * **列 = 依赖深度**，深度大的在左（组合功能），深度 0 在右（基础件）——
-  ///   于是箭头一律从左上指向右下，看的方向感稳定；
-  /// * **同层内**按「邻居的平均行号」排两遍，减少连线交叉；
-  /// * 硬依赖参与分层，软依赖只画线（免得可选边把层数拉乱）；
-  /// * 有环时回边按 0 层算，布局不会卡死、也不会丢节点。
+  /// 分层布局：列 = 依赖深度（深度大的在左，箭头一律从左上指向右下，基础件在右），
+  /// 同层内按邻居平均行号排两遍减少交叉；软依赖只画线不参与分层，成环时回边按 0 层算。
   static PluginGraphLayout compute(PluginGraph graph) {
     if (graph.nodes.isEmpty) {
       return const PluginGraphLayout(<String, Rect>{}, Size.zero, <String, int>{});
@@ -189,12 +184,9 @@ class PluginGraphLayout {
   }
 }
 
-/// 关系图：整张图先缩放到「看得全」（只缩不放、居中），用户在这基础上双指放大、
-/// 放大后拖动查看；点节点选中，选中后只高亮与它相连的边。
-///
-/// 适配视图这件事交给 [FittedBox]，不用 TransformationController：
-/// 实测 InteractiveViewer 会把外部设进去的「小于 1」的缩放弹回 1，
-/// 自己写控制器适配反而要和它打架。
+/// 关系图：整张图先缩放到「看得全」（只缩不放、居中），再由用户双指放大 / 拖动查看；
+/// 点节点选中，选中后只高亮与它相连的边。适配用 [FittedBox] 而非 TransformationController
+/// （InteractiveViewer 会把外部设进去的小于 1 的缩放弹回 1）。
 class PluginGraphView extends StatelessWidget {
   const PluginGraphView({
     super.key,
@@ -211,13 +203,15 @@ class PluginGraphView extends StatelessWidget {
 
   /// 已停用的插件（画成灰的）。
   final Set<String> off;
+
+  /// 点节点的回调。
   final ValueChanged<String>? onTap;
 
   @override
   Widget build(BuildContext context) {
     final sel = selected;
     return InteractiveViewer(
-      // 起点已经是「整张图」，所以用户只能放大；放大后边界自然会限制在内容里
+      // 起点已经是整张图，用户只能放大；放大后的边界自然限制在内容里
       minScale: 1,
       maxScale: 4,
       child: SizedBox.expand(
@@ -255,14 +249,11 @@ class PluginGraphView extends StatelessWidget {
   }
 }
 
-/// 关系图的画布底色：做成「内凹的井」（用页面底色，比卡面深），节点才有地方浮起来。
+/// 关系图的画布底色：用页面底色（比卡面深），节点才有地方浮起来。
 Color pluginGraphCanvasFill() => SemColors.bg;
 
-/// 关系图里节点的底色＝画布上再叠一层卡面。
-///
-/// **别写成 `SemColors.card.withValues(alpha: …)`**：card 本身自带透明度
-/// （浅色白 55% / 深色白 8%），withValues 会把它**覆盖**掉——深色下节点会被刷成
-/// 近白色，而节点文字是 textPrimary（深色下＝白 95%），白底白字，整张图看不清。
+/// 节点底色 = 卡面色叠在画布上。**不能**写成 `SemColors.card.withValues(alpha: …)`：
+/// card 自带透明度，withValues 会覆盖掉它，深色下变成白底白字看不清。
 Color pluginGraphNodeFill() => Color.alphaBlend(SemColors.card, pluginGraphCanvasFill());
 
 class _NodeCard extends StatelessWidget {
@@ -346,8 +337,7 @@ class _EdgePainter extends CustomPainter {
       final b = layout.rects[e.to];
       if (a == null || b == null) continue;
       final focused = selected == null || selected == e.from || selected == e.to;
-      // 虚线分两档：软依赖（可选增强）用次要文字色，挂载边（工具卡片挂在工具中心）
-      // 用更淡的 textMuted——挂载关系只是「卡片显示在那一页」，比可选依赖更弱
+      // 软依赖用次要文字色、挂载边用更淡的 textMuted（挂载关系比可选依赖更弱）。
       final base = e.optional ? SemColors.textSecondary : (e.host ? SemColors.textMuted : SemColors.accent);
       final color = base.withValues(alpha: selected == null ? 0.5 : (focused ? 0.95 : 0.15));
       final forwards = b.center.dx >= a.center.dx;
@@ -369,7 +359,7 @@ class _EdgePainter extends CustomPainter {
         ..strokeWidth = focused && selected != null ? 2 : 1.3
         ..color = color;
       if (e.soft) {
-        // 虚线：软依赖（长虚线）/ 挂载（短虚线更淡）
+        // 虚线：可选依赖长虚线，挂载边更短的虚线
         final dash = e.host ? 3 : 5;
         final gap = e.host ? 5 : 4;
         for (final metric in path.computeMetrics()) {
