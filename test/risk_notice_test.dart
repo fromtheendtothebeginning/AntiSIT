@@ -10,12 +10,7 @@ import 'package:plugin_risk/plugin_risk.dart';
 import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「风险提醒」组件（默认启用）的验收：
-/// * 校园码：二维码区域换成引导（不显示付款码）、引导能跳插件管理；停用后立刻恢复取码；
-/// * 电费：点「充值」只弹提醒，不进金额输入；停用后恢复；
-/// * 停用前必须过一遍条款：读完才能同意（取消 / 返回手势 = 未作出同意，组件维持启用）；
-/// * 条款正文是法律条文形式（条 → 款 → 项，先定义后使用）；
-/// * 卡片与页面的进出动画跟全站一致（AnimatedSize 高度过渡 / 普通路由）。
+/// 风险提醒组件（默认启用）：校园码 / 电费的拦截与恢复、停用前必须过条款（取消 = 未同意）、条款是法律条文形式、动画与全站一致。
 void main() {
   /// 校园码页会给屏幕常亮加锁，测试环境没有平台实现，把通道应答成成功。
   const wakelockToggle =
@@ -76,8 +71,7 @@ void main() {
     return digit[s]!;
   }
 
-  /// 某一条里（一）（二）… 的项编号（按出现顺序）。
-  /// 只认行首的项标记——正文里的援引（「本条第（五）项」「第四条第（一）项」）不算项。
+  /// 某一条里（一）（二）… 的项编号：只认行首项标记，正文里的援引不算。
   List<int> itemsOf(String no) =>
       RegExp(r'^（([一二三四五六七八九十]+)）', multiLine: true)
           .allMatches(RiskTerms.clauses.firstWhere((c) => c.no == no).body)
@@ -197,8 +191,7 @@ void main() {
     await closePage(tester);
   });
 
-  /// 条款页滚到底（内容一屏放得下时拖不动，重复拖也不会出错）。
-  /// 只拖条款页自己那个 ListView——管理页底下也有一个，别拖错。
+  /// 条款页滚到底：只拖条款页自己那个 ListView（管理页底下也有一个）。
   Future<void> scrollToEnd(WidgetTester tester) async {
     final list = find.descendant(
         of: find.byType(RiskNoticePage), matching: find.byType(ListView));

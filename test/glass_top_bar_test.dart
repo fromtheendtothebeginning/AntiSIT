@@ -120,8 +120,7 @@ void main() {
     }
 
     final light = barTopColor();
-    // 色带是 const 组件，页面重建时会被跳过——必须靠订阅色板自己重画，
-    // 否则应用内切深浅色后顶栏还是旧色，要重启才生效。
+    // 色带是 const 组件，页面重建时会被跳过，必须靠订阅色板自己重画，否则切深浅色后顶栏还是旧色。
     SemColors.p = GlassPalette.dark;
     await tester.pump();
     final dark = barTopColor();
@@ -142,8 +141,7 @@ void main() {
         ),
       ),
     );
-    // 圆钮 = 40 直径的「更实一档」玻璃面；BackdropFilter 只留给顶栏背景那一层，
-    // 圆钮里再套一层会在 Impeller 下产生椭圆光晕
+    // 圆钮 = 40 直径的更实一档玻璃面；BackdropFilter 只留给顶栏背景，再套一层会在 Impeller 下出椭圆光晕。
     final face = find.ancestor(
       of: find.byTooltip('刷新'),
       matching: find.byType(Container),

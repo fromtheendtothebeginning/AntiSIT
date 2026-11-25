@@ -1,16 +1,4 @@
-// 插件清单 + 依赖关系生成器。
-//
-//   dart run tool/gen_plugins.dart
-//
-// 三件事：
-//   1. 扫描宿主 pubspec.yaml 里以 `plugin_` 开头的依赖 → lib/plugins/manifest.g.dart；
-//   2. 扫描各插件包与宿主核心插件的**源码**，把「依赖关系」表写回 docs/plugins.md
-//      的两行标记之间（勿手改那张表）；
-//   3. 校验依赖引用：不存在的 id / 自依赖 / 硬依赖成环直接报错退出——这类错误
-//      不生成的话要等运行时才在插件管理页顶部看到告警。
-//
-// 「导入插件」= 往依赖里加一行 + 跑这个脚本；「删除插件」= 去掉那一行 + 跑这个脚本。
-// 纯 Dart（不依赖 Flutter），所以可以直接 dart run。
+// 插件清单 + 依赖关系生成器：扫 pubspec 的 plugin_* 依赖产出 manifest.g.dart、扫源码写回 docs/plugins.md 的依赖表、校验依赖引用（不存在的 id / 自依赖 / 硬依赖成环）。
 import 'dart:io';
 
 const _manifestPath = 'lib/plugins/manifest.g.dart';
@@ -69,8 +57,6 @@ void main() {
   }
 }
 
-// ==================== 清单：pubspec → manifest.g.dart ====================
-
 class _Plugin {
   const _Plugin(this.name, this.flag);
 
@@ -98,8 +84,7 @@ List<_Plugin> _scanPluginDeps(String yaml) {
   return out;
 }
 
-/// 插件包的实现文件：包内第一个声明了 FeaturePlugin / ThemePlugin 子类的库。
-/// 约定是 `lib/<包名>_plugin.dart`，但主题包直接写在 barrel 里，所以按内容找更稳。
+/// 插件包的实现文件：包内第一个声明了 FeaturePlugin / ThemePlugin 子类的库（按内容找比按约定文件名稳）。
 File _pluginClassFile(String pkg) {
   final dir = Directory('packages/$pkg/lib');
   final files = [
@@ -144,8 +129,6 @@ String _render(List<_Plugin> plugins) {
   return b.toString();
 }
 
-// ==================== 依赖关系：插件源码 → docs/plugins.md 的表 ====================
-
 class _PluginMeta {
   _PluginMeta(this.pkg, this.id, this.kind, this.hard, this.soft, this.removable,
       this.contributions, this.uses);
@@ -158,8 +141,7 @@ class _PluginMeta {
   final bool removable;
   final String contributions;
 
-  /// 本包源码里通过注册表用到的能力（`capability<X>(PluginIds.y)` 里的 y）。
-  /// 这就是「代码耦合」；必须与 hard/soft 里的声明对得上。
+  /// 本包源码里通过注册表用到的能力（`capability<X>(PluginIds.y)` 的 y），必须与 hard/soft 声明对得上。
   final List<String> uses;
 }
 
@@ -232,9 +214,7 @@ List<_PluginMeta> _parseSource(String pkg, File file, Map<String, String> plugin
   return out;
 }
 
-/// 扫一个插件包里所有源码，找出它**通过注册表用到的能力**：
-/// `PluginRegistry.I.capability<X>(PluginIds.y)` 里的那个 y。
-/// 取用处的这个 id 就是代码耦合关系，必须与该插件声明的依赖对得上。
+/// 扫一个插件包的所有源码，找出它通过注册表用到的能力 id；取用处必须与该插件声明的依赖对得上。
 List<String> _capabilityUses(String pkg, Map<String, String> pluginIds) {
   final dir = Directory('packages/$pkg/lib');
   if (!dir.existsSync()) return const [];
@@ -288,8 +268,7 @@ String _contributions(String body, _Kind kind) {
   final ui = <String>[
     if (body.contains('navItems(')) '底栏页',
     if (body.contains('tools(')) '工具卡片',
-    // 两处宿主都算「设置条目」：`timetableSettingsTiles(` 收进「课程表设置」二级页，
-    // `settingsTiles(` 留在「我的 → 设置」。注意大小写——前者并不包含后者。
+    // 两处设置入口：timetableSettingsTiles( 收进课表设置二级页、settingsTiles( 留在我的 → 设置（注意大小写，前者不包含后者）。
     if (body.contains('settingsTiles(') || body.contains('timetableSettingsTiles('))
       '设置条目',
   ];
@@ -326,8 +305,6 @@ String _renderDoc(String doc, List<_PluginMeta> metas) {
 
 String _cell(List<String> ids) => ids.isEmpty ? '—' : ids.map((e) => '`$e`').join('、');
 
-// ==================== 依赖校验 ====================
-
 List<String> _validate(List<_PluginMeta> metas) {
   final out = <String>[];
   final ids = <String>{};
@@ -339,8 +316,7 @@ List<String> _validate(List<_PluginMeta> metas) {
       if (d == m.id) out.add('${m.pkg} 硬依赖了自己');
       if (!ids.contains(d)) out.add('${m.pkg} 硬依赖了不存在的插件：$d');
     }
-    // 代码里按 id 取用了别人的能力，就得声明依赖——两者不一致说明图和代码对不上，
-    // 生成阶段直接拦下来（不然图上少一条边，改动别人时看不到牵连）。
+    // 代码里取用了别人的能力就得声明依赖，两者不一致说明图和代码对不上，生成阶段直接拦下。
     for (final u in m.uses) {
       if (!m.hard.contains(u) && !m.soft.contains(u)) {
         out.add('${m.pkg} 用了 $u 的能力（capability<...>(PluginIds.$u)）但没声明依赖：'
@@ -393,8 +369,6 @@ List<List<String>> _hardCycles(List<_PluginMeta> metas) {
   }
   return out;
 }
-
-// ==================== 输出 ====================
 
 /// 内容没变化就不重写，避免无意义的 diff。
 bool _writeIfChanged(File file, String text) {

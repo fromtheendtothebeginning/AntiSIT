@@ -41,8 +41,7 @@ void main() {
     });
 
     test('退出登录走 login.clear：删除这些域的 Cookie', () async {
-      // 桌面 / 测试环境没有 CookieManager：应报「只支持 Android」而不是静默成功，
-      // 免得拓展以为账号已经退出了。
+      // 桌面 / 测试环境没有 CookieManager：应报「只支持 Android」而不是静默成功，免得拓展以为账号已退出。
       if (ExtCookieBridge.supported) return;
       expect(
         () => ExtCookieBridge.remove(const ['https://chaoxing.com']),
@@ -51,8 +50,7 @@ void main() {
     });
 
     test('父域候选：子域能退回主域（父域 Cookie 才是学习通的登录态）', () {
-      // CookieManager 删 `.chaoxing.com` 必须带 Domain=，候选要按长度递减排出来。
-      // 这里只验「可删域」这层纯逻辑，实际删除在 Android 侧。
+      // 删 .chaoxing.com 必须带 Domain=，候选按长度递减；这里只验「可删域」这层纯逻辑。
       expect(
         ExtCookieBridge.domainCandidates('mooc1-api.chaoxing.com'),
         ['mooc1-api.chaoxing.com', 'chaoxing.com'],
@@ -73,8 +71,7 @@ void main() {
     });
 
     test('还在登录页时，即使带着旧 Cookie 也不算登录成功', () {
-      // 这是「退出后又自己登上」的另一半根因：判定只看 Cookie 时，
-      // 登录页一打开就会被自动 capture（CookieStore 里还留着上次的 _uid）。
+      // 判定只看 Cookie 时，登录页一打开就会被自动 capture（CookieStore 里还留着上次的 _uid）。
       expect(
         ExtLoginPage.shouldAutoCapture(
           url: 'https://passport2.chaoxing.com/login?fid=',

@@ -3,11 +3,7 @@ import 'dart:io';
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 回归：重定向链上每一跳的 Set-Cookie 都必须进 Cookie 罐。
-///
-/// 真实学校系统就是这么用的：authserver 在 302 上建会话（JSESSIONID），下面的
-/// /captcha.html 与登录 POST 都靠这个会话把验证码对上；只留最后一跳的 Cookie
-/// 会让验证码绑到另一个会话上，登录必然失败（且看不出原因）。
+/// 回归：重定向链每一跳的 Set-Cookie 都要进 Cookie 罐（学校在 302 上建会话，只留最后一跳会让验证码绑错会话）。
 void main() {
   late HttpServer server;
   late int port;

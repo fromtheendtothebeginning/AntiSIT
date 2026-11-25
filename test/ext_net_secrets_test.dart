@@ -87,8 +87,7 @@ void main() {
             throwsA(isA<ExtNetException>()),
             reason: '$host 不该通过');
       }
-      // 校内地址是普通内网段：campus 通道要放行（网络不通会在连接阶段报错，
-      // 而不是在校验阶段被拦）
+      // 校内地址是普通内网段：campus 通道要放行（网络不通会在连接阶段报错，而不是在校验阶段被拦）。
       final uri = await ExtNetService.I.validateCampusUrl('http://10.1.2.3:8003/');
       expect(uri.host, '10.1.2.3');
     });

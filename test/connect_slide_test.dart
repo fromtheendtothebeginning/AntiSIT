@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 需求：连接设置里滑块下方的界面也随滑块切换，且整页可以左右滑动切模式（与主界面同一套）。
-/// 两套设置并排放在一个 Stack 里跟着连续位置滑动，所以这里按**横向位置**判断谁在屏幕里。
+/// 连接设置里滑块下方的界面随滑块切换，整页也可左右滑动切模式；两套设置并排在 Stack 里，按横向位置判断谁在屏幕里。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});

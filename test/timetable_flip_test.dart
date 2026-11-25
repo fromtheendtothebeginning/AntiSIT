@@ -1,11 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 
-/// 需求：「下课了立刻变灰」。
-///
-/// 课表原来看「已上完」是渲染时按当前时刻算的，但只有 60s 心跳驱动重绘——
-/// 09:55 下课的课最晚 09:55:59 才变灰。现在按下课时刻排一次性定时器，
-/// 这里测的就是那个「下一次到点时刻」的计算（不用真等到下课）。
+/// 需求：下课立刻变灰——按下课时刻排一次性定时器，这里测那个「下一次到点时刻」的算法。
 void main() {
   // 与页面里 _slotEndTimes 一致的节次下课时刻
   const ends = <String>[

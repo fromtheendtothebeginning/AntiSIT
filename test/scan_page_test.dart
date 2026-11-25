@@ -15,12 +15,7 @@ import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_webview/plugin_webview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「扫一扫」页与两处入口的验收：
-/// * 扫码页：识码弹结果面板（复制 / 网址才给打开链接 / 继续扫回取景）；
-/// * 相册识别：识出弹面板、没识出给一句提示、用户取消不吭声；
-/// * 入口：第二课堂活动 / 拓展页右上角的镂空扫码图标，按扫一扫插件的
-///   [ScanCapability] 取用——插件停用（能力查不到）就不显示。
-/// 相机用注入的替身（widget 测试没有平台通道），识码与入口接线才是主角。
+/// 扫一扫页与两处入口：识码结果面板、相册识别的三种结果、二课活动 / 拓展页右上角扫码图标按 ScanCapability 取用；相机用注入的替身。
 void main() {
   String? clipboard;
 
@@ -29,8 +24,7 @@ void main() {
     AppState.I.demo = false;
     ScanPage.debugCamera = (context) => const ColoredBox(
         color: Colors.green, child: Center(child: Text('假相机')));
-    // 扫码页的详情码要用活动插件的能力；入口测试要扫一扫插件的能力。
-    // 相机走 debugCamera 替身，不注册真摄像头能力（不碰平台通道）。
+    // 扫码页用活动插件的能力、入口测试用扫一扫插件的能力；相机走 debugCamera 替身，不注册真摄像头能力。
     PluginRegistry.I = PluginRegistry(
       features: const [ActivitiesPlugin(), ScanPlugin()],
       themes: const [GlassTheme()],
@@ -51,8 +45,7 @@ void main() {
       }
       return null;
     });
-    // url_launcher 通道没人应答时 launchUrl 的 Future 永不完成——挂个必抛的 mock，
-    // 让 openExternalUrl 稳定走「复制链接」兜底分支。
+    // url_launcher 通道没人应答时 Future 永不完成：挂个必抛的 mock，让 openExternalUrl 稳定走「复制链接」兜底。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
             const MethodChannel('plugins.flutter.io/url_launcher'), (call) async {
@@ -697,8 +690,7 @@ class _OutcomeScanCapability extends ScanCapability {
       outcome;
 }
 
-/// 扫一扫替身：推一页带标志文本的页面，证明入口真的打开了扫码功能，
-/// 不把真 ScanPage（相机平台通道）拖进入口测试。
+/// 扫一扫替身：推一页带标志文本的页面，证明入口真的打开了扫码功能，不把真 ScanPage 拖进来。
 class _StubScanCapability extends ScanCapability {
   const _StubScanCapability();
 

@@ -4,11 +4,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 回归用例：直连模式「全部学期」的成绩必须逐页拉全。
-///
-/// 背景：正方成绩接口按 queryModel.showCount/currentPage 分页，原来固定
-/// showCount=15 + currentPage=1，而成绩是按学年升序返回的——于是大二以后的成绩
-/// 全被截掉，用户看到的现象就是「只能查到大一的」，学期筛选项也只有大一的。
+/// 回归：直连「全部学期」的成绩必须逐页拉全（原来固定 showCount=15 + currentPage=1，大二以后的成绩全被截掉）。
 void main() {
   final mock = MockCampusServer.instance;
 

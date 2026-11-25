@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_evaluate/plugin_evaluate.dart';
 
-/// 评教插件的接线：不再依赖 WebView 内核（原生界面）；演示模式也给入口，\n/// 用本地假数据渲染列表，方便在模拟器里检查界面与滚动适配。
+/// 评教插件的接线：不再依赖 WebView 内核（原生界面）；演示模式也给入口，用本地假数据渲染列表。
 void main() {
   const plugin = EvaluatePlugin();
 

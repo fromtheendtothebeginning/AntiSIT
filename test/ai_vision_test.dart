@@ -9,14 +9,7 @@ import 'package:http/testing.dart';
 import 'package:plugin_ai/plugin_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 识图请求的回归用例（issue #1：deepseek-flash 识别校历报「AI 返回空结果」）。
-///
-/// 根因：思考型模型默认就开着思考（官网：deepseek-flash「thinking 默认开启，默认档位 high」），
-/// 推理内容与正式回答共享 max_tokens——思考把预算吃光后 content 为空、finish_reason=length，
-/// 而老代码把它报成「模型可能不支持识图」，用户看到的是模型不行，实际是 token 被思考占了。
-/// 现在：① 校历解析这类纯提取任务直接关思考；② 其余调用首次空回答自动关思考重试一次；
-/// ③ 真的撞上 length 就如实说「被截断」，不再误判成不支持识图。
-/// 真实调用要联网 + Key，这里用 MockClient 只验请求体与重试/报错行为。
+/// 识图回归（issue #1）：思考型模型把 max_tokens 吃光导致空回答；现在关思考 + 空回答重试一次 + 截断如实说，这里用 MockClient 只验请求体与重试行为。
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});

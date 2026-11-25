@@ -2,10 +2,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 二课达标线不再写死某一届：
-/// * default 是兜底策略；
-/// * cohorts 按入学年（nj）覆盖；
-/// * 都没有时只显示实际分数（空策略）。
+/// 二课达标线不再写死某一届：default 兜底、cohorts 按入学年覆盖、都没有时只显示实际分数。
 void main() {
   test('未知年级走 default 策略', () {
     final t = ScoreTargets.parse('''

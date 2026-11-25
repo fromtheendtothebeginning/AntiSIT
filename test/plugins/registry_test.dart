@@ -100,8 +100,7 @@ void main() {
     });
 
     test('基础设施按 id 引用的插件确实在清单里（防止字符串写错后静默失效）', () {
-      // ai_vision.dart: PluginRegistry.I.isEnabled('ai')
-      // class_reminder_service.dart: PluginRegistry.I.isEnabled('reminder')
+      // 期望：ai_vision.dart 取 'ai'、class_reminder_service.dart 取 'reminder'。
       final ids = features.map((p) => p.id).toSet();
       expect(ids, contains('ai'));
       expect(ids, contains('reminder'));
@@ -391,8 +390,7 @@ void main() {
         for (final brightness in [Brightness.light, Brightness.dark]) {
           final p = t.palette(brightness);
           expect(p.isDark, brightness == Brightness.dark, reason: t.id);
-          // 派生色板最容易漏的就是文字与强调色被写成半透明，这里挡一下
-          // （玻璃主题深色下主文字是白 95%，所以只要求足够实，不要求完全不透明）
+          // 派生色板最容易漏的就是文字与强调色被写成半透明；玻璃主题深色主文字本就是白 95%，所以只要求足够实。
           expect(p.textPrimary.a, greaterThan(0.9), reason: '${t.id} 主文字色太透');
           expect(p.accent.a, greaterThan(0.9), reason: '${t.id} 强调色太透');
         }

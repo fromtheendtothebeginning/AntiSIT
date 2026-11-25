@@ -4,11 +4,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 学生侧接口：
-/// * 我的报名：POST /bizFlow/result/group/list.zf `groupCode=xshd`
-///   （学校「报名结果查询」，返回**本人**报名记录；hdgl/list.zf `all=0` 是匿名公共池，不能当我的报名用）
-/// * 加分明细：同接口（学分字段）
-/// 跑本地模拟校园服务，协议与真实学工系统同款。
+/// 学生侧接口：我的报名用 POST /bizFlow/result/group/list.zf groupCode=xshd（本人记录，不是匿名公共池），加分明细同接口；跑模拟服务。
 void main() {
   final mock = MockCampusServer.instance;
 

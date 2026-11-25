@@ -58,8 +58,7 @@ void main() {
       ..writeAsBytesSync(List.filled(2048, 1));
 
     await pumpConfig(tester);
-    // 统计缓存大小是真磁盘 IO：得放 runAsync 放行真实事件，再 pump 一帧让它落到界面上。
-    // （FakeAsync 里真 IO 的回调永远排不上队，只 pump 会一直是「正在统计…」）
+    // 统计缓存大小是真磁盘 IO：放 runAsync 放行真实事件，再 pump 一帧让它落到界面上。
     for (var i = 0; i < 50 && find.textContaining('占用').evaluate().isEmpty; i++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
       await tester.pump();

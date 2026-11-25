@@ -11,13 +11,7 @@ import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_webview/plugin_webview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 组 1（顶栏适配）的回归测试。
-///
-/// * #10 悬浮切换器收起后不能画到顶栏上面——关掉悬浮顶栏时（切换器自己只有 48 高）
-///   以前只上移约 50px，正好停在状态栏 + 标题栏那一条里，浮在标题上；
-/// * #14 下拉刷新圈从顶栏底边开始，而不是屏幕最上沿；
-/// * #12 拓展页的顶栏留白要随「悬浮玻璃顶栏」开关重算；
-/// * #15 评教表单的内容要穿过顶栏（留白在列表 padding 里，不是外层 Padding）。
+/// 组 1（顶栏适配）回归：#10 切换器收起后不能画到顶栏上、#14 刷新圈从顶栏底边开始、#12 拓展页留白随开关重算、#15 评教表单穿过顶栏。
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -82,9 +76,7 @@ void main() {
         find.byType(AnimatedSlide).first,
       );
       expect(slide.offset.dy, lessThan(-1.0), reason: '收起要整块移出自身盒子');
-      // 位移是相对自身高度的比例，而**关掉顶栏后自身只剩 48 高**：48×1.05 ≈ 50px，
-      // 只够把自己那点盒子推出可视区一点点。位移发生在 paint 期，Stack 的
-      // clipBehavior 管不住它，必须靠外层这层 ClipRect（issue #10 的根因）。
+      // 位移是相对自身高度的比例，关掉顶栏后只剩 48 高（48×1.05 ≈ 50px）；位移发生在 paint 期，Stack 的 clip 管不住，必须靠外层 ClipRect。
       expect(
         find.ancestor(
           of: find.byType(AnimatedSlide).first,
@@ -108,8 +100,7 @@ void main() {
       await collapse(tester);
 
       final (w, bytes) = await grab(tester, key);
-      // 药丸是纯红：红通道远高于绿/蓝。顶栏底色是浅色、标题文字是深灰——
-      // 两者都「红≈绿」，只有药丸（以及它扫过的红块）满足红占优。
+      // 药丸是纯红：红通道远高于绿蓝，顶栏底色与标题文字都「红≈绿」。
       int pillPixels() {
         var n = 0;
         for (var y = 0; y < kToolbarHeight; y += 2) {
@@ -349,8 +340,7 @@ void main() {
         reason: '开了悬浮顶栏：内容要让出状态栏 + 标题栏',
       );
 
-      // 走真实路径改开关并通知：以前 topInset 算在 builder 外面，
-      // 通知只重建 builder、不重算留白，开关切换后留白仍是旧值（issue #12）。
+      // 走真实路径改开关并通知：以前 topInset 算在 builder 外面，通知只重建 builder、不重算留白。
       await AppState.I.setGlassTopBar(false);
       await tester.pumpAndSettle();
       expect(padTop(), 20, reason: '关掉悬浮顶栏后留白要归零');

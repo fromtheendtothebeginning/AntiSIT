@@ -4,8 +4,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:plugin_evaluate/plugin_evaluate.dart';
 
-/// 评教列表页的「缓存优先」行为：有缓存就直接显示，刷新只体现在顶部刷新条上，
-/// 不能整页转圈把缓存盖掉（用户反馈过这一点）。
+/// 评教列表页的「缓存优先」：有缓存就直接显示，刷新只体现在顶部刷新条上，不能整页转圈把缓存盖掉。
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -39,8 +38,7 @@ void main() {
     expect(find.byType(ToolRefreshBar), findsOneWidget);
   });
 
-  // 测试环境没有真实服务器：无缓存时页面要么在加载、要么已经落到错误态，
-  // 但**绝不能凭空显示课程**（那说明它在用别的账号/上一次的残留数据）。
+  // 测试环境没有真实服务器：无缓存时页面要么在加载、要么错误态，绝不能凭空显示课程。
   testWidgets('没有缓存时不会显示任何课程', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: EvaluatePage()));
     await tester.pump();

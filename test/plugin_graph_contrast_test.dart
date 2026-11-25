@@ -8,10 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// bug 回归：深色模式下依赖关系图看不清。
-/// 起因是节点底色写成 `card.withValues(alpha: 0.92)`——card 自带透明度（深色白 8%），
-/// withValues 把它覆盖成 92%，节点被刷成近白色，而节点文字是 textPrimary（深色下白 95%），
-/// 于是白底白字。这里用真实渲染出来的节点/画布颜色钉住对比度。
+/// 深色模式下关系图看不清的回归：节点底色曾写成 card.withValues(alpha: 0.92) 被刷成近白，白底白字；这里用真实渲染颜色钉对比度。
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});

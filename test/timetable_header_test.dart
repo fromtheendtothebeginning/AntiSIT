@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 需求：顶部「今天」卡与「近期日程」条**不随下方课表左右切换而横移**（它们与周次无关），
-/// 但仍与课表在同一条竖向滚动里（整页一起上下滑，见 timetable_scroll_test）。
+/// 顶部「今天」卡与「近期日程」条不随下方课表左右切换而横移，但仍与课表在同一条竖向滚动里。
 void main() {
   late String startISO;
   late int todayWeek;

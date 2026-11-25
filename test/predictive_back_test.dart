@@ -5,14 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 页面转场的验收：
-/// * 普通前进：新页整块从右侧滑入（不淡入），旧页延后 22% 时长才左移 20% + 轻微压暗；
-/// * 普通返回：当前页向右滑出，下层页从 −20% 让位处回到 0；
-/// * 预测式返回（Android 14+ 边缘拖入）：**画面就是这套默认返回动画**，由手指驱动动画值；
-///   中途取消能退回原位，松手提交才真的返回。
-///
-/// 手势是用 Flutter 自己的测试手法模拟的：往 `flutter/backgesture` 平台通道发
-/// start / update / cancel / commit 消息（见 flutter/packages/flutter/test 里的同名用例）。
+/// 页面转场：前进滑入 / 返回滑出 / 预测式返回就是这套默认返回动画并由手指驱动；手势靠往 flutter/backgesture 通道发消息模拟。
 void main() {
   Future<void> backGesture(WidgetTester tester, String method,
       [Map<String, Object?> args = const {}]) async {

@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_evaluate/plugin_evaluate.dart';
 
-/// 评分页的界面要素与批量打分的口径。
-/// 网络层被替身挡住（页面在 initState 里就要取表单），这里只看「界面该有的东西在不在」。
+/// 评分页的界面要素与批量打分的口径；网络层被替身挡住，这里只看界面该有的东西在不在。
 void main() {
   test('批量打分遇到已提交的条目会跳过（不覆盖已提交评教）', () async {
     final result = await fillAllTargets(

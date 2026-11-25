@@ -1,9 +1,7 @@
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 课表「已上过的课置灰」的判断：该列当天日期 + 实际下课时刻已过。
-/// 这里锁住一个踩过的坑——colISO 是纯日期（yyyy-MM-dd），直接 parse 得到当天 00:00，
-/// 如果拿它的时分去比下课时刻，会永远得出「还没下课」，整周都不置灰。
+/// 已上过的课置灰：该列当天日期 + 实际下课时刻已过；colISO 是纯日期（当天 00:00），拿它的时分比下课时刻会永远不置灰。
 void main() {
   group('lessonPassed（已上过的课置灰）', () {
     test('同一列：下课时刻已过 → 灰', () {
@@ -132,8 +130,7 @@ void main() {
           startDate: start, week: 1, dayIndex: 5, endTimes: endTimes, now: now);
       expect(ok.map((c) => c.name).toList(), ['数据结构']);
 
-      // 拿被借星期的日期（索引 2 → 3/4）去判，会被算成「3/4 的课早就下课了」→ 列表空
-      // （顶部卡「不显示今天的课」就是这么来的）
+      // 拿被借星期的日期去判，会被算成「那天的课早就下课了」→ 列表空（顶部卡就显示不出今天的课）。
       final wrong = TimetableStore.upcomingOn([wed],
           startDate: start, week: 1, dayIndex: 2, endTimes: endTimes, now: now);
       expect(wrong, isEmpty);

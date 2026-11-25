@@ -8,10 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_ext/plugin_ext.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 扫码安装的验收：
-/// * 下载后先核对二维码里的 sha256，对不上不读包、不解压；
-/// * 装进来的拓展带 bundled / sha256 / 权限，`ext.json` 与二维码 id 不一致要拒；
-/// * 已存在同 id / 内置 id 不能覆盖。
+/// 扫码安装：下载后先核对二维码里的 sha256、装进来的拓展带 bundled / sha256 / 权限、同 id 与内置 id 不能覆盖。
 void main() {
   late Directory dir;
   late Future<String> Function() savedDocs;

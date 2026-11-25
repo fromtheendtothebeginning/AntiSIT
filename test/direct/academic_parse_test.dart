@@ -1,10 +1,6 @@
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 学业情况页面解析的纯函数用例（不联网、不起 mock 服务）：
-/// 覆盖「正常页 / 属性顺序变 / &nbsp; 占位 / 学校报错 / 登录页 / 无 showKc 占位」
-/// 几种页面形态，以及明细 JSON 的两种包法。
-
 const String _indexHtml = '''
 <html><body>
 <h5>学生学业情况查询</h5>
@@ -27,6 +23,7 @@ const String _indexHtml = '''
 </body></html>
 ''';
 
+/// 学业情况页面解析纯函数用例：正常页 / 属性顺序变 / &nbsp; 占位 / 学校报错 / 登录页 / 无 showKc 占位，以及明细 JSON 的两种包法。
 void main() {
   test('解析正常页：学号、GPA、计划内外统计、类别与学分', () {
     final r = parseAcademicIndex(_indexHtml);

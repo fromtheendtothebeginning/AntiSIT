@@ -2,8 +2,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 「外观」滑块拖到中间时整站配色怎么渐变：
-/// 位置 → 深浅程度（[appearanceDarkness]）→ 色板差值（[GlassPalette.lerp]）。
+/// 「外观」滑块拖到中间时整站配色怎么渐变：位置 → 深浅程度（[appearanceDarkness]）→ 色板差值（[GlassPalette.lerp]）。
 void main() {
   group('外观滑块位置 → 该暗到什么程度', () {
     test('两个端点档位：浅色=0、深色=1', () {
@@ -91,8 +90,7 @@ void main() {
 
       await g.up();
       await tester.pumpAndSettle();
-      // 落点由弹簧 + 甩动动量决定（测试里一步位移的速度估计很大，会多滑一格），
-      // 这里钉的是「位置收敛到整档、提交的档位与落点一致」这条不变量。
+      // 落点由弹簧 + 甩动动量决定，这里钉的是「位置收敛到整档、提交的档位与落点一致」这条不变量。
       expect(pos.value, closeTo(pos.value.roundToDouble(), 0.01), reason: '松手后落在整档');
       expect(picked, pos.value.round(), reason: '提交的档位 = 落点');
     });

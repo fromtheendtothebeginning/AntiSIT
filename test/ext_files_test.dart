@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_ext/plugin_ext.dart';
 
-/// `files` 权限与 accept 解析的验收：
-/// * 市场拓展没声明 `files`，`files.pick/save` 在进平台通道前就被拒；
-/// * accept 同时支持扩展名与 MIME，不传 = 任意文件；
-/// * 权限文案与接口映射齐全（安装弹窗 / 权限页靠它展示）。
+/// files 权限与 accept 解析：没声明 files 的拓展在进平台通道前就被拒、accept 支持扩展名与 MIME、权限文案与接口映射齐全。
 void main() {
   group('accept 解析', () {
     test('扩展名 / MIME / 逗号串都认', () {

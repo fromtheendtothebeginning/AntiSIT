@@ -4,8 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_score/plugin_score.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 工具页缓存必须落闪存：进程被杀 / 隔一段时间再进来，卡面和二级页都直接有上次的数据，
-/// 而不是只剩一个转圈。这里覆盖三条链路：快照持久化、同账号重登不清缓存、二级页首屏直出。
+/// 工具页缓存必须落闪存：覆盖快照持久化、同账号重登不清缓存、二级页首屏直出。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});

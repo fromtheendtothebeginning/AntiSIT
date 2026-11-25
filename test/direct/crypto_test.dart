@@ -6,10 +6,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pointycastle/export.dart';
 
-/// 向量来源：
-/// - SM4：index 后端 campus/electricity.py（Python 实跑输出）
-/// - AES-128-CBC/PKCS7：Node.js crypto（同一算法族，金智 wisedu 密码加密）
-/// - RSA：Node.js 生成的 2048 位密钥对（test/direct/fixtures/rsa_key.json）
+/// 向量来源：SM4 / AES-128-CBC 取自后端与 Node.js 实跑，RSA 用 test/direct/fixtures/rsa_key.json 的 2048 位密钥对。
 void main() {
   group('SM4（校付宝支付密码加密）', () {
     test('默认密钥与后端输出逐字节一致', () {

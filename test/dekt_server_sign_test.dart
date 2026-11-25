@@ -5,11 +5,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 二课扫码签到的**双模式路由**验收：直连走 CampusDirect（有独立单测），
-/// 服务器模式必须打到 `/api/campus-open/activities/sign`（签到 / 签退）与
-/// `/api/campus-open/activities/train-sign`（报名 / 培训码），参数原样透传。
-/// 用真 HTTP 打本地假服务——必须是普通 test（widget 测试的假 HttpClient 会拦成 400），
-/// 且放在独立文件里，避免同文件前面的 widget 测试把 ApiClient 的客户端困在 FakeAsync。
+/// 二课扫码签到的双模式路由：直连走 CampusDirect，服务器模式打 /api/campus-open/activities/{sign,train-sign}；真 HTTP 打本地假服务，必须是普通 test。
 void main() {
   late HttpServer server;
   String? path;

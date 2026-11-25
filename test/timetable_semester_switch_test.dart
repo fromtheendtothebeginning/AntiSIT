@@ -4,11 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 需求：点课程表上方的「大X上/下」就能切换学期
-/// （打开的就是右上角菜单里那一项用的同一个学期选择器）。
+/// 点课程表上方的「大X上/下」就能切换学期（与右上角菜单里那一项用同一个学期选择器）。
 void main() {
-  // 页面初始化会采用「按今天推断的学期」，所以课就放在那个学期里；
-  // 拿它同年的另一个学期当「切过去的目标」（两个都取得到「大X上/下」的标签）。
+  // 页面按今天推断学期，课就放在那个学期里；拿同年的另一个学期当切过去的目标。
   const nj = '2025';
   late String activeKey;
   late String activeLabel;

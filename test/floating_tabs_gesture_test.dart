@@ -3,17 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 组 2（#11 上滑到顶两页跳变）的回归测试，顺带锁住真机上那次红屏的根因。
-///
-/// 两条硬约束：
-/// 1. 页面里的**横向**可滚区域（搜索框内部的 `EditableText` 就是）不能驱动切页位置——
-///    以前 `FloatingTabsHeader` 把任何横向滚动都当成「PageView 正在切页」，把
-///    `pixels / viewportDimension` 写进 dragPosition，两页就跟着这个伪位置平移、
-///    松手再弹回来；
-/// 2. 收起 / 展开**不能在滚动回调里同步 setState**：滚动通知是在 layout 阶段派发的
-///    （滚到顶时列表在布局里纠正 overscroll），同步 setState 会让本帧再排一次构建，
-///    子树里有 `LayoutBuilder`（切换器自带一个）时就会撞上框架断言——
-///    真机表现是红屏 `'debugNeedsLayout': is not true`。
+/// 组 2（#11 上滑到顶两页跳变）回归 + 真机红屏根因：横向可滚区不能驱动切页位置，收起 / 展开不能在滚动回调里同步 setState。
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -46,8 +36,7 @@ void main() {
               children: [
                 // 顶栏 / 切换器是浮层：内容要让出它那一截，搜索框才不会被切换器盖住
                 const SizedBox(height: 56),
-                // 搜索框：TextField 内部的 EditableText 是横向可滚动的，
-                // 这里用一个显式的横向滚动区等价替代，方便测试直接拖动它。
+                // 搜索框的 EditableText 是横向可滚动的，这里用显式横向滚动区等价替代，方便直接拖它。
                 SizedBox(
                   height: 56,
                   child: SingleChildScrollView(

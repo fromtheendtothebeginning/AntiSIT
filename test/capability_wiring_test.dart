@@ -6,8 +6,7 @@ import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 能力注册表在 UI 上的效果：课表页那颗「上课提醒」铃铛挂在**提醒能力**上——
-/// 提供方（plugin_reminder）在不在，决定铃铛在不在。课表不 import 那个包。
+/// 能力注册表在 UI 上的效果：课表页的「上课提醒」铃铛挂在提醒能力上，提供方在不在决定铃铛在不在（课表不 import 那个包）。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});

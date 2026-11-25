@@ -4,8 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 回归用例：日程 / 课程表单的校验提示原来走 SnackBar，挂在页面 Scaffold 上，
-/// 底部弹层一开就被盖住。现在提示画在弹层里，并且是红色。
+/// 回归：表单校验提示曾走 SnackBar，底部弹层一开就被盖住；现在画在弹层里且是红色。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});

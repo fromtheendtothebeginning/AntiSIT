@@ -2,8 +2,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 底栏滑块（pill）自身的拖拽：跟手 + 就近落格。
-/// 页面区域横滑是另一套（见 home_swipe_test），这里只钉住底栏这一侧。
+/// 底栏滑块自身的拖拽：跟手 + 就近落格（页面区域横滑是另一套，见 home_swipe_test）。
 void main() {
   Future<List<int>> pumpBar(
     WidgetTester tester, {
@@ -84,9 +83,7 @@ void main() {
     expect(picked, isEmpty);
   });
 
-  // 底栏内区高度 = 66 − 边框 1×2 − 内边距 4×2 = 56；滑块必须正好填满它。
-  // 曾经写死 height: 58，多出的 2px 被 Stack 的 Clip.hardEdge 从底部切平，
-  // 下滑块的下边框和两个下圆角就缺了一块。
+  // 滑块必须正好填满底栏内区 56（66 − 边框 2 − 内边距 8）；写死 58 会被 Clip.hardEdge 从底部切平。
   testWidgets('滑块高度 = 底栏内区高度：下边框不会被 Stack 裁掉', (tester) async {
     await pumpBar(tester);
     final stack = find.descendant(

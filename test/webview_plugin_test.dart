@@ -7,14 +7,7 @@ import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_webview/plugin_webview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「WebView 内核插件（默认开启）」的验收：
-/// * defaultEnabled 机制：默认关闭的插件 isEnabled 为假，显式 enable 后才可用，
-///   选择被持久化（重启读得回），disable 后回到默认关闭；
-/// * 普通插件（默认启用）行为不变；
-/// * 能力接线：内核默认可用，停用后查不到 WebViewCapability；
-///   桌面测试环境（Windows）引擎 available == false；
-/// * 真实注册表（buildAppRegistry）里带着 webview，默认开启；
-/// * 硬依赖是默认关闭插件时，启用方会被 _repair 修掉。
+/// WebView 内核插件（默认开启）：defaultEnabled 机制与持久化、能力接线、桌面环境不可用、真实注册表带 webview、硬依赖修复。
 class _Normal extends FeaturePlugin {
   const _Normal(this.id, {this.deps = const []});
 
@@ -98,8 +91,7 @@ void main() {
       await r.load();
       expect(r.isEnabled('hardDependant'), isFalse,
           reason: '它硬依赖的 off 默认关闭，repair 会把它修掉');
-      // 运行期直接启用：闭包连带打开 off（hardDependant 是普通插件、本来就算
-      // 启用态，所以 turned 里只有 off）
+      // 运行期直接启用：闭包连带打开 off（hardDependant 是普通插件、本来就算启用态）。
       final turned = await r.enable('hardDependant');
       expect(turned, contains('off'),
           reason: '硬依赖是默认关闭插件时，启用方要连带把它打开');

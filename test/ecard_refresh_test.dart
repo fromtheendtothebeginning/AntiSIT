@@ -1,8 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_ecard/plugin_ecard.dart';
 
-/// 校园码刷新节奏：默认每 10 秒换一张（可在「我的 → 配置」调整）；
-/// 服务端 `refresh` 标的是码的有效期（现在回 55），有效期更短时听服务端的。
+/// 校园码刷新节奏：默认每 10 秒换一张（可在「我的 → 配置」调整），服务端 refresh 更短时听服务端的。
 void main() {
   group('校园码刷新倒计时', () {
     test('默认每 10 秒换一张，服务端的 55 秒有效期不再决定节奏', () {

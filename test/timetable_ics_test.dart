@@ -5,12 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「导出 / 导入日历」（iCalendar，RFC 5545）的验收：
-/// * 场次展开：周次区间、单双周、调休（放假 / 调课）都按课表页同一套判据；
-/// * 导出范围：今天 / 本周 / 本月 / 全学期各收哪些日期；
-/// * .ics 文本：必需属性、CRLF、TEXT 转义、75 八位组折行、浮动本地时刻；
-/// * 解析：折行还原、转义还原、全天 / UTC / 本地三种时间、简单每周重复；
-/// * 页面：范围切换与勾选会改变导出内容，全不选后不能导出。
+/// iCalendar 导出 / 导入：场次展开（周次 / 单双周 / 调休）、导出范围、.ics 文本规范（CRLF / 转义 / 75 八位组折行）、解析、页面勾选。
 void main() {
   // 2026-03-02 是周一：第 1 周周一，6 周 → 3/2 ~ 4/12
   const start = '2026-03-02';
@@ -45,8 +40,7 @@ void main() {
         adjustments: [...adjustments],
       );
 
-  /// 默认课表：周一高数（1-6 周）、周三英语（单周）、周六实验（双周）、
-  /// 每周五例会 + 一条期中考试。
+  /// 默认课表：周一高数（1-6 周）、周三英语（单周）、周六实验（双周）、每周五例会 + 一条期中考试。
   SemesterTt sample({List<TtAdjust> adjustments = const []}) => semester(
         courses: [
           course('c1', '高等数学', 0, 0, 1),

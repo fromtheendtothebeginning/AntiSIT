@@ -5,11 +5,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 直连会话的 Cookie 载入必须是「所有并发请求一起等」。
-///
-/// 页面会在启动时同时拉课表 / 成绩 / 考试，几个请求可能同时走到 [HttpSession.load]：
-/// 如果只是用一个 bool 标记「开始读了」，后到的请求会立即返回、在 Cookie 还没进罐时
-/// 就发出去，学校系统认不出登录态——表现就是所有带 Cookie 的接口失效。
+/// 会话 Cookie 的载入必须让所有并发请求一起等：只用一个 bool 标记，后到的请求会在 Cookie 进罐前就把请求发出去。
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});

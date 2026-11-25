@@ -1,13 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_webview/plugin_webview.dart';
 
-/// 内核「纯逻辑」那部分的验收（见 `webview_policy.dart`）：
-///
-/// * **导航判定**：内联 html（压缩包拓展）里的 http(s) 外链要拦下来交给系统浏览器
-///   ——否则页面跳走以后，内核每次 onPageFinished 都会把 `antiSIT` 垫片重新注入，
-///   等于把「网页 ↔ App 通道」送给外面那个站点；网址形态（用户自己填的站点）不拦；
-/// * **垫片预注入**：内联 html 的垫片写进页面本身，网页第一个同步脚本就能用 `antiSIT`
-///   （只靠 onPageFinished 注入是「页面脚本已经跑完」之后，晚一步）。
+/// 内核纯逻辑：内联 html 的 http(s) 外链交给系统浏览器（否则垫片会把网页 ↔ App 通道送出去）、垫片预注入让首个同步脚本就能用 antiSIT。
 void main() {
   group('主框架导航判定', () {
     NavAction nav(String url, {bool isMainFrame = true, required bool inline}) =>

@@ -1,6 +1,4 @@
-// 一次性脚本：为「本地模拟校园服务」生成一对 RSA 密钥（正方教务密码用 RSA/PKCS#1 加密）。
-// 结果粘贴到 lib/direct/mock_campus_server.dart 的 _rsaModulusB64 / _rsaPrivateB64。
-// 运行：dart run tool/gen_mock_rsa.dart
+// 一次性脚本：生成模拟校园服务用的 RSA 密钥对，输出粘进 lib/direct/mock_campus_server.dart 的 _rsaModulusB64 / _rsaPrivateB64（dart run tool/gen_mock_rsa.dart）。
 // ignore_for_file: avoid_print
 import 'dart:convert';
 import 'dart:typed_data';

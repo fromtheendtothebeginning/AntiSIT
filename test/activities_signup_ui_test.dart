@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_activities/plugin_activities.dart';
 
-/// 活动详情页在线报名的全流程（演示模式）：报名中的活动给「在线报名」入口，
-/// 点开是确认弹窗（无需填写任何内容，报名信息由学校预填），确认后提交，
-/// 成功给出申请编号并把入口置为「已报名」防重复。
+/// 活动详情页在线报名全流程（演示模式）：入口 → 确认弹窗 → 提交 → 成功给出申请编号并置为已报名。
 void main() {
   testWidgets('报名中 → 确认 → 申请编号 → 按钮变已报名', (tester) async {
     AppState.I.demo = true;
@@ -85,8 +83,7 @@ void main() {
         'end': '2026-10-18 13:00:00',
       }),
     ));
-    // 详情接口（演示 400ms 延迟）拉回 signed；页面无加载动画时 pumpAndSettle 会提前退出，
-    // 必须定长推进到定时器触发，否则测试结束时「Timer is still pending」
+    // 详情接口有 400ms 演示延迟：无加载动画时 pumpAndSettle 会提前退出，必须定长推进到定时器触发，否则收尾报 Timer 仍挂着。
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
@@ -112,8 +109,7 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
-    // 状态胶囊与按钮都写着「报名已结束」——按钮那个必须禁用
-    //（FilledButton.icon 的实际类型是子类，byType 匹配不上，得用 bySubtype）
+    // 状态胶囊与按钮都写「报名已结束」，按钮那个必须禁用（FilledButton 的实际类型是子类，得按 bySubtype 找）。
     final button = tester.widget<FilledButton>(find.ancestor(
         of: find.text('报名已结束'), matching: find.bySubtype<FilledButton>()));
     expect(button.onPressed, isNull, reason: '窗口外的报名按钮必须禁用');

@@ -3,8 +3,7 @@ import 'package:plugin_reminder/plugin_reminder.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 上课提醒的排期算法是纯函数：给定课表 + 起始时间，算出「课前 15 分钟」的提醒时刻。
-/// 这里只测算出来的时刻对不对（不触发插件 / 系统通知）。
+/// 上课提醒排期是纯函数：给定课表 + 起始时间算出「课前 15 分钟」的提醒时刻（不触发插件 / 系统通知）。
 void main() {
   // 2026-03-02 是周一
   const start = '2026-03-02';

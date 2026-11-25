@@ -5,8 +5,7 @@ import 'package:plugin_activities/plugin_activities.dart';
 import 'package:plugin_score/plugin_score.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 工具二级页新增的两个视图：二课活动「我的报名」、二课分数「加分明细」，
-/// 都与原视图左右滑动切换。用演示数据跑整页。
+/// 工具二级页新增的两个视图：二课活动「我的报名」、二课分数「加分明细」，都与原视图左右滑动切换；用演示数据跑整页。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -25,8 +24,7 @@ void main() {
     expect(find.text('活动广场'), findsOneWidget);
     expect(find.text('我的报名'), findsOneWidget);
 
-    // 左滑切到「我的报名」
-    // 页面横滑：现在不是 PageView，而是整页手势驱动（和首页底栏同一套）
+    // 左滑切到「我的报名」（整页手势驱动，不是 PageView）。
     await tester.drag(find.byType(ListView).first, const Offset(-400, 0));
     await tester.pumpAndSettle(const Duration(milliseconds: 500));
 
