@@ -11,7 +11,7 @@ export const FEATURES = [
   {
     icon: "qr",
     title: "校园码",
-    desc: "动态付款码 30 秒自动刷新 + 校园卡余额，亮码期间屏幕常亮；校付宝公网可达，两种模式都无需校园网。",
+    desc: "动态付款码按配置间隔自动刷新（默认 10 秒，服务端有效期更短时听服务端的）+ 校园卡余额，亮码期间屏幕常亮；校付宝公网可达，两种模式都无需校园网。",
     tags: ["动态码", "余额", "常亮"]
   },
   {
@@ -98,28 +98,26 @@ export const STATS = [
   { value: "GPL-3.0", label: "开源协议 · 可自建服务器" }
 ];
 
-// 首页展示区：真实 App 截图（位于 shots/，构建前拷入 public/img/shots）
+// 首页展示区：截图来自当前源码（test/site_shots_test.dart 生成），每页两套配色。
+// 文件名规则见 lib/shots.js —— 站点自动按访客主题选 dark / light，不用手工换图。
 export const SHOWCASE = [
   {
     id: "timetable",
     label: "课程表",
-    file: "img/shots/03_timetable-900.jpg",
     title: "一眼看清这一周",
-    desc: "周视图按节次排布、按课程上色，滑一下就翻周；正在上的课高亮，已经下课的格子自动置灰。调休、单次日程、每周重复都画在同一张表里。",
+    desc: "周视图按节次排布、按课程上色，滑一下就翻周；正在上的课高亮、已经下课的格子自动置灰。调休、单次日程、每周重复都画在同一张表里。",
     bullets: ["滑动翻周 / 回到今天", "下课即置灰（精确到节次）", "调休与日程事件同表渲染"]
   },
   {
     id: "ecard",
     label: "校园码",
-    file: "img/shots/06_ecard-900.jpg",
-    title: "亮码即付，30 秒一换",
-    desc: "动态付款码定时刷新，余额就挂在码下面；亮码时屏幕保持常亮，扫完不用担心它先暗下去。动态码仅供本人付款使用。",
-    bullets: ["30 秒自动刷新 + 立即刷新", "余额随码显示", "校付宝公网可达，无需校园网"]
+    title: "亮码即付，定时换码",
+    desc: "动态付款码按配置间隔刷新（默认 10 秒，服务端有效期更短时听服务端的），余额就挂在码下面；亮码时屏幕保持常亮。动态码仅供本人付款使用。",
+    bullets: ["定时自动刷新 + 立即刷新", "余额随码显示", "校付宝公网可达，无需校园网"]
   },
   {
     id: "grades",
     label: "成绩",
-    file: "img/shots/21_grades_real-900.jpg",
     title: "绩点、学分、类别一次看全",
     desc: "顶部汇总平均绩点与门数，下面逐门列出成绩、学分与绩点；课程类别以标签呈现，按学年学期筛选随手切。",
     bullets: ["全部学期 / 按学期查询", "平均绩点与学分绩点", "类别标签 + 排序"]
@@ -127,18 +125,16 @@ export const SHOWCASE = [
   {
     id: "activities",
     label: "第二课堂",
-    file: "img/shots/24_activities_real-900.jpg",
     title: "报名中的活动，搜得到",
     desc: "活动看板带搜索与类别标签筛选，全拼和首字母都能命中；每条活动给主办、名额、活动时间与报名窗口，报名状态一眼分辨。",
     bullets: ["拼音搜索（全拼 / 首字母）", "类别级联筛选", "报名状态分色"]
   },
   {
-    id: "extensions",
-    label: "拓展",
-    file: "img/shots/flexible-grid-extension-900.jpg",
-    title: "卡片自己排，大小自己定",
-    desc: "长按卡片进入整理：拖动换位，右上角手柄调大小（1×1 / 1×3 / 2×3 / 2×2，名字按行×列读）；顺序与尺寸都记在本机。",
-    bullets: ["长按拖动换位", "四档尺寸 + 连续缩放", "拓展工坊用 Agent 写拓展"]
+    id: "tools",
+    label: "工具",
+    title: "卡片宫格，自己排",
+    desc: "成绩单、考试安排、二课分数、学业情况、学生评教……常用工具收在一屏宫格里；长按进入整理，拖动换位、拖右下角调大小（1×1 / 1×3 / 2×3 / 2×2），顺序与尺寸都记在本机。",
+    bullets: ["长按拖动换位", "四档尺寸 + 连续缩放", "顺序与尺寸存本机"]
   }
 ];
 
@@ -165,32 +161,44 @@ export const DOC_GROUPS = [
   {
     group: "开始",
     items: [
-      { id: "overview", title: "项目总览" },
-      { id: "quickstart", title: "本地跑起来" },
-      { id: "structure", title: "仓库结构" }
+      { id: "what", title: "拓展是什么" },
+      { id: "first", title: "第一个拓展（10 分钟）" },
+      { id: "life", title: "生命周期与 ctx.effect" }
     ]
   },
   {
-    group: "开发",
+    group: "界面",
     items: [
-      { id: "plugin", title: "写一个功能插件" },
-      { id: "manifest", title: "清单与依赖生成" },
-      { id: "extension", title: "Cordis 拓展开发" },
-      { id: "ext-publish", title: "拓展市场与第三方源" }
+      { id: "ui", title: "AntiUI 组件" },
+      { id: "theme", title: "主题与夜间模式" },
+      { id: "nav", title: "页面栈与返回" }
     ]
   },
   {
-    group: "服务端",
+    group: "能力",
     items: [
-      { id: "api", title: "开放接口规约" },
-      { id: "self-host", title: "自建服务器" }
+      { id: "storage", title: "存储与凭据" },
+      { id: "net", title: "联网：https 与校内 http" },
+      { id: "ai", title: "调用 AI" },
+      { id: "notify", title: "通知（即时 / 定时 / 横幅）" },
+      { id: "misc", title: "剪贴板 · 文件 · 登录 · 保活" }
     ]
   },
   {
-    group: "交付",
+    group: "发布",
     items: [
-      { id: "release", title: "发版流程" },
-      { id: "privacy", title: "隐私与凭据" }
+      { id: "perm", title: "权限声明与授权" },
+      { id: "pack", title: "打包、自检、安装" },
+      { id: "market", title: "发布到市场 / 第三方源" },
+      { id: "migrate", title: "旧 html 拓展迁移" }
+    ]
+  },
+  {
+    group: "附录",
+    items: [
+      { id: "safety", title: "安全边界" },
+      { id: "appdev", title: "写 Dart 功能插件" },
+      { id: "api", title: "开放接口规约" }
     ]
   }
 ];

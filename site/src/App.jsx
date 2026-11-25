@@ -93,7 +93,7 @@ export default function App() {
         ) : route.page === "license" ? (
           <LicensePage onNavigate={navigate} />
         ) : (
-          <HomePage onNavigate={navigate} />
+          <HomePage onNavigate={navigate} theme={theme} />
         )}
 
         <Footer onNavigate={navigate} />

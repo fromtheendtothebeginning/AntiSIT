@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FEATURES, SHOWCASE, STATS } from "../lib/data.js";
 import { SITE } from "../lib/site.js";
+import { shotSrc } from "../lib/shots.js";
 import Icon from "../components/Icon.jsx";
 import Reveal from "../components/Reveal.jsx";
 
@@ -14,7 +15,7 @@ function PhoneFrame({ src, alt, className = "phone" }) {
   );
 }
 
-export default function HomePage({ onNavigate }) {
+export default function HomePage({ onNavigate, theme }) {
   const [shot, setShot] = useState(SHOWCASE[0].id);
   const active = SHOWCASE.find((s) => s.id === shot) || SHOWCASE[0];
 
@@ -58,7 +59,7 @@ export default function HomePage({ onNavigate }) {
         <div className="hero-visual reveal" data-delay="2">
           <span className="hero-orb a" />
           <span className="hero-orb b" />
-          <PhoneFrame src="./img/shots/03_timetable-900.jpg" alt="AntiSIT 课程表界面" />
+          <PhoneFrame src={shotSrc("timetable", theme)} alt="AntiSIT 课程表界面" />
         </div>
       </section>
 
@@ -69,18 +70,17 @@ export default function HomePage({ onNavigate }) {
             <span className="eyebrow">Showcase</span>
             <h2>先看看它长什么样</h2>
             <p className="section-sub">
-              下面是真实运行截图（不是效果图）：换页时切换标签即可，图取自 App 的课程表、校园码、成绩、
-              第二课堂与拓展五个界面。
+              下面是真实运行截图（不是效果图）：配色与当前站点同步（深色 / 浅色各一套），换标签即可切换页面。
             </p>
           </div>
-          <span className="badge muted">真实截图 · 演示数据</span>
+          <span className="badge muted">真实截图 · 示例数据</span>
         </Reveal>
 
         <Reveal className="showcase" delay={1}>
           <div className="showcase-stage">
-            <div className="showcase-phone" key={active.id}>
+            <div className="showcase-phone" key={active.id + theme}>
               <div className="phone-screen">
-                <img src={"./" + active.file} alt={active.title} />
+                <img src={shotSrc(active.id, theme)} alt={active.title} />
               </div>
             </div>
           </div>
