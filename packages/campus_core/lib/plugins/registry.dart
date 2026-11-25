@@ -4,19 +4,21 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../widgets/common.dart';
 import '../widgets/flexible_grid.dart';
 import 'capability.dart';
 import 'json_theme.dart';
 import 'plugin.dart';
+import 'plugin_fallbacks.dart';
+import 'plugin_graph.dart';
+import 'plugin_manifest.dart';
+
+// 兜底主题 / 兜底提供商随本文件一并暴露，外部仍可从 campus_core.dart 取到。
+export 'plugin_fallbacks.dart';
 
 /// 插件注册表：插件集合 + 运行期启停状态 + 依赖关系查询 / 校验。
 ///
-/// * 插件集合由**宿主**注入（见本包 README / 宿主 tool/gen_plugins.dart）：
-///   core 不认识具体插件包，插件包都依赖 core，反向引用就成环了；
-/// * 启停状态与当前主题落在 SharedPreferences 的 `plugin_*` 键上；
-/// * 插件自己的数据请按 `plugin.<id>.*` 前缀另存，删插件时才不会互相牵连；
-/// * [I] 可整体替换——测试里换成只含被测插件的小清单，不必动全局状态。
+/// 插件集合由宿主注入（core 不认识具体插件包）；启停状态与主题落在 `plugin_*` 键上，
+/// 插件自己的数据请按 `plugin.<id>.*` 前缀另存。[I] 可整体替换，测试换成小清单即可。
 class PluginRegistry extends ChangeNotifier {
   PluginRegistry({
     List<FeaturePlugin> features = const <FeaturePlugin>[],
@@ -45,46 +47,42 @@ class PluginRegistry extends ChangeNotifier {
   static const String _kToolOrder = 'plugin_tool_order';
   static const String _kToolSizes = 'plugin_tool_sizes';
 
-  /// 「默认关闭」的插件里被用户**显式打开**过的 id：
-  /// 默认关闭的插件只有出现在这里（且不在 [PluginRegistry._disabled]）才算启用。
+  /// 默认关闭的插件只有出现在这里（且不在 [_disabled]）才算启用。
   static const String _kUserEnabled = 'plugin_user_enabled';
 
   final List<FeaturePlugin> features;
 
-  /// 内置主题（清单里带来的）。运行期导入的自定义主题见 [_extraThemes]，
-  /// 读取方一律走 [themes]。
+  /// 内置主题；运行期导入的自定义主题见 [_extraThemes]，读取方一律走 [themes]。
   final List<ThemePlugin> _themes;
   final List<ThemePlugin> _extraThemes = <ThemePlugin>[];
 
   /// 全部可用主题 = 内置 + 运行期导入的自定义主题。
   List<ThemePlugin> get themes => [..._themes, ..._extraThemes];
 
-  /// 已装进来的 AI 提供商（顺序 = 清单顺序，也就是 pubspec 里的书写顺序）。
-  /// 与主题一样是「只选不关」：没有停用开关，被删掉/被 EXCLUDE 的提供商压根不在这个列表里。
+  /// 已装进来的 AI 提供商（顺序 = 清单顺序）。
   final List<AiProviderPlugin> providers;
 
-  /// 各插件对外提供的能力（key = 提供方的插件 id，见 [PluginBundle.capabilities]）。
+  /// 各插件对外提供的能力（key = 提供方的插件 id）。
   final Map<String, PluginCapability> capabilities;
   final String defaultThemeId;
 
   final Set<String> _disabled = <String>{};
 
-  /// 用户显式打开过的「默认关闭」插件（见 [_kUserEnabled]）。
+  /// 用户显式打开过的「默认关闭」插件。
   final Set<String> _userEnabled = <String>{};
 
   /// 用户排过的工具顺序（插件 id；没列到的按清单顺序排在后面）。
   final List<String> _toolOrder = <String>[];
 
-  /// 用户改过的工具卡片尺寸（插件 id → 网格占位）。没改过的就是默认的 2x3。
+  /// 用户改过的工具卡片尺寸（插件 id → 网格占位）；没改过就是默认的 2x3。
   final Map<String, GridCardSize> _toolSizes = <String, GridCardSize>{};
   late String _themeId;
   bool loaded = false;
 
-  /// 清单自检结果：重复 id / 依赖不存在的插件 / 硬依赖成环。
-  /// 非空说明清单本身写错了，管理页顶部原样展示，别的功能照常跑。
+  /// 清单自检结果：非空说明清单写错了，管理页顶部原样展示，别的功能照常跑。
   late List<String> problems;
 
-  // ==================== 查询 ====================
+  // ── 查询 ──
 
   FeaturePlugin? byId(String id) {
     for (final p in features) {
@@ -93,10 +91,8 @@ class PluginRegistry extends ChangeNotifier {
     return null;
   }
 
-  /// 插件存在且没被停用。清单里根本没有这个 id 时返回 false——
-  /// 「功能被删掉」和「功能被关掉」对被依赖方是同一件事：别干活。
-  /// 「默认关闭」的插件（[FeaturePlugin.defaultEnabled] == false）还要求
-  /// 用户显式打开过（[_userEnabled]），否则视为关闭。
+  /// 插件存在且没被停用：「功能被删掉」与「被关掉」对被依赖方是同一件事。
+  /// 默认关闭的插件还要求用户显式打开过（[_userEnabled]）。
   bool isEnabled(String id) {
     final p = byId(id);
     if (p == null || _disabled.contains(id)) return false;
@@ -124,8 +120,7 @@ class PluginRegistry extends ChangeNotifier {
     return out;
   }
 
-  /// 工具卡片 + 归属插件 id。顺序 = 用户在「工具 → 排序」里排过的顺序，
-  /// 没排过的插件按清单顺序排在后面（新增插件不会打乱用户已排好的位置）。
+  /// 工具卡片 + 归属插件 id：用户排过的在前，没排过的按清单顺序排在后面。
   List<(String, PluginTool)> get toolEntries {
     final entries = <(String, PluginTool)>[
       for (final p in enabled)
@@ -149,13 +144,13 @@ class PluginRegistry extends ChangeNotifier {
         for (final e in toolEntries) e.$2,
       ];
 
-  /// 保存用户排好的工具顺序（只存还存在的插件 id，避免残留越来越多）。
+  /// 保存用户排好的工具顺序（只存还存在的插件 id）。
   Future<void> setToolOrder(List<String> pluginIds) async {
     final alive = [
       for (final id in pluginIds)
         if (byId(id) != null) id,
     ];
-    // 逐项比较：只比集合会把「换了个顺序」当成没变化，那样排序就存不下去了
+    // 逐项比较：只比集合会把「换了个顺序」当成没变化
     var same = alive.length == _toolOrder.length;
     if (same) {
       for (var i = 0; i < alive.length; i++) {
@@ -173,14 +168,14 @@ class PluginRegistry extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 工具卡片的网格尺寸：没改过就是默认的 2x3（半屏宽 × 常规高）。
+  /// 工具卡片的网格尺寸：没改过就是默认的 2x3。
   GridCardSize toolSize(String pluginId) =>
       _toolSizes[pluginId] ?? GridCardSize.standard;
 
   /// 是否有用户改过尺寸的工具卡片（排序页据此决定要不要露出「重置大小」）。
   bool get hasCustomToolSizes => _toolSizes.isNotEmpty;
 
-  /// 保存某张工具卡片的尺寸。传 [GridCardSize.standard] = 恢复默认（不会多存一条）。
+  /// 保存某张工具卡片的尺寸；传 [GridCardSize.standard] = 恢复默认。
   Future<void> setToolSize(String pluginId, GridCardSize size) async {
     if (byId(pluginId) == null) return;
     final next = Map<String, GridCardSize>.of(_toolSizes);
@@ -239,16 +234,15 @@ class PluginRegistry extends ChangeNotifier {
   List<Widget> settingsTiles(BuildContext context) =>
       _tilesOrdered((p) => p.settingsTiles(context, this));
 
-  /// 「我的 → 配置」里由插件贡献的条目（刷新设置 / 二课达标线等偏好）。
+  /// 「我的 → 配置」里由插件贡献的条目。
   List<Widget> configTiles(BuildContext context) =>
       _tilesOrdered((p) => p.configTiles(context, this));
 
-  /// 「课程表设置」二级页里由插件贡献的条目（课表相关设置集中在这一页，别再往「我的」里撒）。
+  /// 「课程表设置」二级页里由插件贡献的条目。
   List<Widget> timetableSettingsTiles(BuildContext context) =>
       _tilesOrdered((p) => p.timetableSettingsTiles(context, this));
 
-  /// 收集各插件贡献的设置条目：按 [FeaturePlugin.settingsOrder] 排，没贡献的插件跳过。
-  /// 两处宿主（「我的 → 设置」与「课程表设置」）共用它，排序规则才不会两边走偏。
+  /// 收集各插件贡献的设置条目：按 [FeaturePlugin.settingsOrder] 排，没贡献的跳过。
   List<Widget> _tilesOrdered(List<Widget> Function(FeaturePlugin) tilesOf) {
     final groups = <(int, List<Widget>)>[];
     for (final p in enabled) {
@@ -272,10 +266,9 @@ class PluginRegistry extends ChangeNotifier {
     return themes.isEmpty ? const FallbackTheme() : themes.first;
   }
 
-  // ==================== AI 提供商 ====================
+  // ── AI 提供商 ──
 
-  /// 按 id 取提供商；没装这家（插件包被删 / 被 EXCLUDE 掉）时返回 null。
-  /// **停用的照样返回**（插件管理页要在停用状态下显示它），能不能用看 [isProviderEnabled]。
+  /// 按 id 取提供商；没装这家时返回 null。**停用的照样返回**，能不能用看 [isProviderEnabled]。
   AiProviderPlugin? providerById(String id) {
     for (final p in providers) {
       if (p.id == id) return p;
@@ -283,27 +276,26 @@ class PluginRegistry extends ChangeNotifier {
     return null;
   }
 
-  /// 这家装着、且没被用户停用。停用 = 不出现在 AI 设置的选择器里、AI 视同没配这家。
+  /// 这家装着、且没被用户停用（停用 = 不进选择器、AI 视同没配这家）。
   bool isProviderEnabled(String id) => providerById(id) != null && !_disabled.contains(id);
 
-  /// 启用中的提供商（清单顺序）。停用记录与功能插件共用 `plugin_disabled` 这个键。
+  /// 启用中的提供商（清单顺序）。停用记录与功能插件共用 `plugin_disabled` 键。
   List<AiProviderPlugin> get enabledProviders =>
       [for (final p in providers) if (isProviderEnabled(p.id)) p];
 
-  /// 界面里列提供商的顺序：普通提供商按清单顺序，内置的「自定义」（兜底入口）排最后。
+  /// 界面里列提供商的顺序：普通提供商按清单顺序，内置的「自定义」排最后。
   static List<AiProviderPlugin> _customLast(List<AiProviderPlugin> list) => [
         ...list.where((p) => !p.isCustom),
         ...list.where((p) => p.isCustom),
       ];
 
-  /// AI 设置的选择器用：只列启用中的——停用的就不该出现在那儿。
+  /// AI 设置的选择器用：只列启用中的。
   List<AiProviderPlugin> get providerChoices => _customLast(enabledProviders);
 
   /// 插件管理页用：连被停用的一起列（那里要给每行开关）。
   List<AiProviderPlugin> get providerList => _customLast(providers);
 
-  /// 停用 / 启用某家提供商（只影响它自己：提供商没有依赖，也没有连带）。
-  /// 当前正在用的那家被停用后，AI 按「未配置」处理——存档里的 Key 仍留着，开回来即可。
+  /// 停用 / 启用某家提供商（只影响它自己）。停用后 AI 按「未配置」处理，Key 仍留着。
   Future<void> setProviderEnabled(String id, bool enabled) async {
     final p = providerById(id);
     if (p == null || !p.removable) return;
@@ -317,10 +309,8 @@ class PluginRegistry extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 解析配置里存的 providerId：**停用与没装都算不可用**，于是回退到第一个启用中的
-  /// 非自定义提供商（用户存档里那家用不了时，落到一个能真正用的地址而不是「自定义」），
-  /// 再退到第一个启用中的，一个都没有就用 [FallbackAiProvider]（空基址 →
-  /// `AiConfig.ready` 为假，表现为「未配置」而不是崩）。
+  /// 解析配置里存的 providerId：停用与没装都算不可用，于是回退到第一个启用中的
+  /// 非自定义提供商，再退到第一个启用中的，一个都没有就用 [FallbackAiProvider]。
   AiProviderPlugin resolveProvider(String id) {
     if (isProviderEnabled(id)) return providerById(id)!;
     final usable = enabledProviders;
@@ -331,34 +321,20 @@ class PluginRegistry extends ChangeNotifier {
   }
 
   /// 提供商 id 重复 → 人话描述；与 [validate] 的结果一起并进 [problems]。
-  static List<String> validateProviders(List<AiProviderPlugin> providers) {
-    final out = <String>[];
-    final ids = <String>{};
-    for (final p in providers) {
-      if (!ids.add(p.id)) out.add('AI 提供商 id 重复：${p.id}');
-    }
-    return out;
-  }
+  static List<String> validateProviders(List<AiProviderPlugin> providers) =>
+      validateAiProviderIds(providers);
 
   /// 能力必须挂在一个**真实存在的插件 id** 上（写错 id 就永远查不到，静默失效）。
-  static List<String> validateCapabilities(PluginRegistry r) {
-    final known = {
-      for (final p in r.features) p.id,
-      for (final t in r.themes) t.id,
-      for (final p in r.providers) p.id,
-    };
-    return [
-      for (final id in r.capabilities.keys)
-        if (!known.contains(id)) '能力挂在不存在的插件 id 上：$id',
-    ];
-  }
+  static List<String> validateCapabilities(PluginRegistry r) => validateCapabilityOwners(
+        features: r.features,
+        themes: r.themes,
+        providers: r.providers,
+        capabilities: r.capabilities,
+      );
 
-  // ==================== 能力 ====================
+  // ── 能力 ──
 
-  /// 按「接口 + 提供方插件 id」取能力（见 [PluginCapability]）。
-  /// 提供方没装或被停用 → null；取到的实例不是 [T] → 也当没有（清单写错了，别崩）。
-  ///
-  /// 插件之间就靠它解耦：调用方只 import campus_core 里的接口，不 import 提供方的包；
+  /// 按「接口 + 提供方插件 id」取能力：提供方没装 / 被停用 / 类型不符都返回 null。
   /// 取用处写的这个 id 同时也是依赖关系（生成器会对账）。
   T? capability<T extends PluginCapability>(String ownerId) {
     if (!isEnabled(ownerId)) return null;
@@ -366,31 +342,13 @@ class PluginRegistry extends ChangeNotifier {
     return c is T ? c : null;
   }
 
-  // ==================== 依赖 ====================
+  // ── 依赖（图算法见 plugin_graph.dart）──
 
   /// 直接依赖 [id] 的插件（硬依赖，即关掉 [id] 会牵连谁）。
-  List<String> dependentsOf(String id) => [
-        for (final p in features)
-          if (p.dependencies.contains(id)) p.id,
-      ];
+  List<String> dependentsOf(String id) => hardDependentsOf(features, id);
 
   /// 传递闭包：停用 [id] 会连带停用的插件（不含自身，按依赖方向展开）。
-  List<String> disableClosure(String id) {
-    final out = <String>{};
-    var frontier = <String>{id};
-    while (frontier.isNotEmpty) {
-      final next = <String>{};
-      for (final p in features) {
-        if (!isEnabled(p.id) || out.contains(p.id)) continue;
-        if (p.dependencies.any(frontier.contains)) {
-          out.add(p.id);
-          next.add(p.id);
-        }
-      }
-      frontier = next;
-    }
-    return out.toList();
-  }
+  List<String> disableClosure(String id) => dependencyDisableClosure(features, id, isEnabled);
 
   /// 启用 [id] 及其硬依赖闭包；返回本次真正被打开的 id（含自身）。
   Future<List<String>> enable(String id) async {
@@ -438,7 +396,7 @@ class PluginRegistry extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ==================== 自定义主题（导入 JSON）====================
+  // ── 自定义主题（导入 JSON）──
 
   static const String _kCustomThemes = 'plugin_custom_themes';
 
@@ -475,8 +433,9 @@ class PluginRegistry extends ChangeNotifier {
     ]);
   }
 
-  // ==================== 持久化 / 生命周期 ====================
+  // ── 持久化 / 生命周期 ──
 
+  /// 读回启停、主题、工具顺序 / 尺寸与导入的自定义主题，并修复悬空依赖。
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
     // 停用记录里混着功能插件与 AI 提供商的 id（同一个键 `plugin_disabled`）：
@@ -546,15 +505,14 @@ class PluginRegistry extends ChangeNotifier {
   }
 
   /// 启用的插件其硬依赖却不可用（清单改动 / 旧版本数据 / 依赖是默认关闭插件）→
-  /// 关掉依赖它的插件，别让界面停在「一半有、一半没有」的半残状态。
+  /// 关掉依赖它的插件，别让界面停在半残状态。
   void _repair() {
     var changed = true;
     while (changed) {
       changed = false;
       for (final p in features) {
         if (!isEnabled(p.id)) continue;
-        // 注意用 isEnabled 而不是 isDisabled：依赖可能是「默认关闭」——
-        // 它不在 _disabled 里，但同样不可用。
+        // 注意用 isEnabled 而不是 isDisabled：依赖可能是「默认关闭」，它不在 _disabled 里。
         if (p.dependencies.any((d) => !isEnabled(d))) {
           _disabled.add(p.id);
           changed = true;
@@ -571,101 +529,13 @@ class PluginRegistry extends ChangeNotifier {
     await sp.setStringList(_kUserEnabled, _userEnabled.toList());
   }
 
-  // ==================== 清单自检 ====================
+  // ── 清单自检：实现见 plugin_manifest.dart ──
 
   /// 重复 id / 依赖不存在的插件 / 硬依赖成环 → 人话描述，空 = 清单没问题。
-  static List<String> validate(List<FeaturePlugin> features) {
-    final out = <String>[];
-    final ids = <String>{};
-    for (final p in features) {
-      if (!ids.add(p.id)) out.add('插件 id 重复：${p.id}');
-    }
-    for (final p in features) {
-      // 只查硬依赖：软依赖的语义就是「有则增强、没有就算了」，
-      // 插件被删掉之后不该留一条永久告警（删依赖方才是要修的东西）。
-      for (final d in p.dependencies) {
-        if (!ids.contains(d)) out.add('${p.id} 依赖了不存在的插件：$d');
-      }
-    }
-    for (final cycle in hardCycles(features)) {
-      out.add('硬依赖成环：${cycle.join(' → ')}');
-    }
-    return out;
-  }
+  static List<String> validate(List<FeaturePlugin> features) =>
+      validateFeatureManifest(features);
 
   /// 找硬依赖环；每个环返回一条 id 路径（首尾同 id）。没有环返回空。
-  static List<List<String>> hardCycles(List<FeaturePlugin> features) {
-    final byId = {for (final p in features) p.id: p};
-    final done = <String>{};
-    final out = <List<String>>[];
-    for (final root in features) {
-      final path = <String>[];
-      final onPath = <String>{};
-      void visit(String id) {
-        if (done.contains(id) || onPath.contains(id)) return;
-        final p = byId[id];
-        if (p == null) return;
-        path.add(id);
-        onPath.add(id);
-        for (final d in p.dependencies) {
-          if (onPath.contains(d)) {
-            out.add([...path.sublist(path.indexOf(d)), d]);
-          } else {
-            visit(d);
-          }
-        }
-        onPath.remove(id);
-        path.removeLast();
-        done.add(id);
-      }
-
-      visit(root.id);
-    }
-    return out;
-  }
-}
-
-/// 一个主题包都没装时的兜底主题（正常构建里不会用到，见 [PluginRegistry.theme]）。
-/// 放在 core 而不是某个主题包里：core 不认识主题包。
-class FallbackTheme extends ThemePlugin {
-  const FallbackTheme();
-
-  @override
-  String get id => 'theme.fallback';
-  @override
-  String get name => '默认';
-  @override
-  String get description => '兜底主题：没有安装任何主题插件时使用';
-  @override
-  GlassPalette palette(Brightness brightness) =>
-      brightness == Brightness.dark ? GlassPalette.dark : GlassPalette.light;
-  @override
-  List<GlassWell> wells(Brightness brightness) =>
-      brightness == Brightness.dark ? kGlassWellsDark : kGlassWellsLight;
-}
-
-/// 一个提供商包都没装时的兜底（正常构建里不会用到，见 [PluginRegistry.resolveProvider]）。
-/// 放在 core 而不是某个提供商包里：core 不认识提供商包。基址为空 →
-/// `AiConfig.ready` 为假，界面表现为「未配置」，不会崩。
-class FallbackAiProvider extends AiProviderPlugin {
-  const FallbackAiProvider();
-
-  @override
-  String get id => 'none';
-  @override
-  String get label => '未选择提供商';
-  @override
-  String get description => '没有装入任何 AI 提供商插件';
-  @override
-  String get baseUrl => '';
-  @override
-  List<String> get models => const [];
-  @override
-  String get defaultModel => '';
-  @override
-  String get docs => '';
-  @override
-  String get applyLabel => '申请 API Key';
-  @override
-  String get logo => '';
+  static List<List<String>> hardCycles(List<FeaturePlugin> features) =>
+      hardDependencyCycles(features);
 }

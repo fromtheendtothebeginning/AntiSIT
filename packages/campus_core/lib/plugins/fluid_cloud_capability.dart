@@ -25,7 +25,7 @@ class FluidCloudInfo {
   /// 精确闹钟是否已授权；没授权时排期会降级成不精确（差几分钟）。
   final bool exactAlarm;
 
-  /// 系统是否支持 Android 16 的 promoted ongoing（决定能否被系统升格成流体云形态）。
+  /// 系统是否支持 Android 16 的 promoted ongoing（决定能否被升格成流体云形态）。
   final bool promotedSupported;
 
   bool get isKnownVendor => vendor != 'other';
@@ -50,8 +50,6 @@ class FluidCloudInfo {
 }
 
 /// 一条「亮起窗口」：到 `startAt - leadMinutes` 亮起，`endAt` 收起。
-///
-/// 课程通知用它；其它插件要往流体云上放东西也可以复用（比如考试倒计时）。
 class FluidCloudWindow {
   const FluidCloudWindow({
     required this.id,
@@ -102,16 +100,12 @@ class FluidCloudWindow {
       );
 }
 
-/// 流体云能力：把常驻进度通知交给系统展示。
-///
-/// **不需要厂商 SDK**：ColorOS / OriginOS / 澎湃OS 都按系统通知规则接入，
-/// Android 16+ 声明 promoted ongoing 后由系统映射到各自的流体云 / 原子通知 / 焦点通知形态；
-/// 更早的系统就是一条常驻倒计时通知（通知栏里照常可见）。
+/// 流体云能力：把常驻进度通知交给系统展示（不需要厂商 SDK）。
 abstract class FluidCloudCapability extends PluginCapability {
   /// 当前系统信息（品牌、通知权限、精确闹钟、是否支持 promoted ongoing）。
   Future<FluidCloudInfo> info();
 
-  /// 立刻亮一条（预览 / App 在前台时补亮）。返回 false = 没发出去（通知权限/渠道被关）。
+  /// 立刻亮一条（预览 / 前台补亮）；false = 没发出去（通知权限/渠道被关）。
   Future<bool> show(FluidCloudWindow window);
 
   /// 收起当前这条。

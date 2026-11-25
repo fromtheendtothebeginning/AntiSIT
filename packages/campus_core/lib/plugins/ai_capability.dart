@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'capability.dart';
 
 /// 一条调休规则：与课表 store 的 `TtAdjust` 同形（date + type + day）。
-/// 放在契约层：AI 能力（提供方 plugin_ai）与课表（消费方 plugin_timetable）都要用它。
 class HolidayRule {
   const HolidayRule({required this.date, required this.type, this.day});
 
@@ -85,8 +84,7 @@ class AiChatReply {
 
   final String text;
 
-  /// 思考型模型返回的推理过程（`reasoning_content` / `reasoning`）。
-  /// 普通模型为空；工坊把它折叠展示，不混进正式回答。
+  /// 思考型模型返回的推理过程（`reasoning_content` / `reasoning`）；普通模型为空。
   final String reasoning;
 
   final List<AiToolCall> toolCalls;
@@ -97,10 +95,6 @@ class AiChatReply {
 }
 
 /// AI 识图能力（提供方：AI 设置插件 `PluginIds.ai`）。
-///
-/// 课表页（校历识别）与 core 的验证码弹窗（自动识码）都通过
-/// `PluginRegistry.I.capability<AiCapability>(PluginIds.ai)` 取用，
-/// 谁都不 import plugin_ai——实现留在那个包里。
 abstract class AiCapability implements PluginCapability {
   /// 读一次本机配置；用到之前先 await 它，[available] 与摘要才准。
   Future<void> load();
@@ -115,7 +109,7 @@ abstract class AiCapability implements PluginCapability {
   /// 验证码识别：识别成功返回文字，失败返回 null（调用方回退手动输入）。
   Future<String?> solveCaptcha(Uint8List image);
 
-  /// 从校历图片里识别调休安排（日期按 [startDate] 起、[weekCount] 周的学期范围校验）。
+  /// 从校历图片里识别调休安排（日期在 [startDate] 起、[weekCount] 周范围内校验）。
   Future<List<HolidayRule>> parseHolidayImage(
     Uint8List image, {
     required String startDate,
@@ -123,23 +117,18 @@ abstract class AiCapability implements PluginCapability {
     String mime = 'image/png',
   });
 
-  /// 纯文本对话：提示词进、回答文本出（拓展的 `ai.chat` 接口走这里）。
-  /// 请求由 App 本地按当前提供商的协议构造（Key / 模型都不出 App），失败抛 ApiError。
-  /// [maxTokens] 缺省由实现决定；没配置模型 / 插件被停用时先用 [available] 判断。
+  /// 纯文本对话：请求由 App 本地按当前提供商协议构造，失败抛 ApiError。
   Future<String> chat(String prompt, {String? system, int? maxTokens});
 
-  /// 多轮对话 + 原生工具调用（拓展工坊的 Agent 循环走这里）。
-  /// [tools] 为空就是普通多轮文本；提供商不支持 tools 时实现应尽量降级为空工具重试，
-  /// 调用方也可以根据 [AiChatReply.usedTools] 判断是否要改走文本协议。
+  /// 多轮对话 + 原生工具调用（工坊的 Agent 循环走这里）。
+  /// 提供商不支持 tools 时应降级为空工具重试，调用方可按 [AiChatReply.usedTools] 判断。
   Future<AiChatReply> chatWithTools(
     List<AiChatMessage> messages, {
     List<AiToolSpec> tools = const [],
     int? maxTokens,
   });
 
-  /// 流式版 [chatWithTools]：边收边把增量交给 [onText] / [onReasoning]，
-  /// 结束时仍返回完整回复（工具调用在流结束后一次性给出）。
-  /// 提供商不支持流式时实现应退回普通请求，把完整文本作为一次增量回调。
+  /// 流式版 [chatWithTools]：边收边回调增量，结束时仍返回完整回复。
   Future<AiChatReply> chatWithToolsStream(
     List<AiChatMessage> messages, {
     List<AiToolSpec> tools = const [],

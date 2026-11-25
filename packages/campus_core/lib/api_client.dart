@@ -13,13 +13,9 @@ import 'direct/course_select.dart';
 export 'api_error.dart';
 
 /// 统一 API 客户端，按「连接设置」的数据来源模式分流：
-/// - 服务器模式：与网站同源的账号 JWT 鉴权
-///   · 登录 = POST /api/login {username, password} → access_token（30 天 JWT）
-///   · 401 → 先 POST /api/refresh 换新 token，失败再用记住的账号密码重登，均失败才抛出
-///   · 隧道类接口全局串行：学校侧单 VPN 隧道约束
-///   · 202 = VPN 建隧道中，等 retry_after 秒重试同一请求
-///   · 电费充值 once=true：单次调用，绝不重试
-/// - 直连模式：App 直接用校园凭据访问学校系统（CampusDirect），不走服务器
+/// - 服务器模式：账号 JWT 鉴权；401 先 refresh 再用记住的密码重登；隧道类接口全局串行
+///   （学校侧单 VPN 隧道约束）；202 = 建隧道中，等 retry_after 秒重试；充值 once=true 绝不重试。
+/// - 直连模式：App 直接用校园凭据访问学校系统（CampusDirect），不走服务器。
 class ApiClient {
   static final ApiClient I = ApiClient._();
   ApiClient._();
@@ -29,9 +25,7 @@ class ApiClient {
   Future<bool>? _recoverInFlight; // 并发 401 时共享同一次 refresh/重登，防止登录请求风暴触发 429
 
   /// 正卡在「202 = 服务器在建校园网隧道」等待里的请求数（>0 = 建隧道中）。
-  /// 服务器模式第一次查询要建隧道（几十秒），这期间界面不能只给一个光转的圈——
-  /// 页面拿它显示「正在建立校园网隧道…」（见 [PageStateView]）。
-  /// 计数而不是布尔：并发请求（工具页预取 + 我的页）可能同时在等。
+  /// 计数而不是布尔：并发请求可能同时在等，页面据此显示「正在建立校园网隧道…」。
   static final ValueNotifier<int> tunnelWarmup = ValueNotifier<int>(0);
 
   static void _warmupStart() => tunnelWarmup.value = tunnelWarmup.value + 1;
@@ -40,8 +34,7 @@ class ApiClient {
     if (tunnelWarmup.value > 0) tunnelWarmup.value = tunnelWarmup.value - 1;
   }
 
-  /// 服务器模式的手动验证码弹窗：开放接口无法自动识码（未配识图模型等）时回 need_captcha，
-  /// UI 层注入后弹出与直连模式同款的输入框（启动时与 CampusDirect 一起装一次）。
+  /// 服务器模式的手动验证码弹窗：开放接口无法自动识码时由 UI 层注入。
   CaptchaPrompt? captchaPrompt;
 
   /// 直连模式生效条件：演示模式优先（demo 时一切走本地假数据）。
@@ -106,7 +99,7 @@ class ApiClient {
 
         if (resp.statusCode == 202 && !once) {
           if (waited > 120) throw ApiError('校园网隧道建立超时，请稍后重试');
-          onWarm(); // 建隧道中：界面据此显示「正在建立校园网隧道…」，别只给一个光转的圈
+          onWarm(); // 建隧道中：界面据此显示「正在建立校园网隧道…」
           var retryAfter = 5;
           try {
             final j = jsonDecode(utf8.decode(resp.bodyBytes));
@@ -118,8 +111,7 @@ class ApiClient {
         }
 
         if (resp.statusCode == 401 && !once) {
-          // 并发 401 共享同一次恢复（refresh → 记住密码重登），避免重复打 /api/login；
-          // 恢复后仍 401 说明 token 确实不被接受，直接抛出服务端 detail，不再无限重试
+          // 并发 401 共享同一次恢复；恢复后仍 401 说明 token 确实不被接受，直接抛出
           if (!recovered) {
             recovered = true;
             if (await _recoverAuth()) continue;
@@ -147,7 +139,7 @@ class ApiClient {
           throw ApiError(msg, resp.statusCode);
         }
         if (j?['need_captcha'] == true) {
-          // 服务器自动识码走不通（未配识图模型/识图失败）：弹手动验证码，登录完成后重试原请求
+          // 服务器自动识码走不通：弹手动验证码，登录完成后重试原请求
           if (++captchaRounds > 3) throw ApiError('验证码登录未完成，请稍后重试');
           await _solveCaptcha(j!);
           continue;
@@ -156,7 +148,7 @@ class ApiClient {
       }
     }
 
-    // 建隧道期间让界面有话可说：进过 202 等待的这轮结束后（成功 / 报错 / 超时）收掉计数
+    // 建隧道期间让界面有话可说：这轮结束后（成功 / 报错 / 超时）收掉计数
     var warming = false;
     Future<Map<String, dynamic>> run() async {
       void onWarm() {
@@ -175,8 +167,7 @@ class ApiClient {
     return tunnel ? _serial(run) : run();
   }
 
-  /// need_captcha 手动验证码流程：弹输入框 → POST /api/campus-open/captcha 提交；
-  /// 学校回「验证码」类错误则换一张（GET 同路径）再弹，其他错误（密码/账号错）直接抛出。
+  /// need_captcha 手动验证码流程：弹输入框 → 提交；验证码类错误换一张再弹，其他错误直接抛。
   /// 注意：提交/换一张绝不能 tunnel:true——原请求正占着隧道串行队列，排队会死等自己。
   Future<void> _solveCaptcha(Map<String, dynamic> j) async {
     final mode = (j['mode'] ?? 'xg').toString();
@@ -211,7 +202,6 @@ class ApiClient {
   }
 
   /// 单飞恢复登录态：refresh 成功或用记住的密码重登成功返回 true。
-  /// 并发调用只发起一次网络请求，全部等待同一结果。
   Future<bool> _recoverAuth() {
     return _recoverInFlight ??= _recoverAuthImpl().whenComplete(() => _recoverInFlight = null);
   }
@@ -316,9 +306,8 @@ class ApiClient {
 
   /// 内嵌教务网页（评教助手）需要的会话材料。
   ///
-  /// * 直连模式：App 本地已登录的教务 Cookie，域名用学校档案里的地址；
-  /// * 服务器模式：服务器那边代连校园网时已登录的教务 Cookie，教务域名以服务器返回为准。
-  ///   此时 WebView 还必须经 [serverWebProxy] 的代理出去，否则外网打不开教务页。
+  /// 直连模式用 App 本地已登录的教务 Cookie；服务器模式用服务器代连时的教务 Cookie，
+  /// 且 WebView 必须经 [serverWebProxy] 的代理出去，否则外网打不开教务页。
   Future<JwxtWebSession> jwxtWebSession() async {
     if (_useDirect) {
       return JwxtWebSession(cookies: await CampusDirect.I.jwxtCookies());
@@ -328,8 +317,7 @@ class ApiClient {
     return JwxtWebSession.fromServer(r['data']);
   }
 
-  /// 服务器模式的校园隧道网页代理（`http://host:port`）：该账号隧道容器的 HTTP 代理。
-  /// 直连 / 演示模式，或隧道没连上时返回空串。
+  /// 服务器模式的校园隧道网页代理（`http://host:port`）；直连 / 演示 / 隧道没连上返回空串。
   Future<String> serverWebProxy() async {
     if (_useDirect || AppState.I.demo) return '';
     return campusProxyFromStatus(await status());
@@ -366,25 +354,21 @@ class ApiClient {
       ? CampusDirect.I.activityDetail(aid)
       : _call('GET', '/api/campus-open/activities/$aid', tunnel: true);
 
-  /// 活动报名（写操作，报名内容由学校系统预填，App 不填任何字段）。
-  /// 超时 / 网络错误后**绝不自动重发**——结果不确定时先引导用户到学工系统确认
-  /// 是否已生成申请。202 / 401 / need_captcha 的重试是安全的（请求还没到达学校），
-  /// 交给 [_call] 的默认循环处理即可（不能用 once：那会把 202 当成功）。
+  /// 活动报名（写操作）：超时 / 网络错误后**绝不自动重发**，先引导用户到学工系统确认。
+  /// 202 / 401 / need_captcha 的重试安全（请求还没到达学校），走 [_call] 默认循环。
   Future<Map<String, dynamic>> activitySignup(String aid) => _useDirect
       ? CampusDirect.I.activitySignup(aid)
       : _call('POST', '/api/campus-open/activities/$aid/signup',
           body: const {}, tunnel: true);
 
-  /// 扫码签到 / 签退（学校 signInOrSignOut.zf 按场次判定方向，返回判定原文）。
-  /// 写操作：两种模式都只提交一次、绝不重试。
+  /// 扫码签到 / 签退（学校按场次判定方向，返回判定原文）。写操作：只提交一次、绝不重试。
   Future<Map<String, dynamic>> activitySignInOrSignOut(String hdId, String hdActId) =>
       _useDirect
           ? CampusDirect.I.activitySignInOrSignOut(hdId, hdActId)
           : _call('POST', '/api/campus-open/activities/sign',
               body: {'hdId': hdId, 'hdActId': hdActId}, tunnel: true);
 
-  /// 报名（培训）二维码的扫码签到（学校 shsj/qd.zf，返回判定原文）。
-  /// 写操作：两种模式都只提交一次、绝不重试。
+  /// 报名（培训）二维码的扫码签到。写操作：只提交一次、绝不重试。
   Future<Map<String, dynamic>> activityTrainingSignIn(String hdId, String pxId) =>
       _useDirect
           ? CampusDirect.I.activityTrainingSignIn(hdId, pxId)
@@ -402,15 +386,12 @@ class ApiClient {
       : _call('POST', '/api/campus-open/timetable/exams',
           body: {'xnm': xnm, 'xqm': xqm}, tunnel: true);
 
-  /// 学业情况（学生学业情况查询，N105515）：整体统计 + 培养方案类别学分要求
-  /// 与类别课程明细（含通识类等非课程节点）。
+  /// 学业情况（N105515）：整体统计 + 培养方案类别学分要求与类别课程明细。
   Future<Map<String, dynamic>> academicStatus() => _useDirect
       ? CampusDirect.I.academicStatus()
       : _call('GET', '/api/campus-open/academic', tunnel: true);
 
-  // ==================== 抢课（正方 9.0 选课） ====================
-  // 暂只实现直连模式：选课是写操作，开放接口还没有对应端点；
-  // 直连需要设备在校园网 / 校内 VPN 内（或在系统层把流量转进校园网）。
+  // ── 抢课（正方 9.0 选课）：暂只实现直连模式，开放接口还没有对应端点 ──
 
   void _requireDirectSelection() {
     // 演示模式用本地假数据，不算「直连」，不拦
@@ -472,7 +453,7 @@ class ApiClient {
       ? CampusDirect.I.electricityQuery()
       : _call('POST', '/api/campus-open/electricity/query');
 
-  /// 电费历史：服务器模式取站内记录，直连模式取本机记录（均升序，recharge>0 表示当天有充值）。
+  /// 电费历史：服务器模式取站内记录，直连模式取本机记录（均升序，recharge>0 = 当天有充值）。
   Future<Map<String, dynamic>> electricityHistory({int days = 90}) => _useDirect
       ? CampusDirect.I.electricityHistory(days: days)
       : _call('GET', '/api/campus-open/electricity/history', query: {'days': '$days'});
@@ -483,7 +464,7 @@ class ApiClient {
       : _call('POST', '/api/campus-open/electricity/recharge',
           body: {'amount': amount}, once: true);
 
-  /// 课程表云端存储（站内接口，与网站共用同一份数据）；直连模式没有云端，静默降级为本地。
+  /// 课程表云端存储（站内接口，与网站共用同一份数据）；直连模式静默降级为本地。
   Future<Map<String, dynamic>> timetableCloudGet() async {
     if (_useDirect) return {'ok': true, 'data': null};
     return _call('GET', '/api/timetable');
@@ -523,7 +504,7 @@ class JwxtWebSession {
 }
 
 /// 从 `/api/campus-open/status` 的响应里取校园隧道网页代理（`http://host:port`）。
-/// 隧道没连上、缺端口或 host 为空时返回空串（调用方据此给出引导）。
+/// 隧道没连上、缺端口、host 为空或是回环地址时返回空串（回环只对服务器自己有意义）。
 String campusProxyFromStatus(Object? status) {
   final map = status is Map ? status : const {};
   final session = map['session'];
@@ -533,7 +514,6 @@ String campusProxyFromStatus(Object? status) {
       .replaceFirst(RegExp(r'^https?://'), '')
       .replaceAll(RegExp(r'/+$'), '');
   final port = session['http_port'];
-  // 回环地址只对服务器自己有意义：手机拿着 127.0.0.1 只会连到自己
   final loopback = host == 'localhost' || host.startsWith('127.');
   if (host.isEmpty || loopback || port is! num || port <= 0) return '';
   return 'http://$host:${port.toInt()}';

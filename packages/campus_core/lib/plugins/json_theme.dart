@@ -7,22 +7,9 @@ import 'plugin.dart';
 
 /// 由 JSON 数据驱动的自定义主题——「导入主题」功能的载体。
 ///
-/// 把前端的主题**抽象成数据**：一份 JSON 描述浅色 / 深色两套「底色 + 面底 +
-/// 强调色 + 文字色」，[GlassPalette.flat] 负责派生整套令牌（透明度 / 描边档位
-/// 与内置色板一致），界面与普通主题插件无异。
-///
-/// JSON 形如（颜色支持 `#RRGGBB` / `#AARRGGBB`）：
-/// ```json
-/// {
-///   "name": "我的主题",
-///   "light": { "bg": "#E3E9F2", "surface": "#FFFFFF", "accent": "#3E639B",
-///              "gold": "#8A6420", "text": "#16233A" },
-///   "dark":  { "bg": "#0B1322", "surface": "#111A2B", "accent": "#93B1D4",
-///              "gold": "#E4B863", "text": "#FFFFFF" }
-/// }
-/// ```
-/// `success` / `danger` 可省略（给默认绿 / 红）。导入后持久化在注册表里，
-/// 与内置主题一样出现在选择器中。
+/// 一份 JSON 描述浅色 / 深色两套「底色 + 面底 + 强调色 + 文字色」，颜色支持
+/// `#RRGGBB` / `#AARRGGBB`；`success` / `danger` 可省略（给默认绿 / 红）。
+/// 导入后持久化在注册表里，与内置主题一样出现在选择器中。
 class JsonThemePlugin extends ThemePlugin {
   const JsonThemePlugin({
     required this.id,

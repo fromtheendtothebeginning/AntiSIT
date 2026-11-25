@@ -1,11 +1,6 @@
 import 'package:lpinyin/lpinyin.dart';
 
-/// 「输入拼音搜汉字」的索引：把一段文本转成全拼 / 首字母两种小写形式，
-/// 查询命中原文、全拼或首字母任一即算匹配。
-///
-/// * `ty` 能搜到「体育太极拳」（首字母 tytjq），`taiquan` 能搜到（全拼 tiyutaijiquan）；
-/// * 非汉字（字母 / 数字 / 符号）原样保留参与匹配；空白统一忽略；
-/// * 个别生僻字转不出拼音时该字按空处理，不影响其余部分。
+/// 「输入拼音搜汉字」的索引：原文 / 全拼 / 首字母任一命中即算匹配。
 class PinyinSearchText {
   PinyinSearchText(this.source)
       : full = _full(source),
@@ -42,8 +37,7 @@ class PinyinSearchText {
   }
 }
 
-/// 列表过滤：[text] 取每条参与匹配的文本（可把多个字段拼在一起）。
-/// [query] 为空时原样返回。
+/// 列表过滤：[text] 取每条参与匹配的文本；[query] 为空时原样返回。
 List<T> filterByPinyin<T>(List<T> items, String Function(T) text, String query) {
   final q = query.trim();
   if (q.isEmpty) return items;
