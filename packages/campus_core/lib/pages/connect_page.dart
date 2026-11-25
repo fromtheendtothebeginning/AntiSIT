@@ -1,8 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../direct/campus_direct.dart';
@@ -10,16 +7,23 @@ import '../direct/epay.dart';
 import '../direct/mock_campus_server.dart';
 import '../direct/school.dart';
 import '../widgets/common.dart';
-import 'login_page.dart';
+import 'connect_common.dart';
+import 'connect_credentials_card.dart';
+import 'connect_direct_section.dart';
+import 'connect_mock_card.dart';
+import 'connect_school_card.dart';
+import 'connect_server_section.dart';
 
-const String _antisitRepo =
-    'https://github.com/fromtheendtothebeginning/AntiSIT';
-const String _anticraftRepo =
-    'https://github.com/fromtheendtothebeginning/anticraft';
+// 各段与各卡拆到同目录文件，这里 re-export 保持 connect_page.dart 的出口不变。
+export 'connect_common.dart';
+export 'connect_credentials_card.dart';
+export 'connect_direct_section.dart';
+export 'connect_mock_card.dart';
+export 'connect_school_card.dart';
+export 'connect_self_host_card.dart';
+export 'connect_server_section.dart';
 
-/// 连接设置：项目用同一套接口，两种接入方式——
-/// 1) 服务器模式：填任意服务器地址（IP / 域名[:端口]）+ 该服务器的 anticraft 账号密码，由服务器代连校园内网；
-/// 2) 直连模式：填学校系统信息 + 校园凭据，App 直接用凭据访问学校系统（不走服务器，需校园网 / 校内 VPN）。
+/// 连接设置：服务器模式（填服务器地址 + 该服务器的账号）与直连模式（填学校系统信息 + 校园凭据）。
 class ConnectPage extends StatefulWidget {
   const ConnectPage({super.key});
 
@@ -30,8 +34,7 @@ class ConnectPage extends StatefulWidget {
 class _ConnectPageState extends State<ConnectPage> {
   late AppMode _mode = AppState.I.mode;
 
-  /// 模式滑块的连续位置（0 = 服务器 / 1 = 直连）：下方两套设置跟着它一起左右滑动，
-  /// 做法与主界面底栏切页完全一样——弹簧留在 [GlassTabs] 里，这里只把位置接到内容上。
+  /// 模式滑块的连续位置（0 = 服务器 / 1 = 直连）：下方两套设置跟着它一起左右滑动。
   final ValueNotifier<double> _tabPos = ValueNotifier<double>(0);
 
   /// 在页面区域横滑时写这里（非 null = 拖动中），交给 GlassTabs 驱动同一个位置。
@@ -54,17 +57,10 @@ class _ConnectPageState extends State<ConnectPage> {
   final _sid = TextEditingController();
   final _pwd = TextEditingController();
   final _payPwd = TextEditingController();
-  final _dormBuilding = TextEditingController(); // 楼号，如 24
-  final _dormRoom = TextEditingController(); // 寝室号，如 1016
+  final _dormBuilding = TextEditingController(); // 楼号，如 24。
+  final _dormRoom = TextEditingController(); // 寝室号，如 1016。
   final _realName = TextEditingController();
   final _grade = TextEditingController();
-
-  bool _hidePwd = true;
-  bool _hidePayPwd = true;
-
-  /// 「校园凭据」默认展开（最常填），「学校信息」默认收起（添加学校时才展开）。
-  bool _credsOpen = true;
-  bool _schoolOpen = false;
 
   bool _testing = false;
   List<ProbeResult>? _probes;
@@ -88,6 +84,7 @@ class _ConnectPageState extends State<ConnectPage> {
     _grade.text = st.creds.grade;
   }
 
+  /// 把学校档案写进表单。
   void _loadSchool(SchoolProfile s) {
     _schoolName.text = s.name;
     _authBase.text = s.authBase;
@@ -98,6 +95,7 @@ class _ConnectPageState extends State<ConnectPage> {
     _allowSelfSigned = s.allowSelfSigned;
   }
 
+  /// 用表单当前值组一份学校档案草稿。
   SchoolProfile _draftSchool() => SchoolProfile(
         name: _schoolName.text.trim(),
         authBase: _authBase.text.trim(),
@@ -143,21 +141,19 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
-  // ── 页面区域左右滑动切模式（与主界面同一套：拖过一半就换；页面内部接住横滑的照旧优先） ──
-
   void _onTabDragStart(DragStartDetails _) => _tabDrag.value = _tabPos.value;
 
   void _onTabDragUpdate(DragUpdateDetails d) {
     final w = MediaQuery.sizeOf(context).width;
     if (w <= 0) return;
-    // 与内容方向一致：往左拖 = 去下一格
+    // 与内容方向一致：往左拖 = 去下一格。
     final next = ((_tabDrag.value ?? _tabPos.value) - d.delta.dx / w).clamp(
       0.0,
       1.0,
     );
     _tabDrag.value = next;
-    // 「界面实时跟着滑块切换」关掉时不在拖动中换——等松手落位再换
-    if (AppState.I.followSlider) _setTab(next.round()); // 界面 = 最贴近滑块的那一格
+    // 「界面实时跟着滑块切换」关掉时不在拖动中换——等松手落位再换。
+    if (AppState.I.followSlider) _setTab(next.round());
   }
 
   void _onTabDragEnd(DragEndDetails d) {
@@ -168,41 +164,35 @@ class _ConnectPageState extends State<ConnectPage> {
     );
     var target = (_tabDrag.value ?? _tabPos.value).round().clamp(0, 1);
     final next = target + (v > 0 ? 1 : -1);
-    if (v.abs() >= 5.0 && next >= 0 && next <= 1) target = next; // 甩动多滑一格
-    _tabDrag.value = null; // 交还弹簧：滑块从当前位置弹到落点
+    if (v.abs() >= 5.0 && next >= 0 && next <= 1) target = next; // 甩动多滑一格。
+    _tabDrag.value = null; // 交还弹簧：滑块从当前位置弹到落点。
     _setTab(target);
   }
 
-  /// 两套设置并排放在同一个 Stack 里：最贴近滑块的那套决定高度，另一套跟着位置滑进滑出
-  /// （超出部分被 ClipRect 裁掉，不会把页面撑高）。行高变化用 AnimatedSize 过渡。
+  /// 两套设置并排放在同一个 Stack 里：最贴近滑块的那套决定高度，另一套跟着位置滑进滑出。
   Widget _slidingSections(AppState st) => ValueListenableBuilder<double>(
         valueListenable: _tabPos,
         builder: (context, rawPos, _) {
-          // 开关关掉时两套设置不跟滑块连续滑，只按已落位的模式显示（松手才切）
+          // 开关关掉时两套设置不跟滑块连续滑，只按已落位的模式显示（松手才切）。
           final pos = AppState.I.followSlider ? rawPos : _tabIndex.toDouble();
           final w = MediaQuery.sizeOf(context).width;
           final active = pos.round().clamp(0, 1);
           final other = 1 - active;
-          Widget panel(int i) => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: i == 0 ? _serverSection(st) : _directSection(st),
-              );
+          Widget panel(int i) => i == 0 ? _serverPanel(st) : _directPanel(st);
           return AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
-            // 顶部锚定：默认的居中会让内容在高度动画期间整体上下漂移
-            // （切换模式后「弹一下」的原因）；锚住顶边后只有框高在变。
+            // 顶部锚定：默认的居中会让内容在高度动画期间整体上下漂移。
             alignment: Alignment.topCenter,
             child: ClipRect(
               child: Stack(
                 children: [
-                  // 当前这套：既是滑动的一方，也决定这块的高度
+                  // 当前这套：既是滑动的一方，也决定这块的高度。
                   Transform.translate(
                     offset: Offset((active - pos) * w, 0),
                     child: panel(active),
                   ),
-                  // 另一套按自身高度布局（不能 Positioned.fill：会被拉成当前那套的高度、内容溢出），
-                  // 滑出这块区域的部分由上面的 ClipRect 裁掉
+                  // 另一套按自身高度布局（不能 Positioned.fill：会被拉成当前那套的高度）。
                   Positioned(
                     left: 0,
                     right: 0,
@@ -219,8 +209,55 @@ class _ConnectPageState extends State<ConnectPage> {
         },
       );
 
-  // ==================== 服务器模式 ====================
+  /// 服务器模式段。
+  Widget _serverPanel(AppState st) => ConnectServerSection(
+        server: _server,
+        probing: _serverTesting,
+        probe: _serverProbe,
+        onProbe: _probeServer,
+        onSave: _save,
+        demo: st.demo,
+        loggedIn: st.token != null,
+        username: st.username,
+        serverUrl: st.serverUrl,
+      );
 
+  /// 直连模式段。
+  Widget _directPanel(AppState st) => ConnectDirectSection(
+        mockCard: kDebugMode
+            ? ConnectMockCard(testing: _testing, onUseMock: _useMock)
+            : null,
+        credentials: ConnectCredentialsCard(
+          sid: _sid,
+          pwd: _pwd,
+          payPwd: _payPwd,
+          dormBuilding: _dormBuilding,
+          dormRoom: _dormRoom,
+          realName: _realName,
+          grade: _grade,
+          testing: _testing,
+          probes: _probes,
+          onSave: _save,
+          onTest: _testDirect,
+        ),
+        schoolCard: ConnectSchoolCard(
+          schools: st.schools,
+          school: st.school,
+          name: _schoolName,
+          authBase: _authBase,
+          jwxtBase: _jwxtBase,
+          xgBase: _xgBase,
+          ecardBase: _ecardBase,
+          aesKey: _aesKey,
+          allowSelfSigned: _allowSelfSigned,
+          onSelfSignedChanged: (v) => setState(() => _allowSelfSigned = v),
+          onAdd: _addSchool,
+          onRemove: _removeSchool,
+          onPick: _pickSchool,
+        ),
+      );
+
+  /// 用空体登录请求探测服务器；空地址就地提示，不发请求。
   Future<void> _probeServer() async {
     final url = AppState.normalizeServer(_server.text);
     if (url.isEmpty) {
@@ -231,32 +268,15 @@ class _ConnectPageState extends State<ConnectPage> {
       _serverTesting = true;
       _serverProbe = null;
     });
-    try {
-      // 空体登录请求：401/422 都说明该地址上跑着同一套开放接口
-      final resp = await http
-          .post(
-            Uri.parse('$url/api/login'),
-            headers: {'Content-Type': 'application/json'},
-            body: '{}',
-          )
-          .timeout(const Duration(seconds: 15));
-      final ok = [400, 401, 422].contains(resp.statusCode);
-      if (mounted) {
-        setState(
-          () => _serverProbe = ok
-              ? '连接成功：$url（HTTP ${resp.statusCode}，接口可用）'
-              : '该地址返回 HTTP ${resp.statusCode}，可能不是同款开放接口服务',
-        );
-      }
-    } catch (e) {
-      if (mounted) setState(() => _serverProbe = '连接失败：$e');
-    } finally {
-      if (mounted) setState(() => _serverTesting = false);
-    }
+    final result = await probeServerEndpoint(url);
+    if (!mounted) return;
+    setState(() {
+      _serverProbe = result;
+      _serverTesting = false;
+    });
   }
 
-  // ==================== 直连模式 ====================
-
+  /// 用草稿地址探测四个学校系统；结束恢复原学校，真正切换交给「保存」。
   Future<void> _testDirect() async {
     final original = AppState.I.school;
     setState(() {
@@ -271,14 +291,12 @@ class _ConnectPageState extends State<ConnectPage> {
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
-      // 探测用草稿地址，结束恢复原学校；真正切换交给「保存」
       await AppState.I.setSchool(original);
       if (mounted) setState(() => _testing = false);
     }
   }
 
   /// 调试：一键切到本机模拟校园服务（四个系统都在 127.0.0.1，凭据用模拟值）。
-  /// 直连模式没有校园网时，靠它把验证码 / 会话 / 各系统查询链路真正跑起来。
   Future<void> _useMock() async {
     setState(() {
       _testing = true;
@@ -327,6 +345,7 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
+  /// 弹窗添加一所学校（只填名称与域名，地址由域名推导）。
   Future<void> _addSchool() async {
     final name = TextEditingController();
     final domain = TextEditingController();
@@ -381,6 +400,7 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
+  /// 删除当前学校档案（至少保留一个）。
   Future<void> _removeSchool() async {
     final name = AppState.I.school.name;
     if (AppState.I.schools.length <= 1) {
@@ -396,8 +416,18 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
-  // ==================== 保存 ====================
+  /// 切换到另一所学校档案并刷新表单。
+  Future<void> _pickSchool(SchoolProfile s) async {
+    await AppState.I.setSchool(s);
+    CampusDirect.I.forgetLoginState();
+    if (!mounted) return;
+    setState(() {
+      _loadSchool(s);
+      _probes = null;
+    });
+  }
 
+  /// 保存当前模式的设置（服务器地址 / 学校档案 + 校园凭据）。
   Future<void> _save() async {
     final st = AppState.I;
     setState(() {
@@ -456,11 +486,11 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   Widget build(BuildContext context) {
     final st = AppState.I;
-    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）。
         final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
@@ -468,8 +498,7 @@ class _ConnectPageState extends State<ConnectPage> {
           body: GlassFadedBody(
             barHeight: topInset,
             child: GestureDetector(
-            // 页面区域横滑切模式；页面内部真接住横滑的组件（滑块自己）照旧优先——
-            // 和主界面底栏切页是同一套做法。
+            // 页面区域横滑切模式；页面内部真接住横滑的组件（滑块自己）照旧优先。
             behavior: HitTestBehavior.translucent,
             onHorizontalDragStart: _onTabDragStart,
             onHorizontalDragUpdate: _onTabDragUpdate,
@@ -482,7 +511,10 @@ class _ConnectPageState extends State<ConnectPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _sectionTitle(Icons.alt_route_rounded, '数据来源'),
+                      ConnectSectionTitle(
+                        icon: Icons.alt_route_rounded,
+                        title: '数据来源',
+                      ),
                       const SizedBox(height: 10),
                       GlassTabs(
                         labels: const ['服务器模式', '直连模式'],
@@ -495,7 +527,7 @@ class _ConnectPageState extends State<ConnectPage> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // 下方两套设置跟着滑块一起左右滑动（与主界面切页同一套观感）
+                // 下方两套设置跟着滑块一起左右滑动（与主界面切页同一套观感）。
                 _slidingSections(st),
                 if (_error != null) ...[
                   const SizedBox(height: 10),
@@ -539,7 +571,7 @@ class _ConnectPageState extends State<ConnectPage> {
                     ),
                   ),
                 ],
-                // 从组件边上挪下来的说明，统一沉到页底
+                // 说明文案统一沉到页底。
                 const PageNotes(
                   lines: [
                     '服务器模式：由服务器代连校园内网；登录用该服务器的账号密码，'
@@ -555,603 +587,6 @@ class _ConnectPageState extends State<ConnectPage> {
           ),
         );
       },
-    );
-  }
-
-  // ==================== 服务器模式 UI ====================
-
-  List<Widget> _serverSection(AppState st) => [
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '服务器地址',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-              ),
-              const SizedBox(height: 10),
-              GlassField(
-                label: 'IP 或域名（可带端口）',
-                controller: _server,
-                keyboardType: TextInputType.url,
-                hintText: '192.168.1.10:8000 / my.server.cn:8443',
-                prefixIcon: const Icon(Icons.dns_outlined),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                children: [
-                  OutlinedButton(
-                    onPressed: _serverTesting ? null : _probeServer,
-                    child: _serverTesting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('测试连接'),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => _server.clear(),
-                    child: const Text('清空'),
-                  ),
-                  if (kDebugMode)
-                    OutlinedButton(
-                      onPressed: () {
-                        _server.text = AppState.localUrl;
-                      },
-                      child: const Text('本地调试'),
-                    ),
-                ],
-              ),
-              if (_serverProbe != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _serverProbe!,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: SemColors.textSecondary,
-                    height: 1.6,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(
-                    child:
-                        FilledButton(onPressed: _save, child: const Text('保存')),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        await _save();
-                        if (!mounted) return;
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const LoginPage()),
-                        );
-                      },
-                      child: const Text('保存并登录'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        AppCard(
-          child: Row(
-            children: [
-              Icon(
-                st.demo
-                    ? Icons.science_outlined
-                    : (st.token != null
-                        ? Icons.check_circle
-                        : Icons.info_outline),
-                color: st.demo
-                    ? SemColors.accent
-                    : (st.token != null
-                        ? SemColors.success
-                        : SemColors.textMuted),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  st.demo
-                      ? '当前为演示模式（本地假数据，不发起请求）'
-                      : (st.token != null
-                          ? '已登录：${st.username ?? ''} @ ${st.serverUrl.isEmpty ? '未填写地址' : st.serverUrl}'
-                          : '该服务器未登录：登录后即可查询校园数据'),
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: SemColors.textSecondary,
-                    height: 1.6,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        _selfHostCard(),
-      ];
-
-  // ==================== 直连模式 UI ====================
-
-  List<Widget> _directSection(AppState st) => [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: SemColors.warning.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(10),
-            border:
-                Border.all(color: SemColors.warning.withValues(alpha: 0.35)),
-          ),
-          child: Text(
-            '直连模式不走服务器：请先连接校园网或校内 VPN（校园内网）。校外且没有校内 VPN 时，'
-            '请改用服务器模式，或让学校提供可访问的服务器地址。',
-            style: TextStyle(
-                fontSize: 12.5, color: SemColors.warning, height: 1.7),
-          ),
-        ),
-        const SizedBox(height: 10),
-        if (kDebugMode) ...[_mockCard(), const SizedBox(height: 10)],
-        // 校园凭据在前（最常填、默认展开），学校信息在后（默认收起）
-        _credsCard(st),
-        const SizedBox(height: 10),
-        _schoolCard(st),
-      ];
-
-  /// 可收起卡片：标题行整行可点，内容高度用顶部锚定的 AnimatedSize 过渡
-  /// （内容不上下漂移），收起时留零高占位。
-  Widget _collapsibleCard({
-    required IconData icon,
-    required String title,
-    required bool open,
-    required VoidCallback onToggle,
-    required Widget content,
-    List<Widget> actions = const [],
-  }) =>
-      AppCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onToggle,
-              child: Row(
-                children: [
-                  Expanded(child: _sectionTitle(icon, title)),
-                  ...actions,
-                  const SizedBox(width: 4),
-                  Icon(
-                    open
-                        ? Icons.expand_less_rounded
-                        : Icons.expand_more_rounded,
-                    size: 20,
-                    color: SemColors.textMuted,
-                  ),
-                ],
-              ),
-            ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: open
-                  ? content
-                  : const SizedBox(width: double.infinity, height: 0),
-            ),
-          ],
-        ),
-      );
-
-  Widget _credsCard(AppState st) => _collapsibleCard(
-        icon: Icons.badge_outlined,
-        title: '校园凭据',
-        open: _credsOpen,
-        onToggle: () => setState(() => _credsOpen = !_credsOpen),
-        content: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 12),
-            GlassField(
-              label: '学号',
-              controller: _sid,
-              prefixIcon: const Icon(Icons.badge_outlined),
-            ),
-            const SizedBox(height: 10),
-            GlassField(
-              label: '统一身份认证密码',
-              controller: _pwd,
-              obscureText: _hidePwd,
-              prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                onPressed: () => setState(() => _hidePwd = !_hidePwd),
-                icon: Icon(
-                  _hidePwd
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            GlassField(
-              label: '校园卡支付密码',
-              controller: _payPwd,
-              obscureText: _hidePayPwd,
-              prefixIcon: const Icon(Icons.credit_card_outlined),
-              suffixIcon: IconButton(
-                onPressed: () => setState(() => _hidePayPwd = !_hidePayPwd),
-                icon: Icon(
-                  _hidePayPwd
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            // 楼号和寝室号分开填，内部仍拼成校付宝要的「24号楼1016」。
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: GlassField(
-                    label: '楼号',
-                    controller: _dormBuilding,
-                    prefixIcon: const Icon(Icons.apartment_outlined),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GlassField(
-                    label: '寝室号',
-                    controller: _dormRoom,
-                    prefixIcon: const Icon(Icons.house_outlined),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            GlassField(
-              label: '姓名',
-              controller: _realName,
-              prefixIcon: const Icon(Icons.person_outline),
-            ),
-            const SizedBox(height: 10),
-            GlassField(
-              label: '年级',
-              controller: _grade,
-              prefixIcon: const Icon(Icons.school_outlined),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child:
-                      FilledButton(onPressed: _save, child: const Text('保存')),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _testing ? null : _testDirect,
-                    child: _testing
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('测试连接'),
-                  ),
-                ),
-              ],
-            ),
-            if (_probes != null) ...[
-              const SizedBox(height: 10),
-              for (final p in _probes!)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        p.ok ? Icons.check_circle : Icons.error_outline,
-                        size: 16,
-                        color: p.ok ? SemColors.success : SemColors.danger,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          '${p.name}：${p.detail}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: p.ok
-                                ? SemColors.textSecondary
-                                : SemColors.danger,
-                            height: 1.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ],
-        ),
-      );
-
-  Widget _schoolCard(AppState st) => _collapsibleCard(
-        icon: Icons.dns_outlined,
-        title: '学校信息',
-        open: _schoolOpen,
-        onToggle: () => setState(() => _schoolOpen = !_schoolOpen),
-        actions: [
-          TextButton.icon(
-            onPressed: _addSchool,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('添加', style: TextStyle(fontSize: 13)),
-          ),
-          if (st.schools.length > 1)
-            TextButton.icon(
-              onPressed: _removeSchool,
-              icon: const Icon(Icons.delete_outline, size: 18),
-              label: const Text('删除', style: TextStyle(fontSize: 13)),
-            ),
-        ],
-        content: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 6),
-            GlassDropdown<String>(
-              label: '当前学校',
-              value: st.school.name,
-              items: [
-                for (final s in st.schools)
-                  DropdownMenuItem(value: s.name, child: Text(s.name)),
-              ],
-              onChanged: (v) async {
-                if (v == null) return;
-                final s = st.schools.firstWhere((e) => e.name == v);
-                await st.setSchool(s);
-                CampusDirect.I.forgetLoginState();
-                if (!mounted) return;
-                setState(() {
-                  _loadSchool(s);
-                  _probes = null;
-                });
-              },
-            ),
-            const SizedBox(height: 12),
-            GlassField(label: '学校名称', controller: _schoolName),
-            const SizedBox(height: 10),
-            _addrField(_jwxtBase, '教务系统'),
-            const SizedBox(height: 10),
-            _addrField(_xgBase, '学工系统'),
-            const SizedBox(height: 10),
-            _addrField(_authBase, '统一身份认证'),
-            const SizedBox(height: 10),
-            _addrField(_ecardBase, '校园卡'),
-            const SizedBox(height: 10),
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              childrenPadding: const EdgeInsets.only(bottom: 8),
-              title: const Text('高级', style: TextStyle(fontSize: 13.5)),
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    '允许学校系统使用自签证书',
-                    style: TextStyle(fontSize: 13.5),
-                  ),
-                  subtitle: const Text(
-                    '默认关闭：证书校验失败会直接断开，避免校园网里用假证书替换登录页。'
-                    '仅当学校系统确实使用自签证书时开启；开启会降低登录密码的抗中间人能力。',
-                    style: TextStyle(fontSize: 11.5, height: 1.5),
-                  ),
-                  value: _allowSelfSigned,
-                  onChanged: (v) => setState(() => _allowSelfSigned = v),
-                ),
-                GlassField(label: '响应解密密钥', controller: _aesKey),
-              ],
-            ),
-          ],
-        ),
-      );
-
-  /// 分区标题：玻璃风图标章 + 标题（+ 可选右侧按钮），让卡片头部与液态玻璃面融合。
-  Widget _sectionTitle(
-    IconData icon,
-    String title, {
-    List<Widget> actions = const [],
-  }) =>
-      Row(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: SemColors.accentSoft,
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Icon(icon, size: 17, color: SemColors.accent),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          ),
-          const Spacer(),
-          ...actions,
-        ],
-      );
-
-  Widget _addrField(TextEditingController c, String label) =>
-      GlassField(label: label, controller: c, keyboardType: TextInputType.url);
-
-  // ==================== 本地模拟服务（仅 debug） ====================
-
-  /// 没有校园网（模拟器 / 教室外）时用它在 App 进程内跑一套行为一致的学校系统，
-  /// 用来验证直连链路：验证码弹窗、会话 Cookie、登录失败重试、各系统查询。
-  Widget _mockCard() {
-    final mock = MockCampusServer.instance;
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.science_outlined, size: 18, color: SemColors.accent),
-              SizedBox(width: 6),
-              Text(
-                '本地模拟服务（仅调试构建）',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '在 App 内监听 127.0.0.1 起一套与学校系统行为一致的模拟服务：'
-            '正方教务（RSA 加密 + 图形验证码）、统一认证 CAS（AES 加密 + 图形验证码）、'
-            '学工二课、校园卡（SM4 支付密码）。没有校园网也能把直连链路跑通。',
-            style: TextStyle(
-              fontSize: 12,
-              color: SemColors.textSecondary,
-              height: 1.7,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _testing ? null : _useMock,
-                  child: Text(mock.running ? '重启并切到本地模拟服务' : '使用本地模拟服务'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            mock.running
-                ? '运行中：${mock.baseUrl}（模拟凭据 学号 ${MockCampusServer.studentId} / '
-                    '密码 ${MockCampusServer.password} / 支付密码 ${MockCampusServer.payPassword}）'
-                : '模拟凭据：学号 ${MockCampusServer.studentId} / 密码 ${MockCampusServer.password} / '
-                    '支付密码 ${MockCampusServer.payPassword} / 寝室 ${MockCampusServer.dorm}',
-            style: TextStyle(
-              fontSize: 11,
-              color: SemColors.textMuted,
-              height: 1.6,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ==================== 自建服务器指引 ====================
-
-  /// 打开仓库链接；打不开（无浏览器/网络受限）时复制到剪贴板兜底。
-  Future<void> _openRepo(String url) async {
-    try {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (_) {
-      await Clipboard.setData(ClipboardData(text: url));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('已复制链接：$url'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
-
-  Widget _repoLink(String label, String url) => InkWell(
-        onTap: () => _openRepo(url),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              Icon(Icons.open_in_new, size: 15, color: SemColors.accent),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: SemColors.accent,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-
-  /// 服务器模式下的自建指引：本项目（API 文档）与现成开源服务端（GPL-3.0）。
-  Widget _selfHostCard() {
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '自建服务器',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '上面填的地址可以是任何实现了同一套开放接口的服务器，两种方式：',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: SemColors.textSecondary,
-              height: 1.7,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '① 参照 API 文档自行实现：本项目仓库内 docs/campus-api.md 是完整接口规约，'
-            '照此用任意语言 / 框架重建服务端即可接入本 App。',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: SemColors.textSecondary,
-              height: 1.7,
-            ),
-          ),
-          _repoLink(
-            'github.com/fromtheendtothebeginning/AntiSIT（含 API 文档）',
-            _antisitRepo,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '② 直接部署现成服务端：anticraft 校园服务网站就是这套接口的参考实现，同样开源，'
-            '部署好把地址填到上方即可。',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: SemColors.textSecondary,
-              height: 1.7,
-            ),
-          ),
-          _repoLink(
-            'github.com/fromtheendtothebeginning/anticraft（GPL-3.0）',
-            _anticraftRepo,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '两个项目均为 GPL-3.0 开源。协议要点：可自由使用、学习、修改与再分发；'
-            '再分发或衍生作品必须同样以 GPL-3.0 开源并提供完整源码；软件不含任何担保。',
-            style: TextStyle(
-              fontSize: 11.5,
-              color: SemColors.textMuted,
-              height: 1.6,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

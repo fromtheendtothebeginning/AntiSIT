@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 液态玻璃色板（参照 anticlass「夜航玻璃拟态」：玻璃无色、颜色属于场景）。
-/// 浅色 = 晨光玻璃（#E3E9F2 底 + 白 55% 玻璃面）；深色 = 规范夜景色（#0B1322 底 + 白 8% 玻璃面）。
-/// 强调双色分工：钢蓝（链接/激活/次要高亮）+ 香槟金（主 CTA / 关键数字 / 待办警告语义）。
+/// 液态玻璃色板：浅色 = 晨光玻璃（#E3E9F2 底 + 白 55% 玻璃面），深色 = 夜景色（#0B1322 底 + 白 8% 玻璃面）。
+/// 强调双色分工：钢蓝（链接 / 激活）+ 香槟金（主 CTA / 关键数字 / 警告语义）。
 class GlassPalette {
   const GlassPalette({
     required this.isDark,
@@ -34,25 +33,25 @@ class GlassPalette {
   });
 
   final bool isDark;
-  final Color bg; // 页面底色
-  final Color card; // 玻璃卡面
-  final Color cardElevated; // 次级玻璃面（嵌套控件底）
-  final Color navPill; // 底部悬浮导航条底（比 cardElevated 更实，保证压在内容上可读）
-  final Color menuBg; // 弹窗/菜单近实底
-  final Color border; // 玻璃描边
-  final Color borderStrong; // 输入框/独立控件描边
-  final Color inputFill; // 输入框填充
-  final Color stripe; // 条带/分组底
-  final Color thumb; // 滑块 Tab 的滑动 thumb 面
-  final Color overlay; // 弹窗遮罩
-  final Color shadow; // 卡片外投影色
+  final Color bg; // 页面底色。
+  final Color card; // 玻璃卡面。
+  final Color cardElevated; // 次级玻璃面（嵌套控件底）。
+  final Color navPill; // 底部悬浮导航条底（比 cardElevated 更实，压在内容上也读得清）。
+  final Color menuBg; // 弹窗 / 菜单近实底。
+  final Color border; // 玻璃描边。
+  final Color borderStrong; // 输入框 / 独立控件描边。
+  final Color inputFill; // 输入框填充。
+  final Color stripe; // 条带 / 分组底。
+  final Color thumb; // 滑块 Tab 的滑动 thumb 面。
+  final Color overlay; // 弹窗遮罩。
+  final Color shadow; // 卡片外投影色。
   final Color textPrimary;
   final Color textSecondary;
   final Color textMuted;
-  final Color accent; // 月光钢蓝
+  final Color accent; // 月光钢蓝。
   final Color accentSoft;
   final Color accentStrong;
-  final Color gold; // 香槟金（唯一强调色）
+  final Color gold; // 香槟金（唯一强调色）。
   final Color goldSoft;
   final Color success;
   final Color successSoft;
@@ -114,10 +113,8 @@ class GlassPalette {
     dangerSoft: Color(0x24FF5A4A), // 14%
   );
 
-  /// 两套色板按 [t] 插值（0 = [a] 原样、1 = [b] 原样）：拖动「外观」滑块时整站配色
-  /// 就靠它渐变——拖到 0.5 时页面底色/卡面/文字都是浅深各一半，松手落到所选那档。
-  /// 每个令牌一视同仁地 `Color.lerp`（含 alpha），`isDark` 取更近的那一档
-  /// （状态栏图标、场景光斑按它选）。
+  /// 两套色板按 [t] 线性插值（0 = [a] 原样、1 = [b] 原样）；`isDark` 取更近的那一档。
+  /// 拖动「外观」滑块时整站配色靠它渐变，每个令牌（含 alpha）都 `Color.lerp`。
   static GlassPalette lerp(GlassPalette a, GlassPalette b, double t) {
     if (t <= 0) return a;
     if (t >= 1) return b;
@@ -151,8 +148,7 @@ class GlassPalette {
     );
   }
 
-  /// 由「底色 + 面底 + 强调色」派生整套令牌（透明/描边档位与原玻璃色板一致）。
-  /// 非玻璃主题用它构造即可，不必手写 26 个令牌；液态玻璃仍保留上面手调的常量。
+  /// 由「底色 + 面底 + 强调色」派生整套令牌，非玻璃主题用它构造。
   factory GlassPalette.flat({
     required bool isDark,
     required Color bg,
@@ -164,7 +160,7 @@ class GlassPalette {
     required Color text,
   }) {
     Color soft(Color c, double a) => c.withValues(alpha: a);
-    const ink = Color(0xFF0B1322); // 遮罩/投影的中性基色（浅色下当墨色用）
+    const ink = Color(0xFF0B1322); // 遮罩 / 投影的中性基色（浅色下当墨色用）。
     return GlassPalette(
       isDark: isDark,
       bg: bg,
@@ -206,24 +202,22 @@ class GlassWell {
 
 /// 液态玻璃的默认光井（复刻 anticlass body::before 场景光井）。
 const kGlassWellsLight = <GlassWell>[
-  GlassWell(Alignment(0.7, -0.84), 1.6, Color(0x807C9CC4)), // 右上蓝光斑 50%
-  GlassWell(Alignment(-0.84, 0.84), 1.4, Color(0x47E4B863)), // 左下金光斑 28%
-  GlassWell(Alignment(-0.1, -0.2), 1.3, Color(0x2933517A)), // 中部蓝光斑 16%
+  GlassWell(Alignment(0.7, -0.84), 1.6, Color(0x807C9CC4)),
+  GlassWell(Alignment(-0.84, 0.84), 1.4, Color(0x47E4B863)),
+  GlassWell(Alignment(-0.1, -0.2), 1.3, Color(0x2933517A)),
 ];
 
 const kGlassWellsDark = <GlassWell>[
-  GlassWell(Alignment(0.7, -0.84), 1.6, Color(0x477C9CC4)), // 右上蓝光斑 28%
-  GlassWell(Alignment(-0.84, 0.84), 1.4, Color(0x5933517A)), // 左下深蓝光斑 35%
-  GlassWell(Alignment(0.1, -0.1), 1.3, Color(0x1AE4B863)), // 中部金光斑 10%
+  GlassWell(Alignment(0.7, -0.84), 1.6, Color(0x477C9CC4)),
+  GlassWell(Alignment(-0.84, 0.84), 1.4, Color(0x5933517A)),
+  GlassWell(Alignment(0.1, -0.1), 1.3, Color(0x1AE4B863)),
 ];
 
-/// 语义色入口（全站 278 处引用）：取值随 [SemColors.p] 当前色板变化，
-/// 由 CampusApp 在每次构建时按主题模式写入，MaterialApp 重建带动全站刷新。
+/// 语义色入口：取值随 [SemColors.p] 当前色板变化，由 CampusApp 在每次构建时按主题模式写入。
 class SemColors {
   static GlassPalette _p = GlassPalette.light;
 
-  /// 当前色板。写入时如果换成了另一个色板对象，会通知 [palette] 的订阅者
-  /// （拓展 WebView 页要跟着切主题 / 夜间模式）。
+  /// 当前色板。
   static GlassPalette get p => _p;
 
   static set p(GlassPalette value) {
@@ -232,8 +226,7 @@ class SemColors {
     palette.value = value;
   }
 
-  /// 色板变化通知。只在 [p] 真的换成另一个对象时触发；主题插件通常返回
-  /// 同一份常量 / static final 色板，普通重建不会反复通知。
+  /// 色板变化通知：只在 [p] 真的换成另一个对象时触发（拓展 WebView 页跟着切主题）。
   static final ValueNotifier<GlassPalette> palette =
       ValueNotifier<GlassPalette>(_p);
 
@@ -245,16 +238,14 @@ class SemColors {
   static Color get successSoft => p.successSoft;
   static Color get danger => p.danger;
   static Color get dangerSoft => p.dangerSoft;
-  static Color get warning => p.gold; // 待办/警告 = 香槟金（与 anticlass pending 语义一致）
-  static Color get info => p.accent; // 信息 = 钢蓝
+  static Color get warning => p.gold; // 待办 / 警告 = 香槟金。
+  static Color get info => p.accent; // 信息 = 钢蓝。
   static Color get infoSoft => p.accentSoft;
   static Color get neutralSoft => p.cardElevated;
   static Color get border => p.border;
   static Color get textPrimary => p.textPrimary;
   static Color get textSecondary => p.textSecondary;
   static Color get textMuted => p.textMuted;
-
-  // 玻璃体系新增令牌
   static Color get bg => p.bg;
   static Color get card => p.card;
   static Color get cardElevated => p.cardElevated;
@@ -268,17 +259,14 @@ class SemColors {
   static Color get shadow => p.shadow;
 }
 
-/// 当前正在用的场景光斑（[GlassBackground] 每次构建时写入）。
-///
-/// 页面转场期间要给「上层页」垫一张和全局场景底**完全一样**的底（见 main.dart），
-/// 否则页面是半透明的，滑入时会把下层页透出来（看到两个页面叠在一起）。
+/// 当前正在用的场景光斑（[GlassBackground] 每次构建时写入），页面转场垫底复用同一份。
 class GlassScene {
   GlassScene._();
 
   static List<GlassWell>? wells;
 }
-/// 只画场景底的一半（底色 + 光斑），不带任何内容：
-/// 给 [GlassBackground] 和「转场垫底」共用，保证两者像素一致。
+
+/// 只画场景底的一半（底色 + 光斑），给 [GlassBackground] 和「转场垫底」共用。
 class GlassScenePaint extends StatelessWidget {
   const GlassScenePaint({super.key, this.wells});
 
@@ -309,8 +297,7 @@ class GlassScenePaint extends StatelessWidget {
   }
 }
 
-/// 全局场景底：底色 + 若干柔和光源光斑。玻璃主题传入自己的光斑
-/// （[GlassWell] 由主题插件给），不传就用液态玻璃的默认光井。
+/// 全局场景底：底色 + 若干柔和光源光斑；不传 [wells] 就用液态玻璃的默认光井。
 class GlassBackground extends StatelessWidget {
   const GlassBackground({super.key, required this.child, this.wells});
 
@@ -320,7 +307,7 @@ class GlassBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = SemColors.isDark;
-    // 记下当前光斑：转场垫底要复用同一份，撤掉时才不会跳
+    // 记下当前光斑：转场垫底要复用同一份，撤掉时才不会跳。
     GlassScene.wells = wells;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
@@ -336,4 +323,3 @@ class GlassBackground extends StatelessWidget {
     );
   }
 }
-

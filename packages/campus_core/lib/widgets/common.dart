@@ -8,8 +8,7 @@ import '../app_state.dart';
 import '../pages/connect_page.dart';
 import 'theme_palette.dart';
 
-// 色板 / 主题场景、玻璃组件、底栏拆到了同目录三个文件，
-// 这里 re-export 保持 `common.dart` 的原有出口不变（campus_core.dart 只导出本文件）。
+// 色板 / 玻璃组件 / 底栏在同目录其他文件里实现，这里 re-export 保持 common.dart 出口不变。
 export 'glass_nav.dart';
 export 'glass_top_bar.dart';
 export 'glass_widgets.dart';
@@ -17,13 +16,10 @@ export 'theme_palette.dart';
 
 final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 
-/// 已有错误弹窗时（多周课表并发失败等）不叠弹：同一轮失败原因通常相同，
-/// 关掉当前这个再让下一次失败重新弹即可。
+/// 已有错误弹窗时不叠加：关掉当前这个，下一次失败再重新弹。
 bool _errDialogOpen = false;
 
-/// 统一错误弹窗：把学校 / 服务器返回的原文完整展示出来（可长按复制）。
-/// SnackBar 4 秒就消失，失败原因很容易错过；各组件加载 / 刷新 / 导入 / 报名 / 安装失败
-/// 都走这里，页面背后仍保留整页错误态与「重试」，弹窗只负责把原因讲清楚。
+/// 统一错误弹窗：完整展示学校 / 服务器返回的原因（可长按复制），同一时间只弹一个。
 void showErr(BuildContext context, Object e, {String title = '操作失败', StackTrace? st}) {
   final msg = e is ApiError ? e.message : e.toString();
   if (!context.mounted || _errDialogOpen) return;
@@ -61,6 +57,8 @@ class PageStateView extends StatelessWidget {
   final String? error;
   final bool empty;
   final VoidCallback onRetry;
+
+  /// 空态文案。
   final String emptyText;
   final Widget child;
 
@@ -74,8 +72,7 @@ class PageStateView extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               const CircularProgressIndicator(),
-              // 服务器模式第一次查询要建校园网隧道（几十秒）：只给一个转圈会被当成卡死，
-              // 这里把「在等什么」说出来（见 ApiClient.tunnelWarmup）。
+              // 服务器模式首次查询要建校园网隧道（几十秒），这里说明在等什么。
               ValueListenableBuilder<int>(
                 valueListenable: ApiClient.tunnelWarmup,
                 builder: (_, waiting, __) => waiting == 0
@@ -124,7 +121,6 @@ class PageStateView extends StatelessWidget {
 }
 
 /// 工具页顶部刷新条：拉新数据时左上角转圈，右侧常驻手动刷新按钮。
-/// 转圈期间页面继续展示本机缓存，新数据到达后再整体替换，不闪空态。
 class ToolRefreshBar extends StatelessWidget {
   const ToolRefreshBar({
     super.key,
@@ -140,7 +136,7 @@ class ToolRefreshBar extends StatelessWidget {
   /// 当前内容来自本机缓存（不是本次新拉到的数据）。
   final bool fromCache;
 
-  /// 刷新失败：保留缓存并在这里提示，不再弹窗打断浏览。
+  /// 刷新失败：保留缓存并在这里提示，不弹窗打断浏览。
   final bool failed;
 
   @override
@@ -247,10 +243,7 @@ class LoginGate extends StatelessWidget {
   }
 }
 
-/// 二维码 / 动态码底板（校园码用）：
-/// **浅色主题不画白底**——玻璃卡上再叠一块白方块就是用户报过的「背后一个白色正方形」；
-/// 深色主题垫圆角白底，否则深色模块在深色卡面上辨认不出、扫不出来。
-/// 两种主题都做圆角裁剪：万一服务端返回的是带白底的旧式 PNG，也只看到圆角而非方角。
+/// 二维码 / 动态码底板：浅色主题不画白底，深色主题垫圆角白底，两种主题都圆角裁剪。
 class QrPlate extends StatelessWidget {
   const QrPlate({super.key, required this.child, this.side = 220});
 

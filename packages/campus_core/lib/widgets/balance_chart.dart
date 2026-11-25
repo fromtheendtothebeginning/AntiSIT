@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'common.dart';
 import '../json_num.dart';
 
-/// 电费历史折线图（复刻网站「历史用量」：虚线网格 + 主色折线 + 充值点标记）。
+/// 电费历史折线图（虚线网格 + 主色折线 + 充值点标记）。
 class BalanceChart extends StatelessWidget {
   const BalanceChart({super.key, required this.records, this.height = 170});
 
@@ -25,6 +25,7 @@ class BalanceChart extends StatelessWidget {
   }
 }
 
+/// 折线图绘制：Y 轴网格与刻度、余额折线、充值点、X 轴日期标签。
 class _ChartPainter extends CustomPainter {
   _ChartPainter(this.records);
 
@@ -56,7 +57,6 @@ class _ChartPainter extends CustomPainter {
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
 
-    // 横向虚线网格 + Y 轴刻度（4 条）
     final labelStyle = TextStyle(fontSize: 9, color: SemColors.textMuted);
     for (var g = 0; g < 4; g++) {
       final t = g / 3;
@@ -75,7 +75,6 @@ class _ChartPainter extends CustomPainter {
       tp.paint(canvas, Offset(_padL - tp.width - 4, vy - tp.height / 2));
     }
 
-    // 折线
     final linePaint = Paint()
       ..color = SemColors.accent
       ..strokeWidth = 2
@@ -93,7 +92,7 @@ class _ChartPainter extends CustomPainter {
     }
     canvas.drawPath(path, linePaint);
 
-    // 充值点（绿色实心）+ 普通点略过（太密）
+    // 只在有充值记录的日期画点（普通点太密）。
     final dotPaint = Paint()..color = SemColors.success;
     for (var i = 0; i < records.length; i++) {
       final recharge = asNum(records[i]['recharge']) ?? 0;
@@ -102,7 +101,6 @@ class _ChartPainter extends CustomPainter {
       }
     }
 
-    // X 轴首/中/尾日期标签
     String label(int i) {
       final t = '${records[i]['time']}';
       return t.length >= 10 ? t.substring(5, 10) : t;
@@ -119,6 +117,7 @@ class _ChartPainter extends CustomPainter {
     }
   }
 
+  /// X 轴只标首 / 中 / 尾三个日期。
   List<int> _xLabelIndexes() {
     final n = records.length;
     return [0, (n - 1) ~/ 2, n - 1];
