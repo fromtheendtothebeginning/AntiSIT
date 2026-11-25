@@ -8,8 +8,7 @@ import 'market_sources.dart';
 
 /// 第三方源的界面零件：「源」面板、添加源、添加前确认指纹。
 ///
-/// 抽出来是因为 market_view.dart 已经够长了，而且这三块跟「浏览/安装」是两回事。
-/// 用法的重点是**指纹**：目录里的公钥是源自报的，App 只能保证「加进来之后不被换」，
+/// 重点是**指纹**：目录公钥是源自报的，App 只能保证「加进来之后不被换」，
 /// 「第一次这个源是不是作者的」只能靠用户拿指纹和作者公布的那串对照。
 Future<void> showSourceSheet(
   BuildContext context, {
@@ -139,7 +138,7 @@ Future<void> addSourceFlow(
   }
 }
 
-/// 扫到「第三方源安装码」后：拉一次目录 → 核对码里的指纹 → 用户确认 → 添加。
+/// 扫到「第三方源安装码」后：拉一次目录 → 核对码里的指纹 → 用户确认 → 添加；
 /// 二维码里的 `repo` 可以是 `owner/repo`，也可以是完整 https 目录地址。
 Future<bool> addScannedSource(
   BuildContext context,

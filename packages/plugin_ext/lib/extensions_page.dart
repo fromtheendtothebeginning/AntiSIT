@@ -1,41 +1,28 @@
 import 'dart:async';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'package:campus_core/campus_core.dart';
 
 import 'market/market_page.dart';
-import 'bundle_import.dart';
-import 'cordis_bundle.dart';
-import 'ext_bridge.dart';
-import 'ext_consent.dart';
-import 'ext_icon.dart';
 import 'ext_open.dart';
 import 'ext_order_page.dart';
-import 'ext_permissions.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
+import 'extensions_page_actions.dart';
+import 'extensions_page_card.dart';
+import 'extensions_page_consent.dart';
+import 'extensions_page_dialogs.dart';
 import 'market/market_installer.dart';
 import 'market/market_source.dart';
 import 'market/market_sources.dart';
 import 'market/market_sources_view.dart';
-import 'scanned_install.dart';
 
 /// 「拓展」页：网页形态的小功能，用户自己加进来。
 ///
-/// 两个标签：**我的**（自己加的与装进来的）与**市场**（[MarketView]，从插件市场装）。
-/// 子页滑到边界后继续拖，拖动经 [NavSwipeHost] 转给主界面，把两个子页接进
-/// 主界面的滑动链：`… 工具 ⇄ 拓展·我的 ⇄ 拓展·市场 ⇄ 我的 …`。
-/// 自己加有三种加法：**填写网址**、**导入压缩包**（html/js/css 三件套，导入后解压成
-/// 一份自包含页面）、**导入 JSON**；发行方还能在源码里放编译前固定的内置拓展
-/// （见 [kBuiltinExtensions]，用户端只读）。
-///
-/// 加进来的每一条以卡片呈现：图标默认取网站 favicon（可自己改成图片网址或 emoji）、
-/// 名称下方是简介、再下面是网址。右上角一个总开关能一下子隐藏**全部**网址
-/// （卡片上那一行直接不显示；编辑 / 详情里始终看得到）。
-/// 点开就是对应网页，网页里带着 [ExtBridge] 那套接口。
+/// 单页列出自己的拓展（加法与市场都收进「添加拓展」）；加进来的每条以卡片呈现，
+/// 点开就是对应网页，网页里带着 `antiSIT` 那套接口。
 class ExtensionsPage extends StatefulWidget {
   const ExtensionsPage({super.key});
 
@@ -51,8 +38,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   /// 当前选中的拓展卡片（顶部尺寸条作用于它，也只有它显示缩放弧线）。
   String? _selectedCardId;
-  /// 本机 App 版本：判已装拓展的「需升级 App」（导入的 JSON 也能声明最低版本，
-  /// 没有市场那道安装门，列表提示与打开拦截就是唯一检查点）。
+
+  /// 本机 App 版本：判已装拓展的「需升级 App」（导入的 JSON 也能声明最低版本）。
   String _appVersion = '';
 
   /// 市场目录在 MarketView.initState 里加载时会同步 notify；那时本页可能正在
@@ -67,15 +54,12 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     MarketSource.I.addListener(_onChanged);
     ExtSourceStore.I.addListener(_onChanged);
     if (!_store.loaded) unawaited(_store.load());
-    // 演示模式的目录是本地假数据（不打网络）：进页面就拉，
-    // 「可更新」角标和点击跳市场才能立刻工作（真实模式仍等市场页打开时再拉）。
+    // 演示模式的目录是本地假数据（不打网络）：进页面就拉，角标与跳市场才能立刻工作
     if (AppState.I.demo && MarketSource.I.status == MarketStatus.idle) {
       unawaited(MarketSource.I.load());
     }
     unawaited(_readAppVersion());
   }
-
-
 
   Future<void> _readAppVersion() async {
     final v = await ExtensionItem.appVersionLoader();
@@ -84,8 +68,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   void _onChanged() {
     if (!mounted) return;
-    // 市场目录在 MarketView.initState 里加载时会同步 notify；那时本页正在 build，
-    // 直接 setState 会炸。只在 build 阶段挪到下一帧，平时立即重建。
+    // 市场目录在本页 build 期间同步 notify：只在 build 阶段挪到下一帧，平时立即重建。
     if (SchedulerBinding.instance.schedulerPhase ==
         SchedulerPhase.persistentCallbacks) {
       if (_rebuildScheduled) return;
@@ -107,11 +90,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     super.dispose();
   }
 
-  // ==================== 打开 ====================
-
+  /// 打开拓展；有新版就直接跳到插件市场并定位到这条，用户在那儿更新。
   Future<void> _open(ExtensionItem e) async {
-    // 有新版：直接跳到插件市场并定位到这条，用户在那儿更新
-    // （要继续用旧版可以长按卡片 → 详情，或装完新版再打开）。
     if (_isUpdatable(e)) {
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => MarketPage(focusId: e.id)),
@@ -120,8 +100,6 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
     openExtension(context, e, onMessage: _toast);
   }
-
-  // ==================== 添加 ====================
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -135,8 +113,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
       );
   }
 
-  /// 「添加拓展」：还是原来的底部菜单，三种加法；另加一项「插件市场」，
-  /// 点进去是市场自己的独立页（市场不和「我的拓展」并排）。
+  /// 「添加拓展」：三种加法，另加一项「插件市场」（市场是自己的独立页）。
   Future<void> _addMenu() async {
     final pick = await showModalBottomSheet<String>(
       context: context,
@@ -205,6 +182,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     );
     if (mounted) setState(() {});
   }
+
   /// 填写网址 / 编辑 / 看详情：同一个弹窗；[isNew] 决定按钮与写盘方式。
   Future<void> _edit({
     ExtensionItem? item,
@@ -214,7 +192,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     final out = await showDialog<ExtensionItem>(
       context: context,
       builder: (_) =>
-          _AddEditDialog(item: item, isNew: isNew, readOnly: readOnly),
+          ExtensionEditDialog(item: item, isNew: isNew, readOnly: readOnly),
     );
     if (out == null) return;
     if (isNew) {
@@ -226,88 +204,17 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
   }
 
-  /// 导入压缩包：选 zip → 解压到本地 → 让用户确认名称/简介/图标 → 入列。
-  Future<void> _importBundle() async {
-    XFile? picked;
-    try {
-      picked = await openFile(
-        acceptedTypeGroups: [
-          const XTypeGroup(label: '拓展压缩包', extensions: ['zip']),
-        ],
+  Future<void> _importBundle() => importExtensionBundle(
+        context: context,
+        store: _store,
+        toast: _toast,
       );
-    } catch (e) {
-      _toast('打开文件选择器失败：$e');
-      return;
-    }
-    if (picked == null) return;
 
-    final bytes = await picked.readAsBytes();
-    final CordisManifest manifest;
-    try {
-      manifest = readBundleManifest(bytes);
-    } on FormatException catch (e) {
-      _toast(e.message);
-      return;
-    } catch (e) {
-      _toast('读取压缩包失败：$e');
-      return;
-    }
-    if (_store.items.any((e) => e.id == manifest.id)) {
-      _toast('已存在 id 为「${manifest.id}」的拓展，请先删除或让作者换一个 id');
-      return;
-    }
-
-    ExtBundle bundle;
-    try {
-      bundle = extractBundle(
-        bytes: bytes,
-        dir: await _store.bundleDir(manifest.id),
+  Future<void> _importJson() => importExtensionJson(
+        context: context,
+        store: _store,
+        toast: _toast,
       );
-    } on FormatException catch (e) {
-      _toast(e.message);
-      return;
-    } catch (e) {
-      _toast('解压失败：$e');
-      return;
-    }
-    if (!mounted) return;
-
-    // 清单已经带了名称 / 简介 / 权限，导入后仍让用户确认卡片显示值。
-    final preset = ExtensionItem(
-      id: manifest.id,
-      name: manifest.name,
-      url: bundle.entry,
-      desc: manifest.desc,
-      bundled: true,
-      runtime: ExtensionItem.runtimeCordis,
-      version: manifest.version,
-      permissions: manifest.permissions,
-      minAppVersion: manifest.minAppVersion,
-    );
-    final item = await showDialog<ExtensionItem>(
-      context: context,
-      builder: (_) => _AddEditDialog(item: preset, isNew: true),
-    );
-    if (item == null) {
-      await _store.deleteBundleDir(manifest.id); // 用户取消了：把刚解压出来的目录一并清掉
-      return;
-    }
-    await _store.add(item);
-    _toast('已导入「${item.name}」');
-  }
-
-  /// 导入 JSON：粘贴一份拓展 JSON（单条或数组），全部校验通过才入列。
-  Future<void> _importJson() async {
-    final list = await showDialog<List<ExtensionItem>>(
-      context: context,
-      builder: (_) => const _ImportDialog(),
-    );
-    if (list == null || !mounted) return;
-    for (final item in list) {
-      await _store.add(item);
-    }
-    _toast('已导入 ${list.length} 个拓展');
-  }
 
   /// 扫一扫加拓展：网址 → 加一条 web 拓展；规定格式的安装码 → 下载安装。
   /// 码型识别与结果面板在扫码插件里，这里只处理「用户确认后」的落库动作。
@@ -335,143 +242,29 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     );
     final item = await showDialog<ExtensionItem>(
       context: context,
-      builder: (_) => _AddEditDialog(item: preset, isNew: true),
+      builder: (_) => ExtensionEditDialog(item: preset, isNew: true),
     );
     if (item == null) return;
     await _store.add(item);
     _toast('已添加「${item.name}」');
   }
 
-  /// 下载 + 校验扫码得到的拓展包：下载过程弹不可取消的进度框，
-  /// 校验通过后把包里的名称 / id / 版本 / 权限列给用户，确认才解压入列。
-  Future<void> _installScannedBundle(ScanBundleOutcome code) async {
-    final installer = ScannedBundleInstaller(store: _store);
-    final result = await showDialog<Object?>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _DownloadDialog(
-        label: '正在下载拓展…',
-        task: () => installer.download(code),
-      ),
-    );
-    if (!mounted) return;
-    if (result is _DownloadFailure) {
-      _toast(_scanError(result.error));
-      return;
-    }
-    if (result is! ScannedBundle) return;
-    final bundle = result;
-
-    final ok = await _confirmScannedInstall(bundle, code.url);
-    if (!mounted || !ok) return;
-    try {
-      final item = await installer.install(bundle);
-      _toast('已安装「${item.name}」');
-    } catch (e) {
-      _toast(_scanError(e));
-    }
-  }
-
-  /// 安装前确认：包里的清单（不是二维码里写的）才是最终内容，权限尤其要看清楚。
-  Future<bool> _confirmScannedInstall(ScannedBundle bundle, String url) async {
-    final m = bundle.manifest;
-    final perms = m.permissions.isEmpty
-        ? '无'
-        : describeSensitivePermissions(m.permissions).join('\n');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('安装「${m.name}」？'),
-        content: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(ctx).size.height * 0.5,
-          ),
-          child: SingleChildScrollView(
-            child: Text(
-              'id：${m.id}\n'
-              '版本：${m.version}\n'
-              '来源：$url\n\n'
-              '敏感权限：\n$perms',
-              style: const TextStyle(fontSize: 12.5, height: 1.6),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('安装'),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
-
-  /// 把下载 / 解压错误翻成一句能给用户看的提示。
-  static String _scanError(Object e) {
-    if (e is FormatException) return e.message;
-    if (e is StateError) return e.message;
-    if (e is TimeoutException) return '下载超时，请检查网络后重试';
-    return '$e';
-  }
-
-  // ==================== 单条菜单 ====================
+  Future<void> _installScannedBundle(ScanBundleOutcome code) =>
+      installScannedExtension(
+        context: context,
+        store: _store,
+        toast: _toast,
+        code: code,
+      );
 
   Future<void> _itemMenu(ExtensionItem e) async {
     final builtin = _store.isBuiltin(e.id);
     if (!mounted) return;
-    final pick = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: const Text('详情'),
-              subtitle: Text(
-                builtin ? '内置拓展：随 App 发布，不能改' : '看完整信息',
-                style: const TextStyle(fontSize: 12),
-              ),
-              onTap: () => Navigator.pop(ctx, 'detail'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.verified_user_outlined),
-              title: const Text('权限'),
-              subtitle: const Text(
-                '静态权限 + 运行时授权',
-                style: TextStyle(fontSize: 12),
-              ),
-              onTap: () => Navigator.pop(ctx, 'consent'),
-            ),
-            if (AppState.I.demo && e.id == 'demo-note') ...[
-              ListTile(
-                leading: const Icon(Icons.restart_alt_rounded),
-                title: const Text('降级到 v1.0.0（重测演示）'),
-                subtitle: const Text('把这条假拓展降回旧版，重走「可更新 → 跳市场」流程',
-                    style: TextStyle(fontSize: 12)),
-                onTap: () => Navigator.pop(ctx, 'demo-downgrade'),
-              ),
-            ],
-            if (!builtin) ...[
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('编辑'),
-                onTap: () => Navigator.pop(ctx, 'edit'),
-              ),
-              ListTile(
-                leading: Icon(Icons.link_off_rounded, color: SemColors.danger),
-                title: Text('删除', style: TextStyle(color: SemColors.danger)),
-                onTap: () => Navigator.pop(ctx, 'delete'),
-              ),
-            ],
-          ],
-        ),
-      ),
+    final pick = await showExtensionItemMenu(
+      context,
+      e,
+      builtin: builtin,
+      demo: AppState.I.demo,
     );
     if (!mounted) return;
     switch (pick) {
@@ -491,121 +284,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
   }
 
-  /// 权限管理：静态权限只读展示；运行时授权逐项开关。
-  Future<void> _manageConsent(ExtensionItem e) async {
-    final grants = await ExtConsentService.I.grants(e.id);
-    if (!mounted) return;
-    final staticLabels = describeSensitivePermissions(e.permissions);
-    final caps = <String>{
-      if (e.permissions.contains('notification')) 'notification.popup',
-      if (e.permissions.contains('clipboard')) 'clipboard.read',
-      if (e.permissions.contains('background')) 'background.keepalive',
-      ...grants.keys,
-    }.toList()..sort();
-    final state = <String, bool?>{for (final cap in caps) cap: grants[cap]};
-    final reset = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialog) => AlertDialog(
-          title: Text('「${e.name}」的权限'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (staticLabels.isNotEmpty) ...[
-                    const Text(
-                      '安装时声明（只读）',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    for (final label in staticLabels)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.lock_outline, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                label,
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    const SizedBox(height: 10),
-                  ],
-                  const Text(
-                    '运行时授权',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                  if (caps.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        '这个拓展没有需要单独确认的能力。',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  for (final cap in caps)
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      title: Text(ExtConsentService.describe(cap)),
-                      subtitle: Text(
-                        state[cap] == true
-                            ? '已允许'
-                            : (state[cap] == false ? '已拒绝' : '未申请；插件用到时会询问'),
-                        style: const TextStyle(fontSize: 11.5),
-                      ),
-                      value: state[cap] == true,
-                      onChanged: (value) async {
-                        if (value) {
-                          await ExtConsentService.I.allow(e.id, cap);
-                        } else {
-                          await ExtConsentService.I.deny(e.id, cap);
-                        }
-                        setDialog(() => state[cap] = value);
-                      },
-                    ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    '关闭后，插件下次用到这项能力会重新询问或直接拒绝；'
-                    '弹窗通知会立即停止。',
-                    style: TextStyle(fontSize: 11.5),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('关闭'),
-            ),
-            if (caps.isNotEmpty)
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('全部重置'),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (reset == true) {
-      await ExtConsentService.I.revokeAll(e.id);
-      _toast('已重置「${e.name}」的运行时授权');
-    }
-  }
-
-  // ==================== 界面 ====================
+  Future<void> _manageConsent(ExtensionItem e) =>
+      manageExtensionConsent(context, e, toast: _toast);
 
   void _setEditing(bool value) {
     if (_editing == value) return;
@@ -621,7 +301,6 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
   }
 
   /// 隐藏全部网址的总开关（卡片上那一行直接不显示，详情里照旧能看到）。
-  /// 藏在标题栏是因为它管的是「整页要不要露网址」，摆在页面上会一直占位置。
   Future<void> _toggleHideUrls() => _store.setHideUrls(!_store.hideUrls);
 
   /// 打开排序页：拖完回来宫格按新顺序排（排序结果由 store 落盘）。
@@ -645,10 +324,8 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白必须在这个 builder **里面**算：它读的是 AppState 里的开关，
-        // 算在外面的话开关一改这里不会重算——留着上一次的留白，表现为「内容跑到
-        // 顶栏底下 / 关掉开关后还空出一截」（issue #12）。它还得在建 Scaffold 之前
-        // 取：body 里的 MediaQuery 已被扣掉状态栏。
+        // 顶栏留白必须在 builder 里算（读 AppState 的开关），且要在建 Scaffold 之前取
+        // （body 里的 MediaQuery 已被扣掉状态栏，issue #12）。
         final topInset = glassTopInset(context);
         final myPage = items.isEmpty
             ? _empty(context, topInset)
@@ -676,8 +353,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）。
-                          // 从这页进去的扫码会把网址 / 拓展安装码带回来，直接用。
+                          // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
                           if (scan != null)
                             _roundAction(
                               Icons.qr_code_scanner_outlined,
@@ -713,9 +389,7 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
             child: Column(
             children: [
               Expanded(
-                // 编辑卡片大小时，点卡片以外的空白处也退出编辑模式：
-                // 编辑态卡片自己不吃点击（onTap 为 null），用 translucent 让点击
-                // 落到这一层，滑动手势不受影响。
+                // 编辑态卡片自己不吃点击（onTap 为 null），用 translucent 让点空白处落到这一层
                 child: _editing
                     ? GestureDetector(
                         behavior: HitTestBehavior.translucent,
@@ -826,63 +500,73 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
       ),
     ),
   );
+
   Widget _grid(
     BuildContext context,
     List<ExtensionItem> items,
     String? selectedId,
     double topInset,
-  ) => CustomScrollView(
-    slivers: [
-      SliverToBoxAdapter(
-        child: FlexibleCardGrid(
-          // 顶部让出悬浮顶栏
-          padding: EdgeInsets.fromLTRB(14, 12 + topInset, 14, 0),
-          items: [
-            for (final e in items)
-              FlexibleGridItem(
-                id: e.id,
-                size: _store.sizeOf(e.id),
-                builder: (context, size, editing) => _card(e, size, editing),
-              ),
-          ],
-          selectedId: selectedId,
-          onSelected: _selectCard,
-          editing: _editing,
-          onEditingChanged: _setEditing,
-          onOrderChanged: (ids) => _store.setOrder(ids),
-          onSizeChanged: (id, size) => _store.setSize(id, size),
-        ),
-      ),
-      SliverPadding(
-        // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：最后一张卡也要能滚出底栏上方。
-        // 整理态时尺寸条贴在底栏上方，那份留白交给它，别再重复叠一次。
-        padding: EdgeInsets.fromLTRB(
-          14,
-          12,
-          14,
-          _editing ? 12 : 24 + MediaQuery.paddingOf(context).bottom,
-        ),
-        sliver: SliverToBoxAdapter(child: _addCard()),
-      ),
-    ],
-  );
+  ) =>
+      CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: FlexibleCardGrid(
+              // 顶部让出悬浮顶栏
+              padding: EdgeInsets.fromLTRB(14, 12 + topInset, 14, 0),
+              items: [
+                for (final e in items)
+                  FlexibleGridItem(
+                    id: e.id,
+                    size: _store.sizeOf(e.id),
+                    builder: (context, size, editing) => ExtensionCard(
+                      item: e,
+                      size: size,
+                      editing: editing,
+                      hideUrls: _store.hideUrls,
+                      appVersion: _appVersion,
+                      updatable: _isUpdatable(e),
+                      onOpen: () => _open(e),
+                      onMore: () => _itemMenu(e),
+                    ),
+                  ),
+              ],
+              selectedId: selectedId,
+              onSelected: _selectCard,
+              editing: _editing,
+              onEditingChanged: _setEditing,
+              onOrderChanged: (ids) => _store.setOrder(ids),
+              onSizeChanged: (id, size) => _store.setSize(id, size),
+            ),
+          ),
+          SliverPadding(
+            // 底栏是玻璃浮层：最后一张卡要能滚出底栏上方；整理态时那份留白交给尺寸条。
+            padding: EdgeInsets.fromLTRB(
+              14,
+              12,
+              14,
+              _editing ? 12 : 24 + MediaQuery.paddingOf(context).bottom,
+            ),
+            sliver: SliverToBoxAdapter(child: ExtensionAddCard(onTap: _addMenu)),
+          ),
+        ],
+      );
 
-  /// 顶栏按钮：用全站统一的悬浮玻璃圆钮（40 直径、thumb 玻璃面 + 描边、无投影），
-  /// 不再自己画 42 的实心圆 + 投影——那样和别的页面大小、阴影都不一致。
+  /// 顶栏按钮：用全站统一的悬浮玻璃圆钮（40 直径、thumb 玻璃面 + 描边、无投影）。
   Widget _roundAction(
     IconData icon,
     String tooltip,
     VoidCallback? onPressed, {
     Color? color,
-  }) => glassTopBarAction(
-    IconButton(
-      tooltip: tooltip,
-      onPressed: onPressed,
-      icon: Icon(icon, size: 22, color: color ?? SemColors.textSecondary),
-      padding: EdgeInsets.zero,
-    ),
-    edge: 4,
-  );
+  }) =>
+      glassTopBarAction(
+        IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          icon: Icon(icon, size: 22, color: color ?? SemColors.textSecondary),
+          padding: EdgeInsets.zero,
+        ),
+        edge: 4,
+      );
 
   /// 市场里这条有没有新版：目录还没拉到时返回 false，拉到后监听会重建。
   bool _isUpdatable(ExtensionItem e) {
@@ -897,736 +581,4 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
     }
     return false;
   }
-
-  Widget? _badge(ExtensionItem e) {
-    if (e.needsNewerApp(_appVersion)) {
-      return Capsule('需升级 App', color: SemColors.danger);
-    }
-    if (_isUpdatable(e)) return Capsule('可更新', color: SemColors.warning);
-    if (e.builtin) return Capsule('内置', color: SemColors.textMuted);
-    return Capsule('已安装', color: SemColors.success);
-  }
-
-  /// 卡片底部左侧：远程写域名，本地包写来源（版本单独靠右）。
-  String _sourceLabel(ExtensionItem e) {
-    if (!e.bundled) {
-      final host = Uri.tryParse(e.url)?.host ?? '';
-      return host.isEmpty ? e.url : host;
-    }
-    if (e.runtime == ExtensionItem.runtimeLegacy) return '旧版网页拓展（需迁移）';
-    if (!e.fromMarket) return '本地 Cordis';
-    return '插件市场 · Cordis';
-  }
-
-  /// 紧凑尺寸下用的小圆点状态：只标「需升级 App / 可更新」这类要处理的事，
-  /// 内置 / 已安装不打扰。完整胶囊仍只在默认尺寸里显示。
-  Color? _statusColor(ExtensionItem e) {
-    if (e.needsNewerApp(_appVersion)) return SemColors.danger;
-    if (_isUpdatable(e)) return SemColors.warning;
-    return null;
-  }
-
-  /// 图标 + 右上角状态点（紧凑尺寸用；默认尺寸用完整胶囊）。
-  Widget _iconWithStatus(
-    ExtensionItem e, {
-    double size = 24,
-    double padding = 8,
-    bool dot = false,
-  }) {
-    final icon = ExtIcon(item: e, size: size, padding: padding);
-    final color = _statusColor(e);
-    if (!dot || color == null) return icon;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        icon,
-        Positioned(
-          right: -1,
-          top: -1,
-          child: Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(color: SemColors.bg, width: 1.5),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _moreButton(
-    ExtensionItem e, {
-    double size = 30,
-    double iconSize = 18,
-  }) => Tooltip(
-    message: e.builtin ? '详情' : '编辑 / 删除',
-    child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => _itemMenu(e),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          // card 本身带透明度，withValues 会覆盖掉 alpha（深色下变近白）：
-          // 先与页面底色合成，得到实底又不发白
-          color: Color.alphaBlend(SemColors.card, SemColors.bg),
-          border: Border.all(color: SemColors.border),
-        ),
-        child: Icon(
-          Icons.more_horiz,
-          size: iconSize,
-          color: SemColors.textMuted,
-        ),
-      ),
-    ),
-  );
-
-  Widget _card(ExtensionItem e, GridCardSize size, bool editing) {
-    final version = e.version.isEmpty ? '' : 'v${e.version}';
-    // 眼睛开关只隐藏网址：本地 / 市场来源与版本不是 URL，照旧显示
-    final showSource = !_store.hideUrls || e.bundled;
-    final showFooter = showSource || version.isNotEmpty;
-    // 排版按尺寸档位的「取向」分（后续加档位只需补一种排法）
-    final kind = size.kind;
-    final tile = kind == GridCardKind.iconOnly;
-    final bar = kind == GridCardKind.row;
-    final narrow = kind == GridCardKind.stack;
-    final tall = size == GridCardSize.tall;
-
-    Widget footer({double fontSize = 10.5}) {
-      if (!showFooter) return const SizedBox.shrink();
-      return Row(
-        children: [
-          if (showSource) ...[
-            if (!e.bundled) ...[
-              Icon(
-                Icons.public,
-                size: fontSize + 1.5,
-                color: SemColors.textMuted,
-              ),
-              const SizedBox(width: 4),
-            ],
-            Expanded(
-              child: Text(
-                _sourceLabel(e),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: fontSize,
-                  color: SemColors.textMuted,
-                ),
-              ),
-            ),
-          ] else
-            const Spacer(),
-          if (version.isNotEmpty) ...[
-            const SizedBox(width: 6),
-            Text(
-              version,
-              style: TextStyle(fontSize: fontSize, color: SemColors.textMuted),
-            ),
-          ],
-        ],
-      );
-    }
-
-    if (tile) {
-      // 1x1 小方格：**只显示图标**（居中，略放大）。这么小的一格放名字只会被截成
-      // 两三个字，图标更好认；名称靠长按选中后顶部尺寸条那一行、或放大后再看。
-      return AppCard(
-        bottomGap: 0,
-        radius: 14,
-        padding: EdgeInsets.zero,
-        onTap: editing ? null : () => _open(e),
-        child: Center(
-          child: _iconWithStatus(e, size: 20, padding: 5, dot: true),
-        ),
-      );
-    }
-
-    if (bar) {
-      // 1x3 横条：图标在左、名称与简介在右；「更多」靠右上，
-      // 给右下角缩放弧线让出位置（这一档卡片只有 59dp 高）
-      return AppCard(
-        bottomGap: 0,
-        radius: 16,
-        padding: const EdgeInsets.fromLTRB(10, 7, 6, 7),
-        onTap: editing ? null : () => _open(e),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _iconWithStatus(e, size: 18, padding: 6, dot: true),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    e.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                      height: 1.15,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    e.desc,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      height: 1.25,
-                      color: SemColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 2),
-            _moreButton(e, size: 22, iconSize: 14),
-          ],
-        ),
-      );
-    }
-
-    if (narrow) {
-      // 2x1 竖条：卡面只有 55dp 宽、内容区约 40dp，放不下「图标 + 三点」并排。
-      // 所以三点按钮做成**右上角浮层**（允许轻微压住图标块的边），
-      // 图标保持在左上、名称贴底两行；这样三点不会被卡片裁掉。
-      return AppCard(
-        bottomGap: 0,
-        radius: 16,
-        padding: const EdgeInsets.fromLTRB(8, 8, 5, 8),
-        onTap: editing ? null : () => _open(e),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _iconWithStatus(e, size: 16, padding: 5, dot: true),
-                const Spacer(),
-                Text(
-                  e.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11.5,
-                    height: 1.2,
-                  ),
-                ),
-              ],
-            ),
-            // 浮层去掉位，不再挤占那一行的宽度
-            Positioned(
-              top: -3,
-              right: -3,
-              child: _moreButton(e, size: 18, iconSize: 12),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (tall) {
-      // 2x2 竖卡：图标 + 更多在顶部一行，名称 / 简介往下排
-      return AppCard(
-        bottomGap: 0,
-        radius: 16,
-        padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
-        onTap: editing ? null : () => _open(e),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _iconWithStatus(e, size: 17, padding: 6, dot: true),
-                const Spacer(),
-                _moreButton(e, size: 22, iconSize: 14),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              e.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                height: 1.15,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Expanded(
-              child: Text(
-                e.desc,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.3,
-                  color: SemColors.textSecondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // 默认 2x3：图标 36 + 标题 + 单行简介 + 来源/版本
-    final badge = _badge(e);
-    return AppCard(
-      bottomGap: 0,
-      radius: 16,
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-      onTap: editing ? null : () => _open(e),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              ExtIcon(item: e),
-              // 状态胶囊最多见的是「需升级 App」：窄屏上给它可缩的剩余宽度，
-              // 宁可整体缩一点，也不要顶出卡片右边。
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: badge == null
-                      ? const SizedBox.shrink()
-                      : FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerRight,
-                          child: badge,
-                        ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              _moreButton(e),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            e.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 15,
-              height: 1.15,
-            ),
-          ),
-          const SizedBox(height: 2),
-          SizedBox(
-            height: 15,
-            child: Text(
-              e.desc,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.25,
-                color: SemColors.textSecondary,
-              ),
-            ),
-          ),
-          const Spacer(),
-          footer(),
-        ],
-      ),
-    );
-  }
-
-  Widget _addCard() => SizedBox(
-    height: 56,
-    child: CustomPaint(
-      painter: _DashedBorderPainter(
-        color: SemColors.borderStrong.withValues(alpha: 0.55),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: _addMenu,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: SemColors.borderStrong),
-                ),
-                child: Icon(
-                  Icons.add_rounded,
-                  size: 18,
-                  color: SemColors.textSecondary,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                '添加拓展',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: SemColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-/// 下载失败：把异常包一层再从进度框带回来（失败和结果走同一个返回值）。
-class _DownloadFailure {
-  const _DownloadFailure(this.error);
-
-  final Object error;
-}
-
-/// 不可取消的下载进度框：任务完成 / 失败时自己关掉，并把结果交给调用方。
-class _DownloadDialog<T> extends StatefulWidget {
-  const _DownloadDialog({required this.label, required this.task});
-
-  final String label;
-  final Future<T> Function() task;
-
-  @override
-  State<_DownloadDialog<T>> createState() => _DownloadDialogState<T>();
-}
-
-class _DownloadDialogState<T> extends State<_DownloadDialog<T>> {
-  @override
-  void initState() {
-    super.initState();
-    Future<T>.microtask(widget.task)
-        .then((value) {
-          if (mounted) Navigator.of(context).pop<Object?>(value);
-        })
-        .catchError((Object e, StackTrace _) {
-          if (mounted) Navigator.of(context).pop<Object?>(_DownloadFailure(e));
-        });
-  }
-
-  @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: false,
-    child: AlertDialog(
-      content: Row(
-        children: [
-          const SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2.5),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(widget.label, style: const TextStyle(fontSize: 13.5)),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-/// 虚线圆角边框：给「添加拓展」占位卡用（不引第三方 dashed border 包）。
-class _DashedBorderPainter extends CustomPainter {
-  const _DashedBorderPainter({required this.color});
-
-  final Color color;
-
-  static const double radius = 16;
-  static const double dash = 6;
-  static const double gap = 5;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    final path = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(
-          Offset.zero & size,
-          const Radius.circular(radius),
-        ),
-      );
-    for (final metric in path.computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        final end = (distance + dash).clamp(0.0, metric.length).toDouble();
-        canvas.drawPath(metric.extractPath(distance, end), paint);
-        distance = end + gap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
-      oldDelegate.color != color;
-}
-
-/// 添加 / 编辑 / 详情弹窗：输入控制器归它的 State 管——弹窗退场动画期间控件还在
-/// 重建，在外面 await 完就 dispose 会撞上「用了已释放的控制器」。
-/// [readOnly] = 内置拓展的详情（只看不改）。校验通过就把 [ExtensionItem] 返回。
-class _AddEditDialog extends StatefulWidget {
-  const _AddEditDialog({this.item, required this.isNew, this.readOnly = false});
-
-  final ExtensionItem? item;
-  final bool isNew;
-  final bool readOnly;
-
-  @override
-  State<_AddEditDialog> createState() => _AddEditDialogState();
-}
-
-class _AddEditDialogState extends State<_AddEditDialog> {
-  late final TextEditingController _name = TextEditingController(
-    text: widget.item?.name ?? '',
-  );
-  late final TextEditingController _url = TextEditingController(
-    text: widget.item?.bundled == true ? '' : widget.item?.url ?? '',
-  );
-  late final TextEditingController _desc = TextEditingController(
-    text: widget.item?.desc ?? '',
-  );
-  late final TextEditingController _icon = TextEditingController(
-    text: widget.item?.icon ?? '',
-  );
-  String? _error;
-
-  bool get _bundled => widget.item?.bundled == true;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _url.dispose();
-    _desc.dispose();
-    _icon.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final url = _bundled
-        ? widget.item!.url
-        : ExtensionItem.normalizeUrl(_url.text);
-    if (url == null) {
-      setState(() => _error = '网址要能打开：填完整域名（没写协议会按 https 补）');
-      return;
-    }
-    final name = _name.text.trim();
-    final desc = _desc.text.trim();
-    final icon = _icon.text.trim();
-    // 编辑既有条目一律走 copyWith：市场字段（版本 / 哈希 / 权限 / 来源）不能因为
-    // 「在 App 里改了个名字」就丢掉——丢了既看不到更新，权限门也会跟着失效。
-    final base =
-        widget.item ??
-        ExtensionItem(
-          id: ExtensionItem.newId(),
-          name: '',
-          url: url,
-          bundled: _bundled,
-        );
-    Navigator.pop(
-      context,
-      base.copyWith(
-        name: name.isEmpty
-            ? (base.name.isNotEmpty
-                  ? base.name
-                  : (_bundled ? '本地拓展' : Uri.parse(url).host))
-            : name,
-        url: url,
-        desc: desc,
-        icon: icon,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ro = widget.readOnly;
-    return AlertDialog(
-      title: Text(
-        ro
-            ? '拓展详情'
-            : widget.isNew
-            ? '添加拓展'
-            : '编辑拓展',
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (ro)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Text(
-                  _bundled ? '内置 / 本地拓展：入口是一个本地文件' : '内置拓展：随 App 发布，不能在这里改',
-                  style: TextStyle(fontSize: 12, color: SemColors.textMuted),
-                ),
-              ),
-            TextField(
-              controller: _name,
-              enabled: !ro,
-              autofocus: !ro,
-              decoration: const InputDecoration(
-                labelText: '名称',
-                hintText: '例如：课程表工具',
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (_bundled)
-              // 压缩包导入的：入口是解压出来的本地文件，改它没意义
-              TextField(
-                enabled: false,
-                controller: TextEditingController(text: widget.item!.url),
-                decoration: const InputDecoration(
-                  labelText: '入口文件',
-                  helperText: '导入压缩包解压出来的 index.html',
-                ),
-              )
-            else
-              TextField(
-                controller: _url,
-                enabled: !ro,
-                keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
-                  labelText: '网址',
-                  hintText: 'https://example.com/app',
-                ),
-              ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _desc,
-              enabled: !ro,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: '简介（可空）',
-                hintText: '一句话说明它做什么，显示在卡片名称下方',
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _icon,
-              enabled: !ro,
-              decoration: const InputDecoration(
-                labelText: '图标（可空）',
-                hintText: 'line:handyman / 图片网址 / emoji；留空用网站 favicon',
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                _error!,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: SemColors.danger,
-                  height: 1.5,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(ro ? '关闭' : '取消'),
-        ),
-        if (!ro)
-          FilledButton(
-            onPressed: _submit,
-            child: Text(widget.isNew ? '添加' : '保存'),
-          ),
-      ],
-    );
-  }
-}
-
-/// 导入弹窗：粘贴一份拓展 JSON（单条或数组），解析通过就把整批返回给调用方。
-class _ImportDialog extends StatefulWidget {
-  const _ImportDialog();
-
-  @override
-  State<_ImportDialog> createState() => _ImportDialogState();
-}
-
-class _ImportDialogState extends State<_ImportDialog> {
-  final _text = TextEditingController();
-  String? _error;
-
-  @override
-  void dispose() {
-    _text.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    try {
-      Navigator.pop(context, ExtensionItem.parseImported(_text.text));
-    } on FormatException catch (e) {
-      setState(() => _error = e.message);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('导入拓展'),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '粘贴拓展 JSON（单条或数组，字段 name / url / desc / icon）：',
-            style: TextStyle(fontSize: 12.5),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _text,
-            maxLines: 6,
-            autofocus: true,
-            style: const TextStyle(fontSize: 12, height: 1.5),
-            decoration: const InputDecoration(
-              hintText: '[{"name": "我的拓展", "url": "https://example.com"}]',
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _error!,
-              style: TextStyle(
-                fontSize: 12,
-                color: SemColors.danger,
-                height: 1.5,
-              ),
-            ),
-          ],
-        ],
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('取消'),
-      ),
-      FilledButton(onPressed: _submit, child: const Text('导入')),
-    ],
-  );
 }

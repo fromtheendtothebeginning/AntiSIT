@@ -34,12 +34,10 @@ class ExtCookieBridge {
     await _channel.invokeMethod<bool>('clear');
   }
 
-  /// 只删这些域的 Cookie（`login.clear` 用）：登出后下次打开登录页才是未登录态。
+  /// 只删这些域的 Cookie（`login.clear` 用）。
   ///
-  /// 返回 `{ok, scoped}`：
-  /// * `ok` 为 false 表示清完仍读得到 Cookie；
-  /// * `scoped` 为 false 表示按域精确删没能清干净、**兜底把整个 CookieStore 清了**
-  ///   ——此时其它 WebView 的登录态也没了，拓展要如实告诉用户。
+  /// `ok=false` 表示清完仍读得到 Cookie；`scoped=false` 表示按域精确删没清干净、
+  /// **兜底清了整个 CookieStore**（别的 WebView 登录态也没了，要如实告诉用户）。
   static Future<({bool ok, bool scoped})> remove(List<String> urls) async {
     if (!supported) {
       throw UnsupportedError('登录页目前只支持 Android');
@@ -73,9 +71,8 @@ class ExtCookieBridge {
 
   /// 一个主机名可能要删的域，从最长到最短（至少保留两级）。
   ///
-  /// 学习通的登录态大多是**父域 Cookie**（`Domain=.chaoxing.com`），
-  /// 删 `mooc1.chaoxing.com` 的 host-only Cookie 删不掉它——必须按父域逐个下发。
-  /// 原生侧 `CookieBridge.removeCookies` 用的就是这套候选（两边规则要一致）。
+  /// 学习通的登录态多是**父域 Cookie**（`Domain=.chaoxing.com`），只删 host-only
+  /// 删不掉，所以按父域逐个下发；原生侧 `CookieBridge.removeCookies` 用同一套候选。
   static List<String> domainCandidates(String host) {
     final parts = host
         .trim()

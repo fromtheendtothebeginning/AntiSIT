@@ -1,14 +1,8 @@
-/// 拓展的文件读写：只碰用户通过**系统文件选择器**明确选中的文件。
+/// 拓展的文件读写：只碰用户通过**系统文件选择器**明确选中的文件（pick / save）。
 ///
-/// * `pick` —— 打开系统文件选择器，把选中文件的内容（文本 / base64）交给拓展；
-/// * `save` —— 打开系统「保存到」选择器，把拓展给的内容写进用户选的位置。
-///
-/// 刻意不做「按任意路径读写」：那需要 MANAGE_EXTERNAL_STORAGE 之类的宽权限，
-/// 也会让市场拓展拿到 App 沙盒之外的入口。系统选择器本身就是用户的一次明确授权，
-/// 每次读写都由用户挑文件 / 挑位置，拓展拿不到路径，只拿到内容。
-///
-/// 大小上限：单文件 8 MB、一次最多 10 个、合计 16 MB。超过就报错，不做截断——
-/// 截断过的文件交回拓展只会留下难查的损坏数据。
+/// 刻意不做「按任意路径读写」：那要宽权限，也会让市场拓展拿到 App 沙盒外的入口；
+/// 系统选择器本身就是一次明确授权。上限：单文件 8 MB、一次 10 个、合计 16 MB，
+/// 超过就报错不截断（截断过的文件只会留下难查的损坏数据）。
 library;
 
 import 'dart:convert';
@@ -43,9 +37,8 @@ class ExtFilesService {
   /// Android 侧用 ACTION_CREATE_DOCUMENT 保存（见 `ExtFilesBridge.kt`）。
   static const MethodChannel _channel = MethodChannel('antisit/ext_files');
 
-  /// `files.pick({accept?, multiple?, encoding?})`。
-  ///
-  /// 返回 `{files: [{name, size, mime, text? | base64?}]}`；用户取消时 `files` 为空。
+  /// `files.pick({accept?, multiple?, encoding?})` → `{files: [{name, size, mime, text?/base64?}]}`；
+  /// 用户取消时 `files` 为空。
   Future<Map<String, Object?>> pick(Object? args) async {
     final a = args is Map
         ? args
@@ -101,9 +94,7 @@ class ExtFilesService {
     return {'files': out};
   }
 
-  /// `files.save({name, text? | base64?, mime?})`。
-  ///
-  /// 用户在系统「保存到」里选好位置并确认后返回 true；取消返回 false。
+  /// `files.save({name, text?/base64?, mime?})`：用户在系统「保存到」里确认后返回 true。
   Future<bool> save(Object? args) async {
     if (args is! Map) throw const ExtFilesException('files.save 要带 {name, text|base64}');
     var name = _safeFileName('${args['name'] ?? ''}');
@@ -155,7 +146,7 @@ class ExtFilesService {
     }
   }
 
-  /// `accept` 支持字符串或数组：`.csv` / `csv` 当扩展名，`text/csv` / `image/*` 当 MIME。
+  /// `accept` 支持字符串或数组：`.csv` / `csv` 当扩展名，`text/csv` / `image/*` 当 MIME；
   /// 不传 = 任意文件。
   static List<XTypeGroup> typeGroupsFromAccept(Object? raw) {
     final items = <String>[];
@@ -188,8 +179,7 @@ class ExtFilesService {
     ];
   }
 
-  /// 保存时的文件名：去掉路径分隔符与控制字符，避免把清单/路径写穿。
-  /// 空串由调用方补默认名。
+  /// 保存时的文件名：去掉路径分隔符与控制字符，避免把清单 / 路径写穿（空串由调用方补默认名）。
   static String _safeFileName(String raw) {
     var name = raw.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_').trim();
     if (name.length > 120) {

@@ -28,9 +28,7 @@ class ScannedBundle {
 
 /// 扫码安装：二维码 → 下载 → **校验 sha256** → 读 ext.json → 解压入列。
 ///
-/// 只接受 https 且必须带 sha256：二维码可以在任何地方被换成另一张图，
-/// 下载完先核对内容，对不上连解压都不做。安装前由页面把包里的名称 / id / 权限
-/// 列给用户确认。
+/// 只接受 https 且必须带 sha256（二维码可能被换成另一张图），对不上连解压都不做。
 class ScannedBundleInstaller {
   ScannedBundleInstaller({ExtensionStore? store}) : store = store ?? ExtensionStore.I;
 

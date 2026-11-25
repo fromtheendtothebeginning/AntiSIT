@@ -12,17 +12,15 @@ import 'extension_item.dart';
 
 /// 拓展清单 + 每个拓展自己的键值存储。
 ///
-/// 清单 = [kBuiltinExtensions]（编译前固定的，随包发布、不落盘）+ 用户自己加的
-/// （落在 `plugin.ext.items`）。每个拓展的键值数据落在 `plugin.ext.data.<id>.*`；
-/// 压缩包导入的解压文件落在 `<文档目录>/ext/<id>/`。页面监听它重建。
+/// 清单 = [kBuiltinExtensions]（编译前固定，不落盘）+ 用户自己加的（`plugin.ext.items`）；
+/// 每个拓展的键值数据在 `plugin.ext.data.<id>.*`，解压文件在 `<文档目录>/ext/<id>/`。
 class ExtensionStore extends ChangeNotifier {
   ExtensionStore();
 
   /// 宿主启动时换成真实实例；测试里换成干净的（与 `PluginRegistry.I` 同一个套路）。
   static ExtensionStore I = ExtensionStore();
 
-  /// 编译前固定的内置拓展（默认就是源码里的 [kBuiltinExtensions]；
-  /// 单测里可以替换成临时清单来验「内置不可删改」）。
+  /// 编译前固定的内置拓展（单测里可换成临时清单来验「内置不可删改」）。
   static List<ExtensionItem> builtins = kBuiltinExtensions;
 
   static const String _kItems = 'plugin.ext.items';
@@ -35,21 +33,16 @@ class ExtensionStore extends ChangeNotifier {
   List<ExtensionItem> _items = const [];
 
   /// 接口给**内置拓展**改的卡片显示值（extId → {name / desc / icon}）。
-  /// 内置项本身不落盘（清单在源码里，见 [builtins]），所以它们的接口改动只能另存一处；
-  /// 用户自己加的拓展不需要这一层——接口直接改清单条目（见 [setCard]）。
+  /// 内置项本身不落盘，改动只能另存这一层（用户自己加的走清单条目，见 [setCard]）。
   Map<String, Map<String, String>> _builtinCard = {};
 
   /// 卡片的自定义排序（按拓展 id 记）：空 = 默认顺序（内置在前，其后按添加先后）。
-  /// 增删拓展都不用改它——没排到的按原顺序接在后面，已删的留在里面也无害。
   List<String> _order = const [];
 
-  /// 卡片的自定义尺寸（按拓展 id 记）：空 = 全部默认 2x3（半屏宽 × 常规高）。
-  /// 和排序一样，没记到的用默认值，已删的条目在删除 / 读盘时清掉。
+  /// 卡片的自定义尺寸（按拓展 id 记）：空 = 全部默认 2x3。
   Map<String, GridCardSize> _sizes = <String, GridCardSize>{};
 
-  /// 当前的拓展清单（副本，外部改不动）。默认内置排在前面，用户拖过排序后按
-  /// [_order] 排（见 [setOrder]）。内置项已套上接口覆盖值：调用方拿到的一律是
-  /// **卡片上实际显示**的那份。
+  /// 当前的拓展清单（副本，外部改不动）：内置在前，按 [_order] 排，内置项已套上覆盖值。
   List<ExtensionItem> get items => List.unmodifiable(_applyOrder([
         for (final e in _items) e.builtin ? _withBuiltinCard(e) : e,
       ]));
@@ -134,8 +127,7 @@ class ExtensionStore extends ChangeNotifier {
     }
   }
 
-  /// 隐藏全部网址（拓展页右上角那一个总开关）：卡片上直接不显示网址那一行。
-  /// 编辑 / 详情里始终看得到，不然就没法改。
+  /// 隐藏全部网址的总开关：卡片上直接不显示网址那一行（编辑 / 详情里始终看得到）。
   bool hideUrls = false;
 
   /// 是否已经从本地读过一次（页面据此决定要不要 load）。
@@ -159,11 +151,9 @@ class ExtensionStore extends ChangeNotifier {
     _sizes = _parseSizes(sp.getString(_kSizes))
       ..removeWhere((id, size) =>
           !alive.contains(id) || size == GridCardSize.standard);
-    // 演示模式：种一条「市场装的旧版」假拓展，配合市场里的演示目录演示
-    // 「可更新 → 点卡片跳市场 → 更新」全流程；退出演示时清掉 demo-* 条目。
+    // 演示模式：种一条「市场装的旧版」假拓展，配合演示目录走「可更新 → 跳市场 → 更新」；
+    // 退出演示时清掉 demo-* 条目（已更新到 v2.0.0 后不自动降回，靠 demoResetNote 手动重置）。
     if (AppState.I.demo) {
-      // 没装过就种一条旧版；已经更新到目录版本（v2.0.0）后**不再降回去**，
-      // 但提供「演示记事本」长按菜单里的「降级演示」来手动重置，见 demoResetNote。
       if (!_items.any((e) => e.id == 'demo-note')) {
         _items = [..._items, _demoInstalledNote()];
         await _persist();
@@ -240,13 +230,8 @@ class ExtensionStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 换掉某条拓展卡片上的显示值（拓展网页用 `card.setName` / `card.setDesc` /
-  /// `card.setIcon` 接口改自己的卡片，见 [ExtBridge]）。
-  /// 找不到这条拓展 → false（调用方据此报错）。
-  ///
-  /// 用户自己加的拓展直接改清单条目——用户在 App 里的编辑与接口写的是同一条数据，
-  /// 后写的生效；内置拓展的改动落在 [ExtensionStore._builtinCard] 覆盖层里
-  /// （覆盖只影响卡片显示，不影响它在源码清单里的定义）。
+  /// 换掉某条拓展卡片上的显示值（网页用 `card.setName` / `setDesc` / `setIcon` 改自己的
+  /// 卡片）；找不到这条拓展返回 false。用户加的改清单条目，内置的落在 [_builtinCard] 覆盖层。
   Future<bool> setCard(String id, {String? name, String? desc, String? icon}) async {
     final i = _items.indexWhere((e) => e.id == id);
     if (i < 0) return false;
@@ -296,11 +281,8 @@ class ExtensionStore extends ChangeNotifier {
     }
   }
 
-  // ==================== 压缩包导入 ====================
-
-  /// 拓展解压目录的根目录从哪儿来（`<文档目录>/ext/<id>`）。
-  /// 单测里 path_provider 没有实现，所以留一个可替换的取目录函数
-  /// （与 `SiteIcon.loader`、`ExtensionStore.I` 同一个套路）。
+  /// 拓展解压目录的根目录来源（`<文档目录>/ext/<id>`）；单测里 path_provider 没实现，
+  /// 所以留一个可替换的取目录函数。
   static Future<String> Function() documentsDirectory =
       () async => (await getApplicationDocumentsDirectory()).path;
 
@@ -318,8 +300,6 @@ class ExtensionStore extends ChangeNotifier {
 
   /// 删掉某个拓展的解压目录（导入取消时清刚解出来的文件用）。
   Future<void> deleteBundleDir(String id) => _deleteBundle(id);
-
-  // ==================== 拓展自己的存储（按拓展 id 隔离）====================
 
   Future<Object?> dataGet(String extId, String key) async {
     final sp = await SharedPreferences.getInstance();
@@ -352,8 +332,6 @@ class ExtensionStore extends ChangeNotifier {
     }
     return keys.length;
   }
-
-  // ==================== 落盘 ====================
 
   /// 只写用户自己加的（内置的在源码清单里，不落盘——改清单升级 App 就生效）。
   Future<void> _persist() async {

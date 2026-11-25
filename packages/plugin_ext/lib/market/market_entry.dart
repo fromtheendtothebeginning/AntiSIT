@@ -6,9 +6,8 @@ import '../extension_item.dart' show compareVersions;
 
 /// 市场目录（`market.json`）里的一条：只带「装得下来」需要的东西。
 ///
-/// 目录由维护者签名（见 [MarketSource]），这份解析只负责把它读成对象——
-/// 校验字段合法性的是签名前的工具（`AntiSIT-market` 仓库的 `market_tool check`），
-/// 所以这里对单条坏数据是**跳过**（记一条日志），不让它把整页拖崩。
+/// 字段合法性由签名前的工具校验，所以这里对单条坏数据是跳过（记一条日志），
+/// 不让它把整页拖崩。
 class MarketEntry {
   const MarketEntry({
     required this.id,
@@ -61,7 +60,7 @@ class MarketEntry {
   final String minAppVersion;
 
   /// 这条来自哪个源：**官方目录是空串**，第三方源是它解析出来的 base 地址
-  /// （下载时用 `base + zip`，所以 App 不需要为第三方源再准备镜像）。
+  /// （下载时用 `base + zip`，App 不用为第三方源另备镜像）。
   final String base;
 
   /// 源 id（`''` = 官方目录）。用来判断「同一个 id 是不是换了个源在装」。
@@ -76,8 +75,7 @@ class MarketEntry {
 
   bool get isLegacyBundle => isBundle && runtime != 'cordis';
 
-  /// 「需要升级 App」的判断。[appVersion] 形如 `1.16.0`；
-  /// 读不到（空串）不设门——拿不到本机版本时宁可放行，别把市场锁死。
+  /// 「需要升级 App」的判断；读不到本机版本（空串）不设门，别把市场锁死。
   bool needsNewerApp(String appVersion) =>
       minAppVersion.isNotEmpty &&
       appVersion.isNotEmpty &&
@@ -154,8 +152,7 @@ String catalogPublicKeyOf(List<int> bytes) {
 }
 
 /// 公钥指纹：`sha256(公钥字节)` 前 12 位，按 4 位分组（`A1B2-C3D4-E5F6`）。
-/// **与市场仓库 `market_tool` 的 `keyFingerprint` 必须一致**——作者公布的指纹
-/// 就是它，用户添加源时核对的也是它。
+/// **必须与市场仓库 `market_tool` 的 `keyFingerprint` 一致**（作者公布、用户核对的就是它）。
 String keyFingerprintOf(String publicKeyBase64) {
   try {
     final hex = sha256.convert(base64Decode(publicKeyBase64)).toString().toUpperCase();

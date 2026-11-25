@@ -4,12 +4,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// 拓展通知的宿主实现：市场拓展声明 `notification` 权限后，可以用
-/// `ctx.notify.show / schedule / cancel / cancelAll` 发本地通知。
+/// 拓展通知的宿主实现：拓展声明 `notification` 权限后可用 `ctx.notify.*` 发本地通知。
 ///
-/// 渠道与上课提醒分开（`ext_notify`），取消也按 id 逐条撤——`cancelAll()` 只清
-/// 这条拓展自己排过的通知，不会误伤课表提醒。id 走 0x40000000 以上的区间，
-/// 避开上课提醒的 30 位哈希。
+/// 渠道与上课提醒分开（`ext_notify`），`cancelAll()` 只清这条拓展自己排过的通知；
+/// id 走 0x40000000 以上区间，避开上课提醒的 30 位哈希。
 abstract class ExtNotificationService {
   /// 测试可以换成假实现（不碰系统通知）。
   static ExtNotificationService instance = PlatformExtNotificationService();
@@ -143,8 +141,6 @@ class PlatformExtNotificationService implements ExtNotificationService {
     await sp.remove(_idsKey(extId));
   }
 
-  // ==================== 初始化 / 权限 ====================
-
   Future<void> _ensureReady() async {
     final pending = _initFuture ??= _init();
     try {
@@ -240,8 +236,6 @@ class PlatformExtNotificationService implements ExtNotificationService {
     }
     return tz.getLocation('UTC');
   }
-
-  // ==================== id 与已排记录 ====================
 
   static int _idFor(String extId, String key) {
     var hash = 17;

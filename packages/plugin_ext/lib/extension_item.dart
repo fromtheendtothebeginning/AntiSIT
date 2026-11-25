@@ -3,10 +3,9 @@ import 'dart:io';
 
 import 'package:package_info_plus/package_info_plus.dart';
 
-/// 一条拓展：名字 + 打开内容（远程网址，或导入的压缩包入口）。
+/// 一条拓展：名字 + 打开内容（远程网址，或导入压缩包的本地入口）。
 ///
-/// App 端不内置拓展——清单默认只有 [kBuiltinExtensions]（编译前固定，默认为空），
-/// 其余全靠用户自己加（见 [ExtensionStore]）或从插件市场装（[fromMarket]）。
+/// App 端不内置拓展（默认清单 [kBuiltinExtensions] 为空），其余靠用户自己加或从市场装。
 class ExtensionItem {
   const ExtensionItem({
     required this.id,
@@ -34,13 +33,11 @@ class ExtensionItem {
   /// 旧版 html 压缩包：运行时已切换到 Cordis，这种只能提示迁移。
   static const String runtimeLegacy = 'legacy';
 
-  /// 稳定 id：生成一次就跟着数据走（存储、每个拓展的键值数据隔离都按它）。
-  /// **接口改名称不改 id**：卡片上显示的名字可以变，存储与隔离仍按 id。
+  /// 稳定 id：生成一次就跟着数据走（存储与数据隔离都按它，接口改名称不改 id）。
   final String id;
   final String name;
 
-  /// 接口（`card.setName` / `card.setDesc` / `card.setIcon`）的长度上限，
-  /// 与卡片上的位置对应：名称一行、简介两行、文字图标一个小方块。
+  /// 接口改卡片显示值（`card.setName` 等）的长度上限，与卡片上的位置对应。
   static const int nameMaxLength = 20;
   static const int descMaxLength = 60;
   static const int iconTextMaxLength = 4;
@@ -51,44 +48,35 @@ class ExtensionItem {
   /// 简介：显示在卡片名称下方（可空）。
   final String desc;
 
-  /// 自定义图标：`line:<name>` 镂空线性图标、一个图片网址，或一段短文字 / emoji
-  /// （空 = 用网站 favicon；Cordis 拓展空着则用镂空拓展图标）。
+  /// 自定义图标：`line:<name>` 镂空图标、图片网址，或短文字 / emoji（空 = 网站 favicon）。
   final String icon;
 
   /// 来自导入的压缩包（[url] 是本地入口文件路径，不是网址）。
   final bool bundled;
 
-  /// 编译前固定的内置拓展：随包发布，用户不能删、不能改（接口仍可改卡片显示值，
-  /// 见 [ExtensionStore.setCard]）。
+  /// 编译前固定的内置拓展：随包发布，用户不能删改（接口仍可改卡片显示值）。
   final bool builtin;
 
-  /// 市场里装的才有：清单里的版本号（`''` = 不是市场装的 / 没写版本）。
-  /// 更新判定看它——版本变了，或者同版本但 [sha256] 变了（作者重发了同一版），
-  /// 都算「有更新」。
+  /// 市场里装的才有：清单里的版本号（`''` = 没写）；版本或 [sha256] 变了都算有更新。
   final String version;
 
-  /// 市场里装的才有：这份内容的 sha256（清单里记的那个值，装的时候校验过）。
+  /// 市场里装的才有：这份内容的 sha256（清单里记的值，装的时候校验过）。
   final String sha256;
 
-  /// 市场清单里声明的权限（`storage` / `network` 这类敏感接口）。
-  /// **只对 [fromMarket] 的拓展生效**：声明了才放行，没声明就拒（见 `ExtBridge`）。
+  /// 市场清单里声明的权限。**只对 [fromMarket] 的拓展生效**：声明了才放行，否则拒。
   final List<String> permissions;
 
-  /// 来自插件市场。市场装的拓展内容来自别人，接口按 [permissions] 放行；
-  /// 用户自己填网址 / 自己挑压缩包装的照旧能用全套接口（来源是他自己选的）。
+  /// 来自插件市场：接口按 [permissions] 放行；用户自己加的照旧能用全套接口。
   final bool fromMarket;
 
-  /// 装它的是哪个源：官方目录是 `''`，第三方源是那个源的 id。
-  /// 用来挡住「另一个源拿同一个 id 把已装的插件顶掉」——同一 id 换源装会被拒。
+  /// 装它的是哪个源：官方目录是 `''`，第三方源是那个源的 id；
+  /// 用来挡住「另一个源拿同一 id 把已装的插件顶掉」。
   final String sourceId;
 
-  /// 跑这条拓展需要的最低 App 版本（`''` = 没要求）。市场条目与导入的 JSON
-  /// 都可以声明；当前 App 低于它 → 市场里装不了，已装的照旧标「需升级 App」、
-  /// 打开时拦下（见 `ext_open.dart`）。
+  /// 跑这条拓展需要的最低 App 版本（`''` = 没要求）：装不了 / 标「需升级 App」/ 打开拦截。
   final String minAppVersion;
 
-  /// 运行形态：`web`（远程网页）/ `cordis`（本地 Cordis 插件）/ `legacy`（旧版
-  /// html 压缩包，已不再执行）。落盘数据没有这个字段时，本地包按 legacy 处理。
+  /// 运行形态：`web`（远程网页）/ `cordis`（本地插件）/ `legacy`（旧版 html 包，已不执行）。
   final String runtime;
 
   bool get isCordis => bundled && runtime == runtimeCordis;
@@ -99,13 +87,12 @@ class ExtensionItem {
       appVersion.isNotEmpty &&
       compareVersions(appVersion, minAppVersion) < 0;
 
-  /// 当前 App 版本的读取方式（判 [needsNewerApp] 用，安装 / 打开前都会问它）：
-  /// 默认读 PackageInfo，读不到给空串 = 不设门（软门，不挡人）。测试里整体替换。
+  /// 当前 App 版本的读取方式（判 [needsNewerApp] 用）：默认读 PackageInfo，
+  /// 读不到给空串 = 不设门（软门，不挡人）。测试里整体替换。
   static Future<String> Function() appVersionLoader = _readPackageVersion;
 
   static Future<String> _readPackageVersion() async {
-    // 单测（flutter_tester）里平台通道没人应答，PackageInfo 会永远等下去：
-    // 测试环境直接当读不到，要测版本门就替换 [appVersionLoader]
+    // 单测（flutter_tester）里平台通道没人应答，PackageInfo 会永远等下去
     if (Platform.environment.containsKey('FLUTTER_TEST')) return '';
     try {
       return (await PackageInfo.fromPlatform()).version;
@@ -118,8 +105,7 @@ class ExtensionItem {
   bool get iconIsImage =>
       icon.startsWith('http://') || icon.startsWith('https://');
 
-  /// 换几个字段（其余原样带走）——[withCard] 与编辑弹窗都走它，
-  /// 免得新增字段时漏掉某处拷贝（市场字段就是这么丢过一次也不该丢）。
+  /// 换几个字段（其余原样带走）：[withCard] 与编辑弹窗都走它，免得漏拷市场字段。
   ExtensionItem copyWith({
     String? name,
     String? url,
@@ -151,13 +137,11 @@ class ExtensionItem {
         runtime: runtime ?? this.runtime,
       );
 
-  /// 换掉卡片上的显示值（网页用 `card.setName` / `card.setDesc` / `card.setIcon` 接口改，
-  /// 见 [ExtensionStore.setCard]）；只传要换的字段，null = 保持原值。
+  /// 换掉卡片上的显示值；只传要换的字段，null = 保持原值。
   ExtensionItem withCard({String? name, String? desc, String? icon}) =>
       copyWith(name: name, desc: desc, icon: icon);
 
-  /// 卡片副标题那行：市场装的写来源与版本、本地包说明来源，远程拓展直接写网址
-  /// （要不要显示这一行由「拓展」页右上角的总开关决定，见 ExtensionStore.hideUrls）。
+  /// 卡片副标题那行：市场装的写来源与版本、本地包说明来源，远程拓展直接写网址。
   String get urlLine {
     if (!bundled) return url;
     if (runtime == runtimeLegacy) return '旧版网页拓展（需迁移）';
@@ -182,11 +166,7 @@ class ExtensionItem {
         // builtin 不落盘：只有编译前的固定清单能置这个标记
       };
 
-  /// 生成一个 id。
-  ///
-  /// 时间戳只到微秒：一次导入多条的数组时，它们可能在同一个微秒里生成，
-  /// 光靠 [DateTime.microsecondsSinceEpoch] 会撞 id（宫格按 id 认卡片，撞了就重键）。
-  /// 末尾再加一个进程内自增序号，重启后靠时间戳区分，同一次运行里靠序号区分。
+  /// 生成一个 id：时间戳只到微秒（一次导入多条会撞 id），末尾再加进程内自增序号区分。
   static int _idSeq = 0;
   static String newId() =>
       'e${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
@@ -203,10 +183,8 @@ class ExtensionItem {
     return uri.toString();
   }
 
-  /// 解析一条（导入 / 落盘回读）：缺 id 现生成、缺名字用域名、网址必须合法；
-  /// `builtin` 一律忽略（只有编译前的固定清单能是内置）。
-  /// 市场字段（version / sha256 / permissions / market）缺省即为「不是市场装的」——
-  /// 老版本的落盘数据就是这么读回来的。
+  /// 解析一条（导入 / 落盘回读）：缺 id 现生成、缺名字用域名、网址必须合法，
+  /// `builtin` 一律忽略；市场字段缺省即为「不是市场装的」。
   static ExtensionItem parse(Object? raw) {
     if (raw is! Map) throw const FormatException('每条拓展要是一个 JSON 对象');
     final bundled = raw['bundled'] == true;
@@ -250,9 +228,8 @@ class ExtensionItem {
   }
 }
 
-/// `x.y.z` 比大小：[minAppVersion] 判定用。App 层 `update_check` 里另有一份
-/// （插件包够不着 app 层，两处各自维护）；位数不等按 0 补，非数字段当 0
-/// （不抛异常——目录里的脏数据不该把页面搞崩）。
+/// `x.y.z` 比大小，[minAppVersion] 判定用（App 层 `update_check` 里另有一份，两处各自维护）；
+/// 位数不等按 0 补，非数字段当 0（不抛异常，脏数据不该把页面搞崩）。
 int compareVersions(String a, String b) {
   List<int> parts(String v) => [
         for (final s in v.split('.'))

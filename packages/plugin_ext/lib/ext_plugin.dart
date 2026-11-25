@@ -7,12 +7,8 @@ import 'extensions_page.dart';
 
 /// 拓展：网页形态的小功能，用户自己填网址 / 导入 JSON 添加，点开就是对应网页。
 ///
-/// * **默认开启**（[defaultEnabled]）：装进来就占底栏，开箱即可从市场装拓展；
-///   不想要可以在「插件管理」里关掉，关掉与否会被记住。
-/// * **依赖 WebView 内核**（[dependencies]）：拓展跑在内核上，所以启用本插件会
-///   连带启用 `webview`，停用内核会把本插件一起停掉（关系图上是一条实线）。
-/// * 初始**没有任何内置拓展**，清单从空开始，全靠用户自己加（见 [ExtensionStore]）
-///   或从**插件市场**装（见 `market/`）。
+/// 默认开启、依赖 WebView 内核（启用本插件会连带启用 `webview`，停内核则一起停）；
+/// 初始没有任何内置拓展，清单从空开始。
 class ExtPlugin extends FeaturePlugin {
   const ExtPlugin();
 
@@ -27,8 +23,8 @@ class ExtPlugin extends FeaturePlugin {
   @override
   List<String> get dependencies => const [PluginIds.webview];
 
-  /// AI 是软依赖：ai.chat 接口只在 AI 插件可用时工作，没装 / 停用 / 没配置就
-  /// 报错回网页（「有则增强、删了拉倒」）。扫一扫同理：插件在就显示右上角入口。
+  /// AI 是软依赖：`ai.chat` 只在 AI 插件可用时工作，没装 / 停用 / 没配置就报错回网页。
+  /// 扫一扫同理：插件在就显示右上角入口。
   @override
   List<String> get optionalDependencies => const [PluginIds.ai, PluginIds.scan];
 
@@ -48,6 +44,5 @@ class ExtPlugin extends FeaturePlugin {
 }
 
 /// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_EXT=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 编译期开关为真时（--dart-define=EXCLUDE_EXT=true）这条连同包内代码一起不可达，被摇树丢掉。
 const PluginBundle pluginBundle = PluginBundle(features: [ExtPlugin()]);

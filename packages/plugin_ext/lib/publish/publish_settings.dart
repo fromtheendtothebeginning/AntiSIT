@@ -9,7 +9,7 @@ import 'publish_models.dart';
 
 /// 发布设置与密钥：配置走 SharedPreferences，Token / 私钥走 [SecureStore]。
 ///
-/// Token 与签名私钥都属于「泄露就能冒充作者」的凭据，不能落明文。
+/// Token 与签名私钥属于「泄露就能冒充作者」的凭据，不能落明文。
 class PublishSettings {
   PublishSettings._();
 
