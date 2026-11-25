@@ -140,6 +140,16 @@ button {
   transform: none;
 }
 
+/* 打印 / 无动画环境（含 prefers-reduced-motion）下不依赖观察器：直接可见 */
+@media print {
+  .reveal { opacity: 1 !important; transform: none !important; }
+}
+
+/* 兜底：脚本被禁用时内容不能消失（动画只是锦上添花） */
+@media (scripting: none) {
+  .reveal { opacity: 1 !important; transform: none !important; }
+}
+
 .reveal[data-delay="1"] { transition-delay: 0.08s; }
 .reveal[data-delay="2"] { transition-delay: 0.16s; }
 .reveal[data-delay="3"] { transition-delay: 0.24s; }

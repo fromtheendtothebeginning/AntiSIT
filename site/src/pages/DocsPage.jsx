@@ -21,6 +21,16 @@ export default function DocsPage({ sub }) {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // 手机端目录是一条可横滑的胶囊条：切换章节后把当前项滑进可视区，否则选中项可能在屏幕外
+  useEffect(() => {
+    const rail = document.querySelector(".doc-nav");
+    const cur = rail && rail.querySelector('a[aria-current="page"]');
+    if (!rail || !cur) return;
+    if (rail.scrollWidth <= rail.clientWidth + 1) return;
+    const left = cur.offsetLeft - rail.clientWidth / 2 + cur.offsetWidth / 2;
+    rail.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }, [active]);
+
   const group = DOC_GROUPS.find((g) => g.items.some((i) => i.id === active));
   const current = group?.items.find((i) => i.id === active);
 

@@ -1,6 +1,5 @@
 import Code from "../components/Code.jsx";
 import Icon from "../components/Icon.jsx";
-import Reveal from "../components/Reveal.jsx";
 import { SITE } from "../lib/site.js";
 
 // 每章一个纯组件：只渲染文本 + Code；增删章节改这里与 lib/data.js。
@@ -32,9 +31,10 @@ export default function DocContent({ id }) {
 const NL = "\n";
 const lines = (arr) => arr.join(NL);
 
+// 章节卡**不做入场动画**：切章节时内容必须立刻可见（历史 bug：切章后整块停在 opacity:0）。
 function Chapter({ title, icon, kicker, children }) {
   return (
-    <Reveal className="doc-section">
+    <section className="doc-section">
       <div className="doc-card">
         <div className="doc-card-head">
           <span className="repo-icon" style={{ width: 32, height: 32, borderRadius: 11 }}>
@@ -47,7 +47,7 @@ function Chapter({ title, icon, kicker, children }) {
         </div>
         <div className="doc-prose">{children}</div>
       </div>
-    </Reveal>
+    </section>
   );
 }
 

@@ -893,16 +893,45 @@
   .showcase { grid-template-columns: minmax(0, 1fr); }
   .showcase-stage { min-height: 460px; }
 
-  .doc-shell { grid-template-columns: minmax(0, 1fr); }
+  .doc-shell { grid-template-columns: minmax(0, 1fr); gap: 18px; }
 
+  /* 手机上目录改成一条可横滑的章节胶囊条：
+     18 个链接竖排会把首屏整块吃掉（内容被挤到第二屏以下），横滑一行就够。 */
   .doc-nav {
-    position: static;
+    position: sticky;
+    top: calc(var(--nav-height) + 8px);
+    z-index: 50;
     flex-direction: row;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: center;
     gap: 6px;
+    padding: 8px 10px;
+    border-radius: 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    background: var(--menu-bg);
   }
 
+  .doc-nav::-webkit-scrollbar { display: none; }
+
   .doc-nav-group { display: none; }
+
+  .doc-nav > div[style*="contents"] { display: contents; }
+
+  .doc-nav a {
+    flex: none;
+    padding: 7px 12px;
+    border-radius: 100px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    background: var(--bg-elevated);
+  }
+
+  .doc-nav a.active {
+    background: var(--accent-1-soft-strong);
+    border-color: var(--accent-1-border);
+  }
 
   .license-side { grid-template-columns: minmax(0, 1fr); }
 }
@@ -910,7 +939,16 @@
 @media (max-width: 768px) {
   .nav { display: none; }
   .menu-btn { display: grid; }
-  .topbar { padding: 0 18px; }
+  .topbar { padding: 0 16px; gap: 10px; }
+
+  /* 顶部品牌副标题在窄屏会折行成一个孤字，直接不显示 */
+  .brand-sub { display: none; }
+
+  .page-hero { padding: 34px 0 4px; }
+
+  .page-hero h1 { font-size: clamp(24px, 7.2vw, 32px); }
+
+  .page-hero .lead { font-size: 13.5px; line-height: 1.8; }
 
   .main { padding: 0 18px 56px; }
 

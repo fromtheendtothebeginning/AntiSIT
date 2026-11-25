@@ -59,7 +59,7 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  useReveal(route.page + "/" + route.sub);
+  useReveal();
 
   const navigate = (page, sub) => {
     const target = "#/" + [page === "home" ? "" : page, sub || ""].filter(Boolean).join("/");
