@@ -38,3 +38,39 @@
 2. `flutter test` 全绿（879 项基线，不允许减少）；
 3. `git diff --stat` 只包含本批范围；
 4. 本地 commit 一次（不推送）。
+
+## 执行结果
+
+### 总量
+
+| 指标 | 重构前 | 重构后 |
+|---|---|---|
+| `lib` + `packages` 下的 .dart 文件 | 215 | 303（拆出 88 个子文件） |
+| 总行数 | 56784 | 57101 |
+| 注释行 | 5384（9.5%） | 3666（6.4%） |
+| > 600 行的文件 | 14 | 1（`lib/changelog_entries.dart`，纯版本条目数据表） |
+
+总行数略升是因为拆分后每个新文件都要带 header 与 import/export；注释减少 32%，且每个类 / 方法 /
+字段都只保留一句作用说明。
+
+### 各批次
+
+| 批次 | 结果 |
+|---|---|
+| B1 | `main.dart` 621 → 转场拆到 `page_transitions.dart`、启动页拆到 `pages/boot_page.dart`；更新日志拆条目表 / 弹窗 / 版本记录；我的页、插件管理页拆分区与弹窗 |
+| B2 | 课表模型与纯函数拆出 `timetable_models` / `timetable_schedule`；演示数据拆 `demo_fixtures`；清单自检与依赖图拆 `plugin_manifest` / `plugin_graph`；兜底类型拆 `plugin_fallbacks` |
+| B3 | 教务拆 `jwxt_parser` / `jwxt_login_html` / `jwxt_courses`；模拟服务按系统拆 4 个 part 文件；选课拆 `course_select_parser`；学工拆 `xg_parser`；连接探测与电费历史各自独立 |
+| B4 | 宫格拆尺寸模型 / 拖拽装箱 / 位移动画 / 绘制器 / 卡片外观 / 边缘滚动 / 尺寸条；玻璃组件拆输入与切换器；连接页拆 7 个分区文件 |
+| B5 | 课程表页 3327 → 540，拆出几何、课程块、网格、卡片、导航、骨架、表单、详情、导入、设置弹窗 11 个文件；成绩页拆概览 / 加分明细 / 组件 / 服务 |
+| B6 | 拓展页拆卡片 / 弹窗 / 导入动作 / 权限弹窗；桥接按通道拆 6 个文件；工坊拆模型与三个 extension；市场与发布视图拆分 |
+| B7 | 活动详情页与卡片拆分；扫码拆解析与面板；AI 拆请求 / 解析 / 选择器；评教拆批量弹窗 |
+| B8 | 29 个中小插件包注释精简；教务与选课页拆视图段 |
+| B9 | 测试与工具脚本注释精简，`extensions_test.dart` 按 group 拆分 |
+
+### 约定补充
+
+- 跨文件必须访问 State 私有状态的地方，优先改成「数据 + 回调」显式传参；只有确实绕不开私有状态时
+  才用 `part` / `part of`（目前仅 `direct/jwxt`、`direct/mock_campus_server`、`plugin_academic`、
+  `plugin_course_select` 四处），避免为了拆分而扩大 public 面。
+- 入口文件一律保留（原 import 路径不变），需要时在入口文件里 `export` 新文件，barrel 只追加不重排。
+
