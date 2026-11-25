@@ -8,12 +8,15 @@ import 'evaluate_api.dart';
 import 'evaluate_cache.dart';
 import 'evaluate_model.dart';
 
-/// 评分表单列表的内边距：顶部基础 8 + 悬浮顶栏留白。
+/// 评分表单列表的内边距：顶部基础 8 + 悬浮顶栏留白，底部基础 24 + 悬浮底栏留白。
 ///
-/// 留白必须在**列表自己的 padding 里**（不能在外面套一层 Padding）：内容要从顶栏底下
-/// 穿过去，滚到标题后面时才看得出顶栏是悬浮的（色带在那儿压住内容，issue #15）。
-EdgeInsets evaluateFormListPadding(double topInset) =>
-    EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24);
+/// 两段留白都必须在**列表自己的 padding 里**（不能在外面套 Padding）：内容要从顶栏 /
+/// 底栏底下穿过去，滚到标题后面时才看得出它们是悬浮的（issue #15）。
+EdgeInsets evaluateFormListPadding(
+  double topInset, {
+  double bottomInset = 0,
+}) =>
+    EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24 + bottomInset);
 
 /// 单个老师的评分页：一列题 + 一条「统一分数」滑条 + 保存 / 提交。
 ///
@@ -272,22 +275,25 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
   @override
   Widget build(BuildContext context) {
     final form = _form;
-    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：顶栏 / 底栏是悬浮玻璃还是普通样式，改完要连 Scaffold 一起重建
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 两处留白都要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣过一遍）
         final topInset = glassTopInset(context);
+        final bottomInset = glassBottomInset(context);
         return Scaffold(
           // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
+          // 底栏同理：操作条浮在内容上、内容从它底下穿过去，毛玻璃才有东西可糊
+          extendBody: glassBottomBarEnabled && form != null && _error == null,
           appBar: glassAppBar(
             context,
             title: Text(widget.target.course, overflow: TextOverflow.ellipsis),
           ),
-          // 顶栏那一截交给具体视图：列表要**从顶栏底下穿过去**（滚到标题后面才看得出
-          // 顶栏是悬浮的），所以留白必须进 ListView 的 padding；套在外层 Padding 等于
-          // 让内容永远从顶栏下方开始，顶栏没有内容可压（issue #15）。
+          // 顶栏 / 底栏那两截交给具体视图：列表要**从它们底下穿过去**（滚到标题后面
+          // 才看得出是悬浮的），所以留白必须进 ListView 的 padding；套在外层 Padding
+          // 等于让内容永远从条的下方开始，条那层没有内容可压（issue #15）。
           body: GlassFadedBody(
             barHeight: topInset,
             child: _loading
@@ -302,10 +308,11 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
                       )
                     : (form == null
                         ? const SizedBox.shrink()
-                        : _formView(form, topInset))),
+                        : _formView(form, topInset, bottomInset))),
           ),
-          bottomNavigationBar:
-              form == null || _error != null ? null : _actionBar(),
+          bottomNavigationBar: form == null || _error != null
+              ? null
+              : glassBottomBar(context, child: _actionBar()),
         );
       },
     );
@@ -335,8 +342,10 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
         ),
       );
 
-  Widget _formView(EvalForm form, double topInset) => ListView(
-        padding: evaluateFormListPadding(topInset),
+  Widget _formView(EvalForm form, double topInset, double bottomInset) => ListView(
+        // 顶部让出悬浮顶栏、底部让出悬浮操作条：内容穿过这两条（滚上去时被顶栏色带
+        // 压住、滚下去时被底栏毛玻璃糊掉），而不是被整块 Padding 顶在它们中间
+        padding: evaluateFormListPadding(topInset, bottomInset: bottomInset),
         children: [
           if (_busy && _log.isNotEmpty)
             Padding(
@@ -555,35 +564,35 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
     );
   }
 
-  Widget _actionBar() => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _save(submit: false),
-                  icon: const Icon(Icons.save_outlined, size: 18),
-                  label: const Text('保存'),
-                ),
+  /// 操作条内容（不含安全区与胶囊底）：安全区和玻璃胶囊都由 [glassBottomBar] 提供，
+  /// 这里只排按钮——样式与悬浮顶栏共用一个开关，页面不再各自画一套底条。
+  Widget _actionBar() => SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : () => _save(submit: false),
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text('保存'),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : () => _save(submit: true),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check_rounded, size: 18),
-                  label: const Text('提交评教'),
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : () => _save(submit: true),
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check_rounded, size: 18),
+                label: const Text('提交评教'),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
 }

@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
@@ -6,6 +8,13 @@ import 'theme_palette.dart';
 /// 顶栏里「渐变段」占顶栏高度的比例：模糊只发生在顶栏自己的范围内，
 /// 最上面 60% 保持较强模糊，靠底部 40% 逐渐收敛到接近 0——内容从顶栏底边露出时基本清晰。
 const double kGlassBarFadeFraction = 0.4;
+
+/// 悬浮玻璃条（顶栏 / 底栏）的胶囊圆角：与首页底栏保持一致。
+const double kGlassBarRadius = 22;
+
+/// 悬浮玻璃底栏在按钮之外还要占掉的高度：胶囊内边距（4 × 2）+ 上下外边距（4 + 10）。
+/// 用 [glassBottomInset] 时不必自己算，传按钮高度即可。
+const double kGlassBottomBarChrome = 22;
 
 
 /// 顶栏是否用悬浮玻璃样式（「我的 → 外观」里的开关，默认开）。
@@ -247,4 +256,102 @@ class GlassFadedBody extends StatelessWidget {
       },
     );
   }
+}
+
+// ==================== 悬浮玻璃底栏（操作条） ====================
+
+/// 底部操作条是否用悬浮玻璃样式：与悬浮顶栏同一个开关。
+///
+/// 两者是同一套视觉语言（内容从条底下穿过、靠色带/毛玻璃分层），所以共用一个
+/// 开关：关掉后底栏退回普通的不透明底条，页面也不再需要 `extendBody` 与底部留白。
+bool get glassBottomBarEnabled => AppState.I.glassTopBar;
+
+/// 滚动内容底部要让出的高度：躲开悬浮玻璃底栏（按钮 + 胶囊外边距 + 系统手势条）。
+///
+/// 和 [glassTopInset] 一样**必须在页面 `build` 的 context（Scaffold 之上）取**：
+/// 开了 `Scaffold.extendBody` 之后 body 里的 `MediaQuery` 已经被扣过一遍，
+/// 在里面算会漏掉系统手势条那截（内容压到条下面）。
+///
+/// [barHeight] 传底栏里最高的那个控件的高度（默认按单行 44 够用）。
+/// 开关关闭时返回 0：普通底栏自己占位，滚动内容不需要额外留白。
+double glassBottomInset(
+  BuildContext context, {
+  double barHeight = 44,
+}) {
+  if (!glassBottomBarEnabled) return 0;
+  final mq = MediaQuery.maybeOf(context);
+  final safeBottom = mq?.viewPadding.bottom ?? 0;
+  return barHeight + kGlassBottomBarChrome + safeBottom;
+}
+
+/// 悬浮玻璃底栏：给 `Scaffold.bottomNavigationBar` 用的操作条（保存 / 提交这类）。
+///
+/// 页面侧还要做两件事，内容才会从条底下**穿过去**而不是被压在下面：
+/// 1. `Scaffold.extendBody: glassBottomBarEnabled`；
+/// 2. 最后一个滚动区的底部留白用 [glassBottomInset]（和顶部留白一样写在
+///    padding 里，别在外面套 Padding）。
+///
+/// 顶部那套 [GlassFadedBody] 的渐隐与它无关：底部不需要渐隐，毛玻璃本身就把穿过去的
+/// 内容糊掉了。开关关闭时退回普通的不透明底条（与加这个功能之前一致）。
+Widget glassBottomBar(
+  BuildContext context, {
+  required Widget child,
+  double height = 44,
+}) {
+  if (!glassBottomBarEnabled) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+        child: SizedBox(height: height, child: child),
+      ),
+    );
+  }
+  return SafeArea(
+    top: false,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+      child: Container(
+        height: height + 8,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(kGlassBarRadius),
+          // 投影留在玻璃**外面**：里面那层要交给 ClipRRect 裁圆，裁完就画不出外投影了
+          boxShadow: [
+            BoxShadow(
+              color: SemColors.shadow,
+              offset: const Offset(0, 8),
+              blurRadius: 24,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(kGlassBarRadius),
+          child: BackdropFilter(
+            // 毛玻璃底：把从操作条下面穿过去的页面内容糊掉，玻璃面再压在上面
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(kGlassBarRadius),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color.alphaBlend(
+                      Colors.white.withValues(alpha: 0.10),
+                      SemColors.card,
+                    ),
+                    SemColors.card,
+                  ],
+                  stops: const [0, 0.5],
+                ),
+                border: Border.all(color: SemColors.border),
+              ),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }

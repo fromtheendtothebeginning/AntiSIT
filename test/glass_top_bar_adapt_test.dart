@@ -240,6 +240,84 @@ void main() {
     test('关掉悬浮顶栏时留白归零（普通 AppBar 自己占位）', () {
       expect(evaluateFormListPadding(0).top, 8);
     });
+
+    test('底部操作条的留白进列表 padding（悬浮底栏自己不吃布局高度）', () {
+      // 底部基础间距 24 + 悬浮底栏留白：列表最后一行要能滚到胶囊上面
+      expect(evaluateFormListPadding(80, bottomInset: 66).bottom, 24 + 66);
+    });
+  });
+
+  group('#15 底部操作条与顶栏共用悬浮开关', () {
+    Widget host({required double viewPaddingBottom}) => MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(
+          viewPadding: EdgeInsets.only(bottom: viewPaddingBottom),
+        ),
+        child: Builder(
+          builder: (context) => Scaffold(
+            body: const SizedBox.shrink(),
+            bottomNavigationBar: glassBottomBar(
+              context,
+              child: const Text('保存 / 提交评教'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('开关打开：操作条是毛玻璃胶囊（有 BackdropFilter）', (tester) async {
+      await tester.pumpWidget(host(viewPaddingBottom: 0));
+      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(find.text('保存 / 提交评教'), findsOneWidget);
+    });
+
+    testWidgets('开关关闭：退回普通底条，不再画玻璃', (tester) async {
+      await AppState.I.setGlassTopBar(false);
+      await tester.pumpWidget(host(viewPaddingBottom: 0));
+      expect(find.byType(BackdropFilter), findsNothing,
+          reason: '关掉悬浮玻璃后底条不该再有毛玻璃');
+      expect(find.text('保存 / 提交评教'), findsOneWidget);
+    });
+
+    testWidgets('glassBottomInset 随开关与手势条安全区变化', (tester) async {
+      late double on;
+      late double off;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              viewPadding: EdgeInsets.only(bottom: 24),
+            ),
+            child: Builder(
+              builder: (context) {
+                on = glassBottomInset(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      // 按钮 44 + 胶囊留白 22 + 手势条 24
+      expect(on, 44 + kGlassBottomBarChrome + 24);
+
+      await AppState.I.setGlassTopBar(false);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              viewPadding: EdgeInsets.only(bottom: 24),
+            ),
+            child: Builder(
+              builder: (context) {
+                off = glassBottomInset(context);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      expect(off, 0, reason: '普通底栏自己占位，内容不需要额外留白');
+    });
   });
 
   group('#12 拓展页留白跟随开关重算', () {
