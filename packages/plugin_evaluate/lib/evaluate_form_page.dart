@@ -8,6 +8,13 @@ import 'evaluate_api.dart';
 import 'evaluate_cache.dart';
 import 'evaluate_model.dart';
 
+/// 评分表单列表的内边距：顶部基础 8 + 悬浮顶栏留白。
+///
+/// 留白必须在**列表自己的 padding 里**（不能在外面套一层 Padding）：内容要从顶栏底下
+/// 穿过去，滚到标题后面时才看得出顶栏是悬浮的（色带在那儿压住内容，issue #15）。
+EdgeInsets evaluateFormListPadding(double topInset) =>
+    EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24);
+
 /// 单个老师的评分页：一列题 + 一条「统一分数」滑条 + 保存 / 提交。
 ///
 /// 两个写操作的口径不同：
@@ -278,19 +285,24 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
             context,
             title: Text(widget.target.course, overflow: TextOverflow.ellipsis),
           ),
-          // 表单主体是整块内容（加载 / 出错 / 表单三态），用 Padding 顶出顶栏这一截
+          // 顶栏那一截交给具体视图：列表要**从顶栏底下穿过去**（滚到标题后面才看得出
+          // 顶栏是悬浮的），所以留白必须进 ListView 的 padding；套在外层 Padding 等于
+          // 让内容永远从顶栏下方开始，顶栏没有内容可压（issue #15）。
           body: GlassFadedBody(
             barHeight: topInset,
-            child: Padding(
-            padding: EdgeInsets.only(top: topInset),
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Padding(
+                    padding: EdgeInsets.only(top: topInset),
+                    child: const Center(child: CircularProgressIndicator()),
+                  )
                 : (_error != null
-                    ? _errorView()
+                    ? Padding(
+                        padding: EdgeInsets.only(top: topInset),
+                        child: _errorView(),
+                      )
                     : (form == null
                         ? const SizedBox.shrink()
-                        : _formView(form))),
-          ),
+                        : _formView(form, topInset))),
           ),
           bottomNavigationBar:
               form == null || _error != null ? null : _actionBar(),
@@ -323,8 +335,8 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
         ),
       );
 
-  Widget _formView(EvalForm form) => ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+  Widget _formView(EvalForm form, double topInset) => ListView(
+        padding: evaluateFormListPadding(topInset),
         children: [
           if (_busy && _log.isNotEmpty)
             Padding(

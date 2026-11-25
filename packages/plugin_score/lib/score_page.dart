@@ -371,6 +371,8 @@ class _ScorePageState extends State<ScorePage> {
       emptyText: '暂无第二课堂数据，请稍后重试',
       onRetry: _load,
       child: RefreshIndicator(
+        // 刷新圈落在悬浮切换器下面，别贴着屏幕最上沿（issue #14）
+        edgeOffset: topInset + _tabsRowHeight,
         onRefresh: _load,
         child: ListView(
           // 记住本页滚动位置：切走再切回来仍停在原处
@@ -496,6 +498,8 @@ class _ScorePageState extends State<ScorePage> {
       emptyText: '暂无加分明细',
       onRetry: _loadCredits,
       child: RefreshIndicator(
+        // 刷新圈落在悬浮切换器下面，别贴着屏幕最上沿（issue #14）
+        edgeOffset: topInset + _tabsRowHeight,
         onRefresh: _loadCredits,
         child: ListView(
           key: const PageStorageKey<String>('score_credits'),

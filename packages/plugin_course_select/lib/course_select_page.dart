@@ -457,6 +457,8 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                   emptyText: '当前没有开放的选课轮次',
                   onRetry: _loadScopes,
                   child: RefreshIndicator(
+                    // 下拉刷新圈从悬浮顶栏底边开始，别贴着屏幕最上沿（issue #14）
+                    edgeOffset: topInset,
                     onRefresh: () => _loadOffers(reset: true),
                     child: ListView(
                       physics: const AlwaysScrollableScrollPhysics(),

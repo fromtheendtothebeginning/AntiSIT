@@ -156,6 +156,8 @@ class _AcademicPageState extends State<AcademicPage> {
             emptyText: '暂无学业情况数据：教务系统可能未返回统计与课程类别',
             onRetry: _load,
             child: RefreshIndicator(
+              // 下拉刷新圈从悬浮顶栏底边开始，别贴着屏幕最上沿（issue #14）
+              edgeOffset: topInset,
               onRefresh: _load,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),

@@ -454,6 +454,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
       emptyText: '暂无活动',
       onRetry: _load,
       child: RefreshIndicator(
+        // 刷新圈落在悬浮切换器下面，别贴着屏幕最上沿（issue #14）
+        edgeOffset: topInset + _tabsRowHeight,
         onRefresh: _load,
         child: ListView(
           // 记住本页滚动位置：切走再切回来仍停在原处
@@ -607,6 +609,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
     emptyText: '还没有报名活动',
     onRetry: _loadSigned,
     child: RefreshIndicator(
+      // 刷新圈落在悬浮切换器下面，别贴着屏幕最上沿（issue #14）
+      edgeOffset: topInset + _tabsRowHeight,
       onRefresh: _loadSigned,
       child: ListView(
         key: const PageStorageKey<String>('activities_signed'),

@@ -340,6 +340,8 @@ class _MarketViewState extends State<MarketView> {
     return Stack(
       children: [
         RefreshIndicator(
+          // 刷新圈落在悬浮切换器下面，别贴着屏幕最上沿（issue #14）
+          edgeOffset: widget.topPadding,
           onRefresh: () => _source.load(force: true),
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),

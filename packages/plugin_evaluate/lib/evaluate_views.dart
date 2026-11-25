@@ -253,6 +253,12 @@ class EvaluateListView extends StatelessWidget {
       ],
     );
     final refresh = onRefresh;
-    return refresh == null ? list : RefreshIndicator(onRefresh: refresh, child: list);
+    if (refresh == null) return list;
+    return RefreshIndicator(
+      // 刷新圈从悬浮顶栏底边开始，别贴着屏幕最上沿（issue #14）
+      edgeOffset: topPadding,
+      onRefresh: refresh,
+      child: list,
+    );
   }
 }

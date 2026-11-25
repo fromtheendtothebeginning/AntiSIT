@@ -136,40 +136,47 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
           child: IgnorePointer(
             // 收起后不拦触摸：这块区域要让给列表
             ignoring: _hidden,
-            child: AnimatedSlide(
-              offset: Offset(0, _hidden ? _hiddenOffset : 0),
-              duration: widget.showDuration,
-              curve: Curves.easeOutCubic,
-              // 底部留白放在毛玻璃**外面**：否则模糊会拖到切换器下面那条空隙里
-              child: Padding(
-                padding: EdgeInsets.only(top: widget.topInset, bottom: 8),
-                // 左右留白和页面内容对齐（内容列表都是 12），别贴屏幕边
+            // 这层裁剪是必须的：收起走的是 AnimatedSlide（paint 期 transform），布局位置没变，
+            // Stack 自己的 clipBehavior 只在「子节点布局溢出」时才建裁剪层，管不住它。
+            // 没有这层时，**关掉悬浮顶栏**（topInset=0、切换器自身只剩 48 高）会让药丸
+            // 只上移约 50px，正好停在状态栏 + 标题栏那一条里浮在标题上面（issue #10）；
+            // 裁到自己的盒子里，收起的药丸就彻底出画。
+            child: ClipRect(
+              child: AnimatedSlide(
+                offset: Offset(0, _hidden ? _hiddenOffset : 0),
+                duration: widget.showDuration,
+                curve: Curves.easeOutCubic,
+                // 底部留白放在毛玻璃**外面**：否则模糊会拖到切换器下面那条空隙里
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(_radius),
-                    child: BackdropFilter(
-                      // 和首页底栏同一套毛玻璃：把从切换器底下滚过去的内容糊掉
-                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                      // 再压一层半透明玻璃面 + 描边（同 GlassNavBar 的 _face）
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(_radius),
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Color.alphaBlend(
-                                  Colors.white.withValues(alpha: 0.10),
-                                  SemColors.card),
-                              SemColors.card,
-                            ],
-                            stops: const [0, 0.5],
+                  padding: EdgeInsets.only(top: widget.topInset, bottom: 8),
+                  // 左右留白和页面内容对齐（内容列表都是 12），别贴屏幕边
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(_radius),
+                      child: BackdropFilter(
+                        // 和首页底栏同一套毛玻璃：把从切换器底下滚过去的内容糊掉
+                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                        // 再压一层半透明玻璃面 + 描边（同 GlassNavBar 的 _face）
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(_radius),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color.alphaBlend(
+                                    Colors.white.withValues(alpha: 0.10),
+                                    SemColors.card),
+                                SemColors.card,
+                              ],
+                              stops: const [0, 0.5],
+                            ),
+                            border: Border.all(color: SemColors.border),
                           ),
-                          border: Border.all(color: SemColors.border),
+                          child: widget.header,
                         ),
-                        child: widget.header,
                       ),
                     ),
                   ),

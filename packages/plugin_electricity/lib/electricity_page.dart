@@ -297,6 +297,8 @@ class _ElectricityPageState extends State<ElectricityPage> {
             error: _err,
             onRetry: _refreshAll,
             child: RefreshIndicator(
+              // 下拉刷新圈从悬浮顶栏底边开始，别贴着屏幕最上沿（issue #14）
+              edgeOffset: topInset,
               onRefresh: _refreshAll,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),

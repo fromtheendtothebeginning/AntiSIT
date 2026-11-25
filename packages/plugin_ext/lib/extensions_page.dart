@@ -634,8 +634,6 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
-    final topInset = glassTopInset(context);
     final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
     final items = _store.items;
     final hide = _store.hideUrls;
@@ -643,13 +641,18 @@ class _ExtensionsPageState extends State<ExtensionsPage> {
         ? _selectedCardId
         : null;
     final selectedSize = selectedId == null ? null : _store.sizeOf(selectedId);
-    final myPage = items.isEmpty
-        ? _empty(context, topInset)
-        : _grid(context, items, selectedId, topInset);
     // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
+        // 顶栏留白必须在这个 builder **里面**算：它读的是 AppState 里的开关，
+        // 算在外面的话开关一改这里不会重算——留着上一次的留白，表现为「内容跑到
+        // 顶栏底下 / 关掉开关后还空出一截」（issue #12）。它还得在建 Scaffold 之前
+        // 取：body 里的 MediaQuery 已被扣掉状态栏。
+        final topInset = glassTopInset(context);
+        final myPage = items.isEmpty
+            ? _empty(context, topInset)
+            : _grid(context, items, selectedId, topInset);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(

@@ -201,6 +201,8 @@ class _GradesPageState extends State<GradesPage> {
             emptyText: '暂无成绩记录',
             onRetry: _load,
             child: RefreshIndicator(
+              // 下拉刷新圈从悬浮顶栏底边开始，别贴着屏幕最上沿（issue #14）
+              edgeOffset: topInset,
               onRefresh: _load,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
