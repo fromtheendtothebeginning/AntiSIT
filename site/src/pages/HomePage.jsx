@@ -24,7 +24,7 @@ export default function HomePage({ onNavigate }) {
       <section className="hero">
         <div className="hero-copy reveal">
           <div className="hero-tags">
-            <span className="badge gold"><Icon name="spark" size={13} /> {SITE.title2 || "Campus Service"}</span>
+            <span className="badge gold"><Icon name="spark" size={13} /> Campus Service</span>
             <span className="badge">Flutter · Android / Windows</span>
             <span className="badge green">{SITE.license.spdx} 开源</span>
           </div>

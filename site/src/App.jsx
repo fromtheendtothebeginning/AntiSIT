@@ -26,7 +26,6 @@ export default function App() {
     return readTheme();
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [docId, setDocId] = useState("");
   const firstPaint = useRef(true);
 
   // 主题初始化 + 跟随系统（用户没手动切换过时）
@@ -88,7 +87,7 @@ export default function App() {
         />
 
         {route.page === "docs" ? (
-          <DocsPage sub={route.sub} setDocId={setDocId} onNavigate={navigate} />
+          <DocsPage sub={route.sub} onNavigate={navigate} />
         ) : route.page === "about" ? (
           <AboutPage onNavigate={navigate} />
         ) : route.page === "license" ? (

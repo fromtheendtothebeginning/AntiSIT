@@ -2,22 +2,17 @@ import { useEffect, useState } from "react";
 import { DOC_GROUPS } from "../lib/data.js";
 import { SITE } from "../lib/site.js";
 import Icon from "../components/Icon.jsx";
-import Code from "../components/Code.jsx";
 import Reveal from "../components/Reveal.jsx";
 import DocContent from "../sections/DocContent.jsx";
 
 const ALL_IDS = DOC_GROUPS.flatMap((g) => g.items.map((i) => i.id));
 
-export default function DocsPage({ sub, onNavigate, setDocId }) {
+export default function DocsPage({ sub, onNavigate }) {
   const [active, setActive] = useState(sub && ALL_IDS.includes(sub) ? sub : ALL_IDS[0]);
 
   useEffect(() => {
     if (sub && ALL_IDS.includes(sub)) setActive(sub);
   }, [sub]);
-
-  useEffect(() => {
-    setDocId(active);
-  }, [active]);
 
   const go = (id) => {
     setActive(id);
