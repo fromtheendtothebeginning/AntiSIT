@@ -34,9 +34,9 @@ export const SITE = {
     url: "https://www.gnu.org/licenses/gpl-3.0.html",
     translations: "https://www.gnu.org/licenses/translations.html"
   },
-  apkMinAndroid: "Android 7.0+",
+  apkMinAndroid: "Android 7.0 以上",
   // 分类（首页/介绍页共用的功能事实）
-  tech: ["Flutter 3 / Dart 3", "Material 3", "pub workspace", "Cordis 拓展运行时"]
+  tech: ["Flutter 3 / Dart 3", "Material 3", "pub 工作区", "Cordis 拓展运行时"]
 };
 
 export const NAV = [

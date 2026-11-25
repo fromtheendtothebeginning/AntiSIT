@@ -9,11 +9,11 @@ export default function Footer({ onNavigate }) {
           <div className="footer-brand">
             <img src="./img/sit-mark-512.png" alt="" />
             <span>
-              {SITE.name} · {SITE.cnName} — Flutter 校园服务客户端，源码以 {SITE.license.spdx} 发布
+              {SITE.name} · {SITE.cnName} — 校园服务客户端，源码以 {SITE.license.spdx} 开源
             </span>
           </div>
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            非官方学生项目 · 与学校系统之间仅做协议对接 · 页面不收集任何信息
+            学生自己做的非官方项目 · 跟学校系统只做数据对接 · 这个页面不收集任何信息
           </span>
         </div>
         <div style={{ display: "grid", gap: 10 }}>
@@ -26,7 +26,7 @@ export default function Footer({ onNavigate }) {
           <div className="footer-links">
             <a href={SITE.repos.github.url} target="_blank" rel="noreferrer">GitHub <Icon name="external" size={12} /></a>
             <a href={SITE.repos.gitee.url} target="_blank" rel="noreferrer">Gitee <Icon name="external" size={12} /></a>
-            <a href={SITE.mirror.latest} target="_blank" rel="noreferrer">更新源 latest.json</a>
+            <a href={SITE.mirror.latest} target="_blank" rel="noreferrer">版本信息</a>
           </div>
         </div>
       </div>

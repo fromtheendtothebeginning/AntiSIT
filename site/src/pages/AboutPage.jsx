@@ -4,10 +4,10 @@ import Icon from "../components/Icon.jsx";
 import Reveal from "../components/Reveal.jsx";
 
 const MILESTONES = [
-  { when: "定位", title: "为什么做这个 App", desc: "教务系统网页版只适配桌面、二课活动要一页页翻、余额和电费散在三个入口。把每天都要用的查询收进一块屏幕，是开发的起点。" },
-  { when: "形态", title: "一个插件 = 一个 Dart 包", desc: "宿主只负责壳、设置、插件管理与清单组装；课程表、校园码、成绩……各自独立成包，删掉一个功能只去掉一行依赖。" },
-  { when: "边界", title: "凭据只在它该在的地方", desc: "服务器模式不存校园密码；直连模式的凭据明文存本机、不上传，手动退出即清除。目录与拓展包都过签名 / sha256 校验。" },
-  { when: "持续", title: "每天在用的东西，得每天能修", desc: "发版走 tag → CI 构建 → GitHub Release → Gitee 镜像 → 自建镜像一条链，普通用户下次检查更新就能拿到。" }
+  { when: "起因", title: "为什么做这个 App", desc: "教务系统只有电脑版好用，二课活动要一页页翻，余额和电费又分在三个地方。想查点东西得来回切，于是干脆自己做一个。" },
+  { when: "做法", title: "每个功能各自独立", desc: "课表、校园码、成绩……各住各的包，互不牵扯。想删掉某个功能，去掉一行就行，不会带坏别的。" },
+  { when: "分寸", title: "密码放在该放的地方", desc: "让服务器代连时，校园密码只填在服务器网站上；直连时，凭据只存在你自己手机里，退出登录就清掉。" },
+  { when: "维护", title: "每天在用的东西，得能天天修", desc: "发版走一条自动化流水线，改完推上去，用户下次点「检查更新」就能拿到。" }
 ];
 
 export default function AboutPage({ onNavigate }) {
@@ -20,9 +20,9 @@ export default function AboutPage({ onNavigate }) {
         </div>
         <h1>介绍 · {SITE.name}</h1>
         <p className="lead">
-          {SITE.name}（中文名 {SITE.cnName}）是面向上海应用技术大学学生的校园服务客户端，
-          用 Flutter 写成 Android / Windows 双端。它不替你改成绩，也不替你抢课之外做任何决定——
-          它只是把散落在各个系统里的信息，排成一块看得懂的界面。
+          {SITE.name}（中文名 {SITE.cnName}）是给上海应用技术大学同学做的校园助手，
+          手机上和电脑上都能跑。它不替你做任何决定，只是把散在各个系统里的信息，
+          收拢成一块看得懂的屏幕。
         </p>
       </header>
 
@@ -32,13 +32,12 @@ export default function AboutPage({ onNavigate }) {
             <h3>它是什么</h3>
             <div className="doc-prose" style={{ marginTop: 8 }}>
               <p>
-                一个 Flutter 客户端 + 一套开放接口。客户端把课程表、校园码、成绩、学业情况、第二课堂、
-                宿舍电费、考试安排、学生评教、拓展市场这些功能装进底栏的几个页面里；
-                接口由任意部署了同一套规约的服务器提供，也可以完全不用服务器。
+                一个手机 App，加上一套公开的取数接口。课表、校园码、成绩、学业情况、第二课堂、
+                宿舍电费、考试安排、评教、拓展市场，都收在底栏几个页面里。
               </p>
               <p>
-                界面语言是「玻璃」：深墨夜景底 + 大半径柔光，面板半透明模糊、边缘一道高光；
-                强调色只有两种——月光钢蓝负责信息，香槟金负责「需要你看见」的那一个点。
+                界面是玻璃质感：深色底子配上柔光，面板半透明、边缘有一道高光。
+                颜色只用两种——钢蓝负责信息，香槟金负责「这个要点你」。
               </p>
             </div>
           </Reveal>
@@ -46,12 +45,12 @@ export default function AboutPage({ onNavigate }) {
             <h3>它不是什么</h3>
             <div className="doc-prose" style={{ marginTop: 8 }}>
               <p>
-                不是学校官方产品，也不是把网页塞进壳里的套壳 App：每个页面都是原生 Flutter 绘制，
-                与学校系统之间只做协议对接。
+                不是学校做的官方应用，也不是把网页套个壳：每个页面都是原生画的，
+                跟学校系统之间只做数据对接。
               </p>
               <p>
-                不收集你的信息：页面本身没有任何统计埋点；App 本地只存登录 token、课表、界面设置与
-                直连模式 Cookie，可一键清除。
+                不收集你的信息：App 里没有埋点，本地只存登录状态、课表和界面设置，
+                「我的」页点一下就能清空。
               </p>
             </div>
           </Reveal>
@@ -63,7 +62,7 @@ export default function AboutPage({ onNavigate }) {
           <div>
             <span className="eyebrow">Architecture</span>
             <h2>四条设计原则</h2>
-            <p className="section-sub">整个仓库的拆法都由这四条决定，写新代码前值得先看一眼。</p>
+            <p className="section-sub">代码怎么拆，都由这四条决定。</p>
           </div>
         </div>
         <div className="grid cols-2">
@@ -80,9 +79,9 @@ export default function AboutPage({ onNavigate }) {
         <div className="section-head">
           <div>
             <span className="eyebrow">Packages</span>
-            <h2>一个宿主，三十多个包</h2>
+            <h2>一个主程序，三十多个包</h2>
             <p className="section-sub">
-              全部包在同一 pub workspace 里，根目录一次 <span className="mono">flutter pub get</span> 解析完。
+              所有包放在同一套工作区里，一次 <span className="mono">flutter pub get</span> 就全部装好。
             </p>
           </div>
         </div>
@@ -106,6 +105,7 @@ export default function AboutPage({ onNavigate }) {
           <div>
             <span className="eyebrow">Timeline</span>
             <h2>它是怎么长成这样的</h2>
+            <p className="section-sub">从「想查点东西」到「天天在改」，中间发生了什么。</p>
           </div>
         </div>
         <div className="steps">
@@ -124,8 +124,8 @@ export default function AboutPage({ onNavigate }) {
       <Reveal className="cta-band">
         <div>
           <h3>技术栈</h3>
-          <p>{SITE.tech.join(" · ")} —— 本地持久化 shared_preferences，网络 http + JWT，</p>
-          <p>直连模式把服务端校园对接链路整体搬进 App（pointycastle 提供 AES / RSA，SM4 纯 Dart 实现）。</p>
+          <p>{SITE.tech.join(" · ")}。数据存在本机，联网走 JWT 令牌。</p>
+          <p>直连模式把连学校系统的那套流程整个搬进了 App，加解密都在本地做。</p>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button type="button" className="btn" onClick={() => onNavigate("docs")}>

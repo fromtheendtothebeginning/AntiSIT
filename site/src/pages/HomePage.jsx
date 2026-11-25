@@ -30,13 +30,13 @@ export default function HomePage({ onNavigate, theme }) {
             <span className="badge green">{SITE.license.spdx} 开源</span>
           </div>
           <h1>
-            把校园装进<br />
-            <span className="accent">一块玻璃</span>
+            校园里要查的，<br />
+            <span className="accent">打开就有</span>
           </h1>
           <p className="hero-lead">
-            {SITE.name}（{SITE.cnName}）是上海应用技术大学的校园服务客户端：课程表、校园码、成绩、
-            第二课堂、宿舍电费与拓展市场，一个 App 收齐。界面用 Flutter 手绘玻璃质感，
-            数据走开放接口——服务器模式不碰你的校园密码，直连模式则完全不经第三方服务器。
+            {SITE.name}（{SITE.cnName}）是给上海应用技术大学同学做的校园助手。
+            课表、校园码、成绩、第二课堂、宿舍电费，不用再一个个找入口，打开 App 就在。
+            它也不碰你的校园密码——让服务器代连时，密码留在服务器上；直连时，数据只走你自己的手机。
           </p>
           <div className="hero-actions">
             <a className="btn" href={SITE.repos.gitee.releases} target="_blank" rel="noreferrer">
@@ -113,10 +113,10 @@ export default function HomePage({ onNavigate, theme }) {
         <Reveal className="section-head">
           <div>
             <span className="eyebrow">Features</span>
-            <h2>十个功能，一个入口</h2>
+            <h2>你要查的，基本都在这儿</h2>
             <p className="section-sub">
-              除了教务、二课这些「必须准」的查询，还有拓展市场、通知、桌面卡片这些日常用得到的小东西。
-              每一项都能在「插件管理」里单独启停。
+              课表、成绩这些每天要看的之外，还有上课提醒、桌面小组件、拓展市场这些顺手的小东西。
+              不想要哪个，去「插件管理」关掉就行。
             </p>
           </div>
         </Reveal>
@@ -139,10 +139,9 @@ export default function HomePage({ onNavigate, theme }) {
         <Reveal className="section-head">
           <div>
             <span className="eyebrow">Connection</span>
-            <h2>服务器模式，还是直连模式</h2>
+            <h2>数据怎么来，你说了算</h2>
             <p className="section-sub">
-              同一套接口形式，两种数据通路。「我的 → 连接设置」里随时切换，任意实现同一套开放接口的
-              自建服务器都能用。
+              两种走法，在「我的 → 连接设置」里随时换。自己搭的服务器也能用，只要接口形式对得上。
             </p>
           </div>
         </Reveal>
@@ -151,11 +150,11 @@ export default function HomePage({ onNavigate, theme }) {
             <div className="card-icon"><Icon name="shield" size={19} /></div>
             <h3>服务器模式（推荐）</h3>
             <p>
-              填服务器地址 + 该服务器账号密码即可用。校园凭据在服务器网站配置一次，由服务器代连校内网，
-              App 全程不接触你的校园密码；401 自动续期，隧道类请求串行排队。
+              填服务器地址和账号就能用。校园密码只填在服务器网站上，由服务器去连校内网，App 从头到尾不碰它。
+              课表也能在手机和网站之间同步。
             </p>
             <div className="card-foot">
-              <span className="badge green">不接触校园密码</span>
+              <span className="badge green">App 不碰校园密码</span>
               <span className="badge muted">课表云端同步</span>
             </div>
           </Reveal>
@@ -163,12 +162,12 @@ export default function HomePage({ onNavigate, theme }) {
             <div className="card-icon"><Icon name="code" size={19} /></div>
             <h3>直连模式</h3>
             <p>
-              用本机凭据直接访问学校系统，不走任何服务器，适合校内直连或自建服务器不可用时。
-              需要设备在校园网 / 校内 VPN 内，验证码手动输入；凭据明文存本机，手动退出即清除。
+              让 App 自己拿着你的凭据去问学校系统，不经任何第三方服务器。适合在校园网里用，
+              验证码要自己输一次。退出登录时，保存的密码会一起清掉。
             </p>
             <div className="card-foot">
               <span className="badge muted">数据不经第三方</span>
-              <span className="badge muted">抢课仅此模式</span>
+              <span className="badge muted">抢课要用这个模式</span>
             </div>
           </Reveal>
         </div>
@@ -177,8 +176,8 @@ export default function HomePage({ onNavigate, theme }) {
       {/* ---------- CTA ---------- */}
       <Reveal className="cta-band">
         <div>
-          <h3>想改点什么？整个仓库都在你手里</h3>
-          <p>功能按 Dart 包拆开、清单由脚本生成，GPL-3.0 允许你自由修改与再分发（衍生作品需同样开源）。</p>
+          <h3>想改点什么？代码都在这儿</h3>
+          <p>整个项目以 GPL-3.0 开源，你可以随便改、随便发给别人用。改完的版本也要同样开源。</p>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <a className="btn" href={SITE.repos.github.url} target="_blank" rel="noreferrer">

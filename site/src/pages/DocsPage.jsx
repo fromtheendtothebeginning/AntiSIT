@@ -40,15 +40,17 @@ export default function DocsPage({ sub }) {
         <div className="hero-tags" style={{ marginBottom: 14 }}>
           <span className="badge gold"><Icon name="puzzle" size={13} /> 拓展开发教程</span>
           <span className="badge">Cordis 运行时</span>
-          <span className="badge muted">行为基线 2026-11</span>
+          <span className="badge muted">跟着当前源码走</span>
         </div>
         <h1>开发文档 · 写一个拓展</h1>
         <p className="lead">
-          一个拓展就是一段跑在 App 里的 Cordis 插件：一个 <span className="mono">ext.json</span> +
-          一个 <span className="mono">main.js</span>，通过 <span className="mono">ctx</span> 拿宿主的存储、网络、
-          AI、通知与整套界面组件。下面按「看懂 → 写第一个 → 画界面 → 用能力 → 发布」的顺序讲完。
-          仓库里 <a className="mono" href={SITE.repos.github.url + "/blob/main/docs/extensions.md"} target="_blank" rel="noreferrer">docs/extensions.md</a>
-          是同一套内容的完整版。
+          想给 App 加个自己的小功能？不用改 App 本体——写个拓展就行。
+          一个拓展只有两个文件：一份说明（<span className="mono">ext.json</span>）和一份代码
+          （<span className="mono">main.js</span>）。装进去就能跑，改内容也不用重新发版。
+        </p>
+        <p className="lead" style={{ marginTop: 10 }}>
+          下面按「先跑起来 → 画界面 → 用能力 → 发出去」的顺序讲。
+          完整版在仓库的 <a className="mono" href={SITE.repos.github.url + "/blob/main/docs/extensions.md"} target="_blank" rel="noreferrer">docs/extensions.md</a>。
         </p>
       </header>
 

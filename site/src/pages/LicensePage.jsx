@@ -60,9 +60,12 @@ export default function LicensePage() {
         </div>
         <h1>开源协议</h1>
         <p className="lead">
-          {SITE.name} 以 GNU 通用公共许可协议第三版（GPL-3.0）发布。下面给出两个代码托管地址、
-          协议中文译本与英文原文；译文仅供理解参考，
-          <strong style={{ color: "var(--text-primary)" }}>以英文原文为准</strong>。
+          {SITE.name} 用的是 GPL-3.0，也就是 GNU 通用公共许可协议第三版。
+          简单说：你可以免费用、随便改、拿去卖也行，但改完的版本也要同样开源。
+        </p>
+        <p className="lead" style={{ marginTop: 10 }}>
+          下面是两个代码仓库的地址，以及协议的中文译本和英文原文。
+          中文只是帮你理解，<strong style={{ color: "var(--text-primary)" }}>真要较真，以英文原文为准</strong>。
         </p>
       </header>
 
@@ -78,7 +81,7 @@ export default function LicensePage() {
           <GlassTabs
             items={[
               { id: "zh", label: "中文译本" },
-              { id: "en", label: "English (Official)" }
+              { id: "en", label: "英文原文" }
             ]}
             value={lang}
             onChange={setLang}
@@ -99,7 +102,7 @@ export default function LicensePage() {
                     <div className="repo-desc">{repo.desc}</div>
                   </div>
                 </div>
-                <span className="repo-go">仓库 <Icon name="external" size={12} /></span>
+                <span className="repo-go">去看看 <Icon name="external" size={12} /></span>
               </a>
             ))}
           </div>
@@ -109,14 +112,14 @@ export default function LicensePage() {
           <div className={"license-paper" + (lang === "en" ? " is-mono" : "")}>
             {lang === "zh" && (
               <div className="lp-sub">
-                译者：阮坤良 &lt;peterrk@pku.edu.cn&gt; · 非官方译本，不替代原文的法律效力；
-                本译本依 GPL 译文发布条款转载，来源 <a href={SITE.license.translations} target="_blank" rel="noreferrer" style={{ color: "var(--accent-1)" }}>gnu.org/licenses/translations</a>。
+                译者：阮坤良 &lt;peterrk@pku.edu.cn&gt;。这是非官方译本，只用来帮你理解，
+                法律效力以英文原文为准。来源 <a href={SITE.license.translations} target="_blank" rel="noreferrer" style={{ color: "var(--accent-1)" }}>gnu.org/licenses/translations</a>。
               </div>
             )}
             {lang === "en" && (
               <div className="lp-sub">
-                Verbatim copy of the license text shipped in the repository LICENSE file ·
-                canonical source <a href={SITE.license.url} target="_blank" rel="noreferrer" style={{ color: "var(--accent-1)" }}>www.gnu.org/licenses/gpl-3.0</a>.
+                这份就是仓库 LICENSE 文件的原文，也是唯一有法律效力的版本 ·
+                出处 <a href={SITE.license.url} target="_blank" rel="noreferrer" style={{ color: "var(--accent-1)" }}>www.gnu.org/licenses/gpl-3.0</a>。
               </div>
             )}
             {rendered}
@@ -125,21 +128,21 @@ export default function LicensePage() {
 
         <Reveal className="grid cols-2" delay={3}>
           <div className="panel">
-            <h3>你能做什么</h3>
+            <h3>你可以</h3>
             <ul className="shot-bullets" style={{ marginTop: 8 }}>
-              <li>商业使用 —— 在公司、收费服务里用都不需要额外授权</li>
-              <li>修改源码 —— 想改哪就改哪，不必向作者报备</li>
-              <li>再分发 —— 原件或修改版都能发，可以收费，但要给接收者同样自由</li>
-              <li>私人使用 —— 在自己设备上跑、私下改，不受分发条款约束</li>
+              <li>拿去商用 —— 在公司里用、做成收费服务，都不用另外申请</li>
+              <li>随便改 —— 想改哪改哪，不用跟作者打招呼</li>
+              <li>发给别人 —— 原件或你改过的版本都能发，可以收钱，但拿到的人也要有同样的自由</li>
+              <li>自己用 —— 在自己设备上跑、私下改，不受这些条款限制</li>
             </ul>
           </div>
           <div className="panel">
-            <h3>你需要注意</h3>
+            <h3>但要注意</h3>
             <ul className="shot-bullets" style={{ marginTop: 8 }}>
-              <li>分发修改版必须同样以 GPL-3.0 开源，并提供对应源码</li>
-              <li>不得附加额外限制：不能把 GPL 授权再收窄一层</li>
-              <li>分发须保留版权声明与「无担保」声明</li>
-              <li>专利：贡献者授予你专利许可；你不得用专利反过来限制他人</li>
+              <li>你发出去的修改版，也得用 GPL-3.0 开源，并把源码一起给出</li>
+              <li>不能加额外限制 —— 不能把这份自由再收窄一层</li>
+              <li>要保留原作者的版权声明和「没有担保」这句话</li>
+              <li>专利：贡献者把专利许可给了你，你也不能拿专利反过来卡别人</li>
             </ul>
           </div>
         </Reveal>
@@ -147,7 +150,7 @@ export default function LicensePage() {
         <Reveal className="cta-band" delay={4}>
           <div>
             <h3>下载 / 参与</h3>
-            <p>Release 页提供签好名的 APK 与 .sha256；想提交代码请走 PR，改动只碰自己的插件包最省事。</p>
+            <p>Release 页有签好名的安装包。想改代码就提 PR，只动自己那个包最省事。</p>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <a className="btn" href={SITE.repos.gitee.releases} target="_blank" rel="noreferrer">
