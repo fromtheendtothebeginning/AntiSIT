@@ -18,10 +18,9 @@ class TimetablePlugin extends FeaturePlugin {
   String get description => '周 / 日视图、教务与考试导入、调休规则、学期起止设置';
   @override
   List<String> get dependencies => const [PluginIds.network];
-  /// 软依赖 = 可选增强：AI 只用来「识别校历截图 / 自动过验证码」（没配就人工输入）；
-  /// 上课提醒是课表页 AppBar 那颗铃铛（插件没装/停用就整颗不出现、课表照常用）。
-  /// 两者都通过注册表按 id 取能力，本包不 import 它们；这里声明是为了让依赖图上的边
-  /// 与代码耦合一致——生成器会把 `capability<...>(PluginIds.x)` 扫出来对账。
+
+  /// 软依赖 = 可选增强：AI 只用来识别校历截图，上课提醒是课表页 AppBar 那颗铃铛；
+  /// 都按 id 从注册表取能力（本包不 import 它们），没装 / 停用时对应入口自动消失。
   @override
   List<String> get optionalDependencies => const [PluginIds.ai, PluginIds.reminder];
   @override
@@ -38,8 +37,7 @@ class TimetablePlugin extends FeaturePlugin {
         ),
       ];
 
-  /// 「我的 → 设置」里只留一行入口：课表相关的设置都收进「课程表设置」二级页
-  /// （课表页 → 更多 → 课程表设置 也能进，两处进的是同一页）。
+  /// 「我的 → 设置」只留一行入口：课表相关设置都收进「课程表设置」二级页。
   @override
   List<Widget> settingsTiles(BuildContext context, registry) => [
         ListTile(
@@ -64,6 +62,5 @@ class TimetablePlugin extends FeaturePlugin {
 }
 
 /// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_XXX=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 保持 const：EXCLUDE 开关为真时整条连同包内代码一起被 AOT 摇树丢掉。
 const PluginBundle pluginBundle = PluginBundle(features: [TimetablePlugin()]);

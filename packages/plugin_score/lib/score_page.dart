@@ -1,15 +1,13 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-import 'credit_math.dart';
+import 'score_credits_view.dart';
+import 'score_overview_view.dart';
 import 'score_target_settings_page.dart';
 
-/// 第二课堂分：精确复刻 anticraft.top 网站排版
-/// （单面板：学生信息行 + 总得分/实践学分 CountUp + 分组手风琴带达标胶囊）。
+/// 第二课堂分：分数概览与加分明细两页，左右滑动切换（复刻网站单面板排版）。
 class ScorePage extends StatefulWidget {
   const ScorePage({super.key});
 
@@ -26,21 +24,18 @@ class _ScorePageState extends State<ScorePage> {
   bool _fromCache = false;
   bool _refreshFailed = false;
 
-  /// 达标线按入学年级（nj）取：远端配置/本机自定义优先，未配置时用默认规则。
+  /// 达标线按入学年级（nj）取：远端配置 / 本机自定义优先，未配置时用默认规则。
   ScoreTargetPolicy _policy = const ScoreTargetPolicy();
 
   /// 当前生效的入学年：教务返回优先，直连模式手填兜底。
   String _cohort = '';
 
-  // 左右滑动切换：0=分数概览，1=加分明细
-  int _tab = 0;
+  int _tab = 0; // 0=分数概览，1=加分明细
 
-  /// 连续位置（单位 = 页）：滑块自己的弹簧、用户拖滑块都会写到这里，
-  /// 页面据此实时平移；「界面实时跟着滑块切换」关掉时页面按落位页显示。
+  /// 连续位置（单位 = 页）：滑块自己的弹簧、用户拖滑块都会写到这里，页面据此实时平移。
   final ValueNotifier<double> _pos = ValueNotifier<double>(0);
 
-  /// 页面横滑时驱动切换器滑块的位置（默认行为，不受开关控制）；
-  /// null = 交还滑块自己的弹簧。
+  /// 页面横滑时驱动切换器滑块的位置（默认行为）；null = 交还滑块自己的弹簧。
   final ValueNotifier<double?> _dragPos = ValueNotifier<double?>(null);
   double _dragFrom = 0;
   double _screenW = 1;
@@ -74,8 +69,7 @@ class _ScorePageState extends State<ScorePage> {
     super.dispose();
   }
 
-  /// 页面横滑：驱动切换器滑块（默认行为）；「界面实时跟着滑块切换」打开时
-  /// 页面同时跟着手指走，关掉则松手落位后才换页。
+  /// 页面横滑：驱动切换器滑块；「界面实时跟着滑块切换」打开时页面也跟手指走。
   void _onPageDragStart(DragStartDetails _) {
     final w = MediaQuery.sizeOf(context).width;
     _screenW = w <= 0 ? 1 : w;
@@ -88,8 +82,7 @@ class _ScorePageState extends State<ScorePage> {
     final raw = (_dragPos.value ?? _dragFrom) - d.delta.dx / _screenW;
     final next = raw.isFinite ? raw.clamp(0.0, last) : _dragFrom;
     _dragPos.value = next;
-    // 拖动过程中只动位置、不切页（不 setState）：跟着手指走的视觉由 _pos 驱动，
-    // 中途重建整页既卡又容易在模拟器上撞到框架断言；落位在松手时一次定。
+    // 拖动中只动位置、不 setState：跟手视觉由 _pos 驱动，落位在松手时一次定。
     if (AppState.I.followSlider) {
       _pos.value = next;
     }
@@ -117,7 +110,7 @@ class _ScorePageState extends State<ScorePage> {
     if (i == 1 && !_creditsLoaded) _loadCredits();
   }
 
-  /// 「加分明细」先读本机缓存；是否自动拉新同样看「工具页自动刷新」设置。
+  /// 「加分明细」先读本机缓存立即展示。
   Future<void> _restoreCredits() async {
     final cached = await ToolPageCache.read(_creditsCacheKey);
     final list = ((cached?['records'] as List?) ?? const [])
@@ -132,9 +125,8 @@ class _ScorePageState extends State<ScorePage> {
     }
   }
 
-  /// 加分明细按时间**从最新开始**排：优先活动开始时间（start），
-  /// 没有就用记录时间（date，认定/提交时间）；都没有的排最后。
-  /// 两类时间都是 `yyyy-MM-dd HH:mm:ss` 格式，字典序即时间序。
+  /// 加分明细按时间**从最新开始**排：优先活动开始时间（start），没有就用记录时间（date），
+  /// 都没有的排最后；两类时间都是 `yyyy-MM-dd HH:mm:ss`，字典序即时间序。
   static List<Map<String, dynamic>> _sortCreditsNewestFirst(
     List<Map<String, dynamic>> list,
   ) {
@@ -258,6 +250,18 @@ class _ScorePageState extends State<ScorePage> {
     if (mounted) _load();
   }
 
+  /// 换大类后，已选的类别若不再属于它就清掉。
+  void _setCreditDl(String d) {
+    setState(() {
+      _creditDl = d;
+      if (d.isNotEmpty &&
+          _creditLb.isNotEmpty &&
+          !creditLbOptions(_credits, d).contains(_creditLb)) {
+        _creditLb = '';
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
@@ -266,9 +270,36 @@ class _ScorePageState extends State<ScorePage> {
       builder: (context, _) {
         // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
         final topInset = glassTopInset(context);
-        // 两页 Widget 只在本页 build 时建一次：拖动中每帧只挪 Positioned，
-        // 不重复构建两整页（真机上拖动才不卡）。
-        final pages = <Widget>[_overviewView(topInset), _creditsView(topInset)];
+        // 两页 Widget 只在本页 build 时建一次：拖动中每帧只挪 Positioned，不重复构建两整页。
+        final pages = <Widget>[
+          buildScoreOverview(
+            topInset: topInset,
+            tabsRowHeight: _tabsRowHeight,
+            data: _data,
+            policy: _policy,
+            loading: _loading,
+            error: _err,
+            fromCache: _fromCache,
+            refreshFailed: _refreshFailed,
+            onRefresh: _load,
+          ),
+          buildScoreCredits(
+            topInset: topInset,
+            tabsRowHeight: _tabsRowHeight,
+            credits: _credits,
+            loading: _creditsLoading,
+            error: _creditsErr,
+            fromCache: _creditsFromCache,
+            refreshFailed: _creditsRefreshFailed,
+            query: _creditsQuery,
+            dl: _creditDl,
+            lb: _creditLb,
+            onQueryChanged: (v) => setState(() => _creditsQuery = v),
+            onDlChanged: _setCreditDl,
+            onLbChanged: (v) => setState(() => _creditLb = v),
+            onRefresh: _loadCredits,
+          ),
+        ];
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
@@ -289,8 +320,7 @@ class _ScorePageState extends State<ScorePage> {
               topInset: topInset,
               header: _tabsRow(),
               dragPosition: _dragPos,
-              // 不用 PageView：它和切换器滑块互相抢手势/回弹。改成和首页底栏同一套做法——
-              // 一个连续位置 _pos 驱动两页平移，横滑手势只改位置。
+              // 不用 PageView：它和切换器滑块互相抢手势 / 回弹。一个连续位置 _pos 驱动两页平移。
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onHorizontalDragStart: _onPageDragStart,
@@ -300,10 +330,7 @@ class _ScorePageState extends State<ScorePage> {
                 child: ValueListenableBuilder<double>(
                   valueListenable: _pos,
                   builder: (context, rawPos, _) {
-                    // 位置兜底：NaN / 越界一律钳回合法范围，别把非法值喂给布局
-                    // 不夹到 0..1：首页底栏的弹簧本身带轻微过冲（欠阻尼），
-                    // 页面跟着它一起过冲再回正，才有「触底反弹」的手感；
-                    // 只兜一个安全范围，防止异常值把页面甩飞。
+                    // 位置兜底：NaN / 越界钳回安全范围；不夹到 0..1，保留弹簧过冲的手感。
                     final safePos = rawPos.isFinite ? rawPos : _tab.toDouble();
                     final pos = AppState.I.followSlider
                         ? safePos.clamp(-0.25, 1.25)
@@ -312,8 +339,7 @@ class _ScorePageState extends State<ScorePage> {
                     return Stack(
                       children: [
                         for (var k = 0; k < pages.length; k++)
-                          // 用 Positioned 摆位而不是 Transform：少一层合成层，
-                          // 和上面的毛玻璃顶栏叠在一起更稳。
+                          // 用 Positioned 摆位而不是 Transform：少一层合成层，与毛玻璃顶栏叠着更稳。
                           Positioned(
                             left: (k - pos) * w,
                             top: 0,
@@ -344,7 +370,7 @@ class _ScorePageState extends State<ScorePage> {
   static const double _tabsRowHeight = 50;
 
   Widget _tabsRow() => GlassTabs(
-    // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底/描边
+    // 外层玻璃胶囊由 FloatingTabsHeader 提供，自己不再画一层底 / 描边
     flat: true,
     // 滑块位置写出去（拖动 / 弹簧都会写）：页面据此实时跟手
     position: _pos,
@@ -356,711 +382,4 @@ class _ScorePageState extends State<ScorePage> {
     height: 32,
     fontSize: 11.5,
   );
-
-  Widget _overviewView(double topInset) {
-    final data = _data;
-    final groups = ((data?['groups'] as List?) ?? const [])
-        .cast<Map<String, dynamic>>();
-    final total = asNum(data?['total']);
-    final empty = total == null && groups.isEmpty;
-
-    return PageStateView(
-      loading: _loading && _data == null,
-      error: _err,
-      empty: !_loading && _err == null && empty,
-      emptyText: '暂无第二课堂数据，请稍后重试',
-      onRetry: _load,
-      child: RefreshIndicator(
-        // 刷新圈落在悬浮切换器下面，别贴着屏幕最上沿（issue #14）
-        edgeOffset: topInset + _tabsRowHeight,
-        onRefresh: _load,
-        child: ListView(
-          // 记住本页滚动位置：切走再切回来仍停在原处
-          key: const PageStorageKey<String>('score_overview'),
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            12,
-            8 + topInset + _tabsRowHeight,
-            12,
-            20,
-          ),
-          children: [
-            ToolRefreshBar(
-              refreshing: _loading,
-              fromCache: _fromCache,
-              failed: _refreshFailed,
-              onRefresh: _load,
-            ),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (data != null) _studentLine(data),
-                  if (data != null && _policy.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        '本年级达标线尚未配置，仅显示实际分数',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: SemColors.textMuted,
-                        ),
-                      ),
-                    ),
-                  if (data != null && total != null) ...[
-                    const SizedBox(height: 14),
-                    _stats(data, total, _policy),
-                    const SizedBox(height: 16),
-                  ],
-                  for (var gi = 0; gi < groups.length; gi++)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _groupTile(groups[gi], gi, groups.length, _policy),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 空串 / 'null' 归一成空（学校脏数据里代码位可能回 'null' 字符串）。
-  static String _tag(Object? v) {
-    final s = '${v ?? ''}'.trim();
-    return (s.isEmpty || s == 'null') ? '' : s;
-  }
-
-  /// 明细里出现过的大类（保序去重）。
-  List<String> get _creditDlOptions {
-    final seen = <String>{};
-    final out = <String>[];
-    for (final r in _credits) {
-      final d = _tag(r['dldm']);
-      if (d.isNotEmpty && seen.add(d)) out.add(d);
-    }
-    return out;
-  }
-
-  /// 类别选项：选了大类就只列该大类下的（级联）。
-  List<String> get _creditLbOptions {
-    final seen = <String>{};
-    final out = <String>[];
-    for (final r in _credits) {
-      if (_creditDl.isNotEmpty && _tag(r['dldm']) != _creditDl) continue;
-      final l = _tag(r['lbdm']);
-      if (l.isNotEmpty && seen.add(l)) out.add(l);
-    }
-    return out;
-  }
-
-  /// 筛选后的明细：标签过滤 + 搜索（活动名 / 大类 / 类别，支持拼音）。
-  List<Map<String, dynamic>> get _creditsFiltered {
-    final list = _credits.where((r) {
-      if (_creditDl.isNotEmpty && _tag(r['dldm']) != _creditDl) return false;
-      if (_creditLb.isNotEmpty && _tag(r['lbdm']) != _creditLb) return false;
-      return true;
-    }).toList();
-    return filterByPinyin(
-      list,
-      (r) => '${r['name']} ${_tag(r['dldm'])} ${_tag(r['lbdm'])}',
-      _creditsQuery,
-    );
-  }
-
-  void _setCreditDl(String d) {
-    setState(() {
-      _creditDl = d;
-      // 换大类后，已选的类别若不再属于它就清掉
-      if (d.isNotEmpty &&
-          _creditLb.isNotEmpty &&
-          !_creditLbOptions.contains(_creditLb)) {
-        _creditLb = '';
-      }
-    });
-  }
-
-  /// 「加分明细」：每次活动参与记录（活动 / 学分 / 审批状态 / 时间）。
-  Widget _creditsView(double topInset) {
-    // 学分按「千分位整数」累加：double 直接相加会出现 0.1+0.2=0.30000000000000004
-    // 这类二进制浮点尾巴（页面上曾显示 5.930000000000002），最后再换算回学分。
-    final sum = sumCreditThousandths(_credits.map((r) => r['credit'])) / 1000;
-    final filtered = _creditsFiltered;
-    final filtering =
-        _creditsQuery.trim().isNotEmpty ||
-        _creditDl.isNotEmpty ||
-        _creditLb.isNotEmpty;
-    return PageStateView(
-      loading: _creditsLoading && _credits.isEmpty,
-      error: _creditsErr,
-      empty: !_creditsLoading && _creditsErr == null && _credits.isEmpty,
-      emptyText: '暂无加分明细',
-      onRetry: _loadCredits,
-      child: RefreshIndicator(
-        // 刷新圈落在悬浮切换器下面，别贴着屏幕最上沿（issue #14）
-        edgeOffset: topInset + _tabsRowHeight,
-        onRefresh: _loadCredits,
-        child: ListView(
-          key: const PageStorageKey<String>('score_credits'),
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            12,
-            8 + topInset + _tabsRowHeight,
-            12,
-            20,
-          ),
-          children: [
-            ToolRefreshBar(
-              refreshing: _creditsLoading,
-              fromCache: _creditsFromCache,
-              failed: _creditsRefreshFailed,
-              onRefresh: _loadCredits,
-            ),
-            if (_credits.isNotEmpty) ...[
-              AppCard(
-                child: Row(
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '加分记录',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: SemColors.textMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${_credits.length} 条',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            color: SemColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '累计学分',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: SemColors.textMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _fmtNum(sum),
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            color: SemColors.accent,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                onChanged: (v) => setState(() => _creditsQuery = v),
-                decoration: const InputDecoration(
-                  hintText: '搜索活动名 / 类别，支持拼音…',
-                  prefixIcon: Icon(Icons.search, size: 20),
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TagFilterRow(
-                title: '大类',
-                labels: _creditDlOptions,
-                selected: _creditDl,
-                onSelected: _setCreditDl,
-              ),
-              const SizedBox(height: 4),
-              TagFilterRow(
-                title: '类别',
-                labels: _creditLbOptions,
-                selected: _creditLb,
-                onSelected: (v) => setState(() => _creditLb = v),
-              ),
-              if (filtering) ...[
-                const SizedBox(height: 6),
-                Text(
-                  filtered.isEmpty
-                      ? '没有符合条件的记录'
-                      : '已筛出 ${filtered.length} / ${_credits.length} 条',
-                  style: TextStyle(fontSize: 11.5, color: SemColors.textMuted),
-                ),
-              ],
-              const SizedBox(height: 6),
-            ],
-            if (!filtering || filtered.isNotEmpty)
-              for (final r in filtered) _creditTile(r),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _creditTile(Map<String, dynamic> r) {
-    final credit = asNum(r['credit']);
-    final status = '${r['status'] ?? ''}'.trim();
-    final cat = [
-      '${r['dldm'] ?? ''}'.trim(),
-      '${r['lbdm'] ?? ''}'.trim(),
-    ].where((s) => s.isNotEmpty && s != 'null').join(' · ');
-    final start = '${r['start'] ?? ''}'.trim();
-    final date = '${r['date'] ?? ''}'.trim();
-    final when = start.isNotEmpty ? start : date;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: AppCard(
-        radius: 10,
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (credit != null)
-                  Capsule('${_fmtNum(credit)} 学分', color: SemColors.accent),
-                if (status.isNotEmpty)
-                  Capsule(
-                    status,
-                    color: status.contains('通过')
-                        ? SemColors.success
-                        : SemColors.textMuted,
-                  ),
-                if (cat.isNotEmpty) Capsule(cat),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${r['name']}',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: SemColors.textPrimary,
-              ),
-            ),
-            if (when.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  '时间：${_shortTime(when)}',
-                  style: TextStyle(fontSize: 12, color: SemColors.textMuted),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _shortTime(String s) => s.length >= 16 ? s.substring(0, 16) : s;
-
-  // ── 学生信息行（cs-student-line：12px，中点分隔）──
-  Widget _studentLine(Map<String, dynamic> data) {
-    final s = data['student'] as Map<String, dynamic>? ?? {};
-    final parts = <String>[
-      if ((s['xh'] ?? '').toString().isNotEmpty) '学号 ${s['xh']}',
-      if ((s['xm'] ?? '').toString().isNotEmpty) '姓名 ${s['xm']}',
-      if ((s['nj'] ?? '').toString().isNotEmpty) '年级 ${s['nj']}',
-      if ((s['bmmc'] ?? '').toString().isNotEmpty) '${s['bmmc']}',
-      if ((s['zymc'] ?? '').toString().isNotEmpty) '${s['zymc']}',
-      if ((s['bjmc'] ?? '').toString().isNotEmpty) '${s['bjmc']}',
-    ];
-    return Text(
-      parts.join('  ·  '),
-      style: TextStyle(
-        fontSize: 12,
-        color: SemColors.textSecondary,
-        height: 1.6,
-      ),
-    );
-  }
-
-  // ── 总得分 / 实践学分 两个大数字（cs-stats） ──
-  Widget _stats(
-    Map<String, dynamic> data,
-    num total,
-    ScoreTargetPolicy policy,
-  ) {
-    final credit = asNum(data['credit']);
-    final target = policy.total;
-    final reached = target != null && credit != null && credit >= target;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '总得分',
-              style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '$total',
-              style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.w600,
-                height: 1.1,
-                color: SemColors.textPrimary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(width: 28),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '实践学分',
-              style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-            ),
-            const SizedBox(height: 2),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                _CountUpText(
-                  value: credit?.toDouble(),
-                  style: TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w600,
-                    height: 1.1,
-                    color: target == null || credit == null
-                        ? SemColors.textPrimary
-                        : (reached ? SemColors.success : SemColors.danger),
-                  ),
-                ),
-                if (target != null) ...[
-                  const SizedBox(width: 4),
-                  Text(
-                    '/ ${_fmtNum(target)}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: SemColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // ── 分组（cs-group）：美育/健康教育单行平铺，其余可展开 ──
-  Widget _groupTile(
-    Map<String, dynamic> group,
-    int gi,
-    int groupCount,
-    ScoreTargetPolicy policy,
-  ) {
-    final target = policy.groupFor('${group['name'] ?? ''}');
-    final actual = asNum(group['subtotal']);
-    final targetVal = target?.target;
-    final rowsCount = ((group['rows'] as List?) ?? const []).length;
-
-    if (target != null && target.noExpand) {
-      return Container(
-        decoration: _groupDecoration(),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        child: Row(
-          children: [
-            Expanded(child: _groupName('${group['name']}')),
-            if (actual != null) _groupCapsule(actual, targetVal),
-          ],
-        ),
-      );
-    }
-
-    return _ScoreGroupTile(
-      name: '${group['name'] ?? ''}',
-      actual: actual,
-      targetVal: targetVal,
-      policy: policy,
-      rows: ((group['rows'] as List?) ?? const []).cast<Map<String, dynamic>>(),
-      defaultOpen: gi < groupCount - 2 && rowsCount <= 4,
-    );
-  }
-
-  BoxDecoration _groupDecoration() => BoxDecoration(
-    color: SemColors.stripe,
-    borderRadius: BorderRadius.circular(10),
-    border: Border.all(color: SemColors.border),
-  );
-
-  Widget _groupName(String name) => Text(
-    name,
-    style: TextStyle(
-      fontSize: 13,
-      fontWeight: FontWeight.w600,
-      color: SemColors.textPrimary,
-    ),
-  );
-
-  /// 组达标胶囊：默认蓝；有目标时达标绿 / 未达标红（cs-group-sub）。
-  Widget _groupCapsule(num actual, double? targetVal) {
-    final reached = targetVal != null && actual >= targetVal;
-    final color = targetVal == null
-        ? SemColors.accent
-        : (reached ? SemColors.success : SemColors.danger);
-    return Capsule(
-      targetVal != null
-          ? '${_fmtNum(actual)} / ${_fmtNum(targetVal)}'
-          : _fmtNum(actual),
-      color: color,
-      soft: targetVal == null
-          ? SemColors.accentSoft
-          : (reached ? SemColors.successSoft : SemColors.dangerSoft),
-    );
-  }
-}
-
-// ── 可展开分组（受控手风琴，复刻 cs-group-summary / cs-group-body）──
-
-class _ScoreGroupTile extends StatefulWidget {
-  const _ScoreGroupTile({
-    required this.name,
-    required this.actual,
-    required this.targetVal,
-    required this.policy,
-    required this.rows,
-    required this.defaultOpen,
-  });
-
-  final String name;
-  final num? actual;
-  final double? targetVal;
-  final ScoreTargetPolicy policy;
-  final List<Map<String, dynamic>> rows;
-  final bool defaultOpen;
-
-  @override
-  State<_ScoreGroupTile> createState() => _ScoreGroupTileState();
-}
-
-class _ScoreGroupTileState extends State<_ScoreGroupTile> {
-  late bool _open = widget.defaultOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final actual = widget.actual;
-    final targetVal = widget.targetVal;
-    final reached = actual != null && targetVal != null && actual >= targetVal;
-    final color = targetVal == null
-        ? SemColors.accent
-        : (reached ? SemColors.success : SemColors.danger);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: SemColors.stripe,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: SemColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          InkWell(
-            onTap: () => setState(() => _open = !_open),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.name,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: SemColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                  if (actual != null) ...[
-                    Capsule(
-                      targetVal != null
-                          ? '${_fmtNum(actual)} / ${_fmtNum(targetVal)}'
-                          : _fmtNum(actual),
-                      color: color,
-                      soft: targetVal == null
-                          ? SemColors.accentSoft
-                          : (reached
-                                ? SemColors.successSoft
-                                : SemColors.dangerSoft),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  AnimatedRotation(
-                    turns: _open ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      Icons.arrow_drop_down,
-                      size: 20,
-                      color: SemColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 200),
-            sizeCurve: Curves.easeOut,
-            crossFadeState: _open
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            firstChild: const SizedBox(width: double.infinity),
-            secondChild: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: SemColors.border)),
-              ),
-              child: widget.rows.isEmpty
-                  ? Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text(
-                        '暂无第二课堂数据，请稍后重试',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: SemColors.textMuted,
-                        ),
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        for (var i = 0; i < widget.rows.length; i++)
-                          _miniRow(widget.rows[i], i == widget.rows.length - 1),
-                      ],
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 二级行（cs-mini-table）：名称左、值右对齐加粗；有子目标时绿/红着色。
-  Widget _miniRow(Map<String, dynamic> row, bool last) {
-    final name = '${row['name'] ?? ''}';
-    final subTarget = widget.policy.subFor(name);
-    final hasTarget = subTarget != null;
-    final value = asNum(row['value']);
-    final raw = row['value'];
-    final reached = hasTarget && value != null && value >= subTarget;
-    final valueColor = hasTarget
-        ? (reached ? SemColors.success : SemColors.danger)
-        : SemColors.textPrimary;
-    final valueText = value != null
-        ? _fmtNum(value)
-        : ((raw == null || raw.toString().isEmpty) ? '—' : '$raw');
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
-      decoration: BoxDecoration(
-        border: last
-            ? null
-            : Border(bottom: BorderSide(color: SemColors.border)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              style: TextStyle(fontSize: 13, color: SemColors.textSecondary),
-            ),
-          ),
-          Text(
-            hasTarget ? '$valueText / ${_fmtNum(subTarget)}' : valueText,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: valueColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 数字显示：先按千分位取整再输出，抹掉 0.1+0.2 这类二进制浮点尾巴
-/// （例如 5.930000000000002 → 5.93，0.7000000000000001 → 0.7）。
-String _fmtNum(num v) => formatCredit(v);
-
-/// 数字增长动画（网站 CountUp：0 → 终值，700ms 缓出；值变化重播）。
-class _CountUpText extends StatefulWidget {
-  const _CountUpText({required this.value, required this.style});
-
-  final double? value;
-  final TextStyle style;
-
-  @override
-  State<_CountUpText> createState() => _CountUpTextState();
-}
-
-class _CountUpTextState extends State<_CountUpText>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 700),
-  );
-  late double? _shown = widget.value;
-
-  @override
-  void initState() {
-    super.initState();
-    if (_shown != null) _c.forward();
-  }
-
-  @override
-  void didUpdateWidget(covariant _CountUpText old) {
-    super.didUpdateWidget(old);
-    if (widget.value != old.value) {
-      _shown = widget.value;
-      _c.forward(from: 0);
-    }
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final v = _shown;
-    if (v == null) {
-      return Text('—', style: widget.style);
-    }
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) {
-        final t = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic).value;
-        final val = v * (1 - math.pow(1 - t, 3));
-        return Text(val.toStringAsFixed(1), style: widget.style);
-      },
-    );
-  }
 }
