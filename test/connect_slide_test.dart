@@ -82,7 +82,6 @@ void main() {
   testWidgets('往右拖回来：回到服务器那套', (tester) async {
     final w = await pumpPage(tester);
     final rest = leftOf(tester, serverMarker());
-
     // 先切到直连
     var g = await tester.startGesture(Offset(w * 0.85, 430));
     for (var i = 0; i < 5; i++) {

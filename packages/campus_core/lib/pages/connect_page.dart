@@ -171,11 +171,12 @@ class _ConnectPageState extends State<ConnectPage> {
 
   /// 两套设置并排放在同一个 Stack 里：最贴近滑块的那套决定高度，另一套跟着位置滑进滑出。
   ///
-  /// 两处细节都是为了不出现「奇怪的阴影」：
+  /// 三处细节都是为了不出现「奇怪的阴影」：
   /// * 已被滑到屏外的那套用 [Offstage] 彻底不画 —— 它的 AppCard 外投影（blur 24）
   ///   会从屏幕另一侧渗回来，在左右边缘各留一条暗带，且随模式切换左右换边。
-  /// * 裁剪只裁横向：普通 ClipRect 会把最后一张卡的**纵向**投影齐腰切断，
-  ///   卡片之间就出现一条硬边暗带。见 [_HorizontalClipper]。
+  /// * 裁剪只裁横向、且**仅滑动中才裁**：静止时还裁的话，[ClipRect] 会沿着卡片
+  ///   左右边缘把柔和的圆角外投影竖直切断，卡片下方就留下一条带硬直边的矩形暗带。
+  ///   见 [_HorizontalClipper]。
   Widget _slidingSections(AppState st) => ValueListenableBuilder<double>(
         valueListenable: _tabPos,
         builder: (context, rawPos, _) {
@@ -184,14 +185,18 @@ class _ConnectPageState extends State<ConnectPage> {
           final w = MediaQuery.sizeOf(context).width;
           final active = pos.round().clamp(0, 1);
           final other = 1 - active;
+          // 弹簧收尾不是精确落点（可能停在 0.999x），阈值留一点余量。
+          final sliding = (pos - active).abs() > 0.002;
           Widget panel(int i) => i == 0 ? _serverPanel(st) : _directPanel(st);
           return AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
             // 顶部锚定：默认的居中会让内容在高度动画期间整体上下漂移。
             alignment: Alignment.topCenter,
+            // 纵向不裁：默认 hardEdge 会沿这块的边界把 AppCard 的外投影切断。
+            clipBehavior: Clip.none,
             child: ClipRect(
-              clipper: const _HorizontalClipper(),
+              clipper: _HorizontalClipper(sliding: sliding),
               child: Stack(
                 children: [
                   // 当前这套：既是滑动的一方，也决定这块的高度。
@@ -611,14 +616,23 @@ class _ConnectPageState extends State<ConnectPage> {
   }
 }
 
-/// 只裁左右、不裁上下：滑动的两套设置并排在同一行里，需要挡住屏外那套的横向溢出，
-/// 但如果连纵向一起裁，最后一张卡的底部投影就会被齐腰切断，卡片之间多出一条硬边暗带。
+/// 裁掉屏外那套设置的横向溢出，但不碰纵向的投影。
+///
+/// [sliding] 为 false（已经停在某一格）时返回一个远大于视口的矩形 = 完全不裁：
+/// 静止时两套设置没有横向溢出，还裁只会把 AppCard 柔和的 blur 24 外投影沿着
+/// 卡片左右边缘竖直切断，卡片下方出现一条带硬直边的矩形暗带。
 class _HorizontalClipper extends CustomClipper<Rect> {
-  const _HorizontalClipper();
+  const _HorizontalClipper({required this.sliding});
+
+  /// 是否正在跟随滑块滑动（两套设置同时在画，需要挡住溢出的那套）。
+  final bool sliding;
 
   @override
-  Rect getClip(Size size) => Rect.fromLTWH(0, -2000, size.width, size.height + 4000);
+  Rect getClip(Size size) => sliding
+      ? Rect.fromLTWH(0, -2000, size.width, size.height + 4000)
+      : Rect.fromLTWH(-4000, -2000, size.width + 8000, size.height + 4000);
 
   @override
-  bool shouldReclip(covariant CustomClipper<Rect> oldClipper) => false;
+  bool shouldReclip(_HorizontalClipper oldClipper) =>
+      oldClipper.sliding != sliding;
 }
