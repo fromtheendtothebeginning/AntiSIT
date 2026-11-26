@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show SchedulerPhase;
 
@@ -22,14 +21,7 @@ import 'timetable_shell.dart';
 /// 课程表：周 / 日视图、教务与考试导入、调休规则、学期设置（底栏第 1 页）。
 /// 本地课表（手动课程 / 调休规则 / 考试日程）不依赖登录；教务导入需登录。
 class TimetablePage extends StatefulWidget {
-  const TimetablePage({super.key, this.activeTab, this.myTab = 0});
-
-  /// 主页当前 Tab。课表页是底栏常驻页（切走不销毁），只有靠它才知道「用户又回到
-  /// 课表了」——回到本页时把内容拉回本周，满足 issue #13 的诉求。
-  final ValueListenable<int>? activeTab;
-
-  /// 本页在底栏里的位置（插件能被停用，下标会变，不能写死常量）。
-  final int myTab;
+  const TimetablePage({super.key});
 
   /// 今天下一个「下课」时刻——只看节次时间，与星期几无关；今天没有了返回 null。
   /// 抽成纯函数是为了不等到真的下课也能测。
@@ -142,43 +134,8 @@ class _TimetablePageState extends State<TimetablePage> {
     AppState.I.addListener(_onAppChange);
     // 提醒插件的启停决定 AppBar 上那颗铃铛在不在，跟着注册表一起刷新
     PluginRegistry.I.addListener(_onAppChange);
-    // 底栏切页：课表页常驻不销毁，靠它知道「用户又回来了」
-    widget.activeTab?.addListener(_onTabChanged);
-    _wasActive = _isActiveTab;
     _wasLoggedIn = AppState.I.loggedIn;
     _init();
-  }
-
-  bool _wasActive = true;
-
-  bool get _isActiveTab => widget.activeTab?.value == widget.myTab;
-
-  /// 底栏切回课表：把内容拉回本周（issue #13 的原始诉求）。
-  ///
-  /// 每次切回来都回本周：用户翻到别的周看完后再去别的页，回来默认看「现在」，
-  /// 不会停在一个已经过期的周上。翻页本身仍是即时的——同一屏内的来回切周不受影响。
-  void _onTabChanged() {
-    final active = _isActiveTab;
-    if (active == _wasActive) return;
-    _wasActive = active;
-    if (!active) return;
-    if (mounted) setState(() {});
-    _returnToToday();
-  }
-
-  /// 把内容拉回「今天」那一周 / 那一天。
-  ///
-  /// 加载期（`_booting`）收到也不丢：`_init` 走完本来就会 `_jumpTo(今天)`，
-  /// 那次跳页会把指示器和内容一起安顿好，不需要额外记账。
-  void _returnToToday() {
-    if (_booting) return;
-    final tw = _todayWeek;
-    if (tw == null) return;
-    if (_dayView) {
-      _goDay(tw, DateTime.now().weekday - 1);
-    } else {
-      _jumpTo(tw, animate: false);
-    }
   }
 
   /// 在下课那一刻再重绘一次（只有 60s 心跳时，09:55 下课的课最晚 09:55:59 才变灰）。
@@ -214,7 +171,6 @@ class _TimetablePageState extends State<TimetablePage> {
     _flip?.cancel();
     AppState.I.removeListener(_onAppChange);
     PluginRegistry.I.removeListener(_onAppChange);
-    widget.activeTab?.removeListener(_onTabChanged);
     _pc.dispose();
     _dayPc.dispose();
     super.dispose();

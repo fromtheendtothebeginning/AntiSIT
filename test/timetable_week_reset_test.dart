@@ -35,15 +35,11 @@ void main() {
     TimetableStore.instance.active = '$xnm-$xqm';
   });
 
-  Future<void> pumpPage(WidgetTester tester, {ValueNotifier<int>? tab, int myTab = 0}) async {
+  Future<void> pumpPage(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: TimetablePage(activeTab: tab, myTab: myTab),
-      ),
-    );
+    await tester.pumpWidget(const MaterialApp(home: TimetablePage()));
     // 首页要等 load / syncCloud 这批 await 走完
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
@@ -86,26 +82,19 @@ void main() {
         reason: '跳页不能静默丢失（旧实现 60 帧后放弃 -> 内容停在第 1 周）');
   });
 
-  testWidgets('翻到别的周 → 切走再切回：回本周（每次都回，不看过多久）', (tester) async {
-    final tab = ValueNotifier<int>(0);
-    addTearDown(tab.dispose);
-    await pumpPage(tester, tab: tab);
+  testWidgets('翻到别的周后停在那周（切走切回不重置）', (tester) async {
+    await pumpPage(tester);
 
     // 手动翻到下一周
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
     expect(shownWeek(tester), todayWeek + 1);
 
-    // 切走再切回（立刻回来也一样）
-    tab.value = 1;
-    await tester.pumpAndSettle();
-    tab.value = 0;
+    // 让页面重新走一轮 build（等价于切走切回时会发生的重建）
+    await tester.pump(const Duration(seconds: 1));
     await tester.pumpAndSettle();
 
-    expect(shownWeek(tester), todayWeek, reason: '回到课表就回本周');
-    final pv = tester.widget<PageView>(find.byType(PageView).first);
-    expect(pv.controller!.page?.round(), todayWeek - 1,
-        reason: '内容也要跟着回到本周（不能只有指示器回去）');
+    expect(shownWeek(tester), todayWeek + 1, reason: '翻到哪周就停在哪周');
   });
 
   testWidgets('双击周数标题立刻回到本周（不用等下一次刷新 / 心跳）', (tester) async {

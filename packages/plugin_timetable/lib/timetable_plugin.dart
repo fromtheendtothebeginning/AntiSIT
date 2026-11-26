@@ -33,8 +33,8 @@ class TimetablePlugin extends FeaturePlugin {
           activeIcon: Icons.calendar_month_outlined,
           label: '课程表',
           order: 10,
-          // 课表页常驻不销毁：把底栏当前页传进去，切回本页时才知道要复位回本周
-          build: (index) => TimetablePage(activeTab: tab, myTab: index),
+          // 课表页常驻不销毁，翻到哪周就停在哪周（切回本页不重置）
+          build: (_) => const TimetablePage(),
         ),
       ];
 
