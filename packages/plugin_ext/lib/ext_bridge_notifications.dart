@@ -21,6 +21,7 @@ class ExtNotificationChannel {
     if (popup) await _consent('notification.popup');
     await ExtNotificationService.instance.show(
       extId: extId,
+      extName: item?.name,
       key: _notifyKey(args, required: false),
       title: _notifyTitle(args),
       body: _notifyBody(args),
