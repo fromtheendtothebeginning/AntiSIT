@@ -33,7 +33,7 @@ class ScorePlugin extends FeaturePlugin {
   @override
   int get settingsOrder => 48;
 
-  /// 达标线属于「长期偏好」，入口收在「我的 → 配置」页里（二课页里也留了一个快捷按钮）。
+  /// 达标线属于长期偏好，入口收在「我的 → 配置」页里（二课页里也留了快捷按钮）。
   @override
   List<Widget> configTiles(BuildContext context, PluginRegistry registry) => [
         ListTile(
@@ -53,8 +53,7 @@ class ScorePlugin extends FeaturePlugin {
     return '${s.credit} / ${s.total} 分';
   }
 
-  /// 「我的 → 学籍信息」也读这份缓存，所以取到后一并写进 AppState。
-  /// 同时落盘到工具页缓存：进入「二课分数」二级页时先显示这份数据，不用先转圈。
+  /// 预取分数：同时写 AppState（「我的 → 学籍信息」也读这份）与工具页缓存（二级页先显示缓存）。
   @override
   Future<void> prefetch() async {
     final r = await ApiClient.I.score();
@@ -65,6 +64,5 @@ class ScorePlugin extends FeaturePlugin {
 }
 
 /// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_XXX=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 保持 const：EXCLUDE 开关为真时整条连同包内代码一起被 AOT 摇树丢掉。
 const PluginBundle pluginBundle = PluginBundle(features: [ScorePlugin()]);

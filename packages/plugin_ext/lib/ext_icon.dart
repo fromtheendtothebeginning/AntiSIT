@@ -7,11 +7,9 @@ import 'package:campus_core/campus_core.dart';
 import 'extension_item.dart';
 import 'site_icon.dart';
 
-/// 拓展卡片图标：`line:<name>` 镂空线性图标优先，其次是自定义的 emoji / 图片网址，
-/// 再其次是网站图标（[SiteIcon]），都没有（或拿不到 / 本地压缩包）就用名称首字。
-/// 尺寸与「工具」宫格一致：8 内边距的圆角色块 + 24 的图标。
+/// 拓展卡片图标：`line:<name>` 镂空图标 → 自定义 emoji / 图片网址 → 网站图标 → 名称首字。
 ///
-/// 「拓展」页与「插件市场」页共用（市场里的条目也要按同一规格画）。
+/// 尺寸与「工具」宫格一致；「拓展」页与「插件市场」页共用。
 class ExtIcon extends StatelessWidget {
   const ExtIcon({super.key, required this.item, this.size = 24, this.padding = 8});
 
@@ -21,10 +19,8 @@ class ExtIcon extends StatelessWidget {
   /// 色块内边距：默认 8（与工具宫格一致）；1x3 窄卡片放不下时缩到 6。
   final double padding;
 
-  /// 官方 / 投稿拓展用的镂空图标名 → Material Outlined 图标。
-  ///
-  /// 市场仓库的 `market_manifest.dart` 维护同一份白名单；新增时两边一起改，
-  /// 否则市场会以「图标名不认识」拦下投稿。
+  /// 镂空图标白名单；市场仓库的 `market_manifest.dart` 维护同一份，新增时两边一起改
+  /// （否则市场会以「图标名不认识」拦下投稿）。
   static const Map<String, IconData> lineIcons = {
     'extension': Icons.extension_outlined,
     'handyman': Icons.handyman_outlined,

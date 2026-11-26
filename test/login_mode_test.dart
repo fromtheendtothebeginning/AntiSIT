@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 登录页要能让用户**自己选**接入方式：默认直连（学号 + 统一身份认证密码），
-/// 也能切到服务器模式（服务器域名或 IP + 账号密码）。之前只有服务器账号登录一条路。
+/// 登录页让用户自己选接入方式：默认直连（学号 + 统一身份认证密码），也能切到服务器模式（域名或 IP + 账号密码）。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});

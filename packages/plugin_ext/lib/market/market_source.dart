@@ -10,23 +10,16 @@ import 'package:campus_core/campus_core.dart';
 
 import 'market_entry.dart';
 
-/// 市场目录的**签名公钥**（写死在 App 里 = 信任根）。
-///
-/// 对应私钥只维护者本机有（`AntiSIT-market` 仓库的 `keys/market.key`，不进仓库、不进 CI），
-/// 所以拿到目录的人伪造不出目录，而目录挂哪个镜像都无所谓——镜像改内容必然验签失败。
-/// 这段是 `market_tool keygen` 打出来的，换密钥时把新 keyId 加进来（旧的要留着：
-/// 老 App 只认识它发版时内置的那把）。
+/// 市场目录的**签名公钥**（写死在 App 里 = 信任根）：镜像改内容必然验签失败。
+/// 私钥只在维护者本机；换密钥时把新 keyId 加进来，旧的留着（老 App 只认内置的那把）。
 const Map<String, String> kMarketPublicKeys = {
   'k1': '0oooGYYznJVB3bBPD42pXabM93AH5hQKqaZXxzpj/XI=',
 };
 
 /// 目录的镜像（依次尝试，谁先给出**验签通过**的目录就用谁）。
 ///
-/// 自建镜像排第一：jsDelivr / raw.githubusercontent 对分支路径有长缓存，而且
-/// **`market.json` 与 `market.json.sig` 是两个互不相干的缓存条目**，发版后两者
-/// 回收时间不一致时会给出「新目录 + 旧签名」，验签必然失败——表现就是
-/// 「拓展发了新版，市场里却一直看不到」。自建镜像由 `tool/market_mirror.sh`
-/// 直接推送，推完立刻生效，国内访问也快。
+/// 自建镜像排第一：jsDelivr / raw 对分支路径有长缓存，且 `market.json` 与 `.sig`
+/// 缓存回收不一致时会给出「新目录 + 旧签名」，验签必然失败。
 const List<String> kMarketMirrors = [
   'https://anticraft.top/market/',
   // 国内可达性好，缓存也快
@@ -63,8 +56,7 @@ enum MarketStatus {
 
 /// 插件市场目录：拉取 + **验签** + 缓存 + 提供下载。
 ///
-/// 页面监听它重建。目录本身很小（几十 KB），缓存原样存本地，
-/// 断网时仍然能看已装拓展有没有更新——但缓存同样要过验签，不然缓存就成了后门。
+/// 页面监听它重建；缓存同样要过验签，不然缓存就成了后门。
 class MarketSource extends ChangeNotifier {
   MarketSource();
 
@@ -79,8 +71,7 @@ class MarketSource extends ChangeNotifier {
   static const String _kSig = 'plugin.ext.market.sig';
   static const String _kAt = 'plugin.ext.market.at';
 
-  /// 上次成功的镜像（跨会话记住，下次先试它——别每次都从第一个开始试错）。
-  /// 这是跟 dsh 的市场学的：按资源记住可用线路，只在失败后才换线。
+  /// 上次成功的镜像（跨会话记住，下次先试它，别每次都从头试错）。
   static const String _kMirror = 'plugin.ext.market.mirror';
 
   /// 目录体积上限（官方那份不到 2 KB；拦的是一反代就吐几十兆的情况）。
@@ -112,13 +103,8 @@ class MarketSource extends ChangeNotifier {
 
   /// 拉一份目录：镜像依次试 → 每个都**验签** → 存缓存；全挂了退回缓存（同样验签）。
   ///
-  /// 已经拿到过就不重复拉（页面每次进来不该都打网络）；要强制刷新传 [force]。
-  ///
-  /// **每次都带缓存戳**：jsDelivr 对 `@main` 这类分支路径的 `s-maxage` 是 12 小时，
-  /// 新版本发出去后各 POP 回收时间不一（实测同一个 URL：curl 拿到新目录、Dart
-  /// 拿到 12 小时前的旧目录，于是市场里一直显示旧版本、用户看不到更新）。
-  /// 目录只有几 KB、一次会话拉一次，绕开边缘缓存换来「发了就能看到」是划算的。
-  /// 拓展包本身按版本号分路径，不受影响。
+  /// 已经拿到过就不重复拉（要强制刷新传 [force]）；每次请求都带缓存戳，绕开
+  /// jsDelivr 对 `@main` 这类分支路径 12 小时的边缘缓存，保证「发了就能看到」。
   Future<void> load({bool force = false}) async {
     // 演示模式：目录是内置假数据，不打网络（安装/更新也走捷径，见 MarketInstaller）。
     if (AppState.I.demo) {
@@ -141,8 +127,7 @@ class MarketSource extends ChangeNotifier {
           problems.add('$base：目录太大（${(catalog.length / 1024 / 1024).toStringAsFixed(1)} MB）');
           continue;
         }
-        // 反代/加速服务出错时会回 HTTP 200 的 HTML 错误页：单独说清，
-        // 不然报「签名校验不过」会把排查方向带偏
+        // 反代出错时会回 HTTP 200 的 HTML 错误页：单独说清，别被当成验签失败
         if (!String.fromCharCodes(catalog.take(40)).trimLeft().startsWith('{')) {
           problems.add('$base：返回的不是目录（像网页或错误页，可能被反代挡了）');
           continue;
@@ -305,8 +290,8 @@ class MarketSource extends ChangeNotifier {
   }
 }
 
-/// Ed25519 验签。**这段与市场仓库 `lib/market_signing.dart` 的 verify 必须一致**
-/// （App 不能反向依赖那个仓库，所以这里是一份小拷贝；两边都靠单测与真目录兜住）。
+/// Ed25519 验签，**必须与市场仓库 `lib/market_signing.dart` 的 verify 一致**
+/// （App 不能反向依赖那个仓库，这里是同逻辑的小拷贝，靠单测与真目录兜住）。
 Future<bool> verifyCatalogSignature(
   List<int> bytes, {
   required String signature,

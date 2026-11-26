@@ -4,8 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 回归用例：窄屏 + 只有 1 节课高的课程卡，不能因为时间/课名/地点/教师
-/// 叠在一起而溢出。
+/// 回归：窄屏 + 只有 1 节课高的课程卡，时间 / 课名 / 地点 / 教师不能叠在一起溢出。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});

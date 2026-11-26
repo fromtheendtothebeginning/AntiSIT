@@ -13,6 +13,12 @@ class ElectricityPage extends StatefulWidget {
 class _ElectricityPageState extends State<ElectricityPage> {
   bool _loading = true;
   bool _historyLoading = false;
+
+  /// 充值进行中：**必须与 [_loading] 分开**。充值成功后要立刻 `_load()` 刷新余额，
+  /// 而 `_load()` 开头有「正在查询就跳过」的并发守卫——复用同一个标志会让刷新被
+  /// 直接 return，页面停在充值前的旧余额，用户以为没到账再充一次（重复扣款）。
+  bool _recharging = false;
+
   String? _err;
   Map<String, dynamic>? _data;
   List<Map<String, dynamic>> _history = [];
@@ -91,25 +97,22 @@ class _ElectricityPageState extends State<ElectricityPage> {
     });
     try {
       final r = await ApiClient.I.electricityHistory(days: days);
-      if (_days != days) return; // 期间切了天数，别把旧请求的结果盖上去
+      if (_days != days) return; // 期间切了天数，别把旧请求的结果盖上去。
       _history =
           ((r['records'] as List?) ?? const []).cast<Map<String, dynamic>>();
       await ToolPageCache.write(_historyKey(days), {'records': _history});
     } catch (_) {
-      // 历史拉取失败保留已有曲线（查余额本身不受影响）
+      // 历史拉取失败保留已有曲线（查余额本身不受影响）。
     } finally {
-      // 期间又切了天数就别动 loading：那是新请求的状态
+      // 期间又切了天数就别动 loading：那是新请求的状态。
       if (mounted && _days == days) {
         setState(() => _historyLoading = false);
       }
     }
   }
 
-  /// 切天数：先切（让 7/30/90 立刻响应、旧曲线先清掉），再读该天数的本地缓存，
-  /// 最后拉新数据。
-  ///
-  /// 注意别把「期间又切了天数」的判断放在 [_days] 赋值之前：那时 _days 还是旧值，
-  /// 判断恒不成立，整个切换会被直接 return（这正是之前 7/30/90 点了没反应的原因）。
+  /// 切天数：先切（让按钮立刻响应、旧曲线先清掉），再读该天数缓存，最后拉新。
+  /// 「期间又切了天数」的判断必须放在 [_days] 赋值之后，否则恒不成立、切换会被直接 return。
   Future<void> _switchDays(int days) async {
     if (_days == days) return;
     setState(() {
@@ -120,7 +123,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
       _refreshFailed = false;
     });
     final cached = await ToolPageCache.read(_historyKey(days));
-    if (!mounted || _days != days) return; // 期间又切了别的天数，丢弃这次结果
+    if (!mounted || _days != days) return; // 期间又切了别的天数，丢弃这次结果。
     final records = ((cached?['records'] as List?) ?? const [])
         .cast<Map<String, dynamic>>();
     setState(() {
@@ -132,8 +135,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
   }
 
   Future<void> _recharge() async {
-    // 风险提醒（默认开启）拦在充值前面：点击只弹提醒，引导去插件管理关掉它
-    // （查余额、看历史不受影响）。没装 / 被停用时取不到能力 = 没有这道闸。
+    // 风险提醒（默认开启）拦在充值前：只弹提醒，查余额与历史不受影响；停用后无此闸。
     final risk = PluginRegistry.I.capability<RiskNoticeCapability>(
       PluginIds.risk,
     );
@@ -205,7 +207,9 @@ class _ElectricityPageState extends State<ElectricityPage> {
     );
     if (confirmed != true) return;
     final amount = num.tryParse(controller.text.trim());
-    if (amount == null || amount < 0.01 || amount > 500) {
+    // NaN 必须单独挡：num.tryParse('NaN') 不是 null，而 NaN 与任何数比较都是 false，
+    // 于是 `NaN < 0.01` 和 `NaN > 500` 同时不成立，会让 NaN 通过校验送到扣款接口。
+    if (amount == null || amount.isNaN || amount < 0.01 || amount > 500) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -215,7 +219,8 @@ class _ElectricityPageState extends State<ElectricityPage> {
       );
       return;
     }
-    setState(() => _loading = true);
+    if (_recharging) return; // 双击防抖：扣款接口不能进两次
+    setState(() => _recharging = true);
     try {
       await ApiClient.I.electricityRecharge(amount);
       if (!mounted) return;
@@ -225,15 +230,17 @@ class _ElectricityPageState extends State<ElectricityPage> {
           behavior: SnackBarBehavior.floating,
         ),
       );
-      await _load();
+      await _load(); // 刷新余额：确认到账，避免用户以为没充上而重复充值
+      if (mounted) await _loadHistory();
     } catch (e) {
       if (!mounted) return;
       final msg = e is ApiError ? e.message : e.toString();
-      final uncertain = msg.contains('超时') || msg.contains('网络');
+      // 口径：只有「确定没被执行」才说失败，其余一律按结果未确认处理。
+      final uncertain = writeOutcomeUncertain(e);
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('充值结果未确认'),
+          title: Text(uncertain ? '充值结果未确认' : '充值失败'),
           content: Text(
             uncertain
                 ? '网络异常：$msg\n\n为防重复扣款，本次充值不会自动重试。请稍后在电费查询中确认是否到账。'
@@ -247,8 +254,10 @@ class _ElectricityPageState extends State<ElectricityPage> {
           ],
         ),
       );
+      // 失败后也刷一次：直连模式下请求可能已扣款，余额是最直接的证据。
+      if (uncertain && mounted) await _load();
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _recharging = false);
     }
   }
 
@@ -281,11 +290,11 @@ class _ElectricityPageState extends State<ElectricityPage> {
     final remain = asDouble(_data?['remain']);
     final low = balance != null && balance < 10;
     final usage = _usageStats();
-    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
@@ -297,6 +306,8 @@ class _ElectricityPageState extends State<ElectricityPage> {
             error: _err,
             onRetry: _refreshAll,
             child: RefreshIndicator(
+              // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
+              edgeOffset: topInset,
               onRefresh: _refreshAll,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -337,7 +348,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
                         Row(
                           children: [
                             FilledButton(
-                              onPressed: _loading ? null : _recharge,
+                              onPressed: _loading || _recharging ? null : _recharge,
                               style: FilledButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
                                 padding: const EdgeInsets.symmetric(
@@ -394,7 +405,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // 历史余额折线图（新接口 /electricity/history）
+                  // 历史余额折线图（接口 /electricity/history）。
                   AppCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

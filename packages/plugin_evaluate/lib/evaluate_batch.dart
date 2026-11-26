@@ -30,13 +30,8 @@ class BatchResult {
   bool get ok => failures.isEmpty && unconfirmed.isEmpty;
 }
 
-/// 批量**提交**：把已经保存过的评教原样交上去（不可撤销，调用方必须先做二次确认）。
-///
-/// 口径（与表单页一致）：
-/// * 分数取**这条评教自己的**已保存分（本机记的那份，退而求其次用页面回填值），
-///   不再统一设分——用户点「全部提交」就是把已经保存好的内容交上去；
-/// * 未保存的条目拿不到「已保存的分」，**绝不临时补分**，直接挡下来；
-/// * 学校服务端对非法请求也会先回「成功」再静默丢弃，所以发完要复查列表才算数。
+/// 批量**提交**：把已经保存过的评教原样交上去（不可撤销，调用方必须先二次确认）。
+/// 分数只取这条评教自己已保存的分；未保存的条目不补分直接挡下；发完要复查列表才算数。
 Future<BatchResult> submitAllTargets({
   required EvaluateApi api,
   required List<EvalTarget> targets,
@@ -103,11 +98,8 @@ Future<BatchResult> submitAllTargets({
   );
 }
 
-/// 给「本轮全部老师」统一打分并**保存**（不提交）。
-///
-/// 保存是可覆盖的写操作，批量做是安全的；提交不可撤销，所以这一步**绝不含提交**。
-/// 打的分同时写一份到本机（[EvaluationLocalScores]）：之后点「全部提交」时，
-/// 提交用的就是这里保存下来的这套分。
+/// 给「本轮全部老师」统一打分并**保存**（不提交），打的分同时写一份到本机。
+/// 保存可覆盖所以批量做是安全的；提交不可撤销，这一步绝不含提交。
 Future<BatchResult> fillAllTargets({
   required EvaluateApi api,
   required List<EvalTarget> targets,
@@ -168,9 +160,7 @@ Future<BatchResult> fillAllTargets({
 }
 
 /// 这条评教「已保存的分」：本机记的那份优先，没有就用页面回填的那份。
-///
-/// 两样都没有时返回空表——说明这条教务上标着已保存，但本机拿不到具体分数，
-/// 调用方必须挡下来，不能凭空给一套分（那就成了「重新打分」，不是「提交已保存的」）。
+/// 两样都没有时返回空表，调用方必须挡下来（不能凭空给一套分）。
 Future<Map<String, double>> _savedScoresFor(EvalForm form, EvalTarget target) async {
   final local = await EvaluationLocalScores.read(target);
   final page = form.savedScores;

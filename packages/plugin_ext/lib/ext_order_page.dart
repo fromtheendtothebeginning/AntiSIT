@@ -7,8 +7,7 @@ import 'extension_store.dart';
 
 /// 拓展排序页：按住右侧手柄上下拖，松手即存（拓展页的宫格立刻跟着变）。
 ///
-/// 用整页而不是底部弹层：弹层自带「下拉关闭」手势，会跟拖拽手柄抢
-/// （与「工具排序」同一个理由）。
+/// 用整页而不是底部弹层：弹层自带「下拉关闭」手势，会跟拖拽手柄抢。
 class ExtensionOrderPage extends StatefulWidget {
   const ExtensionOrderPage({super.key});
 

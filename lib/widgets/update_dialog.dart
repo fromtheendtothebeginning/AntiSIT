@@ -6,10 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../update_check.dart';
 import '../update_download.dart';
 
-/// 引导更新弹窗：说清「当前 → 最新」、列出变更清单。有安装包直链时支持**应用内
-/// 下载**（进度条 + sha256 校验，见 [UpdateDownloader]），完成拉起系统安装器；
-/// 下载失败随时可重试或退回浏览器打开链接。启动时查到新版本、或手动检查后查到，
-/// 都由调用方弹出。
+/// 引导更新弹窗：说清「当前 → 最新」并列出变更清单；有安装包直链时支持应用内下载
+/// （进度条 + sha256 校验，见 [UpdateDownloader]），失败可重试或退回浏览器下载。
 Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) {
   return showDialog<void>(
     context: context,
@@ -65,7 +63,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) {
   );
 }
 
-/// 弹窗内容里的下载区：进度条 / 校验中 / 失败原因与兜底入口。
+/// 弹窗里的下载区：进度条 / 校验中 / 失败原因与兜底入口。
 List<Widget> _downloadArea(BuildContext ctx, UpdateInfo info) {
   final d = UpdateDownloader.I;
   if (!info.canSelfInstall) return const [];
@@ -90,8 +88,7 @@ List<Widget> _downloadArea(BuildContext ctx, UpdateInfo info) {
         ]),
       ];
     case 'ready':
-      // 安装包就绪：主按钮是「安装」，这里常驻一条浏览器下载的直接出路
-      //（设备装不了 / 不想装时不用去找发布页）。
+      // 安装包就绪：主按钮是「安装」，这里常驻一条浏览器下载的直接出路。
       return [
         if (d.installNote != null) ...[
           const SizedBox(height: 8),
@@ -193,8 +190,7 @@ Widget _mainAction(BuildContext ctx, UpdateInfo info) {
   );
 }
 
-/// 打开外部链接；失败（没有浏览器 / 平台不支持）则复制链接并提示，
-/// 与「我的」页打开协议原文同一套兜底。
+/// 打开外部链接；失败（没有浏览器 / 平台不支持）则复制链接并提示。
 Future<void> openExternalUrl(BuildContext context, String url) async {
   try {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);

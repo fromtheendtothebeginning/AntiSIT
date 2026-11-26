@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,12 +6,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:campus_core/campus_core.dart';
 
 import 'ai_config.dart';
+import 'ai_picker_dialog.dart';
 import 'ai_vision.dart';
 
-/// AI 设置：直连模式下 App 自己调用户的 AI 服务，用于
-/// ① 自动识别登录验证码（关思考，只要几个字符）；② 识别校历图片里的调休安排。
-/// 模型选择：用 Key 调 `GET {base}/models` 拉真实可用模型（失败回退「缓存 ∪ 内置列表」），
-/// 再弹窗让用户挑一个——不按模型名猜能否识图（实测 deepseek-flash 能识图但没有 vision 字样）。
+/// AI 设置：配置提供商、API Key 与模型，并测试连接。
 class AiSettingsPage extends StatefulWidget {
   const AiSettingsPage({super.key});
 
@@ -37,7 +33,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     super.initState();
     _c = AiVision.I.config.copy();
     _key.text = _c.apiKey;
-    // 还没选过模型时先填该提供商的默认值；用户可随时点「选择模型」换成别的
+    // 还没选过模型时先填该提供商的默认值
     _model.text = _c.model.isNotEmpty ? _c.model : _c.provider.defaultModel;
     _base.text = _c.customBaseUrl;
   }
@@ -50,6 +46,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     super.dispose();
   }
 
+  /// 本页表单对应的配置草稿（调试 Key 不属于表单，原样带过去）。
   AiConfig get _draft => AiConfig(
         enabled: _c.enabled,
         providerId: _c.providerId,
@@ -57,7 +54,6 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         customBaseUrl: _base.text.trim(),
         keys: Map<String, String>.from(_c.keys),
       )
-        // 调试 Key 不属于本页表单，但要原样带过去——否则保存草稿时会被冲掉
         ..debugApiKey = _c.debugApiKey;
 
   Future<void> _save() async {
@@ -70,10 +66,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
-  /// 选择模型：先用当前 Key 调官方 `/models` 拉真实可用列表，再弹窗让用户挑一个。
-  /// 拉取失败就退回「上次缓存 ∪ 注册表内置」，并在弹窗里说明原因——不让用户卡住。
-  /// 不用「按模型名猜能否识图」那套：实测 deepseek-flash 能识图但名字里没有 vision，
-  /// 猜错反而把能用的模型筛掉了。
+  /// 选择模型：先用当前 Key 调官方 `/models` 拉真实可用列表，失败退回「缓存 ∪ 内置」；
+  /// 不按模型名猜能否识图（实测能识图的模型名字里未必有 vision）。
   Future<void> _pickModel() async {
     _c.setApiKey(_key.text);
     setState(() {
@@ -101,7 +95,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     final cur = _model.text.trim();
     final picked = await showDialog<String>(
       context: context,
-      builder: (_) => _PickerDialog(
+      builder: (_) => AiPickerDialog(
         title: '选择模型',
         badge: _c.provider.label,
         current: cur,
@@ -156,7 +150,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     return '${s.substring(0, 6)}…${s.substring(s.length - 4)}';
   }
 
-  /// 开发期临时 Key：写本机 prefs（`ai_debug_api_key`），不进仓库、release 不读。
+  /// 开发期临时 Key：写本机安全存储，不进仓库、release 不读。
   Future<void> _editDebugKey() async {
     final ctrl = TextEditingController(text: _c.debugApiKey);
     final ok = await showDialog<bool>(
@@ -212,8 +206,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
-  /// 打开该提供商的开放平台（申请 / 管理 API Key、买订阅套餐的页面）。
-  /// 打不开浏览器（没有可用的浏览器 / 无网络）就把链接复制给用户，别让按钮白点。
+  /// 打开该提供商的开放平台；打不开浏览器就把链接复制给用户。
   Future<void> _openApplyPage(AiProviderPlugin p) async {
     try {
       await launchUrl(Uri.parse(p.docs), mode: LaunchMode.externalApplication);
@@ -229,12 +222,11 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     }
   }
 
-  /// 提供商也用同一个选择弹窗（与模型选择统一形态）。
-  /// 列表来自插件注册表——一家一个插件包，删包/EXCLUDE 掉的就不在这儿（顺序 = 清单顺序）。
+  /// 提供商选择：列表来自插件注册表，顺序 = 清单顺序。
   Future<void> _pickProviderDialog() async {
     final picked = await showDialog<String>(
       context: context,
-      builder: (_) => _PickerDialog(
+      builder: (_) => AiPickerDialog(
         title: '选择提供商',
         current: _c.providerId,
         searchHint: null, // 十几个提供商，一屏看得完，不需要筛选
@@ -265,12 +257,11 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
-  /// 正在编辑的那家：**按存档里的 id 取**（哪怕它已被停用——用户得看见自己选的是谁）；
-  /// 连包都没装进来时才退回解析结果。
+  /// 正在编辑的那家：按存档里的 id 取（已被停用也要显示），没装才退回解析结果。
   AiProviderPlugin get _shown =>
       PluginRegistry.I.providerById(_c.providerId) ?? _c.provider;
 
-  /// 需要提醒的地方（当前提供商被停用 / 家全都停用了），与底部 `_msg` 同一套配色。
+  /// 需要提醒的地方（当前提供商被停用 / 全都停用了），与底部 `_msg` 同一套配色。
   Widget _notice(String text) => Container(
         width: double.infinity,
         padding: const EdgeInsets.all(10),
@@ -288,20 +279,16 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final p = _shown;
-    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
         final topInset = glassTopInset(context);
         return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(context, title: const Text('AI 设置')),
           body: GlassFadedBody(
             barHeight: topInset,
             child: ListView(
-            // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
             children: [
               AppCard(
@@ -395,7 +382,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                           : '点开用当前 Key 调 ${p.label} 的 /models 拉取后选择；列表里没有的模型可直接输入',
                       onTap: _busy || _fetching ? () {} : _pickModel,
                     ),
-                    // 开发期临时 Key：只写本机 prefs，不进仓库；仅 debug 构建显示
+                    // 开发期临时 Key：只写本机安全存储，不进仓库；仅 debug 构建显示
                     if (kDebugMode) ...[
                       const SizedBox(height: 6),
                       Row(
@@ -538,221 +525,4 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           ],
         ),
       );
-}
-
-// ==================== 统一的选择弹窗（提供商 / 模型共用） ====================
-
-typedef _PickerItem = ({String value, String title, Widget? leading});
-
-/// 通用选择弹窗：提供商与模型共用同一形态，避免两处入口风格不一致。
-/// 样式走全局：主题对话框底（menuBg + 24 圆角）、Capsule 徽章标题、SemColors 配色。
-class _PickerDialog extends StatefulWidget {
-  const _PickerDialog({
-    required this.title,
-    required this.items,
-    required this.current,
-    this.badge,
-    this.notes = const [],
-    this.searchHint,
-    this.allowCustom = false,
-  });
-
-  final String title;
-  final List<_PickerItem> items;
-  final String? current;
-
-  /// 右上角徽章（如提供商标识）。
-  final String? badge;
-
-  /// 需要额外说明的提示（拉取失败、当前值已失效等），用告警色。
-  final List<String> notes;
-
-  /// 非空时显示筛选框（长列表才好找）。
-  final String? searchHint;
-
-  /// 允许把筛选框里输入的任意字符串当作结果返回（用于手填模型 ID）。
-  final bool allowCustom;
-
-  @override
-  State<_PickerDialog> createState() => _PickerDialogState();
-}
-
-class _PickerDialogState extends State<_PickerDialog> {
-  final _filter = TextEditingController();
-  final _listCtl = ScrollController();
-
-  @override
-  void dispose() {
-    _filter.dispose();
-    _listCtl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final raw = _filter.text.trim();
-    final q = raw.toLowerCase();
-    final list = q.isEmpty
-        ? widget.items
-        : widget.items
-            .where((it) => it.title.toLowerCase().contains(q))
-            .toList();
-    // 允许手填时：筛选框里输入的内容若不是现成项，置顶一条「使用 …」
-    final custom = widget.allowCustom &&
-        raw.isNotEmpty &&
-        !widget.items.any((it) => it.value == raw);
-
-    // 弹窗高度自适应：一次能放下就别出现滚动（第一次用的人看到固定高度的半截列表，
-    // 根本想不到还能上下滑）。放不下才滚，并且这时常显滚动条 + 「共 N 项」，
-    // 让「列表没到底」这件事在界面上看得出来。
-    const rowH = 46.0; // dense ListTile 一行的大致高度
-    final listRows = list.length + (custom ? 1 : 0);
-    final chrome = 150.0 +
-        (widget.searchHint != null ? 62.0 : 0) +
-        widget.notes.length * 40.0;
-    final screenH = MediaQuery.of(context).size.height;
-    // 上限同时受屏幕比例与「标题+按钮+弹窗内边距」留白约束，避免内容把弹窗撑出屏幕
-    final maxH = math.min(screenH * 0.6, screenH - 190);
-    final wantH = math.min(maxH, math.max(160.0, chrome + listRows * rowH));
-    final scrolls = listRows * rowH > wantH - chrome + 1;
-
-    return AlertDialog(
-      title: Row(
-        children: [
-          Expanded(child: Text(widget.title)),
-          if (widget.badge != null)
-            Capsule(widget.badge!, color: SemColors.accent),
-        ],
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-      content: SizedBox(
-        width: 380,
-        height: wantH,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final note in widget.notes) ...[
-              _note(note),
-              const SizedBox(height: 8),
-            ],
-            if (widget.searchHint != null) ...[
-              TextField(
-                controller: _filter,
-                onChanged: (_) => setState(() {}),
-                style: const TextStyle(fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: widget.searchHint,
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.search, size: 18),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                q.isEmpty
-                    ? '共 ${list.length} 项'
-                    : '匹配 ${list.length} / ${widget.items.length}',
-                style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-              ),
-              const SizedBox(height: 2),
-            ] else
-              Text(
-                '共 ${widget.items.length} 项',
-                style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-              ),
-            Expanded(
-              // 列表为空但有「使用输入值」这条时也要渲染，否则手填入口会消失
-              child: (list.isEmpty && !custom)
-                  ? Center(
-                      child: Text(
-                        '没有匹配的项',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: SemColors.textMuted,
-                        ),
-                      ),
-                    )
-                  : Scrollbar(
-                      // 需要滚动时才常显滚动条（可滚动的提示），放得下时不占视觉
-                      thumbVisibility: scrolls,
-                      controller: _listCtl,
-                      child: ListView.builder(
-                        controller: _listCtl,
-                        padding: const EdgeInsets.only(right: 6),
-                        itemCount: list.length + (custom ? 1 : 0),
-                        itemBuilder: (_, i) {
-                          if (custom && i == 0) {
-                            return ListTile(
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(
-                                Icons.edit_outlined,
-                                size: 18,
-                                color: SemColors.accent,
-                              ),
-                              title: Text(
-                                '使用「$raw」',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: SemColors.accent,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              onTap: () => Navigator.pop(context, raw),
-                            );
-                          }
-                          final it = list[custom ? i - 1 : i];
-                          final sel = it.value == widget.current;
-                          return ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: it.leading,
-                            title: Text(
-                              it.title,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: SemColors.textPrimary,
-                                fontWeight:
-                                    sel ? FontWeight.w700 : FontWeight.w400,
-                              ),
-                            ),
-                            trailing: sel
-                                ? Icon(
-                                    Icons.check,
-                                    size: 18,
-                                    color: SemColors.accent,
-                                  )
-                                : null,
-                            onTap: () => Navigator.pop(context, it.value),
-                          );
-                        },
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-      ],
-    );
-  }
-
-  Widget _note(String text) {
-    final color = SemColors.warning;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(fontSize: 11, color: color, height: 1.5),
-      ),
-    );
-  }
 }

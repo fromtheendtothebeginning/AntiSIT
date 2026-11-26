@@ -1,8 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_score/plugin_score.dart';
 
-/// 第二课堂加分明细：学分是 0.1/0.2/0.5 这类十进制小数，
-/// 求和必须用「千分位整数」避免二进制浮点尾巴（曾显示 5.930000000000002）。
+/// 二课加分明细：学分是 0.1 / 0.2 这类十进制小数，求和用千分位整数避免浮点尾巴（曾显示 5.930000000000002）。
 void main() {
   test('学分求和按千分位整数累加，不产生浮点误差', () {
     expect(sumCreditThousandths(['0.20', '0.50', '0.30']), 1000);

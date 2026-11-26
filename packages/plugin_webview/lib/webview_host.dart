@@ -7,12 +7,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-/// 内核实现的可编程网页视图（[WebViewHost]）。
-///
-/// 与内核自带的整页浏览器 [WebViewPage] 的分工：那个是「看网页」，这个把控制器交给
-/// 调用方——评教助手要在页面加载完成后注入扫描脚本、按项改写页面上的分值控件，
-/// 并接收网页发回的消息。内核只负责建 WebView、注册通道、把加载事件转出去，
-/// **界面与交互不掺和**（页面自己排 AppBar / 面板）。
+/// 内核实现的可编程网页视图（[WebViewHost]）：把控制器交给调用方。
+/// 与整页浏览器 [WebViewPage] 分工：那个是「看网页」，这个供注入脚本、改写页面、收网页消息的场景，
+/// 界面与交互不掺和（页面自己排 AppBar / 面板）。
 class KernelWebViewHost implements WebViewHost {
   KernelWebViewHost({
     required String url,
@@ -38,7 +35,7 @@ class KernelWebViewHost implements WebViewHost {
           _url = u;
           _error.value = null;
         },
-        // 每次主文档加载完成都回调：换页后调用方要重新注入脚本
+        // 每次主文档加载完成都回调：换页后调用方要重新注入脚本。
         onPageFinished: (_) {
           if (_disposed) return;
           _progress.value = 0;
@@ -46,7 +43,7 @@ class KernelWebViewHost implements WebViewHost {
           onPageReady(this);
         },
         onWebResourceError: (e) {
-          // 子资源（图片 / 字体）失败不打扰，只有主文档失败才算这页挂了
+          // 子资源（图片 / 字体）失败不打扰，只有主文档失败才算这页挂了。
           if (_disposed || !(e.isForMainFrame ?? false)) return;
           _progress.value = 0;
           _error.value = e.description;
@@ -87,7 +84,7 @@ class KernelWebViewHost implements WebViewHost {
     try {
       await _ctrl.runJavaScript(js);
     } catch (e) {
-      // 页面已走 / 拒绝执行脚本：注入失败不该把整页搞崩，调用方自己会重扫
+      // 页面已走 / 拒绝执行脚本：注入失败不该把整页搞崩，调用方自己会重扫。
       debugPrint('[WebViewHost] 注入失败：$e');
     }
   }
@@ -105,8 +102,7 @@ class KernelWebViewHost implements WebViewHost {
     await _loadQuiet(url);
   }
 
-  /// 首次加载：先设代理（服务器模式要经校园隧道，否则外网打不开教务页），
-  /// 再写 Cookie，最后发第一个请求——顺序反了网页拿到的就是未登录页。
+  /// 首次加载：先设代理，再写 Cookie，最后发第一个请求——顺序反了网页拿到的是未登录页。
   Future<void> _boot(String url) async {
     await _applyProxy();
     await _applyCookies(url);
@@ -119,13 +115,12 @@ class KernelWebViewHost implements WebViewHost {
       final ok = await _proxyChannel.invokeMethod<bool>('setProxy', {'url': _proxy});
       if (ok != true) debugPrint('[WebViewHost] 当前内核不支持网页代理，按直连处理');
     } catch (e) {
-      // iOS / 桌面端没有这条通道：保持直连，页面自己会给出加载失败
+      // iOS / 桌面端没有这条通道：保持直连，页面自己会给出加载失败。
       debugPrint('[WebViewHost] 设置代理失败：$e');
     }
   }
 
-  /// 把 [WebViewHost] 的 cookies 按目标域名写进 WebView（name → value）。
-  /// 写入失败不影响页面（最坏就是网页里重新登录一次）。
+  /// 把 [WebViewHost] 的 cookies 按目标域名写进 WebView（name → value）；失败不影响页面。
   Future<void> _applyCookies(String url) async {
     if (_cookies.isEmpty) return;
     final uri = Uri.tryParse(url.trim());
@@ -168,7 +163,7 @@ class KernelWebViewHost implements WebViewHost {
     _disposed = true;
     _progress.dispose();
     _error.dispose();
-    // 代理是进程级的：不恢复的话，离开评教页后其它 WebView 也会继续走校园隧道
+    // 代理是进程级的：不恢复的话，离开本页后其它 WebView 也会继续走校园隧道。
     if (_proxy.isNotEmpty) {
       unawaited(() async {
         try {

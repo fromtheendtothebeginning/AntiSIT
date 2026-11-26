@@ -5,14 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:campus_core/campus_core.dart';
+import 'page_transitions.dart';
+import 'pages/boot_page.dart';
 import 'pages/home_page.dart';
-import 'predictive_back_fade.dart';
-import 'update_download.dart';
 import 'pages/plugin_manager_page.dart';
 import 'plugins/bootstrap.dart';
 
-/// 中文：日期/时间选择器、长按菜单等 Material 内置文案默认是英文，必须挂这些 delegates。
-/// 抽成常量便于单测直接复用（测试里自己搭 MaterialApp 时也要挂同一份）。
+/// 中文环境：日期 / 时间选择器、长按菜单等 Material 内置文案默认是英文，必须挂这些 delegates。
+/// 抽成常量便于单测直接复用（测试自己搭 MaterialApp 时也要挂同一份）。
 const appLocale = Locale('zh');
 const appSupportedLocales = <Locale>[Locale('zh'), Locale('en')];
 const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
@@ -21,392 +21,9 @@ const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
   GlobalCupertinoLocalizations.delegate,
 ];
 
-/// 当前最顶层路由是不是「页面」（[PageRoute]）。
+/// 告诉引擎返回事件交给 Flutter 处理（Android 预测式返回的前提）。
 ///
-/// 只有页面盖页面时才做「旧页左移 + 变暗」；弹窗 / 菜单 / 底部菜单也会驱动被盖页的
-/// secondaryAnimation，如果不过滤，点开右上角菜单整个页面就会往左跑、变暗。
-final ValueNotifier<bool> topRouteIsPage = ValueNotifier<bool>(true);
-
-/// 跟踪顶层路由类型（注册到 MaterialApp.navigatorObservers）。
-class TopRouteKindObserver extends NavigatorObserver {
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      topRouteIsPage.value = route is PageRoute;
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      topRouteIsPage.value = previousRoute is PageRoute;
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
-      topRouteIsPage.value = newRoute is PageRoute;
-}
-/// 页面转场（默认前进 / 返回）：**整页整体位移 + 上层页不透明覆盖 + 旧页轻微渐暗**。
-///
-/// 前进（push）：
-/// * 新页整块从屏幕右侧滑入到 0（先快后慢、末尾缓慢停住），并**完整盖住**旧页；
-/// * 旧页整体向左平移 20% 屏宽，同时叠一层很浅的暗色。
-///
-/// 返回（pop）：上面这套的反向——
-/// * 当前页整块向右滑出屏幕；
-/// * 下层页从左移 20% 的位置滑回 0，同时把压暗褪掉。
-///
-/// 不做淡入淡出、不做圆角、不做缩放。
-///
-/// 三个关键实现细节：
-/// 1. **上层页要垫一张和全局场景底一模一样的底**：本 App 页面是半透明的（玻璃卡片、
-///    内容渐隐），不垫的话滑入时会把下层页透出来，看起来像「两个页面同时显示」。
-///    垫底常驻组件树、只改 Opacity（纯绘制），不做结构变化。
-/// 2. **不能用 SlideTransition / FractionalTranslation**：它的 applyPaintTransform
-///    要读 child.size，弹窗 localToGlobal 时页面正在布局会抛断言（课程表「更多」）。
-/// 3. **弹窗 / 菜单不算「新页」**：只有 PageRoute 盖上来才搬页面（[topRouteIsPage]），
-///    否则点开菜单整页会跟着左移变暗。
-class _SlidePageTransitionsBuilder extends PageTransitionsBuilder {
-  const _SlidePageTransitionsBuilder();
-
-  /// 旧页被推走的距离（屏宽比例）。
-  static const double oldShift = 0.20;
-
-  /// 旧页最深压暗（只用来拉开层次）。
-  static const double oldDim = 0.10;
-
-  /// 前进：时长更长；曲线更陡（起步就走、尾巴收得慢）。
-  static const Duration pushDuration = Duration(milliseconds: 520);
-
-  /// 返回：时长更短；曲线更缓（起步柔和，不会「一闪而过」）。
-  static const Duration popDuration = Duration(milliseconds: 320);
-
-  @override
-  Duration get transitionDuration => pushDuration;
-
-  @override
-  Duration get reverseTransitionDuration => popDuration;
-
-  @override
-  Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
-      Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
-    // 首屏也包一层：它自己进场时动画值已是 1（不位移），但被上层页覆盖时要跟着
-    // 左移变暗，否则前进观感左右不对称。
-    return _SlidePageTransition(
-      animation: animation,
-      secondaryAnimation: secondaryAnimation,
-      child: child,
-    );
-  }
-}
-
-/// 前进用的缓动：起步就动、末尾缓慢收住（相对「陡」）。
-/// 注意别用极端 expo-out（如 Cubic(0.16, 1, 0.3, 1)）：25% 时长就走完一半以上，
-/// 观感是「旧页闪一下就被盖住，后面几乎不动」。
-const Curve _pushCurve = Cubic(0.20, 0.85, 0.20, 1.0);
-
-/// 返回用的缓动：起步更柔和、整体更「缓」，配合更短的时长。
-const Curve _popCurve = Cubic(0.30, 0.55, 0.35, 1.0);
-
-/// 被盖住的旧页：延后 22% 才开始退让，避免「闪一下就被推开」。
-const Curve _coveredCurve = Interval(0.22, 1.0, curve: _pushCurve);
-
-/// 预测式返回手势是否进行中（含松手后的收尾动画）。
-///
-/// 拖动时 controller 的 value 是被直接赋值的，状态会停在 completed，只看状态会被
-/// 误判成「前进」。用手势标记兜住，顺带保证松手收尾阶段和拖动阶段用同一条曲线。
-/// 故意不做成 ValueNotifier：它只影响曲线选择，画面重建本来就由动画值驱动。
-bool predictiveBackGesturing = false;
-
-/// 按动画方向取曲线：正向（前进）用陡的，反向（返回 / 预测式手势）用缓的。
-Curve _curveFor(Animation<double> a) =>
-    (a.status == AnimationStatus.reverse || predictiveBackGesturing)
-        ? _popCurve
-        : _pushCurve;
-
-class _SlidePageTransition extends StatelessWidget {
-  const _SlidePageTransition({
-    required this.animation,
-    required this.secondaryAnimation,
-    required this.child,
-  });
-
-  final Animation<double> animation;
-  final Animation<double> secondaryAnimation;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([animation, secondaryAnimation, topRouteIsPage]),
-      child: child,
-      builder: (context, child) {
-        final width = MediaQuery.sizeOf(context).width;
-        final covered = topRouteIsPage.value && secondaryAnimation.value > 0.001;
-
-        double shift;
-        double dim;
-        if (covered) {
-          // 镜头在这里不动，只是被上层页推走：左移 20% + 渐暗。
-          // 前进时 0 → -20%，返回时 -20% → 0（同一公式，动画值反向即可）。
-          //
-          // 关键：**延后这个动作**（前 22% 时长里旧页原地不动）。不延后的话新页
-          // 一起步就把旧页推开、压低，观感是「旧页闪一下就被盖住」；延后之后旧页
-          // 一直是完整、亮的状态，直到被新页盖住一部分才开始退让。
-          final s = _coveredCurve.transform(secondaryAnimation.value);
-          shift = -_SlidePageTransitionsBuilder.oldShift * width * s;
-          dim = _SlidePageTransitionsBuilder.oldDim * s;
-        } else {
-          // 自己进出：前进从右侧滑到 0；返回从 0 滑出到右侧（同一公式）。
-          final c = _curveFor(animation).transform(animation.value);
-          shift = (1 - c) * width;
-          dim = 0;
-        }
-
-        // 转场期间让页面不透明（垫一张与全局场景底一致的底），静止时再透明。
-        //
-        // 判断必须看**动画状态**而不是数值：用数值判断会漏掉转场的第一帧——
-        // 返回刚开始时 animation.value 还是 1（还没开始降），于是这一帧不垫底，
-        // 上层页是半透明的、下层页从玻璃里透出来；下一帧数值一降立刻垫上，下层页又被
-        // 盖住 —— 观感就是「返回动画刚开始闪一下」。状态（forward / reverse）在第一帧
-        // 就已经切换，所以按状态判断不会有这个空窗。
-        final busy = animation.status == AnimationStatus.forward ||
-            animation.status == AnimationStatus.reverse ||
-            (topRouteIsPage.value &&
-                (secondaryAnimation.status == AnimationStatus.forward ||
-                    secondaryAnimation.status == AnimationStatus.reverse));
-
-        return Transform.translate(
-          offset: Offset(shift, 0),
-          child: Stack(
-            fit: StackFit.passthrough,
-            children: [
-              // 场景底（常驻、只改显隐与压暗透明度，不触发布局）
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: busy ? 1 : 0,
-                    child: GlassScenePaint(wells: GlassScene.wells),
-                  ),
-                ),
-              ),
-              child!,
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF000000).withValues(alpha: dim),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// 安卓的返回动画：**普通前进/返回**仍用上面的 fade-through（保持玻璃观感），
-/// 但**系统返回手势**（Android 14+ 可预测式返回）交给官方 [PredictiveBackPageTransitionsBuilder]：
-/// 拖动时当前页跟着手指缩小、露出上一页，松手前还能反悔取消。
-///
-/// 为什么不直接用官方 builder 兜底：它在「非手势导航」时会回落到
-/// FadeForwardsPageTransitionsBuilder（横向滑动），那是另一套观感，
-/// 会把我们特意做的淡入淡出换掉。
-class _PredictiveOrFadeThroughBuilder extends PageTransitionsBuilder {
-  const _PredictiveOrFadeThroughBuilder();
-
-  // 路由的过渡时长取的是「当前平台这个 builder」的值（`MaterialRouteTransitionMixin`
-  // 里读 `_getPageTransitionBuilder(context)?.transitionDuration`），安卓这条链走的是
-  // 本类，所以时长要在这里同步，否则 `_SlidePageTransitionsBuilder` 上改的时长对
-  // 安卓不生效（真机/模拟器上仍是 300ms）。
-  @override
-  Duration get transitionDuration => _SlidePageTransitionsBuilder.pushDuration;
-
-  @override
-  Duration get reverseTransitionDuration => _SlidePageTransitionsBuilder.popDuration;
-
-  @override
-  Widget buildTransitions<T>(PageRoute<T> route, BuildContext context,
-      Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
-    // 监听 AppState：在外观设置里切「预测式返回样式」后，返回当前页时立刻生效
-    return ListenableBuilder(
-      listenable: AppState.I,
-      builder: (context, _) {
-        // 默认转场（同一个 builder）：没有手势、或手势样式为「位移 + 压暗」时用它
-        final transitions = _SlidePageTransitionsBuilder().buildTransitions(
-            route, context, animation, secondaryAnimation, child);
-        if (AppState.I.predictiveBackStyle == PredictiveBackStyle.fade) {
-          // 旧样式：整页淡化 + 缩小 + 圆角滑出，露出下层页
-          return PredictiveFadeBackGesture(
-            route: route,
-            animation: animation,
-            secondaryAnimation: secondaryAnimation,
-            fallbackTransitions: transitions,
-            commitSpan: (180 /
-                    _SlidePageTransitionsBuilder.popDuration.inMilliseconds)
-                .clamp(0.15, 1.0),
-            child: child,
-          );
-        }
-        return _PredictiveOrFadeThrough(
-          route: route,
-          animation: animation,
-          child: transitions,
-        );
-      },
-    );
-  }
-}
-
-/// 预测式返回（Android 14+ 从屏幕边缘拖入）：**画面直接用默认返回动画**，
-/// 由手指驱动路由的动画值。
-///
-/// * 手势只做一件事：把系统事件换算成路由的动画值；
-/// * 画面复用默认返回动画（同一个 PageTransitionsBuilder）；
-/// * 跟手是线性的：手势进度先按 [_gain] 放大，再**反解返回曲线**成动画值——
-///   渲染仍走同一条 popCurve，算出来的位移就恰好是手指位移的固定倍数；
-/// * 松手后不重播：直接让路由从当前位置反向播完。
-class _PredictiveOrFadeThrough extends StatefulWidget {
-  const _PredictiveOrFadeThrough({
-    required this.route,
-    required this.animation,
-    required this.child,
-  });
-
-  final PageRoute<dynamic> route;
-  final Animation<double> animation;
-  final Widget child;
-
-  @override
-  State<_PredictiveOrFadeThrough> createState() => _PredictiveOrFadeThroughState();
-}
-
-class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
-    with WidgetsBindingObserver {
-  /// 手势位移 → 页面进度的放大倍数：区间缩到原来的 1/2，
-  /// 手指划过半个屏宽 = 页面走完全程（默认 1.0 需要划满一整屏）。
-  static const double _gain = 2.0;
-
-  /// 把系统给的手势进度换算成路由动画值。
-  ///
-  /// 目标位移 = `手势进度 × _gain`（线性放大）；渲染时位移 = `1 - popCurve(value)`，
-  /// 所以这里**反解**返回曲线：`value = popCurve⁻¹(1 - 目标位移)`。这样：
-  /// * 拖动期间位移与手指严格成正比（线性、无曲线加速段）；
-  /// * 渲染始终走同一条曲线，松手后接着往下走也不会跳变。
-  static double _routeProgress(double gestureProgress) {
-    final advanced = (gestureProgress * _gain).clamp(0.0, 1.0);
-    return _invertCurve(_popCurve, 1 - advanced);
-  }
-
-  /// 单调曲线的数值反解（二分）：返回 x 使 `curve.transform(x) ≈ y`。
-  static double _invertCurve(Curve curve, double y) {
-    if (y <= 0) return 0;
-    if (y >= 1) return 1;
-    var lo = 0.0;
-    var hi = 1.0;
-    for (var i = 0; i < 30; i++) {
-      final mid = (lo + hi) / 2;
-      if (curve.transform(mid) < y) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    return (lo + hi) / 2;
-  }
-  /// 松手后（取消 / 提交）框架自己跑完收尾动画；跑完再清掉手势标记。
-  bool _settling = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    widget.animation.addListener(_onAnimationTick);
-  }
-
-  @override
-  void dispose() {
-    widget.animation.removeListener(_onAnimationTick);
-    WidgetsBinding.instance.removeObserver(this);
-    predictiveBackGesturing = false;
-    super.dispose();
-  }
-
-  /// 松手之后框架会把动画跑完；跑完再清掉手势标记（此时页面已经出画，不会跳）。
-  void _onAnimationTick() {
-    if (!_settling) return;
-    if (!widget.animation.isAnimating) {
-      _settling = false;
-      predictiveBackGesturing = false;
-    }
-  }
-
-  // ===== WidgetsBindingObserver：接管系统返回手势，画面交给默认转场 =====
-
-  @override
-  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    // 按键返回不接管；不能返回的页（首页 / 被压住的页）也返回 false，
-    // 让事件继续往后传——观察者按注册顺序通知，只有当前那一页该接。
-    // 「预测式返回动画」关掉时同样不接管：系统会按普通返回处理（走默认动画）。
-    if (backEvent.isButtonEvent ||
-        !AppState.I.predictiveBack ||
-        !widget.route.isCurrent ||
-        !widget.route.popGestureEnabled) {
-      return false;
-    }
-    predictiveBackGesturing = true;
-    widget.route.handleStartBackGesture(
-        progress: _routeProgress(backEvent.progress));
-    return true;
-  }
-
-  @override
-  void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) =>
-      widget.route.handleUpdateBackGestureProgress(
-          progress: _routeProgress(backEvent.progress));
-
-  @override
-  void handleCancelBackGesture() {
-    _settling = true;
-    // 取消：从当前位置正播回 1（框架内部 forward()，不吃掉已有进度）。
-    widget.route.handleCancelBackGesture();
-  }
-
-  @override
-  void handleCommitBackGesture() {
-    _settling = true;
-    // 提交：**不要**调 route.handleCommitBackGesture()——它内部先 pop() 再
-    // reverse(from: upperBound)，等于把动画拉回 1 从头重播一遍（松手后画面倒回去）。
-    // 这里直接 pop，让 TransitionRoute.didPop 自己 reverse()，即从当前位置继续播完。
-    final nav = widget.route.navigator;
-    nav?.pop();
-    // 补上框架 _handleDragEnd 里的收尾记账：didStopUserGesture。
-    // 少了它 Navigator.userGestureInProgress 会一直停在 true —— 真机上表现为
-    // 「返回动画结束后整屏点不动」（按键还能用，触摸全丢）。
-    late final AnimationStatusListener stopGesture;
-    stopGesture = (AnimationStatus status) {
-      widget.animation.removeStatusListener(stopGesture);
-      nav?.didStopUserGesture();
-    };
-    if (widget.animation.status == AnimationStatus.dismissed) {
-      // 已经拖到底、pop 当场完成，不会再有一次状态变化
-      nav?.didStopUserGesture();
-    } else {
-      widget.animation.addStatusListener(stopGesture);
-    }
-  }
-
-  /// 画面完全由外面的默认转场负责，这里只透传。
-  @override
-  Widget build(BuildContext context) => widget.child;
-}
-/// 告诉引擎：返回事件交给 Flutter 处理（Android 预测式返回的前提）。
-///
-/// 引擎只有收到这句话才会注册带进度的返回回调，我们才能收到
-/// `WidgetsBindingObserver.handleStartBackGesture`；否则系统按自己的默认行为处理
-/// ——把 Activity 弹掉 / 回桌面，预测式动画和「跟手取消」都无从谈起。
-///
-/// 框架默认也会做这件事（`WidgetsApp` 内部监听 NavigationNotification），
-/// 但它要求 App 生命周期必须是 resumed / inactive / paused / hidden 之一，
-/// 状态还没到位时**静默跳过**。这里不设这个条件：只要还有可返回的路由就说。
+/// 框架自己也会做，但要求生命周期处于可交互状态，未就位时静默跳过；这里不设这个条件。
 bool onNavigationNotification(NavigationNotification notification) {
   unawaited(SystemNavigator.setFrameworkHandlesBack(notification.canHandlePop));
   return true;
@@ -414,27 +31,25 @@ bool onNavigationNotification(NavigationNotification notification) {
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // 敏感凭据改走加密存储（Keystore）：默认的内存实现不持久化，必须在这里装上真机版
+  // 敏感凭据走加密存储（Keystore）：默认内存实现不持久化，必须在这里装真机版
   SecureStore.I = FlutterSecureStore();
-  // 竖屏锁定：手机横过来也不跟着陀螺仪转（页面布局按竖屏设计）
+  // 竖屏锁定：页面布局按竖屏设计
   SystemChrome.setPreferredOrientations(const [
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  // 组装插件注册表：核心插件 + 各插件包（清单由 tool/gen_plugins.dart 生成）。
-  // 必须在 runApp 之前装好：首帧就要按当前主题插件的色板渲染。
+  // 插件注册表必须在 runApp 之前装好：首帧就要按当前主题插件的色板渲染
   PluginRegistry.I = buildAppRegistry();
   // 登录页属于 core，主壳属于本包：把「回到主壳」的回调反向注入给 core
   hostShellBuilder = () => const HomePage();
-  // 「插件管理」页也在本包：风险提醒拦下付款码 / 充值时，引导按钮要跳到它
+  // 风险提醒拦下付款码 / 充值时，引导按钮要跳到本包的插件管理页
   hostPluginManagerBuilder = () => const PluginManagerPage();
   // 直连模式的学校系统验证码输入弹窗（服务器模式用不到）
   installDirectCaptchaPrompt();
   runApp(const CampusApp());
 }
 
-/// 由色板构建全站 ThemeData。色板来自当前主题插件（packages/plugin_theme_*），
-/// 所以换主题只换色板，这里的组件主题不跟着动。
+/// 由当前主题插件的色板构建全站 ThemeData。
 ThemeData buildAppTheme(GlassPalette c) {
   final scheme = ColorScheme.fromSeed(
     seedColor: c.accent,
@@ -457,7 +72,7 @@ ThemeData buildAppTheme(GlassPalette c) {
       centerTitle: false,
       foregroundColor: c.textPrimary,
       iconTheme: IconThemeData(color: c.textPrimary),
-      // 悬浮顶栏的标题：比正文略重一档，压在渐变模糊上也稳
+      // 悬浮顶栏标题：比正文重一档，压在渐变模糊上也稳
       titleTextStyle: TextStyle(
         fontSize: 17,
         fontWeight: FontWeight.w600,
@@ -508,15 +123,13 @@ ThemeData buildAppTheme(GlassPalette c) {
       dividerColor: c.border,
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: c.accent),
-    // 玻璃页全部透明，M3 缩放过渡的旧页慢淡出会与新页半透明叠加产生跳变；
-    // 改为快速淡出/淡入（fade-through）：旧页先快速消失，新页再淡入
+    // 玻璃页全透明，M3 缩放过渡的旧页慢淡出会与新页半透明叠加产生跳变
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
-      // 安卓：系统返回手势走官方预测式动画，其余仍是淡入淡出
-      TargetPlatform.android: _PredictiveOrFadeThroughBuilder(),
-      TargetPlatform.iOS: _SlidePageTransitionsBuilder(),
-      TargetPlatform.windows: _SlidePageTransitionsBuilder(),
-      TargetPlatform.macOS: _SlidePageTransitionsBuilder(),
-      TargetPlatform.linux: _SlidePageTransitionsBuilder(),
+      TargetPlatform.android: PredictiveOrFadeThroughBuilder(),
+      TargetPlatform.iOS: SlidePageTransitionsBuilder(),
+      TargetPlatform.windows: SlidePageTransitionsBuilder(),
+      TargetPlatform.macOS: SlidePageTransitionsBuilder(),
+      TargetPlatform.linux: SlidePageTransitionsBuilder(),
     }),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -555,6 +168,7 @@ ThemeData buildAppTheme(GlassPalette c) {
   );
 }
 
+/// App 根组件：跟随主题插件与外观设置重建全站配色与场景底。
 class CampusApp extends StatefulWidget {
   const CampusApp({super.key});
 
@@ -575,7 +189,7 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  // 跟随系统模式下，系统深浅色切换时整体重建
+  /// 跟随系统模式下，系统深浅色切换时整体重建。
   @override
   void didChangePlatformBrightness() => setState(() {});
 
@@ -591,7 +205,7 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
         final dark = mode == ThemeMode.dark || (mode == ThemeMode.system && systemDark);
         final theme = PluginRegistry.I.theme;
         final brightness = dark ? Brightness.dark : Brightness.light;
-        // 拖动「外观」滑块时整站配色在浅色板与深色板之间插值（松手落到所选那档）
+        // 拖动「外观」滑块时，整站配色在浅色板与深色板之间插值（松手落到所选那档）
         final preview = AppState.I.appearancePreviewDark;
         final palette = preview == null
             ? theme.palette(brightness)
@@ -605,12 +219,11 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
           theme: buildAppTheme(preview == null ? theme.palette(Brightness.light) : palette),
           darkTheme: buildAppTheme(preview == null ? theme.palette(Brightness.dark) : palette),
           themeMode: preview == null ? mode : ThemeMode.light,
-          // 中文：日期/时间选择器、长按菜单等 Material 组件默认是英文，必须在这里挂 delegates
           locale: appLocale,
           supportedLocales: appSupportedLocales,
           localizationsDelegates: appLocalizationsDelegates,
           onNavigationNotification: onNavigationNotification,
-          // 记录顶层路由是不是页面：只有页面盖页面才做「旧页左移 + 变暗」
+          // 记录顶层路由是不是页面：只有页面盖页面才搬旧页
           navigatorObservers: [TopRouteKindObserver()],
           // 全局场景底：Scaffold 全透明，光斑（由主题插件给）透出玻璃「折射」感
           builder: (context, child) => GlassBackground(
@@ -619,61 +232,6 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
           home: const BootPage(),
         );
       },
-    );
-  }
-}
-
-/// 启动流：不强制登录——加载本地设置后直接进主页。
-/// 有 token 直接用（401 时请求层自动 refresh/重登）；未登录由各页面的门控引导。
-class BootPage extends StatefulWidget {
-  const BootPage({super.key});
-
-  @override
-  State<BootPage> createState() => _BootPageState();
-}
-
-class _BootPageState extends State<BootPage> {
-  @override
-  void initState() {
-    super.initState();
-    _boot();
-  }
-
-  Future<void> _boot() async {
-    await AppState.I.load();
-    // 插件清单：读启停状态与当前主题（此后底栏、工具宫格、设置项都按启用集合组装）
-    await PluginRegistry.I.load();
-    // 课表也要在插件初始化前读出来：流体云 / 上课提醒 / 桌面卡片都靠它在启动时排期，
-    // 否则插件先跑会拿空课表把上一次排好的闹钟清掉。
-    await TimetableStore.instance.load();
-    // 各启用插件的初始化：AI 配置、上课提醒排期、调试用的本地模拟校园服务
-    await PluginRegistry.I.initAll();
-    // 上次更新下载的安装包装完就没用了（80MB 一份，每升一版留一个）：
-    // 启动时顺手清掉，别让缓存目录一直涨。放最后、且不等它——清扫不该拖慢首屏。
-    unawaited(UpdateDownloader.I.sweepCache());
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset('assets/sit-mark.png', width: 96, height: 96),
-            const SizedBox(height: 16),
-            Text('AntiSIT', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 24),
-            const SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+/// 成绩查询页：先读本机缓存立即展示，再按设置后台刷新。
 class GradesPage extends StatefulWidget {
   const GradesPage({super.key});
 
@@ -17,9 +18,7 @@ String _xqName(String? s) => switch (s) {
       _ => (s ?? '').trim(),
     };
 
-/// 成绩卡上的标签：课程类别 / 考核方式 / 学年学期。
-/// 学校对部分课程不回这些字段（值就是 null），**空字段不生成标签**——
-/// 直接插值会把这些课程显示成字面量 "null"。
+/// 成绩卡标签：课程类别 / 考核方式 / 学年学期；空字段不生成标签，否则会显示字面量 "null"。
 List<String> gradeTags(Map<String, dynamic> g) => [
       _tag(g['kclbmc']),
       _tag(g['khfsmc']),
@@ -89,12 +88,12 @@ class _GradesPageState extends State<GradesPage> {
       if (_all.isEmpty) _err = null;
     });
     try {
-      // 选中学期时带 xnm/xqm 由服务端过滤（与网站一致）；不带则返回全部 + terms 列表
+      // 选中学期时带 xnm/xqm 由服务端过滤（与网站一致）；不带则返回全部 + terms 列表。
       final r = await ApiClient.I.grades(
         xnm: xnm.isEmpty ? null : xnm,
         xqm: xqm.isEmpty ? null : xqm,
       );
-      if (_xnm != xnm || _xqm != xqm) return; // 期间切了筛选，别把旧结果盖上去
+      if (_xnm != xnm || _xqm != xqm) return; // 期间切了筛选，别把旧结果盖上去。
       final data = r['data'] as Map<String, dynamic>? ?? {};
       _applyData(data);
       _fromCache = false;
@@ -183,11 +182,11 @@ class _GradesPageState extends State<GradesPage> {
                 ? '$_xnm ${_xqName(_xqm)}'
                 : '${t['xnmmc']} · ${_xqName(t['xqmmc']?.toString())}';
           }();
-    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
@@ -201,6 +200,8 @@ class _GradesPageState extends State<GradesPage> {
             emptyText: '暂无成绩记录',
             onRetry: _load,
             child: RefreshIndicator(
+              // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
+              edgeOffset: topInset,
               onRefresh: _load,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
@@ -349,6 +350,7 @@ class _GradesPageState extends State<GradesPage> {
     );
   }
 
+  /// 标签胶囊。
   Widget _chip(String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(

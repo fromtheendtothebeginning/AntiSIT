@@ -117,8 +117,7 @@ class CordisBundleLoader {
   static const int maxMainBytes = 512 * 1024;
   static const int maxStyleBytes = 128 * 1024;
 
-  /// [mainPath] 是 `ext.json` 里 main 的绝对路径（ExtensionItem.url）。
-  /// 目录必须与 `ext.json` 同源，防止清单把入口指到别处。
+  /// 入口必须与 `ext.json` 的 main 同源，防止清单把入口指到别处。
   static Future<CordisPage> load(
     ExtensionItem item, {
     required String appVersion,
@@ -152,7 +151,7 @@ class CordisBundleLoader {
       item: item,
       mainJs: mainJs,
       css: css,
-      allowNetwork: item.fromMarket && item.permissions.contains('network'),
+      allowNetwork: item.gated && item.permissions.contains('network'),
       appVersion: appVersion,
     );
   }

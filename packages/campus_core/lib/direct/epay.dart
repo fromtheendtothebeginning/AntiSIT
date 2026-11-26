@@ -30,9 +30,7 @@ String composeDorm(String building, String room) {
   return '$b号楼$r';
 }
 
-/// 校付宝（epeortal / openservice）客户端：校园码、电费查询/充值、校园卡余额。
-/// 公网可达：不需要校园网/VPN，也不需要验证码；支付密码用 SM4 加密提交。
-/// 移植自 index 后端 campus/electricity.py 与 campus/ecard.py。
+/// 校付宝（epeortal / openservice）客户端：校园码、电费查询/充值、校园卡余额（公网可达，支付密码 SM4 加密）。
 class EpayClient {
   EpayClient(String base, {bool allowSelfSigned = false})
       : base = base.replaceAll(RegExp(r'/+$'), '') {
@@ -95,16 +93,20 @@ class EpayClient {
   }
 
   /// 带 token 的 openservice 调用；403（令牌过期）重登续期后重试一次。
+  ///
+  /// [retryOn403] 对**扣款类**调用必须传 false：403 若来自业务侧（而非网关鉴权），
+  /// 自动重发就是重复扣款。宁可抛错让用户手动确认。
   Future<Map<String, dynamic>> _osPost(
     String path,
     Map<String, dynamic> body,
     String studentId,
     String realName,
-    String payPassword,
-  ) async {
+    String payPassword, {
+    bool retryOn403 = true,
+  }) async {
     if (_token == null) await _login(studentId, realName, payPassword);
     var resp = await _http.postJson(_u(path).toString(), body, headers: _headers);
-    if (resp.status == 403) {
+    if (resp.status == 403 && retryOn403) {
       _token = null;
       await _login(studentId, realName, payPassword);
       resp = await _http.postJson(_u(path).toString(), body, headers: _headers);
@@ -181,13 +183,18 @@ class EpayClient {
         {...room, 'amount': amountFen}, studentId, realName, payPassword);
     final billno = (init['billno'] ?? '').toString();
     if (billno.isEmpty) throw ApiError('创建电费订单失败，未返回订单号');
+    // 扣款这一步不允许 403 自动重发（重发 = 重复扣款）。
     final data = await _osPost('/miniprogram/balancepay',
-        {...room, 'amount': amountFen, 'billno': billno, 'pwd': ''}, studentId, realName, payPassword);
+        {...room, 'amount': amountFen, 'billno': billno, 'pwd': ''}, studentId, realName, payPassword,
+        retryOn403: false);
     final bal = data['balance'];
+    // 钱已经扣了：余额字段解析失败（空串 / 带千分位逗号 / 文案）不能抛异常，
+    // 否则调用方收到的是「充值失败」，用户会再充一次。
+    final balFen = double.tryParse(bal == null ? '' : '$bal'.replaceAll(',', '').trim());
     return {
       'ok': true,
       'message': (data['retmsg'] ?? '充值成功').toString(),
-      'balance': bal == null ? null : double.parse((double.parse(bal.toString()) / 100).toStringAsFixed(2)),
+      'balance': balFen == null ? null : double.parse((balFen / 100).toStringAsFixed(2)),
       'billno': billno,
       'amount': amountFen / 100,
     };

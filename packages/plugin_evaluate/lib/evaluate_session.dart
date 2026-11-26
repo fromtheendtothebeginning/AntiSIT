@@ -1,12 +1,7 @@
 import 'package:campus_core/campus_core.dart';
 
-/// 评教用的教务会话：**直接复用 App 已有的教务登录态**，自己不再登录。
-///
-/// 与成绩 / 课表 / 考试等教务功能走同一条路（[ApiClient.jwxtWebSession]）：
-/// * 直连模式：本机已登录的教务 Cookie；
-/// * 服务器模式：服务器代连校园网时已登录的教务 Cookie + 它给的教务域名。
-///
-/// 评教的读取与写入都能用这份 Cookie 直接打通，用户不用再输一次账号密码。
+/// 评教用的教务会话：直接复用 App 已有的教务登录态（[ApiClient.jwxtWebSession]），不再自己登录。
+/// 直连模式是本机已登录的 Cookie，服务器模式是服务器代连的 Cookie + 它给的教务域名。
 class EvaluateSession {
   EvaluateSession({this.fallbackBase = ''});
 

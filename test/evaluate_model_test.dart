@@ -4,10 +4,9 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_evaluate/plugin_evaluate.dart';
 
-/// 评教的协议层：解析评分表单、拼提交参数、列表解析、代理解析。
-/// 真机连教务要校园代理 + 账号，这里钉住「页面/JSON 给了什么 → App 怎么理解」。
 String _fixture() => File('test/fixtures/eval_display_theory.html').readAsStringSync();
 
+/// 评教的协议层：解析评分表单、拼提交参数、列表解析、代理解析；钉住「页面 / JSON 给了什么 → App 怎么理解」。
 void main() {
   group('评分表单解析', () {
     test('理论类模板：身份字段、模板、一级/二级指标与权重', () {

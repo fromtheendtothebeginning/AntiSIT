@@ -11,9 +11,7 @@ import 'package:campus_core/campus_core.dart';
 import 'backup_service.dart';
 
 /// 备份与恢复：导出课表 / 设置 / 学校档案 / 插件偏好为 JSON，重装或换机后导入。
-///
-/// 账号密码、登录 token、直连 Cookie、AI Key 在 SecureStore 里，**不进入备份文件**；
-/// 导入后需要重新登录。拓展（网页插件）及其数据也不在备份里。
+/// 账号密码、登录 token、直连 Cookie、AI Key 在 SecureStore，不进入备份；拓展及其数据也不备份。
 class BackupPage extends StatefulWidget {
   const BackupPage({super.key});
 
@@ -25,6 +23,7 @@ class _BackupPageState extends State<BackupPage> {
   bool _busy = false;
   String? _note;
 
+  /// 导出：移动端走系统分享，桌面端走「另存为」。
   Future<void> _export() async {
     setState(() {
       _busy = true;
@@ -34,8 +33,7 @@ class _BackupPageState extends State<BackupPage> {
       final json = await BackupService.buildJson();
       final name = BackupService.fileName();
       if (Platform.isAndroid || Platform.isIOS) {
-        // 移动端没有通用的“另存为”：写临时文件后交给系统分享面板，
-        // 用户可存到「文件」/ 网盘，也可以直接发给自己。
+        // 移动端没有通用的「另存为」：写临时文件后交给系统分享面板。
         final dir = await getTemporaryDirectory();
         final file = File('${dir.path}/$name');
         await file.writeAsString(json, flush: true);
@@ -64,6 +62,7 @@ class _BackupPageState extends State<BackupPage> {
     }
   }
 
+  /// 导入：选文件 → 校验 → 二次确认 → 覆盖应用，最后整壳重建。
   Future<void> _import() async {
     XFile? picked;
     try {
@@ -138,7 +137,7 @@ class _BackupPageState extends State<BackupPage> {
         ),
       );
       if (!mounted) return;
-      // 旧页面还握着导入前的课表/主题，整壳重建一次最干净。
+      // 旧页面还握着导入前的课表 / 主题，整壳重建一次最干净。
       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => hostShellBuilder()),
         (_) => false,
@@ -152,11 +151,11 @@ class _BackupPageState extends State<BackupPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,

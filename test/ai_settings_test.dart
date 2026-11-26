@@ -6,12 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_ai/plugin_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// AI 设置（直连模式下 App 自己调 AI 识图：自动识别验证码、识别校历调休）。
-/// 这里覆盖纯逻辑部分：配置读写、提供商注册表、模型输出解析、未配置时的报错。
-/// 真实调用 AI 要联网+Key，不在单测里做。
+/// AI 设置的纯逻辑部分：配置读写、提供商注册表、模型输出解析、未配置时的报错（真实调用要联网 + Key，不在这里做）。
 void main() {
-  /// 提供商从插件注册表来（一家一个包，见 packages/plugin_ai_*）；
-  /// AiConfig / AiVision / 设置页都走全局注册表，所以这里先把它装成真实清单。
+  /// 提供商来自插件注册表：AiConfig / AiVision / 设置页都走全局表，所以这里装成真实清单。
   late PluginRegistry reg;
 
   setUp(() {
@@ -145,8 +142,7 @@ void main() {
   });
 
   group('关闭思考要加的请求字段（照官网文档 / index 实测）', () {
-    // (提供商 id, 模型, 该加的字段)。**装着的必须完全一致；没装的跳过**——
-    // 删掉一家提供商包只需要动 pubspec，不用回来改测试。
+    // (提供商 id, 模型, 该加的字段)：装着的必须完全一致，没装的跳过。
     const cases = <(String, String, Map<String, dynamic>)>[
       ('deepseek', 'deepseek-flash', {
         'thinking': {'type': 'disabled'}
@@ -158,8 +154,7 @@ void main() {
       ('qwen', 'qwen-max', {'enable_thinking': false}),
       ('gpt', 'gpt-5-mini', {'reasoning_effort': 'none'}),
       ('gemini', 'gemini-2.5-flash', {'reasoning_effort': 'none'}),
-      // MiMo 用 reasoning_effort：index 2026-09-10 实测 thinking{"type":"disabled"}
-      // 虽被接受却会把结果弄错；套餐是同一套模型与协议。
+      // MiMo 用 reasoning_effort：实测 thinking=disabled 会被接受却把结果弄错，套餐是同一套模型与协议。
       ('mimo', 'mimo-v2.6-flash', {'reasoning_effort': 'none'}),
       ('mimotokenplan', 'mimo-v2.6-flash', {'reasoning_effort': 'none'}),
       ('minimax', 'MiniMax-M3', {
@@ -187,8 +182,7 @@ void main() {
     });
 
     test('没装的 id 一律不加字段（乱加会 400）', () {
-      // 以前 switch 里还兜着 openai / google / dashscope 这些别名，现在协议随包走，
-      // 注册表里没有的 id 就是「不加字段」。
+      // 协议随包走：注册表里没有的 id 就是「不加字段」（老代码在这里兜了一堆别名）。
       for (final pid in ['nope', 'openai', 'google', 'dashscope']) {
         expect(AiVision.applyThinkingOff(pid, 'anything'), isEmpty, reason: pid);
       }

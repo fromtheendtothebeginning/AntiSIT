@@ -4,10 +4,7 @@ import 'package:plugin_home_widget/plugin_home_widget.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 桌面卡片的验收：
-/// * 今日课程计算（节次时间跟自定义作息、调休 / 单双周、去重）；
-/// * 课表保存后把「今日课程 + 下一节」同步给卡片能力；
-/// * 长按快捷方式 / 点卡片的入口动作（AppLaunch）。
+/// 桌面卡片：今日课程计算（自定义作息 / 调休 / 单双周 / 去重）、保存后同步给卡片能力、长按快捷方式与点卡片的入口动作。
 void main() {
   late _FakeWidget widget;
 

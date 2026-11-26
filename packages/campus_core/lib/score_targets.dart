@@ -6,11 +6,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'json_num.dart';
 
-/// 二课达标线：一级板块目标（德育/劳育…）与二级条目目标（讲座/志愿…）。
+/// 二课达标线：一级板块目标（德育/劳育…）。
 class ScoreGroupTarget {
   const ScoreGroupTarget({required this.keywords, this.target, this.noExpand = false});
 
-  /// 板块名包含任一关键词即命中（与网站/旧版规则一致）。
+  /// 板块名包含任一关键词即命中。
   final List<String> keywords;
   final double? target;
 
@@ -20,6 +20,7 @@ class ScoreGroupTarget {
   bool matches(String name) => keywords.any(name.contains);
 }
 
+/// 二课达标线：二级条目目标（讲座/志愿…）。
 class ScoreSubTarget {
   const ScoreSubTarget({required this.keywords, this.target});
 
@@ -38,7 +39,7 @@ class ScoreTargetPolicy {
     this.subs = const [],
   });
 
-  /// 可选展示名（如「2026级」）；配置里的 default 通常留空，避免把某届的规则说成通用规则。
+  /// 可选展示名（如「2026级」）；配置里的 default 通常留空。
   final String? label;
 
   /// 实践学分总目标；null = 不比较总分。
@@ -86,9 +87,10 @@ class ScoreTargetPolicy {
 
 /// 达标线配置：`default` 是兜底策略，`cohorts` 按入学年（nj）覆盖。
 ///
-/// App 内置一套**默认规则**（与现行达标线一致，不绑定某一届）；远端
-/// `score-targets.json` 和用户在本机三级页面的自定义优先。规则调整不需要改代码。
-class ScoreTargets {  const ScoreTargets({
+/// 优先级：本机自定义 → 远端 `score-targets.json` 该届 → 远端默认 → 内置默认规则；
+/// 规则调整不需要改代码。
+class ScoreTargets {
+  const ScoreTargets({
     this.defaultPolicy,
     this.cohorts = const {},
     this.local = const {},
@@ -108,7 +110,6 @@ class ScoreTargets {  const ScoreTargets({
   static const Duration _timeout = Duration(seconds: 3);
 
   /// 取某届的策略：本机该届自定义 → 远端该届 → 远端默认 → 内置默认规则。
-  /// 本机自定义只作用于保存时的年级；未填年级时用本机 `default`。
   ScoreTargetPolicy forCohort(String? nj) {
     final key = (nj ?? '').trim();
     if (key.isNotEmpty) {
@@ -175,8 +176,7 @@ class ScoreTargets {  const ScoreTargets({
     }
   }
 
-  /// 读本地缓存（24h）→ 拉远端 → 过期/失败时用旧缓存 → 内置默认规则。
-  /// 无论走哪条路，都叠加本机自定义（local）：三级设置页保存后立即生效。
+  /// 读本地缓存（24h）→ 拉远端 → 过期/失败用旧缓存 → 内置默认规则，均叠加本机自定义（local）。
   static Future<ScoreTargets> load() async {
     SharedPreferences? sp;
     String? cached;

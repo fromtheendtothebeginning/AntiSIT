@@ -1,5 +1,4 @@
 // 第二课堂活动说明的解析工具：名额 / 报名线索 / 校区 / 事后补录。
-// 移植自 index 后端 campus/activities.py（报名线索规则源自 Second_Class_Notification）。
 
 import '../json_num.dart';
 

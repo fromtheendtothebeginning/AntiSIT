@@ -4,9 +4,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 学业情况（N105515）直连链路：真 HTTP 打本地模拟服务，验证
-/// 「登录 → 首页（整体统计 + 节点树 + 隐藏域）→ 按 jdkcsx 选接口、只对叶子并发拉明细」，
-/// 以及会话失效、学校业务错误、页面改版、明细非 JSON 几个分支。
+/// 学业情况直连链路：登录 → 首页（整体统计 / 节点树 / 隐藏域）→ 按 jdkcsx 选接口、只对叶子并发拉明细，外加会话失效等分支。
 void main() {
   final mock = MockCampusServer.instance;
 

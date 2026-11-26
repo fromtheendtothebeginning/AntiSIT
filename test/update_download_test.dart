@@ -11,11 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
-/// 「应用内更新下载」的验收：整条链路（流式下载 → 进度 → sha256 校验 → 拉起安装器）
-/// 都用注入的假流跑，不联网。重点盯三件容易悄悄错的事：
-/// * 校验不过的包必须删掉，绝不能交给安装器；
-/// * 中途取消要掐掉半截文件、状态回干净；
-/// * 缺「安装未知应用」授权时，回来能凭 readyPath 再装一次。
+/// 应用内更新下载整条链路（假流，不联网）：校验不过的包必须删、取消要掐掉半截文件、缺授权时能凭 readyPath 再装一次。
 void main() {
   late Directory tmp;
   const payload = 'fake-apk-bytes';
@@ -484,10 +480,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    /// 下载链路里混着两样东西：真磁盘 IO（建目录、写文件，得放 runAsync 放行真事件）
-    /// 和 FakeAsync 队列里的微任务（真 IO 完成后的回调排在里面，得 pump 才跑）——
-    /// 所以轮着来，直到不在下载中。只 runAsync 不 pump 会死等，只 pump 不 runAsync
-    /// 真事件永远不来。
+    /// 下载链路混着真磁盘 IO（要 runAsync 放行）与 FakeAsync 微任务（要 pump），轮着来；只做一样会死等。
     Future<void> driveDownload(WidgetTester tester) async {
       await tester.tap(find.text('去下载'));
       await tester.pump();

@@ -13,8 +13,7 @@ class RemoteRepo {
   final bool private;
 }
 
-/// 远端文件：内容读不出来（文件太大 / 二进制被截断）时 [bytes] 为 null，
-/// 但 [sha] 仍然可用于更新。
+/// 远端文件：内容读不出来（太大 / 二进制被截断）时 [bytes] 为 null，[sha] 仍可用于更新。
 class RemoteFile {
   const RemoteFile({required this.bytes, required this.sha});
 
@@ -73,12 +72,8 @@ String _shortBody(http.Response res) {
   return body.length <= 300 ? body : '${body.substring(0, 300)}…';
 }
 
-// ==================== GitHub ====================
-
-/// GitHub REST API（Contents API）。
-///
-/// Token 需要 `repo`（私有仓库 / 更新已有文件）或 `public_repo`（公开仓库）范围；
-/// 新建仓库也走同一个 Token。
+/// GitHub REST API（Contents API）；Token 需要 `repo` 或 `public_repo` 范围，
+/// 新建仓库也用它。
 class GitHubPublishRepository implements PublishRepository {
   GitHubPublishRepository({
     required this.owner,
@@ -215,12 +210,8 @@ class GitHubPublishRepository implements PublishRepository {
   }
 }
 
-// ==================== Gitee ====================
-
-/// Gitee Open API v5。Token 需要仓库（projects）相关权限。
-///
-/// Gitee 的 Token 走 `access_token` 参数 / 表单字段；写文件时新建用 POST、
-/// 更新用 PUT 并带旧文件的 sha。
+/// Gitee Open API v5；Token 需要 projects 权限，走 `access_token` 参数 / 表单字段，
+/// 写文件时新建用 POST、更新用 PUT 并带旧文件的 sha。
 class GiteePublishRepository implements PublishRepository {
   GiteePublishRepository({
     required this.owner,

@@ -5,10 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「更新检查」的验收：
-/// * 版本比较 / Release 解析（不联网，纯函数）；
-/// * 「我的 → 检查更新」：查到新版本弹引导（去下载 / 稍后），已是最新给提示，失败给原因；
-/// * 点过「稍后」的版本记在本地，之后不再自动弹（手动检查照旧能看到）。
+/// 更新检查：版本比较 / Release 解析（纯函数）、检查更新的四种结果、点过「稍后」之后不再自动弹。
 void main() {
   /// 一份 GitHub Release 的返回体（字段按真实接口裁到用得上的那些）。
   Map<String, dynamic> releaseJson(
@@ -58,6 +55,11 @@ void main() {
       ('1.13', '1.13.0', 0),
       ('1.14.0', '1.13.9', 1),
       ('1.13.5-rc1', '1.13.5', -1), // 预发布比正式版旧
+      // 预发布段不能按字典序比：rc10 应当比 rc2 新、alpha 比 beta 旧
+      ('1.14.0-rc10', '1.14.0-rc2', 1),
+      ('1.14.0-rc2', '1.14.0-rc2.1', -1),
+      ('1.14.0-alpha', '1.14.0-beta', -1),
+      ('1.14.0-rc1', '1.14.0-rc1.1', -1),
     ];
 
     for (final (a, b, want) in cases) {

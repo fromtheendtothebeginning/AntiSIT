@@ -3,9 +3,6 @@ import 'package:flutter/widgets.dart';
 import 'capability.dart';
 
 /// 二课活动能力：给别的插件（如扫码）打开 App 内的活动详情页。
-///
-/// 扫码插件不 import `plugin_activities`：按 id 取能力，活动插件没装 / 被停用时
-/// 取不到，扫码退回普通网址处理——不硬依赖它（「拓展」页也能扫码）。
 abstract class ActivitiesCapability extends PluginCapability {
   const ActivitiesCapability();
 

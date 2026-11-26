@@ -5,8 +5,6 @@ import 'package:campus_core/campus_core.dart';
 import 'evaluate_model.dart';
 
 /// 评教列表里的纯渲染部件：不碰网络、不碰设置，只吃数据。
-///
-/// 抽出来是为了**能截图 / 能测**：页面自己那层负责取数，这一层只管长什么样。
 class EvaluateSummaryCard extends StatelessWidget {
   const EvaluateSummaryCard({
     super.key,
@@ -147,12 +145,7 @@ class EvaluateTargetCard extends StatelessWidget {
 }
 
 /// 列表主体：汇总卡 + 两个统一操作按钮 + 每条待评。
-///
-/// 两个按钮用**同一种按钮形式**（FilledButton.tonal），不加粗、不突出其中一个——
-/// 一个是「打分」一个是「提交」，重要性交给文案与后续确认去表达。
-///
-/// 「全部提交」不是「统一打分再提交」：它交的是**已经保存好的那套分**，
-/// 所以只有每一条都保存过（或已提交）时才可用，否则置灰并说明差几条。
+/// 「全部提交」交的是**已经保存好的那套分**，所以只有每一条都保存过（或已提交）时才可用。
 class EvaluateListView extends StatelessWidget {
   const EvaluateListView({
     super.key,
@@ -253,6 +246,12 @@ class EvaluateListView extends StatelessWidget {
       ],
     );
     final refresh = onRefresh;
-    return refresh == null ? list : RefreshIndicator(onRefresh: refresh, child: list);
+    if (refresh == null) return list;
+    return RefreshIndicator(
+      // 刷新圈从悬浮顶栏底边开始，别贴着屏幕最上沿（issue #14）
+      edgeOffset: topPadding,
+      onRefresh: refresh,
+      child: list,
+    );
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,16 +7,16 @@ import '../api_error.dart';
 import '../app_state.dart';
 import 'activities_util.dart';
 import 'course_select.dart';
+import 'direct_history.dart';
+import 'direct_probe.dart';
 import 'epay.dart';
 import 'jwxt.dart';
 import 'school.dart';
 import 'xg.dart';
 
-/// 探测结果（连接设置页「测试连接」逐项展示）。
-typedef ProbeResult = ({String name, bool ok, String detail});
+export 'direct_probe.dart';
 
 /// 验证码输入回调：UI 层注入（返回 null = 用户取消；refresh 用于「换一张」）。
-/// [error] 非空表示上一次提交失败，弹窗据此提示原因（如「验证码错误」）。
 typedef CaptchaPrompt = Future<String?> Function(
   Uint8List image,
   String hint,
@@ -25,9 +24,7 @@ typedef CaptchaPrompt = Future<String?> Function(
   String? error,
 });
 
-/// 直连模式总控：App 用校园凭据直接访问学校系统（教务 / 学工 / 校付宝），
-/// 不经 anticraft 服务器——因此需要设备本身在校园网（或校内 VPN）内。
-/// 验证码由用户手动输入（服务器模式的 AI 识码不适用直连）。
+/// 直连模式总控：App 用校园凭据直接访问学校系统（教务 / 学工 / 校付宝），需设备在校园网或校内 VPN。
 class CampusDirect {
   static final CampusDirect I = CampusDirect._();
   CampusDirect._();
@@ -42,16 +39,11 @@ class CampusDirect {
   String _schoolKey = '';
   String _realNameCache = '';
 
-  /// 登录单飞：主页四个 Tab 同时常驻，启动时会并发查询（课表 / 二课 / 电费 / 学籍），
-  /// 若各自独立走一遍登录流程，验证码弹窗就会叠着弹好几次。
-  /// 同一系统的登录只跑一次，并发调用者共享同一个 Future。
+  /// 登录单飞：同一系统的并发调用共享同一个 Future，避免验证码弹窗叠着弹。
   Future<void>? _xgLogin;
   Future<void>? _jwxtLogin;
 
-  static const String _histKey = 'direct_electricity_history';
-
-  // ==================== 会话与客户端 ====================
-
+  /// 学校档案变化时重建三个客户端并清掉缓存。
   void _syncClients() {
     final s = AppState.I.school;
     final key = [
@@ -98,9 +90,7 @@ class CampusDirect {
     );
   }
 
-  /// 断开直连会话（登录态与 Cookie 一并清掉，下次查询必须重新登录）。
-  /// 注意：Cookie 是持久化在 SharedPreferences 里的，只丢客户端对象会让下次查询
-  /// 悄悄复用旧会话，所以这里必须清 Cookie。
+  /// 断开直连会话：登录态与 Cookie 一并清掉，下次查询必须重新登录。
   Future<void> disconnect() async {
     _jwxt?.clearSession();
     _xg?.clearSession();
@@ -146,8 +136,7 @@ class CampusDirect {
     return prompt(image, hint, refresh, error: error);
   }
 
-  /// 学校系统回文案里含「验证码」→ 只是码输错了，换一张重输；否则（密码/账号错）直接抛出，
-  /// 免得拿同一个错误密码连弹三次验证码。
+  /// 学校文案含「验证码」→ 只是码输错了，换一张重输；否则（密码/账号错）直接抛出。
   static bool _isCaptchaError(String msg) => msg.contains('验证码');
 
   /// 账号 / 密码被学校拒绝（不是验证码错）——教务账号密码登录走不通时改试统一身份认证。
@@ -204,11 +193,7 @@ class CampusDirect {
     });
   }
 
-  /// 教务会话 Cookie（name → value）：评教助手把这份登录态带进内嵌的评教页，
-  /// 网页打开就是登录后的样子，不用在内嵌浏览器里再输一次账号密码。
-  ///
-  /// 会先确保教务已登录（没登录就走同一个验证码登录流程，把 UI 交给调用方）；
-  /// 拿不到（未登录 / 登录被取消）时抛 [ApiError]，调用方退回「网页里手动登录」。
+  /// 教务会话 Cookie（name → value）：评教助手把这份登录态带进内嵌评教页。
   Future<Map<String, String>> jwxtCookies() async {
     await _ensureJwxt();
     return _jwxtClient.cookies();
@@ -242,8 +227,7 @@ class CampusDirect {
       } on ApiError catch (e) {
         lastError = e.message;
         if (_isCaptchaError(lastError)) continue; // 换一张重输
-        // 正方账号密码被拒：这个账号在正方侧可能没有可用密码（如 2026 级新生，
-        // 教务侧密码与统一身份认证不同），改走统一认证 SSO（jziotlogin），密码不变。
+        // 正方账号密码被拒：改走统一认证 SSO（jziotlogin），密码不变。
         if (!casTried && _isCredentialError(lastError) && await client.enableCasLogin()) {
           casTried = true;
           if (client.loggedIn) return; // SSO 直通：持久化的统一认证会话直接建好了业务会话
@@ -251,8 +235,7 @@ class CampusDirect {
           lastError = null;
           continue;
         }
-        // 被拒且没有可用的 SSO 入口：教务密码与统一身份认证密码不同的情况（新生最常见），
-        // 把路指清楚，别让用户拿统一认证密码反复重试。
+        // 被拒且没有可用的 SSO 入口：把「教务密码可能不同于统一认证密码」说清楚。
         if (_isCredentialError(lastError)) {
           throw ApiError('$lastError。教务系统的密码可能与统一身份认证密码不是同一个'
               '（2026 级新生尤其常见）：请在校园网内到教务登录页点「忘记密码」自助重置，'
@@ -264,9 +247,11 @@ class CampusDirect {
     throw ApiError('教务系统登录失败：${lastError ?? '请稍后重试'}');
   }
 
-  /// 学校会话可能在两次查询之间失效（教务会话尤其短，学工也会掉）。客户端在内存里
-  /// `loggedIn` 仍是 true，就会次次失败、只能靠手动「清除直连会话」恢复——所以这里
-  /// 一旦认出会话失效就自动重登一次再试，用户最多再输一次验证码。
+  /// 会话可能在两次查询之间失效：一旦认出失效就自动重登一次再试。
+  ///
+  /// 只认 [ApiError.sessionLost] 标记，**不再按文案匹配「失效」**：学校业务错误里
+  /// 也有「二维码已失效」「签到时间已失效」，靠关键词会让写操作（报名 / 签到）
+  /// 在业务失败后重登重发一次，凭空多出一条申请记录。
   Future<T> _withReloginT<T>(
     Future<T> Function() run,
     Future<void> Function() login,
@@ -274,7 +259,7 @@ class CampusDirect {
     try {
       return await run();
     } on ApiError catch (e) {
-      if (!e.message.contains('失效')) rethrow;
+      if (!e.sessionLost) rethrow;
       await login();
       return run();
     }
@@ -308,8 +293,6 @@ class CampusDirect {
         '（或在校园网下先查询第二课堂分数自动补全）');
   }
 
-  // ==================== 状态 / 断开 ====================
-
   Future<Map<String, dynamic>> status() async {
     final cred = _cred;
     return {
@@ -326,8 +309,6 @@ class CampusDirect {
       'jwxt_ready': _jwxt?.loggedIn ?? false,
     };
   }
-
-  // ==================== 学工：二课分 / 活动 ====================
 
   Future<Map<String, dynamic>> score() => _withRelogin(() async {
         await _ensureXg();
@@ -362,9 +343,7 @@ class CampusDirect {
         final data = await _xg!.fetchActivityDetail(aid);
         final hdms = (data['hdms'] ?? '').toString();
         String s(String k) => (data[k] ?? '').toString().trim();
-        // 元信息（名称 / 起止 / 报名窗口 / 地点 / 主办方 / 校区）：学校详情接口其实
-        // 都返回了，之前只透传说明——扫码直接进详情页时没有列表项，就会开天窗。
-        // 空值不带，免得把列表项里的值盖掉（与后端同一条纪律）。
+        // 元信息空值不带，免得把列表项里的值盖掉（与后端同一条纪律）。
         return {
           'ok': true,
           'data': {
@@ -386,30 +365,25 @@ class CampusDirect {
         };
       }, _ensureXg);
 
-  /// 活动报名（写操作：客户端只提交一次，报名内容由学校表单预填）。
-  /// 会话失效时重登一次再走是安全的——学校还没见到过提交（失败发生在表单拉取阶段）。
+  /// 活动报名（写操作：只提交一次，报名内容由学校表单预填）。
   Future<Map<String, dynamic>> activitySignup(String aid) => _withRelogin(() async {
         await _ensureXg();
         return {'ok': true, 'data': await _xg!.signupActivity(aid)};
       }, _ensureXg);
 
-  /// 扫码签到 / 签退（写操作：只提交一次；会话失效时学校根本没见到这次提交，
-  /// 重登一次再提交是安全的）。hdId / hdActId 来自签到二维码的路径段。
+  /// 扫码签到 / 签退（写操作：只提交一次）；hdId / hdActId 来自签到二维码的路径段。
   Future<Map<String, dynamic>> activitySignInOrSignOut(Object hdId, Object hdActId) =>
       _withRelogin(() async {
         await _ensureXg();
         return {'ok': true, 'data': await _xg!.signInOrSignOut(hdId, hdActId)};
       }, _ensureXg);
 
-  /// 报名（培训）二维码的扫码签到（写操作：只提交一次；同上，会话失效时重登一次
-  /// 是安全的）。hdId / pxId 来自报名二维码的路径段。
+  /// 报名（培训）二维码的扫码签到（写操作：只提交一次）；hdId / pxId 来自二维码的路径段。
   Future<Map<String, dynamic>> activityTrainingSignIn(Object hdId, Object pxId) =>
       _withRelogin(() async {
         await _ensureXg();
         return {'ok': true, 'data': await _xg!.trainingSignIn(hdId, pxId)};
       }, _ensureXg);
-
-  // ==================== 教务：成绩 / 课表 / 考试 ====================
 
   Future<Map<String, dynamic>> grades({String? xnm, String? xqm}) => _withRelogin(() async {
         await _ensureJwxt();
@@ -430,13 +404,10 @@ class CampusDirect {
       }, _ensureJwxt);
 
   /// 学业情况（学生学业情况查询）：整体统计 + 各类别学分要求 + 类别课程明细。
-  /// 只有教务直连实现；服务器模式的开放接口里暂时还没有这一项。
   Future<Map<String, dynamic>> academicStatus() => _withRelogin(() async {
         await _ensureJwxt();
         return {'ok': true, 'data': await _jwxt!.academicStatus()};
       }, _ensureJwxt);
-
-  // ==================== 教务：选课（正方 9.0 zzxk） ====================
 
   Future<List<CourseScope>> courseScopes() => _withReloginT(() async {
         await _ensureJwxt();
@@ -475,8 +446,6 @@ class CampusDirect {
         return _jwxt!.selectedCourses(scope);
       }, _ensureJwxt);
 
-  // ==================== 校付宝：校园码 / 电费 ====================
-
   Future<Map<String, dynamic>> ecard() async {
     final name = await _realName();
     final code = (await _epayClient.qrcode(_cred.studentId, name, _cred.payPassword))['code'];
@@ -496,7 +465,7 @@ class CampusDirect {
     final name = await _realName();
     final data =
         await _epayClient.queryElectricity(_cred.studentId, name, _cred.payPassword, _cred.dorm);
-    await _appendHistory(
+    await appendElectricityHistory(
       balance: (data['balance'] as num?)?.toDouble(),
       remain: (data['remain'] as num?)?.toDouble(),
       dorm: (data['dorm'] ?? _cred.dorm).toString(),
@@ -510,7 +479,7 @@ class CampusDirect {
     final name = await _realName();
     final r = await _epayClient.rechargeElectricity(
         _cred.studentId, name, _cred.payPassword, _cred.dorm, amount.toDouble());
-    await _appendHistory(
+    await appendElectricityHistory(
       balance: (r['balance'] as num?)?.toDouble(),
       remain: null,
       dorm: _cred.dorm,
@@ -529,101 +498,16 @@ class CampusDirect {
 
   Future<Map<String, dynamic>> electricityHistory({int days = 90}) async {
     final sp = await SharedPreferences.getInstance();
-    final records = _readHistory(sp);
+    final records = readElectricityHistory(sp);
     final since = DateTime.now().subtract(Duration(days: days.clamp(1, 365)));
     final out = records
-        .where((r) => _parseTime(r['time'])?.isAfter(since) ?? false)
+        .where((r) => parseHistoryTime(r['time'])?.isAfter(since) ?? false)
         .toList()
-      ..sort((a, b) =>
-          (_parseTime(a['time']) ?? DateTime(0)).compareTo(_parseTime(b['time']) ?? DateTime(0)));
+      ..sort((a, b) => (parseHistoryTime(a['time']) ?? DateTime(0))
+          .compareTo(parseHistoryTime(b['time']) ?? DateTime(0)));
     return {'ok': true, 'records': out};
   }
 
-  // ==================== 测试连接 ====================
-
   /// 逐项探测学校系统可达性（教务 / 学工 / 校付宝），供连接设置页展示。
-  Future<List<ProbeResult>> testConnection() async {
-    final s = AppState.I.school;
-    final out = <ProbeResult>[];
-    out.add(await _probe('教务系统', () async {
-      final c = JwxtClient(s.jwxtBase,
-          aesKey: s.dektAesKey, allowSelfSigned: s.allowSelfSigned);
-      try {
-        final r = await c.probe();
-        return r;
-      } finally {
-        c.dispose();
-      }
-    }));
-    out.add(await _probe('学工系统', () async {
-      final c = XgClient(
-        authBase: s.authBase,
-        xgBase: s.xgBase,
-        allowSelfSigned: s.allowSelfSigned,
-      );
-      try {
-        final r = await c.probe();
-        return r;
-      } finally {
-        c.dispose();
-      }
-    }));
-    out.add(await _probe('校园卡', () async {
-      final c = EpayClient(s.ecardBase, allowSelfSigned: s.allowSelfSigned);
-      try {
-        return await c.probe();
-      } finally {
-        c.dispose();
-      }
-    }));
-    return out;
-  }
-
-  Future<ProbeResult> _probe(String name, Future<String?> Function() run) async {
-    try {
-      final detail = await run();
-      return (name: name, ok: true, detail: detail ?? '可达');
-    } on ApiError catch (e) {
-      return (name: name, ok: false, detail: e.message);
-    } catch (e) {
-      return (name: name, ok: false, detail: '$e');
-    }
-  }
-
-  static DateTime? _parseTime(Object? v) =>
-      v == null ? null : DateTime.tryParse(v.toString().replaceFirst(' ', 'T'));
-
-  static String _fmt(DateTime t) =>
-      '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
-      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
-
-  List<Map<String, dynamic>> _readHistory(SharedPreferences sp) {
-    try {
-      final raw = sp.getString(_histKey);
-      if (raw == null || raw.isEmpty) return [];
-      final arr = jsonDecode(raw);
-      if (arr is List) return arr.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
-    } catch (_) {}
-    return [];
-  }
-
-  Future<void> _appendHistory({
-    double? balance,
-    double? remain,
-    required String dorm,
-    double recharge = 0,
-  }) async {
-    final sp = await SharedPreferences.getInstance();
-    final records = _readHistory(sp);
-    records.add({
-      'balance': balance,
-      'remain': remain,
-      'dorm': dorm,
-      'time': _fmt(DateTime.now()),
-      'recharge': recharge,
-    });
-    final cutoff = DateTime.now().subtract(const Duration(days: 366));
-    records.removeWhere((r) => (_parseTime(r['time']) ?? DateTime.now()).isBefore(cutoff));
-    await sp.setString(_histKey, jsonEncode(records));
-  }
+  Future<List<ProbeResult>> testConnection() => testDirectConnection();
 }

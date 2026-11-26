@@ -4,8 +4,7 @@ import 'package:campus_core/campus_core.dart';
 
 import 'backup_page.dart';
 
-/// 备份与恢复：把本机课表 / 设置 / 学校档案 / 插件偏好导出为 JSON，
-/// 卸载重装或换机后导入恢复。账号密码、登录态、AI Key 不在备份里。
+/// 备份与恢复：把本机课表 / 设置 / 学校档案 / 插件偏好导出为 JSON，换机后导入恢复。
 class BackupPlugin extends FeaturePlugin {
   const BackupPlugin();
 
@@ -36,5 +35,5 @@ class BackupPlugin extends FeaturePlugin {
       ];
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_BACKUP=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(features: [BackupPlugin()]);

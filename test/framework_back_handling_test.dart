@@ -4,15 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 预测式返回的前提：**必须告诉引擎「返回由 Flutter 处理」**，
-/// 引擎才会注册带进度的返回回调（`OnBackAnimationCallback`）。
-/// 否则 Android 会按自己的默认行为处理（把 Activity 弹掉 / 回桌面），
-/// 我们这边的 `handleStartBackGesture` 永远收不到事件——模拟器上实测就是这样。
-///
-/// 这个「告诉引擎」是框架自己做的：Navigator 在路由栈变化时派发
-/// NavigationNotification，WidgetsApp 收到后调用
-/// `SystemNavigator.setFrameworkHandlesBack(canHandlePop)`。
-/// 这里就是验证这条链路真的通，别被以后的改动拆掉。
+/// 预测式返回的前提：Navigator 派发 NavigationNotification → WidgetsApp 调 setFrameworkHandlesBack(true)，引擎才注册返回回调；这里验这条链路真的通。
 void main() {
   testWidgets('push 之后会告诉引擎：返回交给 Flutter 处理', (tester) async {
     final backCalls = <Object?>[];

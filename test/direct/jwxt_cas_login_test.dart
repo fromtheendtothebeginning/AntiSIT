@@ -4,12 +4,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 回归用例：正方账号密码被拒时改走统一身份认证（CAS）。
-///
-/// 背景：2026 级新生在正方侧没有可用的账号密码——浏览器里也只能点登录页上的
-/// 「统一身份认证登录」按钮进去；App 直接拿统一认证密码登正方会一直显示
-/// 「用户名或密码错误」。这里用本地模拟服务把两条链路都跑真 HTTP / 真加密：
-/// 正方密码登录被拒 → 自动切 CAS → 同一密码登入 → 课表可导入。
+/// 回归：正方账号密码被拒时改走统一身份认证（新生在正方侧没有可用密码）；本地模拟服务跑真 HTTP / 真加密。
 void main() {
   final mock = MockCampusServer.instance;
 

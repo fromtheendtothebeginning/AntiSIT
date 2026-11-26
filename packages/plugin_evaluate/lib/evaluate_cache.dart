@@ -5,12 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'evaluate_model.dart';
 
-/// 评教的本地缓存：进去先看上次的列表与分数，后台再拉新。
-///
-/// 两件事分开存：
-/// * **列表** 走 [ToolPageCache]（与成绩 / 二课等工具页同一套缓存，退出登录会一起清）；
-/// * **已打的分** 单独存本机（[EvaluationLocalScores]）——教务对已保存的评教不回填具体分数，
-///   而重新打开表单时我们希望默认显示上次打的那套。
+/// 评教的本地缓存：列表走 [ToolPageCache]（退出登录一起清），
+/// 已打的分单独存本机（教务不回填具体分数，重开表单时要默认显示上次那套）。
 class EvaluationCache {
   EvaluationCache._();
 
@@ -38,10 +34,6 @@ class EvaluationCache {
 }
 
 /// 本机记住的「我上次给这门课打的分」：指标 ID → 分数。
-///
-/// 为什么需要它：教务的已保存评教不会把分数回填到表单里（实测 `value` 是空的），
-/// 而用户希望再打开时看到上次那套分数并在此基础上微调——所以本机留一份。
-///
 /// 记录里带**学号指纹**：换账号后旧分数不生效，不会把别人的分带过来。
 class EvaluationLocalScores {
   EvaluationLocalScores._();

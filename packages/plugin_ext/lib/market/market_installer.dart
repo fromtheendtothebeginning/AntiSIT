@@ -10,11 +10,10 @@ import 'market_entry.dart';
 import 'market_source.dart';
 import 'market_sources.dart';
 
-/// 把市场里的条目装进本地清单。
+/// 把市场里的条目装进本地清单：下载 → **校验 sha256** → 解压 → 入列。
 ///
-/// 装 = 下载 → **校验 sha256** → 解压 → 入列。校验在解压**之前**，哈希不对连文件都不落盘。
-/// 更新就是再装一次：拓展 id 不变，所以解压目录被换掉、而它的数据
-/// （`plugin.ext.data.<id>.*`）留着——记的设置、历史都不会因为更新丢掉。
+/// 校验在解压**之前**（哈希不对连文件都不落盘）；更新就是再装一次，id 不变所以
+/// 拓展自己的数据（`plugin.ext.data.<id>.*`）留着。
 class MarketInstaller {
   MarketInstaller({ExtensionStore? store, MarketSource? source})
       : store = store ?? ExtensionStore.I,
@@ -55,14 +54,10 @@ class MarketInstaller {
     );
   }
 
-  /// 装 / 更新一条。
-  ///
-  /// * `bundle`：下载 zip → 校验 sha256 → 解压 → 入列（更新时保留卡片上改过的名字 / 简介 / 图标）；
-  /// * `web`：不下载东西，只记一条网址（站点自己会变，没有版本可更新）。
+  /// 装 / 更新一条：`bundle` 走下载校验解压入列，`web` 只记一条网址。
   ///
   /// 抛 [StateError] 时消息可以直接给用户看（App 版本不够 / 哈希不对 / 包坏了 /
-  /// 与内置冲突）。市场卡片的「装不了」只是 UI 层，安装器这里再拦一道——
-  /// 「全部更新」之类的批量路径不该绕过版本门。
+  /// 与内置冲突）；版本门在这里再拦一道，「全部更新」这类批量路径绕不过去。
   Future<ExtensionItem> install(MarketEntry entry) async {
     // 演示模式：假拓展没有真实包可下，直接把「已装版本」推进到目录版本。
     // 内容路径写成 demo:// 标记（真去打开会提示不存在，演示流程不依赖它）。

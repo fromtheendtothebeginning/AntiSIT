@@ -2,17 +2,14 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// 流体云能力的实现：走原生通道 `antisit/fluid_cloud`（见 `android/.../FluidCloud.kt`）。
-///
-/// 原生侧做三件事：识别系统品牌、发常驻进度通知（Android 16+ 声明 promoted ongoing）、
-/// 用 AlarmManager 排「几点亮 / 几点收」——App 被杀掉也按时生效。
+/// 流体云能力实现：走原生通道 `antisit/fluid_cloud`（见 `android/.../FluidCloud.kt`）。
+/// 原生侧识别品牌、发常驻进度通知（Android 16+ 声明 promoted ongoing）、用 AlarmManager 排期，App 被杀也按时生效。
 class FluidCloudCapabilityImpl implements FluidCloudCapability {
   const FluidCloudCapabilityImpl();
 
   static const _channel = MethodChannel('antisit/fluid_cloud');
 
-  /// 把 App 当前主题（玻璃卡合成后的实底色 + 文字/强调色）带给原生，
-  /// 自定义通知内容视图按这套颜色画，和 App 内一致。
+  /// 把当前主题色（玻璃卡合成后的实底色 + 文字/强调色）带给原生，通知内容视图按此绘制。
   static Map<String, Object> _theme() {
     final cardSolid = Color.alphaBlend(SemColors.card, SemColors.bg);
     return {

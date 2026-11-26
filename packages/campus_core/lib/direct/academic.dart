@@ -1,58 +1,22 @@
-/// 「学生学业情况查询」（正方教务，GNMKDM=N105515）页面解析。
+/// 「学生学业情况查询」（正方教务，GNMKDM=N105515）页面解析：首页 HTML 与节点课程 JSON。
 ///
-/// 新版正方把这一页渲染成服务端 HTML：
-///
-/// - `input#xh_id`：学号；
-/// - `div#alertBox`：整体统计，形如
-///   「平均学分绩点：3.52 计划总课程 60 门 通过 52 门 未通过 3 门 未修 4 门
-///     在读 1 门，计划外 通过 3 门 未通过 1 门」；
-/// - 每个培养方案节点（主修 / 专业核心课 / 专业选修课 / 方向版块…）渲染一段标题 +
-///   「要求学分：33.0 获得学分：28.0 未获得学分：5.0」+ 一个空的
-///   `<span id='showKc<xfyqjd_id>'></span>` 占位；点开节点时前端再 POST
-///   `xsxyqk_cxJxzxjhxfyqKcxx.html`（表单 `xfyqjd_id=<id>`）拉该节点课程 JSON 数组。
-/// - `div.alert-danger`：学校侧业务错误（如未配置培养方案）。
-///
-/// 这里只做纯字符串解析，不碰网络与登录态（那是 [JwxtClient] 的事），便于单测。
-/// 协议移植自开源实现 zfn_api（openschoolcn/zfn_api）的
-/// `get_academia` / `get_academia_statistics` / `get_academia_type_statistics`，
-/// 并放宽了对属性顺序、HTML 实体、字段缺失（`&nbsp;` 占位）的假设。
+/// 协议移植自 zfn_api（openschoolcn/zfn_api），并放宽了属性顺序 / HTML 实体 / 字段缺失的假设。
 library;
 
 import '../json_num.dart';
 
-/// 学业情况首页（相对 `jwxtBase`，即 `…/jwglxt` 之后）。真实页面可能带 `echarts=1`，
-/// 只影响前端图表。
+/// 学业情况首页（相对 `jwxtBase`）。
 const String academicIndexPath =
     '/xsxy/xsxyqk_cxXsxyqkIndex.html?gnmkdm=N105515&layout=default';
 
-/// 学业情况节点课程明细（同样相对 `jwxtBase`）：POST 表单 `xfyqjd_id`，返回 JSON 数组。
+/// 学业情况节点课程明细（相对 `jwxtBase`）：POST 表单 `xfyqjd_id`，返回 JSON 数组。
 const String academicCoursesPath = '/xsxy/xsxyqk_cxJxzxjhxfyqKcxx.html?gnmkdm=N105515';
 
-/// 「非课程信息」节点的明细接口（页面 JS 里 `jdkcsx != '1'` 的节点，如通识类/实践环节）。
-/// 同样 POST `xfyqjd_id`，返回的字段与课程接口大体一致（KCMC/XF/MAXCJ/JD/…）。
+/// 「非课程信息」节点的明细接口（页面 JS 里 `jdkcsx != '1'` 的节点，如通识类 / 实践环节）。
 const String academicNonCoursePath = '/xsxy/xsxyqk_cxJxzxjhxfyqFKcxx.html?gnmkdm=N105515';
 
-/// 解析学业情况首页 HTML。
-///
-/// 返回：
-/// ```
-/// {
-///   'login': false,              // true = 被重定向到登录页（会话失效）
-///   'error': '',                 // 非空 = 学校 alert-danger 原文
-///   'sid': '25110001',
-///   'statistics': {
-///     'gpa': 3.52,               // num?（页面上取不到时 null）
-///     'planed': {'total': 60, 'passed': 52, 'failed': 3, 'missed': 4, 'in': 1},
-///     'unplaned': {'passed': 3, 'failed': 1},
-///   },
-///   'categories': [
-///     {'name': '专业核心课', 'id': '9002',
-///      'required': 33.0, 'earned': 28.0, 'missed': 5.0},   // 学分可能 null
-///   ],
-/// }
-/// ```
-///
-/// 解析不出来时宁可返回空字段，也不抛异常：调用方据此给「页面可能改版」的诊断。
+/// 解析学业情况首页 HTML，返回 login / error / sid / params / statistics / categories；
+/// 解析不出来时返回空字段而不抛异常，调用方据此给「页面可能改版」的诊断。
 Map<String, dynamic> parseAcademicIndex(String html) {
   final result = <String, dynamic>{
     'login': false,
@@ -78,11 +42,9 @@ Map<String, dynamic> parseAcademicIndex(String html) {
   return result;
 }
 
-/// 解析某个培养方案节点的课程明细 JSON。
+/// 解析某个培养方案节点的课程明细 JSON，把大写字段归一成短字段。
 ///
-/// 正方返回的字段是大写缩写（KCH/KCMC/XF/XDZT/MAXCJ/JD/…），这里归一成
-/// 与其它教务接口一致的短字段；[sid] 用来把「建议修读学年」换算成「大二上」这类
-/// 人话标签（取学号前 2 位作入学年，与 zfn_api 的做法一致，留级/入伍会不准）。
+/// [sid] 用来把「建议修读学年」换算成「大二上」这类标签（取学号前 2 位作入学年，留级/入伍会不准）。
 List<Map<String, dynamic>> parseAcademicCourses(dynamic json, {String sid = ''}) {
   final items = _itemsOf(json);
   if (items.isEmpty) return const [];
@@ -158,10 +120,7 @@ String prescribeTerm({required String sid, required String year, required String
   return const ['大一', '大二', '大三', '大四'][diff] + half;
 }
 
-// ==================== 整体统计 ====================
-
-/// `div#alertBox` 里的整体统计。学校排版差异大（空格、&nbsp;、标点），
-/// 先压成「无空白无标点」文本再匹配；缺字段就留 null，不编造 0。
+/// `div#alertBox` 里的整体统计：先压成「无空白无标点」文本再匹配，缺字段留 null 不编造 0。
 Map<String, dynamic> _parseStatistics(String html) {
   final box = _alertBox(html);
   final out = <String, dynamic>{'gpa': null, 'planed': null, 'unplaned': null};
@@ -171,7 +130,7 @@ Map<String, dynamic> _parseStatistics(String html) {
   final flat = _squash(text);
 
   // GPA：优先「平均学分绩点」后的数字；其次 alertBox 里第一个小数；
-  // 再次页面里 <font size="2px"> 的第 3 个数字（部分版本只在图上标注，zfn_api 同样取法）。
+  // 再次页面里 <font size="2px"> 的第 3 个数字（部分版本只在图上标注）。
   final gpaRe = RegExp(r'平均学分绩点[^\d]{0,12}(\d+(?:\.\d+)?)');
   num? gpa = _numOf(gpaRe.firstMatch(flat)?.group(1));
   if (gpa == null && box.isNotEmpty) {
@@ -263,7 +222,7 @@ String _parseAlertDanger(String html) {
 }
 
 /// 课程明细 POST 需要首页里的一批隐藏域（学号、成绩录入学年/学期、成绩控制开关…），
-/// 少传会导致明细接口回空或报错——所以从首页 HTML 原样抄过来。
+/// 少传会让明细接口回空或报错，所以从首页 HTML 原样抄过来。
 const List<String> _academicFormIds = [
   'xh_id',
   'cjlrxn',
@@ -304,24 +263,16 @@ String? _hiddenInputValue(String html, String id) {
   return rev;
 }
 
-// ==================== 培养方案节点 ====================
-
-/// 从页面里抓「培养方案节点」。
-///
-/// 新版正方（SIT 这版）把节点树写在**前端 JS 模板字符串**里：每个节点是
-/// `<p class='title1' id='p<ID>' yxxf='已修' yqzdxf='要求' sftg='0|1'>` 后面跟
-/// 一个 JS 字符串 `"类别名&nbsp;"`，中文标签（要求学分等）只在 `/* 注释 */` 里，
-/// 真正渲染靠 i18n。所以先按这种「属性方言」解析；老版/其它学校直接渲染 HTML 的
-/// 页面再走下面「按 showKc 占位切段」的静态方言。
+/// 从页面里抓培养方案节点：先按新版「JS 模板方言」解析，取不到再走静态 HTML 方言。
 List<Map<String, dynamic>> _parseCategories(String html) {
   final templateNodes = _parseTemplateNodes(html);
   if (templateNodes.isNotEmpty) return templateNodes;
   return _parseStaticCategories(html);
 }
 
-/// SIT/新版正方：从 JS 模板里解析节点（含父子层级）。
-/// 属性 [yxxf]=已获学分、[yqzdxf]=要求总学分、[sftg]=是否达标；
-/// 父节点 id 在同段模板的 `fxfyqjd_id='...'` 上（根节点为空）。
+/// 新版正方：从 JS 模板里解析节点（含父子层级）。
+///
+/// 属性 yxxf=已获学分、yqzdxf=要求总学分、sftg=是否达标，父节点 id 在同段模板的 fxfyqjd_id 上。
 List<Map<String, dynamic>> _parseTemplateNodes(String html) {
   final re = RegExp(
     r"""<p\s+class=['"]title1['"][^>]*?\bid=['"]p([0-9A-Za-z]{4,40})['"][^>]*?\byxxf=['"]([^'"]*)['"][^>]*?\byqzdxf=['"]([^'"]*)['"][^>]*?\bsftg=['"]([^'"]*)['"][^>]*>\s*"?\s*\+\s*"([^"]*?)&nbsp;""",
@@ -356,8 +307,7 @@ List<Map<String, dynamic>> _parseTemplateNodes(String html) {
   return out;
 }
 
-/// 模板里 `<p ...>` 之前最近的某个属性值（父节点 `fxfyqjd_id`、`jdkcsx` 都挂在
-/// 前面的 `<li>` / `<div class='title'>` 上）。
+/// 模板里 `<p ...>` 之前最近的某个属性值（父节点 fxfyqjd_id、jdkcsx 都挂在前面标签上）。
 String _attrBefore(String html, int pStart, String attr) {
   final from = (pStart - 2000).clamp(0, html.length);
   final prefix = html.substring(from, pStart);
@@ -387,9 +337,8 @@ void _assignLevels(List<Map<String, dynamic>> nodes) {
   }
 }
 
-/// 老版/静态方言：按 `<span id='showKc<id>'>` 占位符切段，
-/// 每段里取**最近一次**出现的「要求学分 / 获得学分 / 未获得学分」三元组。
-/// 用最近的而不是第一个：父子节点嵌套时，父节点的数字会先出现在子节点段里。
+/// 老版/静态方言：按 `<span id='showKc<id>'>` 占位符切段，每段取**最近一次**出现的学分三元组
+/// （父子嵌套时父节点的数字会先出现，取最近的才对）。
 List<Map<String, dynamic>> _parseStaticCategories(String html) {
   final out = <Map<String, dynamic>>[];
   final seen = <String>{};
@@ -425,8 +374,7 @@ List<Map<String, dynamic>> _parseStaticCategories(String html) {
   return out;
 }
 
-/// 把一段上下文解析成一个节点：名称取「要求学分」标签前最近的文本节点，
-/// 学分取段内最后一次出现的数字。
+/// 把一段上下文解析成一个节点：名称取「要求学分」标签前最近的文本节点，学分取段内最后一次出现的数字。
 Map<String, dynamic>? _categoryOf(String ctx, String id) {
   final required = _lastNum(ctx, RegExp(r'要求学分\s*[:：]?\s*(\d+(?:\.\d+)?)'));
   if (required == null) return null;
@@ -440,13 +388,12 @@ Map<String, dynamic>? _categoryOf(String ctx, String id) {
     'required': required,
     'earned': earned,
     'missed': missed,
-    // 静态方言拿不到 jdkcsx：按教学计划接口处理（历史行为），空结果时再由调用方兜底。
+    // 静态方言拿不到 jdkcsx：按教学计划接口处理，空结果时再由调用方兜底。
     'jdkcsx': '',
   };
 }
 
-/// 节点名称：「要求学分」之前最后一个不含量词的文本节点（如 `<a>专业核心课</a>`），
-/// 拿不到再退回「按词回溯」的启发式。
+/// 节点名称：「要求学分」之前最后一个不含量词的文本节点，拿不到再退回按词回溯的启发式。
 String _categoryName(String ctx) {
   final idx = ctx.lastIndexOf('要求学分');
   if (idx <= 0) return '';
@@ -489,11 +436,9 @@ num? _lastNum(String text, RegExp re) {
   return out;
 }
 
-// ==================== 通用 ====================
-
 bool _looksLikeLoginPage(String html) {
   if (html.contains('login_slogin') || html.contains('login_getPublicKey')) return true;
-  // 正方登录页骨架：<h5>用户登录</h5>（zfn_api 用同样的判定）
+  // 正方登录页骨架：<h5>用户登录</h5>
   return RegExp(r'<h5[^>]*>\s*用户登录\s*</h5>').hasMatch(html);
 }
 

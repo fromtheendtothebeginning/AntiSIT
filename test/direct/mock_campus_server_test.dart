@@ -4,11 +4,9 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 用本地模拟校园服务（行为与学校系统一致）驱动真实的直连客户端：
-/// 登录表单 + 验证码 + Cookie 会话 + 各业务接口，全部走真 HTTP 与真实加密。
+/// 本地模拟校园服务（行为与学校系统一致）驱动真实直连客户端：登录表单 + 验证码 + Cookie 会话 + 各业务接口，全走真 HTTP。
 void main() {
-  // 注意：这里不能初始化 TestWidgetsFlutterBinding——它会把 HttpClient 换成返回 400 的假实现，
-  // 于是所有真 HTTP 请求都发不出去（本用例靠真 HTTP 打本地模拟服务）。
+  // 不能初始化 TestWidgetsFlutterBinding：它会把 HttpClient 换成一律回 400 的假实现，真 HTTP 请求就发不出去。
   final mock = MockCampusServer.instance;
 
   setUpAll(() async => mock.start());
@@ -74,8 +72,7 @@ void main() {
       );
     });
 
-    // 学校页面里没有可读错误文案（新版登录页把提示交给 JS 渲染）：过去会退化成全页搜「验证码」
-    // 二字，把 HTML 注释里的 `验证码-->` 当成失败原因贴给用户，还因为含「验证码」白重试三次。
+    // 学校页面没有可读错误文案时不能退化成全页搜「验证码」，否则会把 HTML 注释里的「验证码-->」当成失败原因。
     test('登录页没有错误文案 → 报状态码与页面片段，不拿页面碎片当原因', () async {
       mock.debugJwxtLoginFailBody =
           '<html><head><!--验证码--></head><body><label>验证码</label>'

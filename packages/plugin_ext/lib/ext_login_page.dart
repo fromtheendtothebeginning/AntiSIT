@@ -1,7 +1,6 @@
-/// 通用登录页：打开拓展给的一个 https 登录地址，登录完成后只返回它声明的那些域的 Cookie。
+/// 通用登录页：打开拓展给的 https 登录地址，完成后只返回它声明的那些域的 Cookie。
 ///
-/// 页面是可见的：地址栏下面会显示当前域名，用户能看清自己在哪个站点登录。
-/// 是否允许打开由 `ExtConsentService` 在进入前弹窗确认。
+/// 页面可见（地址栏下方显示当前域名），是否允许打开由 `ExtConsentService` 事先弹窗确认。
 library;
 
 import 'dart:async';
@@ -27,13 +26,10 @@ class ExtLoginPage extends StatefulWidget {
   final String startUrl;
   final List<String> cookieUrls;
 
-  /// 自动完成的判定条件（**两个都满足**才算成功）：
-  /// * [successUrlPrefix]：已经跳到这个前缀（登录成功页）；
-  /// * [successCookie]：Cookie 里有这个键。
+  /// 自动完成的判定条件（两个都满足才算成功）：[successUrlPrefix] 已跳到、[successCookie] 存在。
   ///
-  /// 只给其中一个时按那个判；两个都不给就等用户点「完成」。
-  /// 前缀是硬门槛：还在登录页时，CookieStore 里可能留着上次的登录态，
-  /// 只按 Cookie 会自动「登录成功」，用户看到的就是「退出后又自己登上了」。
+  /// 前缀是硬门槛：还在登录页时 CookieStore 里可能留着上次的登录态，只按 Cookie
+  /// 会自动「登录成功」，用户看到的就是「退出后又自己登上了」。
   final String? successUrlPrefix;
   final String? successCookie;
   final String? userAgent;
@@ -53,18 +49,15 @@ class ExtLoginPage extends StatefulWidget {
     return uri;
   }
 
-  /// 同站判断：比较可注册域名。除了常见的两段域名，还覆盖 `.edu.cn` 这类
-  /// 公共后缀——否则 `a.edu.cn` 和 `b.edu.cn` 会被误判为同站。
+  /// 同站判断：比较可注册域名，并覆盖 `.edu.cn` 这类公共后缀
+  /// （否则 `a.edu.cn` 和 `b.edu.cn` 会被误判为同站）。
   static bool sameSite(String a, String b) {
     final x = _registrable(a.toLowerCase());
     final y = _registrable(b.toLowerCase());
     return x.isNotEmpty && x == y;
   }
 
-  /// 是否该自动完成登录（纯函数，方便单测）。
-  ///
-  /// [successUrlPrefix] 是硬门槛：还在登录页时一律不自动完成——CookieStore 里
-  /// 可能留着上次的登录态，只按 Cookie 判会让用户「点登录直接被判成功」。
+  /// 是否该自动完成登录（纯函数，方便单测）；没给前缀就不拦。
   static bool shouldAutoCapture({
     required String url,
     String? successUrlPrefix,
@@ -143,12 +136,7 @@ class _ExtLoginPageState extends State<ExtLoginPage> {
       (widget.successUrlPrefix?.isNotEmpty ?? false) ||
       (widget.successCookie?.isNotEmpty ?? false);
 
-  /// 页面加载完成时尝试自动完成登录。
-  ///
-  /// 给了 `successUrlPrefix` 就**必须**已经跳到那个前缀才自动完成：
-  /// 只按 Cookie 判会在登录页刚打开时就命中（CookieStore 里还留着上次的
-  /// `_uid`），表现为「点登录直接跳成功、根本没让我登录」——用户看到的就是
-  /// 「退出后还自动登录」。
+  /// 页面加载完成时尝试自动完成登录；给了 `successUrlPrefix` 就必须先跳到那个前缀。
   Future<void> _tryCapture(String url) async {
     if (!_autoDetect || _captured || _capturing || !mounted) return;
     if (!ExtLoginPage.shouldAutoCapture(

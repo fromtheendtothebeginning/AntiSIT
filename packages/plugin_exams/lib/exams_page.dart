@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+/// 考试安排页：先读本机缓存立即展示，再按设置后台刷新。
 class ExamsPage extends StatefulWidget {
   const ExamsPage({super.key});
 
@@ -18,7 +19,7 @@ class _ExamsPageState extends State<ExamsPage> {
   bool _fromCache = false;
   bool _refreshFailed = false;
 
-  /// 缓存按学期隔离：换学期后不会把上学期的安排当成本学期。
+  /// 缓存按学期隔离，换学期不会把上学期安排当成本学期。
   static String _cacheKey(String xnm, String xqm) => 'exams:$xnm:$xqm';
 
   @override
@@ -74,11 +75,11 @@ class _ExamsPageState extends State<ExamsPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
@@ -92,6 +93,8 @@ class _ExamsPageState extends State<ExamsPage> {
             emptyText: '本学期暂无考试安排',
             onRetry: _load,
             child: RefreshIndicator(
+              // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
+              edgeOffset: topInset,
               onRefresh: _load,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),

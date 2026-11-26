@@ -49,9 +49,7 @@ class HttpSession {
   /// 允许自签/校内 CA 证书的主机（后缀匹配）。
   final List<String> trustHosts;
 
-  /// 是否接受这些主机的无效证书。默认 **false**；只有学校系统确实使用自签证书、
-  /// 且用户在学校档案里显式开启时才放行。开启后该主机的任意证书错误都会被接受，
-  /// 校园网里的 MITM 可借此替换登录页——开启前要确认风险。
+  /// 是否接受这些主机的无效证书；默认 false，只有学校用自签证书且用户确认风险时才放行。
   final bool allowSelfSigned;
 
   /// 非空时把 Cookie 持久化（跨启动复用登录态）。
@@ -71,8 +69,6 @@ class HttpSession {
       trustHosts.any((t) => t.isNotEmpty && (host == t || host.endsWith('.$t')));
 
   void dispose() => _client.close();
-
-  // ==================== Cookie ====================
 
   String _cookieHeader(String host) {
     final parts = <String>[];
@@ -117,10 +113,7 @@ class HttpSession {
     unawaited(persist());
   }
 
-  /// 某主机（含其父域）当前的 Cookie：给「要把登录态带进 WebView」的页面用
-  /// （评教助手：网页里直接是登录后的样子，不用再登一次）。
-  ///
-  /// 返回扁平的 name → value；同名以更具体的域为准（后写的覆盖）。
+  /// 某主机（含其父域）当前的 Cookie（name → value），供「把登录态带进 WebView」的页面用。
   Future<Map<String, String>> cookiesFor(String host) async {
     await load();
     final out = <String, String>{};
@@ -130,11 +123,7 @@ class HttpSession {
     return Map<String, String>.unmodifiable(out);
   }
 
-  /// 首次请求前载入持久化 Cookie。
-  ///
-  /// 多个请求会并发走到这里（成绩 / 课表 / 考试可能同时开拉）：必须共享同一个
-  /// Future，后到的请求等它读完再发，否则它们会在 Cookie 还没进罐时就发出去，
-  /// 学校系统认不出登录态，表现为「带 Cookie 的接口全部失效」。
+  /// 首次请求前载入持久化 Cookie；并发请求必须共享同一个 Future，否则 Cookie 进罐前就发出去了。
   Future<void> load() => _loading ??= _loadOnce();
 
   Future<void> _loadOnce() async {
@@ -175,8 +164,6 @@ class HttpSession {
       await sp.remove(key); // 清掉旧版本可能留下的明文 Cookie
     } catch (_) {}
   }
-
-  // ==================== 请求 ====================
 
   Future<HttpResult> get(
     String url, {
@@ -223,10 +210,7 @@ class HttpSession {
     bool redirect = true,
     Duration timeout = const Duration(seconds: 30),
   }) async {
-    // 自己跟随重定向：dart:io/http 自动跟随只把最后一跳的响应交出来，
-    // 中间 302 上的 Set-Cookie（学校系统恰恰用它建会话）会被丢掉——会话对不上，
-    // 验证码就绑到另一个会话上，登录必然失败。服务端 Python 用 requests 不会丢，
-    // 所以这里手动跟，每一跳都收 Cookie。
+    // 自己跟随重定向：自动跟随只交出最后一跳，中间 302 的 Set-Cookie（学校用它建会话）会丢。
     var currentUrl = url;
     var currentMethod = method;
     String? currentBody = body;
@@ -254,13 +238,15 @@ class HttpSession {
       } on ApiError {
         rethrow;
       } on TimeoutException {
-        throw ApiError(_netHint(host, '连接超时'));
+        // 网络层失败标成「写操作结果未确认」：请求可能已经到达学校系统
+        // （扣款 / 报名这类写操作必须让用户先核实，不能被提示成「失败请重试」）。
+        throw ApiError(_netHint(host, '连接超时'), null, true);
       } on SocketException {
-        throw ApiError(_netHint(host, '无法连接'));
+        throw ApiError(_netHint(host, '无法连接'), null, true);
       } on HttpException {
-        throw ApiError(_netHint(host, '无法连接'));
+        throw ApiError(_netHint(host, '无法连接'), null, true);
       } catch (e) {
-        throw ApiError('访问学校系统失败（$host）：$e');
+        throw ApiError('访问学校系统失败（$host）：$e', null, true);
       }
       _storeCookies(host, resp.headersSplitValues);
       final location = resp.headersSplitValues['location']?.first ?? '';

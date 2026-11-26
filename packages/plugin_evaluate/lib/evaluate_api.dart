@@ -8,15 +8,8 @@ import 'package:campus_core/campus_core.dart';
 import 'evaluate_model.dart';
 import 'evaluate_session.dart';
 
-/// 教务评教（正方 9.0 `xspjgl` / 功能码 `N401605`）的客户端。
-///
-/// **连接方式与其它教务功能完全一致**：不信不过 [EvaluateSession] 里那份
-/// 「[ApiClient.jwxtWebSession] 给的教务会话」——直连模式是本机已登录的 Cookie，
-/// 服务器模式是服务器代连时的 Cookie + 它给的教务域名。评教不单独登录、
-/// 不单独配置代理，用户在任何教务功能里登录过，这里直接用。
-///
-/// 唯一特殊之处在传输层：教务那台 Tengine 对带 SNI 的 Dart/BoringSSL 握手直接 reset，
-/// 所以自己实现了一个极小的 HTTP/1.1 客户端，走 [startNoSniTls]（见 [socks5]/[tunnel]）。
+/// 教务评教（正方 9.0 `xspjgl` / 功能码 `N401605`）的客户端：复用 App 已登录的教务会话。
+/// 传输层特殊：教务那台 Tengine 对带 SNI 的 TLS 握手直接 reset，所以走自实现的 HTTP/1.1 + [startNoSniTls]。
 class EvaluateApi {
   EvaluateApi({
     required this.session,
@@ -43,10 +36,8 @@ class EvaluateApi {
 
   void _log(String line) => onLog?.call(line);
 
-  /// 会话是否还活着。
-  ///
-  /// 判别用「不存在的功能码」探针：健康会话会把当前学号写进 sessionUserKey，
-  /// 半失效会话（能看须知页、其它全「无功能权限」）这里是空串。
+  /// 会话是否还活着：用「不存在的功能码」探针，健康会话会把学号写进 sessionUserKey，
+  /// 半失效会话那里是空串。
   Future<bool> checkSession() async {
     try {
       final r = await _request('GET',
@@ -66,8 +57,7 @@ class EvaluateApi {
     throw EvaluateError.rpc(r.status, t, hint: '登录状态失效，请重新登录');
   }
 
-  // ==================== 待评列表 ====================  // ==================== 待评列表 ====================
-
+  /// 待评列表（一条 = 一位教师 × 一个教学班）。
   Future<List<EvalTarget>> fetchTargets() async {
     final r = await _request(
       'POST',
@@ -104,8 +94,7 @@ class EvaluateApi {
     );
   }
 
-  // ==================== 评分表单 ====================
-
+  /// 取一节课的评分表单。
   Future<EvalForm> fetchForm(EvalTarget target) async {
     final query = {
       'jxb_id': target.jxbId,
@@ -133,12 +122,9 @@ class EvaluateApi {
     return form;
   }
 
-  // ==================== 写回 ====================
-
   /// 保存一节课的评价（可再改）。
-  ///
-  /// **返回值不可信**：服务端对不合法的数据也会先回「保存成功！」再静默丢弃
-  /// （实测空 body 就是如此）。判据必须靠 [fetchSummary] / [fetchTargets] 复查。
+  /// **返回值不可信**：服务端对不合法数据也会先回「保存成功！」再静默丢弃，
+  /// 判据必须靠 [fetchSummary] / [fetchTargets] 复查。
   Future<String> saveForm(EvalForm form, Map<String, double> scores,
           {String comment = ''}) =>
       _write(form, scores, comment: comment, submit: false);
@@ -202,8 +188,7 @@ class EvaluateApi {
     return '';
   }
 
-  // ==================== HTTP 底层 ====================
-
+  /// 发一次请求并跟随重定向（最多 6 跳）。
   Future<_Resp> _request(
     String method,
     String url, {
@@ -242,6 +227,7 @@ class EvaluateApi {
     return _sendOnce(verb, current, body: body, ajax: ajax, referer: referer);
   }
 
+  /// 建连（直连 / 校园隧道）、写请求、读完整响应，并吸收续期的 Set-Cookie。
   Future<_Resp> _sendOnce(
     String method,
     Uri uri, {
@@ -291,7 +277,20 @@ class EvaluateApi {
     if (bodyBytes != null) channel.add(bodyBytes);
     await channel.flush();
 
-    final bytes = await channel.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+    // 连接已建立，但读响应没有超时：校园代理半开（对端不回包也不断开）时这里会
+    // 永久挂起，页面上的 _busy 永远是 true，保存 / 提交按钮全部禁用，只能杀 App。
+    final List<int> bytes;
+    try {
+      bytes = await channel
+          .fold<List<int>>(<int>[], (a, b) => a..addAll(b))
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        channel.destroy();
+        throw const EvaluateError('教务响应超时，请检查校园网络后重试');
+      });
+    } catch (e) {
+      channel.destroy();
+      rethrow;
+    }
     channel.destroy();
     final resp = _Resp.parse(Uint8List.fromList(bytes));
     session.absorbCookies(host, resp.setCookies);
@@ -404,10 +403,8 @@ class _Resp {
   }
 }
 
-/// 把表单 + 分数拼成提交用的扁平字段（jQuery `\$.param` 风格的方括号键名）。
-///
-/// 抽成顶层函数是为了**能单测**：这一层最容易错（少一个隐藏字段就静默丢弃），
-/// 但真正发出请求那段没法在单测里跑。
+/// 把表单 + 分数拼成提交用的扁平字段（jQuery `$.param` 风格的方括号键名）。
+/// 抽成顶层函数是为了能单测：少一个隐藏字段学校就静默丢弃。
 Map<String, String> buildSubmitFields(
   EvalForm form,
   Map<String, double> scores, {

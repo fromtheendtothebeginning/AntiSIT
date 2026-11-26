@@ -188,8 +188,7 @@ void main() {
     expect(find.text('主题插件'), findsOneWidget);
   });
 
-  // 曾经的问题：画布（332 逻辑宽）比卡片宽，右边那几列（网络与登录 / 主题）被裁在框外，
-  // 首屏看不出图有多大、也不知道能拖。现在 FittedBox 会先把整张图缩到装得下。
+  // 画布比卡片宽时右边那几列会被裁掉，现在 FittedBox 先把整张图缩到装得下。
   testWidgets('画布比视口宽时，最左最右两列都落在框内', (tester) async {
     tester.view.physicalSize = const Size(800, 600);
     tester.view.devicePixelRatio = 1;

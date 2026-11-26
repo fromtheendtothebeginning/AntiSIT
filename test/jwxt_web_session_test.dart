@@ -1,9 +1,7 @@
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 服务器模式评教页依赖的两块数据：服务器下发的教务会话 + 校园隧道代理地址。
-/// 解析逻辑很薄，但结构一变就是「网页打开是登录页 / 外网打不开」这种难查的问题，
-/// 所以把边界情况钉住。
+/// 服务器模式评教页依赖的两块数据：服务器下发的教务会话 + 校园隧道代理地址（结构一变就是「打开是登录页」）。
 void main() {
   group('服务器教务网页会话', () {
     test('解析 cookies / jwxt_base，Cookie 值统一成字符串', () {

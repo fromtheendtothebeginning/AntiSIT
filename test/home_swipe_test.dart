@@ -6,11 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 需求：**不冲突时**左右滑动切界面，且界面永远是「最贴近底栏滑块的那一格」
-/// （拖过一半就换页，不用等松手）。
-///
-/// 「冲突」= 页面内部自己吃掉了这次横滑（课表周视图、任何横向滚动组件），
-/// 那时照旧滚内容/切周，不切底栏。
+/// 需求：不冲突时左右滑动切界面，且界面永远是「最贴近底栏滑块的那一格」；页面内部吃掉横滑时照旧滚内容 / 切周。
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});

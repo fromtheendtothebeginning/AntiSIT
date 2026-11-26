@@ -83,7 +83,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_ext` | `ext` | `webview` | `ai`、`scan` | `ai`、`scan`、`webview` | ✓ | 底栏页 |
 | `plugin_camera` | `camera` | — | — | — | ✓ | 无界面 |
 | `plugin_scan` | `scan` | `camera` | `webview`、`activities` | `activities`、`camera`、`webview` | ✓ | 无界面 |
-| `plugin_evaluate` | `evaluate` | — | — | — | ✓ | 工具卡片（原生，不依赖 WebView） |
+| `plugin_evaluate` | `evaluate` | — | — | — | ✓ | 工具卡片 |
 | `plugin_ecard` | `ecard` | `network` | `risk`、`home_widget` | `home_widget`、`risk` | ✓ | 底栏页 |
 | `plugin_tools` | `tools` | — | — | — | ✓ | 底栏页 |
 | `plugin_backup` | `backup` | — | — | — | ✓ | 设置条目 |
@@ -118,6 +118,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
   `timetableSettingsTiles` 贡献「上课提醒」那两行。入口两处——课表页右上角菜单、
   「我的 → 设置 → 课程表设置」——进的是同一页；两处宿主共用一套排序（`settingsOrder`）。
 - `score` 的工具卡片顺带缓存学籍给「我的」页；`tools` 的底栏页在没有工具启用时自动隐藏。
+- `evaluate` 的工具卡片是原生界面（不内嵌 WebView）：一键给全部老师同分，再逐条确认提交。
 - `reminder` 的「上课提醒」开关带一行自检摘要，详情与引导在二级页 `ReminderGuidePage`
   （通知权限 / 精确闹钟 / 省电策略，一键跳系统设置），启动时还负责排期。
 - **摄像头与扫一扫是两个包**：`plugin_camera` 只管硬件能力（实时取景 / 补光灯 /

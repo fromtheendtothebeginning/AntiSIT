@@ -7,10 +7,7 @@ import 'package:plugin_reminder/plugin_reminder.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「流体云课程通知」的验收：
-/// * 流体云插件的能力接口 / 课程窗口计算（节次时间跟自定义作息走）；
-/// * 课程通知三选一（不通知 / 弹窗 / 流体云）落盘并真的切换排期；
-/// * 上课提醒在非弹窗模式下不再排课程提醒（避免和流体云重复）。
+/// 流体云课程通知：能力接口 / 课程窗口计算、通知三选一落盘并切换排期、非弹窗模式下不再排课程提醒。
 void main() {
   late _FakeCloud fake;
 
@@ -114,8 +111,7 @@ void main() {
     });
 
     test('课表还没读出来时 sync 不清掉已有排期', () async {
-      // 启动早期插件先于课表加载：这时拿空 store 去 schedule([]) 会把上次排的
-      // 原生闹钟全清掉，流体云之后就不会再亮。
+      // 启动早期插件先于课表加载：拿空 store 去 schedule([]) 会把上次排的原生闹钟全清掉，流体云之后就不亮了。
       await AppState.I.setCourseNotifyMode(CourseNotifyMode.cloud);
       TimetableStore.instance.loaded = false;
       fake.windows = [

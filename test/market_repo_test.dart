@@ -6,16 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_ext/plugin_ext.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// **跨仓库联调检查**（只在维护者本机跑得起来，CI 里自动跳过）：
-/// 拿 `AntiSIT-market` 仓库里**真实**的 `market.json` / `market.json.sig` / `dist/**`
-/// 喂给 App 的这套代码，验证三件容易悄悄错位的事：
-///
-/// 1. 内置公钥能验通那个签名（工具与 App 各有一份 Ed25519 实现，算法/编码必须一致）；
-/// 2. 目录里的 sha256 与真实 zip 对得上（工具打包 vs App 下载校验）；
-/// 3. 真实 zip 能被 App 的解压器打开、找得到入口 html（工具用 archive 打包，
-///    App 用另一份 archive 解压——这条不测就只会在用户手机上炸）。
-///
-/// 仓库不在旁边就跳过（CI 只 checkout 了 App 仓库，这个测试在那儿没意义）。
+/// 跨仓库联调检查（只在维护者本机跑得起来，CI 自动跳过）：内置公钥验通真签名、目录 sha256 对得上真实 zip、真实 zip 能被 App 解开。
 void main() {
   final repo = Directory('../AntiSIT-market');
   final skip = !repo.existsSync() ? '旁边没有 AntiSIT-market 仓库' : null;
@@ -67,10 +58,7 @@ void main() {
   }, skip: skip);
 
   test('真实产物：源码里用到的敏感服务，条目都声明了对应权限', () async {
-    // 权限门（ExtBridge._checkPermission）只看条目上的 permissions：漏一条，
-    // 那次调用就整条 reject 回网页。「大物实验提醒」v1.0.0 漏了 background，
-    // 手机上点「开启后台刷新」只会弹一句 Invalid argument(s)。这里拿 App 自己
-    // 的权限表反过来查真实目录，跨仓库才不会各说各话。
+    // 权限门只看条目上的 permissions，漏一条那次调用就整条 reject；这里拿 App 的权限表反过来查真实目录。
     final catalog = File('${repo.path}/market.json').readAsBytesSync();
     final tmp = Directory.systemTemp.createTempSync('market_repo_perm');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -81,8 +69,7 @@ void main() {
       final bytes = File('${repo.path}/${e.zip}').readAsBytesSync();
       final bundle = extractBundle(bytes: bytes, dir: '${tmp.path}/${e.id}');
       final code = File(bundle.entry).readAsStringSync();
-      // 反向查：代码里真调了哪个服务，就必须有对应权限。`ctx.net` 有两条通道
-      // （net.request 要 network、net.campus 要 campus_net），按调用的方法名分辨。
+      // 反向查：代码里调了哪个服务就必须有对应权限（net.request 要 network、net.campus 要 campus_net）。
       for (final entry in kServicePermissions.entries) {
         final service = entry.key;
         final perm = entry.value;
@@ -145,12 +132,7 @@ void main() {
     expect(byId['sit.deadline-reminder']!.needsNewerApp('1.38.0'), isFalse);
   }, skip: skip);
 
-  // ==================== 第三方源（作者自己发的那种） ====================
-
-  // 这个 fixture 是拿市场仓库的工具现造的（`dart run tool/market_tool.dart publish`，
-  // 见市场仓库 .verify-author-source/，gitignore 掉了）。它专门盯**工具与 App 之间的
-  // 字段名/格式约定**：目录里的 `publicKey` 叫什么、指纹怎么算、zip 能不能解开。
-  // 造过一次之后就有得测；没造过就跳过。
+  // 这个 fixture 由市场仓库的工具现造（.verify-author-source/），专门盯工具与 App 之间的字段名 / 格式约定；没造过就跳过。
   final authorRepo = Directory('../AntiSIT-market/.verify-author-source');
   final authorSkip = !File('${authorRepo.path}/market.json').existsSync()
       ? '旁边没有造过作者 fixture（市场仓库里跑 publish 生成 .verify-author-source/）'

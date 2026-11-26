@@ -5,9 +5,7 @@ import 'ai_capability_impl.dart';
 import 'ai_settings_page.dart';
 import 'ai_vision.dart';
 
-/// AI 设置：直连模式下自动识别验证码、识别校历截图里的调休。
-/// 停用它 → [AiVision.available] 变 false → 验证码退回人工输入、校历识别入口消失，
-/// 但课表本身照常用（所以它只是课程表的软依赖）。
+/// AI 设置：直连模式下自动识别验证码、识别校历截图里的调休，是课程表的软依赖。
 class AiPlugin extends FeaturePlugin {
   const AiPlugin();
 
@@ -64,8 +62,7 @@ class _AiSettingsTileState extends State<_AiSettingsTile> {
   }
 }
 
-/// 内置的「自定义」提供商：任意 OpenAI 兼容服务，地址由用户自己填。
-/// 它是兜底入口（没有第二个包可删），所以留在公共 AI 插件里，不单独成包。
+/// 内置的「自定义」提供商：任意 OpenAI 兼容服务，地址由用户自己填，不单独成包。
 class CustomProvider extends AiProviderPlugin {
   const CustomProvider();
 
@@ -93,13 +90,8 @@ class CustomProvider extends AiProviderPlugin {
   Map<String, dynamic> thinkingOff(String model) => const {};
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// `capabilities` 里的 key 就是本插件 id：别的插件（课表页）与 core（验证码弹窗）
-/// 按「接口 + 这个 id」取用 AI 能力，谁都不 import 本包；本插件被停用时查不到，
-/// 它们自然降级（验证码退回手输、校历识别入口消失）。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_AI=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉——各提供商是独立包，各有自己的
-/// `EXCLUDE_AI_XXX` 开关（见 tool/gen_plugins.dart 打印出来的清单）。
+/// 插件包入口：清单生成器按包名登记；EXCLUDE_AI 开关为真时整包被摇树丢掉。
+/// `capabilities` 的 key 就是本插件 id，消费方只按 [AiCapability] 接口取用，不 import 本包。
 const PluginBundle pluginBundle = PluginBundle(
   features: [AiPlugin()],
   providers: [CustomProvider()],

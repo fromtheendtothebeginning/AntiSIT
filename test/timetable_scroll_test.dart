@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 需求：课表要「整页一起上下滑」——顶部「今天」卡与近期日程条跟着课程表一起滚，
-/// 而不是只有课表格子滚、卡片钉在上面。
+/// 课表要整页一起上下滑：顶部「今天」卡与近期日程条跟着课表滚，而不是只有格子在滚、卡片钉着。
 void main() {
   late String startISO;
   late int todayWeek;

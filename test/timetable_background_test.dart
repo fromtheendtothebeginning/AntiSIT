@@ -5,10 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「自定义课表背景」的验收：
-/// * 状态持久化（路径 + 淡显程度），清除后路径键从存档里移除；
-/// * 换图 / 清除时删掉旧的本机副本；
-/// * 设置页有入口，弹层里能恢复默认（滑块只在有图时可用）。
+/// 自定义课表背景：状态持久化（路径 + 淡显程度）、换图 / 清除时删旧副本、设置页入口与恢复默认。
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});

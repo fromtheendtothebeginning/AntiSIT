@@ -2,13 +2,6 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 可整理宫格的验收：
-/// * 4 列基础网格：默认 2x3 = 半屏宽 × 128 高，1x1 = 一格宽 × 一格高；
-/// * 长按卡片进入整理并选中它，可拖动换位（顺序回调、没有误触发点击）；
-/// * 整理态里点另一张卡会切选中，只有选中的卡显示右下角缩放弧线；
-/// * 拖右下角弧线，尺寸吸附到 1x1 / 1x3 / 2x3 / 2x2；
-/// * 点空白处退出整理；
-/// * 1x1 / 1x3 / 2x2 下卡片内容不溢出（四种尺寸的排版都画得下）。
 class _Harness extends StatefulWidget {
   const _Harness({super.key});
 
@@ -128,6 +121,7 @@ class _LongHarnessState extends State<_LongHarness> {
   }
 }
 
+/// 可整理宫格：4 列网格与四种尺寸、长按整理 / 拖动换位 / 切选中、拖弧线吸附尺寸、点空白退出、各尺寸不溢出。
 void main() {
   Future<GlobalKey<_HarnessState>> pumpGrid(WidgetTester tester) async {
     tester.view.physicalSize = const Size(400, 800);

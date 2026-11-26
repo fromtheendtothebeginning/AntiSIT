@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'ecard_page.dart';
 import 'package:campus_core/campus_core.dart';
 
-/// 校园码：动态付款码（默认 10 秒自动刷新，间隔可在「我的 → 配置」调整）+
-/// 校园卡余额，仅在本页可见时刷新。
+/// 校园码：动态付款码（默认 10 秒刷新，间隔可在「我的 → 配置」调整）+ 余额。
 class EcardPlugin extends FeaturePlugin {
   const EcardPlugin();
 
@@ -19,8 +18,8 @@ class EcardPlugin extends FeaturePlugin {
   @override
   List<String> get dependencies => const [PluginIds.network];
 
-  /// 软依赖（不联动启停）：风险提醒开着时本插件的付款码被拦下（见 [RiskNoticeCapability]），
-  /// 关掉它立即恢复；没装风险提醒则等同没有这道闸。桌面卡片同理：装了就把余额同步过去。
+  /// 软依赖（不联动启停）：风险提醒开着时付款码被拦下，关掉立即恢复；
+  /// 桌面卡片同理，装了就把余额同步过去。
   @override
   List<String> get optionalDependencies =>
       const [PluginIds.risk, PluginIds.homeWidget];
@@ -38,7 +37,5 @@ class EcardPlugin extends FeaturePlugin {
       ];
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_XXX=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_ECARD=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(features: [EcardPlugin()]);

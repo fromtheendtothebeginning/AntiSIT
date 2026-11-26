@@ -5,8 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_ai/plugin_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 旧版本把 AI Key / 直连 Cookie 明文写在 SharedPreferences 里；现在统一迁到
-/// SecureStore。这里验证「读得到旧值 + 明文被删掉」，避免升级后用户重新填 Key。
+/// 旧版本把 AI Key / 直连 Cookie 明文写在 SharedPreferences，现在统一迁到 SecureStore：验读得到旧值 + 明文被删掉。
 void main() {
   setUp(() {
     SecureStore.I = MemorySecureStore();

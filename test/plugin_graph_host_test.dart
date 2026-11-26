@@ -4,10 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「二课活动等工具插件挂在工具中心，依赖关系图要画出来」的验收：
-/// * 贡献了工具卡片的插件与工具中心之间有一条挂载边（虚线，不联动启停）；
-/// * 挂载边不参与分层：工具插件不会因为挂载边被算出依赖深度；
-/// * 没贡献工具的插件没有挂载边。
+/// 工具插件挂在工具中心：两者之间一条虚线挂载边（不参与分层、不联动启停），没贡献工具的插件没有挂载边。
 class _Fake extends FeaturePlugin {
   const _Fake(this.id, {this.deps = const [], this.withTool = false});
 

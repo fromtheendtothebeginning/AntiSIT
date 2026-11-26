@@ -1,23 +1,30 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 
 import 'package:campus_core/campus_core.dart';
 
 import 'timetable_background.dart';
+import 'timetable_cards.dart';
+import 'timetable_detail_sheets.dart';
+import 'timetable_forms.dart';
+import 'timetable_grid.dart';
 import 'timetable_ics_page.dart';
+import 'timetable_import.dart';
+import 'timetable_nav.dart';
+import 'timetable_semester_sheets.dart';
 import 'timetable_settings_page.dart';
+import 'timetable_shell.dart';
 
-/// 课程表：周视图，复刻 anticraft.top 课程表的 Corporate Clean 排版
-/// （11 节次网格 + 上午/下午/晚上色带 + 5 色相课程块 + 底部周切换悬浮条）。
+/// 课程表：周 / 日视图、教务与考试导入、调休规则、学期设置（底栏第 1 页）。
 /// 本地课表（手动课程 / 调休规则 / 考试日程）不依赖登录；教务导入需登录。
 class TimetablePage extends StatefulWidget {
   const TimetablePage({super.key});
 
   /// 今天下一个「下课」时刻——只看节次时间，与星期几无关；今天没有了返回 null。
-  /// 定时器到点后靠它算下一次；抽成纯函数是为了不等到真的下课也能测。
+  /// 抽成纯函数是为了不等到真的下课也能测。
   @visibleForTesting
   static DateTime? nextSlotEndAfter(DateTime now, List<String> slotEndTimes) {
     DateTime? next;
@@ -35,6 +42,24 @@ class TimetablePage extends StatefulWidget {
     return next;
   }
 
+  /// 今天剩下还没上完的课（第一门即「最近的一节」）——实现在 TimetableStore.upcomingOn。
+  /// [dayIndex] 要传**今天所在的列**（不是调休被借的星期），否则日期会算到别的天上去。
+  static List<TtCourse> upcomingToday(
+    List<TtCourse> courses, {
+    required String startDate,
+    required int week,
+    required int dayIndex,
+    DateTime? now,
+  }) =>
+      TimetableStore.upcomingOn(
+        courses,
+        startDate: startDate,
+        week: week,
+        dayIndex: dayIndex,
+        endTimes: TimetableStore.slotEnds,
+        now: now,
+      );
+
   @override
   State<TimetablePage> createState() => _TimetablePageState();
 }
@@ -43,8 +68,14 @@ class _TimetablePageState extends State<TimetablePage> {
   late String xnm;
   late String xqm;
 
-  final PageController _pc = PageController();
-  final PageController _dayPc = PageController();
+  /// 两个分页控制器都挂 `onAttach`：PageView 一挂上就来消费「待跳页」。
+  /// 这是「跳页不丢」的关键——冷启动 / 切周视图 / 切日视图时 PageView 都是后建的，
+  /// 建好之前 `hasClients` 为 false，直接跳会静默丢失。
+  ///
+  /// ⚠️ `onAttach` 是在**布局阶段**回调的（ScrollPosition 正在 attach）：那里不能
+  /// `setState`、也不该当时就 `jumpToPage`，一律排到帧末。
+  late final PageController _pc = PageController(onAttach: (_) => _schedulePendingWeek());
+  late final PageController _dayPc = PageController(onAttach: (_) => _schedulePendingDay());
   int _shownWeek = 1;
   int _shownDay = 0; // 0=周一
   DateTime? _lastNavTap; // 上次点击周次标题的时间：500ms 内点两次回今天
@@ -54,6 +85,15 @@ class _TimetablePageState extends State<TimetablePage> {
   List<Map<String, dynamic>>? _terms; // 成绩接口返回的学期列表（登录后）
   Timer? _tick;
 
+  /// 待跳的周视图页码（null = 没有待办）：等 PageView 挂上后由 [_applyPendingWeek] 消费。
+  int? _pendingWeekPage;
+
+  /// 待跳时是否用动画（挂上就跳的那一刻才知道，所以和页码一起记）。
+  bool _pendingWeekAnimate = false;
+
+  /// 日视图待跳页码（同上，日报不可跨周：切回周视图时按当前周重算）。
+  int? _pendingDayPage;
+
   /// 下课那一刻的精确重绘（见 [_scheduleFlip]）。
   Timer? _flip;
 
@@ -62,19 +102,9 @@ class _TimetablePageState extends State<TimetablePage> {
   final List<GlobalKey> _dayProbeKeys = List.generate(7, (_) => GlobalKey());
 
   static const _maxZs = kMaxSemesterWeeks;
-  static const _axisW = 30.0;
-  static const _slotH = 56.0;
-  static const _bandH = 20.0;
-  static const _noonH = 12.0;
 
-  /// 16:30–18:00 没有节次（晚饭空档）：留一行给这个时段的日程，否则保存了也看不见。
-  /// 48px 才放得下「时间 + 两行课名」，40px 时时间会被挤掉。
-  static const _gapH = 48.0;
-  static const _headerH = 44.0;
-
-  /// 课程/日程的 slotStart/slotEnd = 小节序号（0 起，0-10），与网站渲染一致。
-  /// 教务数据实测值域 0-7（含 4-6 这种三节连上），不能按「大节」理解。
-  /// 各节上下课时刻见 `TimetableStore.slotStarts` / `slotEnds`（导出日历经同一份表）。
+  // 课程 / 日程的 slotStart/slotEnd = 小节序号（0 起，0-10），不是「大节」；
+  // 各节上下课时刻见 TimetableStore.slotStarts / slotEnds（导出日历经同一份表）。
 
   SemesterTt get tt => TimetableStore.instance.semester(xnm, xqm);
   bool _isImported(TtCourse c) => c.id.startsWith('jw-');
@@ -108,11 +138,8 @@ class _TimetablePageState extends State<TimetablePage> {
     _init();
   }
 
-  /// 在下课那一刻再重绘一次。
-  ///
-  /// 只有 60s 心跳的话，09:55 下课的课最晚要等到 09:55:59 才变灰——用户看到的是
-  /// 「下课了还亮着」。这里按**节次下课时刻**（只看一天里的时间，不看星期几）
-  /// 排一个一次性定时器，到点立刻刷新，之后重新排下一次。
+  /// 在下课那一刻再重绘一次（只有 60s 心跳时，09:55 下课的课最晚 09:55:59 才变灰）。
+  /// 按节次下课时刻排一个一次性定时器，到点刷新后重排下一次。
   void _scheduleFlip() {
     _flip?.cancel();
     final now = DateTime.now();
@@ -149,24 +176,7 @@ class _TimetablePageState extends State<TimetablePage> {
     super.dispose();
   }
 
-  /// 今天剩下还没上完的课（第一门即「最近的一节」）——实现在 TimetableStore.upcomingOn。
-  /// [dayIndex] 要传**今天所在的列**（不是调休被借的星期），否则日期会算到别的天上去。
-  static List<TtCourse> upcomingToday(
-    List<TtCourse> courses, {
-    required String startDate,
-    required int week,
-    required int dayIndex,
-    DateTime? now,
-  }) =>
-      TimetableStore.upcomingOn(
-        courses,
-        startDate: startDate,
-        week: week,
-        dayIndex: dayIndex,
-        endTimes: TimetableStore.slotEnds,
-        now: now,
-      );
-
+  /// 初始化：载入本地 store、同步云端、定位到今天的周/日。
   Future<void> _init({bool keepSemester = false}) async {
     if (mounted) setState(() => _booting = true);
     await TimetableStore.instance.load();
@@ -183,468 +193,151 @@ class _TimetablePageState extends State<TimetablePage> {
       xqm = b;
     }
     _fixWeekCount();
-    // 记下「课表现在显示的是哪个学期」：从「我的 → 课程表设置」进来时靠它定位学期
-    // （那里没有课表页的上下文，只能读这里写下的值）。
+    // 记下「课表现在显示的是哪个学期」：从「我的 → 课程表设置」进来时靠它定位学期。
     TimetableStore.instance.active = '$xnm-$xqm';
-    final tw = _todayWeek;
-    _shownWeek = tw ?? 1;
+    // 只定「日」，**不动周指示器**：周指示器等跳页真正落地时再由 _applyPendingWeek
+    // 一起写。否则数据慢 / PageView 还没挂上时，指示器已经跳到本周、内容还停在第 1 周，
+    // 就是 issue #13 那个分裂。
     _shownDay = DateTime.now().weekday - 1;
     if (mounted) setState(() => _booting = false);
-    if (AppState.I.loggedIn) await _ensureWeek(_shownWeek);
-    final tw2 = _todayWeek;
-    if (tw2 != null) _shownWeek = tw2;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _jumpTo(_shownWeek, animate: false);
-    });
+    if (AppState.I.loggedIn) await _ensureWeek(_todayWeek ?? 1);
+    _jumpTo(_todayWeek ?? 1, animate: false);
   }
 
-  void _fixWeekCount() {
-    final maxZs = tt.jwxtWeeks.keys
-        .map(int.tryParse)
-        .whereType<int>()
-        .fold(0, (a, b) => b > a ? b : a);
-    if (maxZs > tt.weekCount) {
-      tt.weekCount = maxZs.clamp(1, _maxZs);
-      TimetableStore.instance.save();
-    }
-  }
+  void _fixWeekCount() => fixSemesterWeekCount(tt);
 
+  /// 跳到第 [zs] 周（1 起）。**指示器只在真正跳页时赋值**（见 [_applyPendingWeek]）。
   void _jumpTo(int zs, {bool animate = true}) {
-    final target = zs.clamp(1, _weekCount) - 1;
-    // PageView 尚未挂载（冷启动 _booting 壳期 / 页签刚切进来）时 hasClients=false，
-    // 老实现直接 return——跳页静默丢失后 _shownWeek 已指向目标周，于是出现
-    // 「指示器第 11 周、内容却是第 1 周」的分裂。改为每帧重试直到挂载再跳。
-    _jumpWhenReady(_pc, target, animate: animate);
+    _pendingWeekPage = zs.clamp(1, _weekCount) - 1;
+    _pendingWeekAnimate = animate;
+    // 可能在 build / layout 里被调（守护条件：不可用时下次再来），一律排到帧末
+    _schedulePendingWeek();
+  }
+
+  /// 帧末消费一次「待跳页」（onAttach 与各处请求都走它，同一帧只排一次）。
+  ///
+  /// **能立刻跳就立刻跳**：点击「上一周 / 下一周」、双击周次标题这些都在 idle 阶段
+  /// 进这里，此时跳页没有任何理由等——`addPostFrameCallback` 自己**不会排帧**，
+  /// 一律延后就会变成「点了没反应，要等下个 60s 心跳才生效」。
+  /// 只有在 build / layout 期间（onAttach、切视图那类）才必须延到帧末。
+  void _schedulePendingWeek() {
+    final binding = WidgetsBinding.instance;
+    if (_pendingWeekPage == null) return;
+    if (binding.schedulerPhase == SchedulerPhase.idle && _pc.hasClients) {
+      _applyPendingWeek();
+      return;
+    }
+    if (_pendingWeekScheduled) return;
+    _pendingWeekScheduled = true;
+    binding.addPostFrameCallback((_) {
+      _pendingWeekScheduled = false;
+      _applyPendingWeek();
+    });
+    // addPostFrameCallback 不排帧：不在帧中时得主动要一帧，回调才会跑
+    binding.ensureVisualUpdate();
+  }
+
+  bool _pendingWeekScheduled = false;
+
+  /// 跳页收尾：PageView 挂上、能跳了才动，**跳成功的那一次同时写指示器**。
+  void _applyPendingWeek() {
+    final target = _pendingWeekPage;
+    if (target == null || !_pc.hasClients) return;
+    _pendingWeekPage = null;
+    if (_pendingWeekAnimate) {
+      _pc.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _pc.jumpToPage(target);
+    }
     _shownWeek = target + 1;
     if (mounted) setState(() {});
   }
 
-  /// 等 PageView 挂载后跳到目标页（最多等 60 帧 ≈ 1 秒，防无限等）。
-  void _jumpWhenReady(PageController pc, int targetPage, {bool animate = false}) {
-    void attempt(int tries) {
-      if (!mounted) return;
-      if (pc.hasClients) {
-        if (animate) {
-          pc.animateToPage(
-            targetPage,
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOutCubic,
-          );
-        } else {
-          pc.jumpToPage(targetPage);
-        }
-        return;
-      }
-      if (tries >= 60) return;
-      WidgetsBinding.instance.addPostFrameCallback((_) => attempt(tries + 1));
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => attempt(0));
-  }
-
-  /// 拉取某周教务课表并入本地 store（登录后懒加载；未登录跳过）。
-  Future<void> _ensureWeek(int zs, {bool force = false}) async {
-    if (zs < 1 || zs > _maxZs) return;
-    if (!AppState.I.loggedIn) return;
-    if (!force &&
-        (tt.jwxtWeeks.containsKey('$zs') || _loadingWeeks.contains(zs))) {
-      return;
-    }
-    _loadingWeeks.add(zs);
-    if (mounted) setState(() {});
-    try {
-      final resp = await ApiClient.I.timetableWeek(xnm, xqm, zs);
-      _storeWeek(zs, resp);
-    } on ApiError catch (e) {
-      if (!e.message.contains('没有课表') && mounted) {
-        showErr(context, e, title: '课表加载失败');
-      }
-    } catch (e) {
-      if (mounted) showErr(context, e, title: '课表加载失败');
-    } finally {
-      _loadingWeeks.remove(zs);
-      if (mounted) setState(() {});
-    }
-  }
-
-  void _storeWeek(int zs, Map<String, dynamic> resp) {
-    tt.jwxtWeeks['$zs'] = ((resp['courses'] as List?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(TtCourse.fromJson)
-        .toList();
-    if (zs == 1 && tt.startDate.isEmpty) {
-      for (final d in (resp['dates'] as List?) ?? const []) {
-        if ('${(d as Map)['xqj']}' == '1') {
-          tt.startDate = '${d['rq']}';
-          break;
-        }
-      }
-    }
-    final nj = resp['nj'];
-    final manual = AppState.I.direct ? AppState.I.creds.grade.trim() : '';
-    if (manual.isNotEmpty) {
-      // 直连模式手填的年级优先：教务没回或回的年级不合用时以用户填的为准。
-      TimetableStore.instance.nj = manual;
-    } else if (nj is String && nj.isNotEmpty) {
-      TimetableStore.instance.nj = nj; // 内部会 persist
-    } else {
-      TimetableStore.instance.save();
-    }
-    _fixWeekCount();
-  }
-
-  // ── 教务全量导入 ──
+  Future<void> _ensureWeek(int zs, {bool force = false}) => ensureSemesterWeek(
+        context,
+        xnm: xnm,
+        xqm: xqm,
+        tt: tt,
+        week: zs,
+        maxWeeks: _maxZs,
+        loadingWeeks: _loadingWeeks,
+        onChanged: () {
+          if (mounted) setState(() {});
+        },
+        force: force,
+      );
 
   Future<void> _importAll() async {
-    if (!_checkLogin()) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('从教务导入课表'),
-        content: Text(
-          '将逐周拉取当前学期（$xnm 学年${xqm == '3' ? '第一' : '第二'}学期）的全部课表，覆盖本机教务数据。\n手动课程与调休规则会保留。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('开始导入'),
-          ),
-        ],
-      ),
+    final lastWeek = await importSemesterCourses(
+      context,
+      xnm: xnm,
+      xqm: xqm,
+      tt: tt,
+      maxWeeks: _maxZs,
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
     );
-    if (confirmed != true || !mounted) return;
-
-    tt.jwxtWeeks.clear();
-    final progress = ValueNotifier('正在连接教务…');
-    final popper = ValueNotifier(false);
-    unawaited(
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => PopScope(
-          canPop: false,
-          child: ValueListenableBuilder(
-            valueListenable: popper,
-            builder: (ctx, done, _) => AlertDialog(
-              title: Text(done ? '导入完成' : '正在导入'),
-              content: ValueListenableBuilder(
-                valueListenable: progress,
-                builder: (ctx, msg, _) => Row(
-                  children: [
-                    if (!done)
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    if (!done) const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(msg, style: const TextStyle(fontSize: 13.5)),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                if (done)
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('好的'),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    var w = 1;
-    var lastWeek = 0;
-    String? error;
-    while (w <= _maxZs) {
-      progress.value = '正在导入 第 $w 周…';
-      try {
-        final resp = await ApiClient.I.timetableWeek(xnm, xqm, w);
-        _storeWeek(w, resp);
-        lastWeek = w;
-        w++;
-      } on ApiError catch (e) {
-        if (!e.message.contains('没有课表')) error = e.message;
-        break;
-      } catch (e) {
-        error = e.toString();
-        break;
-      }
-    }
-    if (lastWeek > 0) {
-      tt.weekCount = math.max(tt.weekCount, lastWeek).clamp(1, _maxZs);
-      await TimetableStore.instance.save();
-    }
-    if (mounted) setState(() {});
-    popper.value = true;
-    progress.value = lastWeek > 0
-        ? (error == null ? '共导入 $lastWeek 周课表' : '导入到第 $lastWeek 周后中断：$error')
-        : '导入失败：$error';
     if (lastWeek > 0) {
       final tw = _todayWeek;
       if (tw != null) _jumpTo(tw);
     }
   }
 
-  // ── 考试导入（转日程事件）──
-
-  Future<void> _importExams() async {
-    if (!_checkLogin()) return;
-    try {
-      final r = await ApiClient.I.exams(xnm, xqm);
-      final exams =
-          ((r['exams'] as List?) ?? const []).cast<Map<String, dynamic>>();
-      final added = TimetableStore.addExamEvents(tt, exams);
-      await TimetableStore.instance.save();
-      if (!mounted) return;
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            added > 0
-                ? '已导入 $added 场考试（跳过 ${exams.length - added} 场）'
-                : '没有新的考试可导入',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+  Future<void> _importExams() => importExamEvents(
+        context,
+        xnm: xnm,
+        xqm: xqm,
+        tt: tt,
+        onChanged: () {
+          if (mounted) setState(() {});
+        },
       );
-    } catch (e) {
-      if (mounted) showErr(context, e, title: '考试导入失败');
-    }
-  }
 
-  bool _checkLogin() {
-    if (AppState.I.loggedIn) return true;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          AppState.I.direct ? '该功能需要先在「连接设置 → 直连模式」填写校园凭据' : '该功能需要先登录服务器账号',
-        ),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-    return false;
-  }
-
-  // ── 学期切换 ──
-
+  /// 切换学期：选完重载课表（新建学期则再进学期设置）。
   Future<void> _pickSemester() async {
-    if (AppState.I.loggedIn && _terms == null) {
-      try {
-        final r = await ApiClient.I.grades();
-        _terms = ((r['data'] as Map?)?['terms'] as List?)
-            ?.cast<Map<String, dynamic>>();
-      } catch (_) {}
+    final choice = await showSemesterPicker(
+      context,
+      xnm: xnm,
+      xqm: xqm,
+      terms: _terms,
+      onTermsLoaded: (t) => _terms = t,
+    );
+    if (!mounted || choice == null) return;
+    if (choice.isNew) {
+      await _newSemester();
+      return;
     }
-    final terms = _terms ?? const [];
-    // 选项 = 成绩学期列表 + 推断的当前学期 + 本地已有数据的学期
-    // （成绩列表里没有当前学期，否则切走后就回不来了）
-    final opts = <(String xnm, String xqm, String label)>[];
-    void addOpt(String xn, String xq, {String? label}) {
-      if (xn.isEmpty || xq.isEmpty) return;
-      if (opts.any((o) => o.$1 == xn && o.$2 == xq)) return;
-      opts.add((
-        xn,
-        xq,
-        label ??
-            '$xn-${int.tryParse(xn) != null ? int.parse(xn) + 1 : '?'}学年 ${xq == '3' ? '第一' : xq == '12' ? '第二' : '短'}学期',
-      ));
+    if (choice.xnm != xnm || choice.xqm != xqm) {
+      setState(() {
+        xnm = choice.xnm;
+        xqm = choice.xqm;
+      });
+      _init(keepSemester: true);
     }
-
-    final inferred = AppState.inferSemester(DateTime.now());
-    addOpt(inferred.$1, inferred.$2);
-    for (final t in terms) {
-      addOpt(
-        '${t['xnm']}',
-        '${t['xqm']}',
-        label: '${t['xnmmc']} ${t['xqmmc']}',
-      );
-    }
-    for (final k in TimetableStore.instance.semesters.keys) {
-      final p = k.split('-');
-      if (p.length == 2) addOpt(p[0], p[1]);
-    }
-    opts.sort(
-      (a, b) => '${b.$1}-${b.$2}'.compareTo('${a.$1}-${a.$2}'),
-    ); // 新 → 旧
-
-    if (!mounted) return;
-    await showModalBottomSheet<Object?>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(8),
-                child: Text(
-                  '选择学期',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              if (opts.isEmpty) _genericSemesterPicker(ctx),
-              for (final o in opts)
-                ListTile(
-                  title: Text(o.$3),
-                  trailing: (o.$1 == xnm && o.$2 == xqm)
-                      ? Icon(Icons.check, color: SemColors.accent)
-                      : null,
-                  onTap: () => Navigator.pop(ctx, {'xnm': o.$1, 'xqm': o.$2}),
-                ),
-              const Divider(height: 1),
-              ListTile(
-                leading: Icon(
-                  Icons.add_circle_outline,
-                  color: SemColors.accent,
-                ),
-                title: Text('新建学期', style: TextStyle(color: SemColors.accent)),
-                subtitle: const Text(
-                  '建一个空学期，手动排课或稍后从教务导入',
-                  style: TextStyle(fontSize: 12),
-                ),
-                onTap: () => Navigator.pop(ctx, const {'new': true}),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ).then((t) {
-      if (t is Map && t['new'] == true) {
-        _newSemester();
-        return;
-      }
-      String? nxnm, nxqm;
-      if (t is Map<String, dynamic>) {
-        nxnm = '${t['xnm']}';
-        nxqm = '${t['xqm']}';
-      } else if (t is List && t.length == 2) {
-        nxnm = '${t[0]}';
-        nxqm = '${t[1]}';
-      }
-      if (nxnm != null && nxqm != null && (nxnm != xnm || nxqm != xqm)) {
-        setState(() {
-          xnm = nxnm!;
-          xqm = nxqm!;
-        });
-        _init(keepSemester: true);
-      }
-    });
   }
 
   /// 新建空学期：选学年 + 学期码 → 建档并切换 → 立刻打开「学期设置」。
   Future<void> _newSemester() async {
-    final created = await showModalBottomSheet<List<String>>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(8),
-              child: Text(
-                '新建学期',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            _genericSemesterPicker(ctx, confirmLabel: '创建'),
-          ],
-        ),
-      ),
-    );
-    if (!mounted || created == null || created.length != 2) return;
-    final yn = created[0];
-    final xq = created[1];
-    if (yn.isEmpty || xq.isEmpty) return;
-    if (yn != xnm || xq != xqm) {
+    final created = await showNewSemesterPicker(context, xnm: xnm, xqm: xqm);
+    if (!mounted || created == null) return;
+    if (created.xnm != xnm || created.xqm != xqm) {
       setState(() {
-        xnm = yn;
-        xqm = xq;
+        xnm = created.xnm;
+        xqm = created.xqm;
       });
-      TimetableStore.instance.semester(yn, xq); // 建空学期
+      TimetableStore.instance.semester(created.xnm, created.xqm); // 建空学期
       await TimetableStore.instance.persist();
       await _init(keepSemester: true);
     }
     if (mounted) _semSettings(); // 新建后立刻到学期设置（设起点 / 周数）
   }
 
-  /// 未登录（无学期列表）时的通用选择器：学年 + 学期码。
-  Widget _genericSemesterPicker(
-    BuildContext ctx, {
-    String confirmLabel = '确定',
-  }) {
-    final now = DateTime.now().year;
-    final years = [for (var y = now - 3; y <= now; y++) '$y'];
-    var year = years.contains(xnm) ? xnm : years.last;
-    var xq = xqm;
-    return StatefulBuilder(
-      builder: (ctx, setS) => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: year,
-                    decoration: const InputDecoration(
-                      labelText: '学年（起始年）',
-                      isDense: true,
-                    ),
-                    items: [
-                      for (final y in years)
-                        DropdownMenuItem(
-                          value: y,
-                          child: Text('$y-${int.parse(y) + 1}学年'),
-                        ),
-                    ],
-                    onChanged: (v) => setS(() => year = v!),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: xq,
-                    decoration: const InputDecoration(
-                      labelText: '学期',
-                      isDense: true,
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: '3', child: Text('第一学期')),
-                      DropdownMenuItem(value: '12', child: Text('第二学期')),
-                    ],
-                    onChanged: (v) => setS(() => xq = v!),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => Navigator.pop(ctx, [year, xq]),
-              child: Text(confirmLabel),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── 学期设置 ──
-  // 两个弹窗（学期 / 调休）的实现在 timetable_settings_page.dart：课表页与
-  // 「课程表设置」二级页共用同一个，这里只负责「改的就是本页正在显示的那个学期」和改完刷新本页。
-
+  /// 学期设置弹窗（弹窗实现在 timetable_semester_sheets.dart，课表页与设置页共用）。
   Future<void> _semSettings() => showSemesterSettingsSheet(
         context,
         xnm,
@@ -652,8 +345,7 @@ class _TimetablePageState extends State<TimetablePage> {
         onSaved: () => setState(() {}),
       );
 
-  /// 「课程表设置」二级页（学期 / 调休 / 上课提醒 / 淡化显示）。
-  /// 回来时刷一次：这一页里改的学期起点、调休规则本页都要跟着变。
+  /// 「课程表设置」二级页（学期 / 调休 / 上课提醒 / 淡化显示），回来时刷一次。
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -673,698 +365,58 @@ class _TimetablePageState extends State<TimetablePage> {
     if (mounted) setState(() {});
   }
 
-  // ── 手动课程表单 ──
-
   Future<void> _courseForm({TtCourse? existing, bool imported = false}) async {
-    final nameC = TextEditingController(text: existing?.name ?? '');
-    final placeC = TextEditingController(text: existing?.place ?? '');
-    final teachersC = TextEditingController(text: existing?.teachers ?? '');
-    final wsC = TextEditingController(text: '${existing?.weekStart ?? 1}');
-    final weC = TextEditingController(
-      text: '${existing?.weekEnd ?? tt.weekCount}',
+    final saved = await showCourseForm(
+      context,
+      tt: tt,
+      existing: existing,
+      imported: imported,
     );
-    var day = existing?.day ?? 0;
-    var slotStart = existing?.slotStart ?? 0;
-    var slotEnd = existing?.slotEnd ?? 1;
-    var weekType = existing?.weekType ?? 'all';
-    // 校验提示画在弹层里：SnackBar 挂在页面 Scaffold 上，会被底部弹层盖住。
-    String? error;
-
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          0,
-          20,
-          20 + MediaQuery.of(ctx).viewInsets.bottom,
-        ),
-        child: StatefulBuilder(
-          builder: (ctx, setS) => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  imported
-                      ? '编辑教务课程（保存后转为手动）'
-                      : existing == null
-                          ? '添加课程'
-                          : '编辑课程',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              TextField(
-                controller: nameC,
-                decoration: const InputDecoration(
-                  labelText: '课程名 *',
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: placeC,
-                      decoration: const InputDecoration(
-                        labelText: '地点',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: teachersC,
-                      decoration: const InputDecoration(
-                        labelText: '教师',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _dropdown<int>(
-                      '星期',
-                      day,
-                      [
-                        for (var i = 0; i < 7; i++) (i, '周${'一二三四五六日'[i]}'),
-                      ],
-                      (v) => setS(() => day = v)),
-                  _dropdown<int>(
-                      '开始',
-                      slotStart,
-                      [
-                        for (var i = 0; i < 11; i++) (i, '第${i + 1}节'),
-                      ],
-                      (v) => setS(() => slotStart = v)),
-                  _dropdown<int>(
-                      '结束',
-                      slotEnd,
-                      [
-                        for (var i = 0; i < 11; i++) (i, '第${i + 1}节'),
-                      ],
-                      (v) => setS(() => slotEnd = v)),
-                  _dropdown<String>(
-                      '周次',
-                      weekType,
-                      const [
-                        ('all', '每周'),
-                        ('odd', '单周'),
-                        ('even', '双周'),
-                      ],
-                      (v) => setS(() => weekType = v)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: wsC,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: '开始周',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: weC,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: '结束周（共 $_weekCount 周）',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if (error != null) ...[
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: SemColors.dangerSoft,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    error!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: SemColors.danger,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  onPressed: () {
-                    final name = nameC.text.trim();
-                    final ws = int.tryParse(wsC.text.trim()) ?? 0;
-                    final we = int.tryParse(weC.text.trim()) ?? 0;
-                    if (name.isEmpty ||
-                        slotStart > slotEnd ||
-                        ws < 1 ||
-                        we < ws ||
-                        we > _weekCount) {
-                      setS(
-                        () => error = name.isEmpty
-                            ? '请填写课程名'
-                            : slotStart > slotEnd
-                                ? '开始节次不能晚于结束节次'
-                                : '周次范围需在 1~$_weekCount 周之间',
-                      );
-                      return;
-                    }
-                    final data = TtCourse(
-                      id: existing?.id ?? TimetableStore.genId(),
-                      name: name,
-                      place: placeC.text.trim(),
-                      teachers: teachersC.text.trim(),
-                      day: day,
-                      slotStart: slotStart,
-                      slotEnd: slotEnd,
-                      weekType: weekType,
-                      weekStart: ws,
-                      weekEnd: we,
-                    );
-                    if (imported && existing != null) {
-                      // 转手动：追加手动课程 + 从教务原始数据移除该段
-                      tt.courses.add(data);
-                      TimetableStore.removeImportedSegment(tt, existing);
-                    } else if (existing != null) {
-                      final i = tt.courses.indexWhere(
-                        (c) => c.id == existing.id,
-                      );
-                      if (i >= 0) tt.courses[i] = data;
-                    } else {
-                      tt.courses.add(data);
-                    }
-                    TimetableStore.instance.save();
-                    Navigator.pop(ctx, true);
-                  },
-                  child: const Text('保存'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (saved == true && mounted) setState(() {});
+    if (saved && mounted) setState(() {});
   }
 
-  Widget _dropdown<T>(
-    String label,
-    T value,
-    List<(T, String)> items,
-    ValueChanged<T> onChanged,
-  ) =>
-      DropdownButton<T>(
-        value: value,
-        items: [
-          for (final (v, l) in items)
-            DropdownMenuItem(
-              value: v,
-              child: Text('$label $l', style: const TextStyle(fontSize: 13)),
-            ),
-        ],
-        onChanged: (v) {
-          if (v != null) onChanged(v);
-        },
-        underline: const SizedBox(),
-        isDense: true,
-      );
-
-  // ── 课程详情 / 删除 ──
+  void _courseFormAdd() => _courseForm();
 
   void _showCourseDetail(TtCourse c, int zs) {
     final imported = _isImported(c);
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      c.name,
-                      style: Theme.of(ctx).textTheme.titleLarge,
-                    ),
-                  ),
-                  if (imported) Capsule('教务课程', color: SemColors.info),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _detailRow(
-                '时间',
-                '周${'一二三四五六日'[c.day]} 第${c.slotStart + 1}-${c.slotEnd + 1}节 · '
-                    '${_weekTypeLabel(c.weekType)} ${c.weekStart}-${c.weekEnd} 周',
-              ),
-              _detailRow('地点', c.place.isEmpty ? '-' : c.place),
-              _detailRow('教师', c.teachers.isEmpty ? '-' : c.teachers),
-              if (c.code.isNotEmpty) _detailRow('课程代码', c.code),
-              if (c.clazz.isNotEmpty) _detailRow('教学班', c.clazz),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _courseForm(existing: c, imported: imported);
-                    },
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: Text(imported ? '编辑（转手动）' : '编辑'),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _deleteCourse(c, zs);
-                    },
-                    icon: Icon(
-                      Icons.delete_outline,
-                      size: 18,
-                      color: SemColors.danger,
-                    ),
-                    label: Text(
-                      '删除',
-                      style: TextStyle(color: SemColors.danger),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+    showCourseDetailSheet(
+      context,
+      course: c,
+      imported: imported,
+      onEdit: () => _courseForm(existing: c, imported: imported),
+      onDelete: () => _deleteCourse(c, zs),
     );
   }
 
-  String _weekTypeLabel(String t) => switch (t) {
-        'odd' => '单周',
-        'even' => '双周',
-        _ => '每周',
-      };
-
   Future<void> _deleteCourse(TtCourse c, int zs) async {
-    final imported = _isImported(c);
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text(
-                '删除方式',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            ListTile(
-              title: Text('仅第 $zs 周这一次'),
-              subtitle: imported
-                  ? null
-                  : const Text('自动拆分周次，其余周保留', style: TextStyle(fontSize: 12)),
-              onTap: () => Navigator.pop(ctx, 'week'),
-            ),
-            ListTile(
-              title: Text(imported ? '所有周的该课程' : '全部场次（同名课程）'),
-              onTap: () => Navigator.pop(ctx, 'all'),
-            ),
-          ],
-        ),
-      ),
+    await deleteCourse(
+      context,
+      tt: tt,
+      course: c,
+      week: zs,
+      imported: _isImported(c),
     );
-    if (choice == null) return;
-    if (choice == 'week') {
-      if (imported) {
-        TimetableStore.removeImportedOccurrence(tt, c, all: false, week: zs);
-      } else {
-        // 拆分周次：原条目替换成前段 + 后段
-        final parts = <TtCourse>[];
-        if (c.weekStart < zs) {
-          parts.add(
-            TtCourse(
-              id: TimetableStore.genId(),
-              name: c.name,
-              place: c.place,
-              teachers: c.teachers,
-              day: c.day,
-              slotStart: c.slotStart,
-              slotEnd: c.slotEnd,
-              weekType: c.weekType,
-              weekStart: c.weekStart,
-              weekEnd: zs - 1,
-            ),
-          );
-        }
-        if (zs < c.weekEnd) {
-          parts.add(
-            TtCourse(
-              id: TimetableStore.genId(),
-              name: c.name,
-              place: c.place,
-              teachers: c.teachers,
-              day: c.day,
-              slotStart: c.slotStart,
-              slotEnd: c.slotEnd,
-              weekType: c.weekType,
-              weekStart: zs + 1,
-              weekEnd: c.weekEnd,
-            ),
-          );
-        }
-        tt.courses.removeWhere((x) => x.id == c.id);
-        tt.courses.addAll(parts);
-      }
-    } else {
-      if (imported) {
-        TimetableStore.removeImportedOccurrence(tt, c, all: true);
-      } else {
-        tt.courses.removeWhere((x) => x.name == c.name);
-      }
-    }
-    await TimetableStore.instance.save();
     if (mounted) setState(() {});
   }
 
-  // ── 手动日程事件 ──
-
   Future<void> _eventForm({TtEvent? existing}) async {
-    final nameC = TextEditingController(text: existing?.name ?? '');
-    final placeC = TextEditingController(text: existing?.place ?? '');
-    final noteC = TextEditingController(text: existing?.note ?? '');
-    DateTime? date = existing == null || existing.date.isEmpty
-        ? null
-        : DateTime.tryParse(existing.date);
-    var weekly = existing != null && existing.date.isEmpty;
-    var day = existing?.day ?? 0;
-    TimeOfDay start =
-        _toTOD(existing?.start) ?? const TimeOfDay(hour: 19, minute: 0);
-    TimeOfDay end =
-        _toTOD(existing?.end) ?? const TimeOfDay(hour: 20, minute: 0);
-    // 校验提示画在弹层里：SnackBar 挂在页面 Scaffold 上，会被底部弹层盖住。
-    String? error;
-
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          0,
-          20,
-          20 + MediaQuery.of(ctx).viewInsets.bottom,
-        ),
-        child: StatefulBuilder(
-          builder: (ctx, setS) => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  existing == null ? '添加日程' : '编辑日程',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              TextField(
-                controller: nameC,
-                decoration: const InputDecoration(
-                  labelText: '名称 *',
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: placeC,
-                decoration: const InputDecoration(
-                  labelText: '地点',
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              GlassTabs(
-                labels: const ['单次（选日期）', '每周重复'],
-                index: weekly ? 1 : 0,
-                onChanged: (i) => setS(() => weekly = i == 1),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  if (weekly)
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: day,
-                        decoration: const InputDecoration(
-                          labelText: '星期',
-                          isDense: true,
-                        ),
-                        items: [
-                          for (var i = 0; i < 7; i++)
-                            DropdownMenuItem(
-                              value: i,
-                              child: Text('周${'一二三四五六日'[i]}'),
-                            ),
-                        ],
-                        onChanged: (v) => setS(() => day = v!),
-                      ),
-                    )
-                  else
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () async {
-                          final now = DateTime.now();
-                          final picked = await showDatePicker(
-                            context: ctx,
-                            initialDate: date ?? now,
-                            firstDate: DateTime(now.year - 1),
-                            lastDate: DateTime(now.year + 1),
-                          );
-                          if (picked != null) setS(() => date = picked);
-                        },
-                        child: Text(
-                          date == null ? '选择日期 *' : TimetableStore.iso(date!),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final t = await showTimePicker(
-                          context: ctx,
-                          initialTime: start,
-                        );
-                        if (t != null) setS(() => start = t);
-                      },
-                      child: Text('开始 ${start.format(ctx)}'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final t = await showTimePicker(
-                          context: ctx,
-                          initialTime: end,
-                        );
-                        if (t != null) setS(() => end = t);
-                      },
-                      child: Text('结束 ${end.format(ctx)}'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: noteC,
-                decoration: const InputDecoration(
-                  labelText: '备注',
-                  isDense: true,
-                ),
-              ),
-              if (error != null) ...[
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: SemColors.dangerSoft,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    error!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: SemColors.danger,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  onPressed: () {
-                    final name = nameC.text.trim();
-                    if (name.isEmpty || (!weekly && date == null)) {
-                      setS(
-                        () => error = name.isEmpty ? '请填写日程名称' : '单次日程需要选择日期',
-                      );
-                      return;
-                    }
-                    final ev = TtEvent(
-                      id: existing?.id ?? TimetableStore.genId(),
-                      name: name,
-                      place: placeC.text.trim(),
-                      date: weekly ? '' : TimetableStore.iso(date!),
-                      day: weekly ? day : (date!.weekday - 1),
-                      start:
-                          '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}',
-                      end:
-                          '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
-                      note: noteC.text.trim(),
-                    );
-                    if (existing != null) {
-                      final i = tt.events.indexWhere(
-                        (x) => x.id == existing.id,
-                      );
-                      if (i >= 0) tt.events[i] = ev;
-                    } else {
-                      tt.events.add(ev);
-                    }
-                    TimetableStore.instance.save();
-                    Navigator.pop(ctx, true);
-                  },
-                  child: const Text('保存'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (saved == true && mounted) setState(() {});
+    final saved = await showEventForm(context, tt: tt, existing: existing);
+    if (saved && mounted) setState(() {});
   }
 
-  TimeOfDay? _toTOD(String? s) {
-    final m = _hm(s ?? '');
-    if (m < 0) return null;
-    return TimeOfDay(hour: m ~/ 60, minute: m % 60);
+  void _showEventDetail(TtEvent e) => showEventDetailSheet(
+        context,
+        event: e,
+        onEdit: () => _eventForm(existing: e),
+        onDelete: () => _deleteEvent(e),
+      );
+
+  void _deleteEvent(TtEvent e) {
+    setState(() => tt.events.removeWhere((x) => x.id == e.id));
+    TimetableStore.instance.save();
   }
 
-  void _showEventDetail(TtEvent e) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      e.name,
-                      style: Theme.of(ctx).textTheme.titleLarge,
-                    ),
-                  ),
-                  if (e.kind == 'exam') Capsule('考试', color: SemColors.danger),
-                  if (e.date.isEmpty) Capsule('每周', color: SemColors.info),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _detailRow(
-                '时间',
-                e.date.isEmpty
-                    ? '每周 周${'一二三四五六日'[e.day]} ${e.start}~${e.end}'
-                    : '${e.date} ${e.start}~${e.end}',
-              ),
-              if (e.place.isNotEmpty) _detailRow('地点', e.place),
-              if (e.seat.isNotEmpty) _detailRow('座位', e.seat),
-              if (e.note.isNotEmpty) _detailRow('备注', e.note),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _eventForm(existing: e);
-                    },
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('编辑'),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      setState(
-                        () => tt.events.removeWhere((x) => x.id == e.id),
-                      );
-                      TimetableStore.instance.save();
-                    },
-                    icon: Icon(
-                      Icons.delete_outline,
-                      size: 18,
-                      color: SemColors.danger,
-                    ),
-                    label: Text(
-                      '删除',
-                      style: TextStyle(color: SemColors.danger),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── 渲染 ──
-
-  /// 跨插件能力：都按「接口 + 提供方插件 id」从注册表取——课表不 import
-  /// plugin_reminder；提供方被停用或没装时就取不到，铃铛整颗不出现。
-  /// 取用处的这个 id 也是依赖关系。
+  /// 跨插件能力：按「接口 + 提供方插件 id」从注册表取，停用 / 未装时取不到（铃铛整颗不出现）。
   ReminderCapability? get _reminder =>
       PluginRegistry.I.capability<ReminderCapability>(PluginIds.reminder);
 
@@ -1398,311 +450,148 @@ class _TimetablePageState extends State<TimetablePage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     // 整页监听 AppState：「悬浮玻璃顶栏」开关改完要连 Scaffold 一起重建
-    // （extendBodyBehindAppBar / appBar / 顶部留白都在 build 里定死）
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
         // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
         final topInset = glassTopInset(context);
-        return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
-          extendBodyBehindAppBar: glassTopBarEnabled,
-          appBar: glassAppBar(
-            context,
-            // 学期名靠左：它是这张表的标识，左边更像「这一页的标题」；右侧留给三个操作按钮。
-            // 标题本身就是切换学期的入口（箭头暗示可点），右上角菜单里也留着同一项。
-            centerTitle: false,
-            title: InkWell(
-              onTap: _pickSemester,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        _semesterTitle,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    const Icon(Icons.arrow_drop_down, size: 22),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              IconButton(
-                onPressed: () {
-                  if (!_dayView) {
-                    // 切到日视图：目标页 = 当前显示的周/日；跳转改为挂载就绪后执行
-                    // （同 _jumpTo 的修复：PageView 未挂载时不再静默丢失）。
-                    final target = (_shownWeek - 1) * 7 + _shownDay;
-                    setState(() => _dayView = true);
-                    _jumpWhenReady(_dayPc, target);
-                    _shownWeek = target ~/ 7 + 1;
-                    _shownDay = target % 7;
-                    if (mounted) setState(() {});
-                  } else {
-                    setState(() => _dayView = false);
-                    _jumpWhenReady(_pc, _shownWeek - 1);
-                  }
-                },
-                icon: Icon(
-                  _dayView
-                      ? Icons.calendar_view_week_rounded
-                      : Icons.calendar_view_day_rounded,
-                ),
-                tooltip: _dayView ? '周视图' : '日视图',
-              ),
-              // 「上课提醒」插件停用/没装时取不到能力，整颗按钮都不出现
-              // （提醒是插件提供的功能，不是课表的一部分）
-              if (_reminder case final r?)
-                glassTopBarAction(
-                  ListenableBuilder(
-                    listenable: r.listenable,
-                    builder: (_, __) => IconButton(
-                      onPressed: _toggleReminder,
-                      icon: Icon(
-                        r.enabled
-                            ? Icons.notifications_active
-                            : Icons.notifications_off_outlined,
-                      ),
-                      tooltip: r.enabled
-                          ? '上课提醒已开启（课前 ${r.leadMinutes} 分钟）'
-                          : '开启上课提醒（课前 ${r.leadMinutes} 分钟）',
-                    ),
-                  ),
-                ),
-              glassTopBarAction(
-                PopupMenuButton<String>(
-                tooltip: '更多',
-                onSelected: (v) {
-                  switch (v) {
-                    case 'addCourse':
-                      _courseFormAdd();
-                    case 'addEvent':
-                      _eventForm();
-                    case 'import':
-                      _importAll();
-                    case 'exams':
-                      _importExams();
-                    case 'ical':
-                      _openCalendarIo();
-                    case 'settings':
-                      _openSettings();
-                    case 'switch':
-                      _pickSemester();
-                    case 'refresh':
-                      _ensureWeek(_shownWeek, force: true);
-                  }
-                },
-                itemBuilder: (ctx) => [
-                  const PopupMenuItem(
-                    value: 'addCourse',
-                    child: ListTile(
-                      leading: Icon(Icons.add),
-                      title: Text('添加课程'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'addEvent',
-                    child: ListTile(
-                      leading: Icon(Icons.schedule_rounded),
-                      title: Text('添加日程'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'import',
-                    child: ListTile(
-                      leading: Icon(Icons.cloud_download_outlined),
-                      title: Text('教务导入课表'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'exams',
-                    child: ListTile(
-                      leading: Icon(Icons.event_note_outlined),
-                      title: Text('导入考试安排'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'ical',
-                    child: ListTile(
-                      leading: Icon(Icons.ios_share_rounded),
-                      title: Text('导出 / 导入日历'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'settings',
-                    child: ListTile(
-                      leading: Icon(Icons.settings_outlined),
-                      title: Text('课程表设置'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'switch',
-                    child: ListTile(
-                      leading: Icon(Icons.calendar_month_outlined),
-                      title: Text('切换学期'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                    ),
-                  ),
-                  if (AppState.I.loggedIn)
-                    const PopupMenuItem(
-                      value: 'refresh',
-                      child: ListTile(
-                        leading: Icon(Icons.refresh),
-                        title: Text('刷新本周'),
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                      ),
-                    ),
-                ],
-              ),
-              ),
-            ],
+        return buildTimetableScaffold(
+          context: context,
+          title: TimetableStore.instance.semesterLabel('$xnm-$xqm') ?? '课程表',
+          onTitleTap: _pickSemester,
+          actions: buildTimetableActions(
+            dayView: _dayView,
+            onToggleView: _toggleView,
+            reminder: _reminder,
+            onToggleReminder: _toggleReminder,
+            loggedIn: AppState.I.loggedIn,
+            onMenuSelected: _onMenu,
           ),
-          body: GlassFadedBody(
-            barHeight: topInset,
-            child: ListenableBuilder(
-            listenable: Listenable.merge([AppState.I, TtBackground.I]),
-            builder: (context, _) {
-              if (_dayView) {
-                // 日视图分页高度取当周各天内容的最高值（每天课数不同）——量完再设，故在这里排一帧
-                WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => _measureDayPager(),
-                );
-              }
-              return Stack(
-                children: [
-                  // 自定义背景图：整页淡显铺底，垫在所有内容之下（没设置就不占层）
-                  if (TtBackground.I.path case final bgPath?)
-                    Positioned.fill(
-                      child: Opacity(
-                        opacity: TtBackground.I.opacity.clamp(
-                          TtBackground.minOpacity,
-                          TtBackground.maxOpacity,
-                        ),
-                        child: Image.file(
-                          File(bgPath),
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                        ),
-                      ),
-                    ),
-                  // 顶部「今天」卡与近期日程条不属于任何一页：它们和课表在**同一条竖向滚动**里
-                  // （整页一起上下滑），但左右切周 / 切天时不该跟着横向位移，所以放在分页之外。
-                  // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：滚动底部与切换条都要让开它，
-                  // 否则最后几节课和切换条会被压在玻璃底栏下面
-                  Positioned.fill(
-                    child: SingleChildScrollView(
-                      // 自绘滚动内容：顶部让出悬浮顶栏，初始状态内容不被顶栏压住
-                      padding: EdgeInsets.only(
-                        top: topInset,
-                        bottom: 90 + MediaQuery.paddingOf(context).bottom,
-                      ),
-                      child: Column(
-                        children: [
-                          if (!AppState.I.loggedIn) _guestBanner(),
-                          _todayCard(),
-                          _examStrip(),
-                          LayoutBuilder(
-                            builder: (context, cons) => _dayView
-                                ? _dayPager(cons.maxWidth)
-                                : _weekPager(),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // 底部悬浮导航条：周视图切周 / 日视图切天（抬高一个底栏高度，压在玻璃底栏上方）
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 12 + MediaQuery.paddingOf(context).bottom,
-                    child: _dayView ? _dayNav() : _weekNav(),
-                  ),
-                ],
-              );
-            },
-          ),
+          body: buildTimetableBody(
+            context: context,
+            topInset: topInset,
+            dayView: _dayView,
+            onDayViewLayout: _measureDayPager,
+            todayCard: _todayCard,
+            examStrip: _examStrip,
+            pagerBuilder: (width) => _dayView ? _dayPager(width) : _weekPager(),
+            navBar: _dayView ? _dayNav : _weekNav,
           ),
         );
       },
     );
   }
 
-  /// 周视图分页：只有课表格子（顶部两块在分页之外），高度是固定的（11 节网格）。
-  Widget _weekPager() => SizedBox(
-        height: _weekPagerH,
-        child: PageView.builder(
-          controller: _pc,
-          itemCount: _weekCount,
-          onPageChanged: (i) {
-            setState(() => _shownWeek = i + 1);
-            _ensureWeek(i + 1);
-          },
-          itemBuilder: (context, i) => _weekGrid(i + 1),
+  /// 顶栏的周 / 日视图切换：换算成对侧分页的页码后再切，避免落到第一页。
+  void _toggleView() {
+    if (!_dayView) {
+      // 切到日视图：目标页 = 当前显示的周/日；周/日指示器与目标页同源，不会分裂
+      final target = (_shownWeek - 1) * 7 + _shownDay;
+      setState(() {
+        _dayView = true;
+        _shownWeek = target ~/ 7 + 1;
+        _shownDay = target % 7;
+      });
+      _jumpDayWhenReady(target);
+    } else {
+      final week = _shownWeek;
+      setState(() => _dayView = false);
+      _jumpTo(week, animate: false);
+    }
+  }
+
+  /// 日视图分页的「挂上就跳」：与周视图同一套（不落地就不改指示器）。
+  void _jumpDayWhenReady(int targetPage) {
+    _pendingDayPage = targetPage;
+    _schedulePendingDay();
+  }
+
+  void _schedulePendingDay() {
+    final binding = WidgetsBinding.instance;
+    if (_pendingDayPage == null) return;
+    if (binding.schedulerPhase == SchedulerPhase.idle && _dayPc.hasClients) {
+      _applyPendingDay();
+      return;
+    }
+    if (_pendingDayScheduled) return;
+    _pendingDayScheduled = true;
+    binding.addPostFrameCallback((_) {
+      _pendingDayScheduled = false;
+      _applyPendingDay();
+    });
+    binding.ensureVisualUpdate();
+  }
+
+  bool _pendingDayScheduled = false;
+
+  void _applyPendingDay() {
+    final target = _pendingDayPage;
+    if (target == null || !_dayPc.hasClients) return;
+    _pendingDayPage = null;
+    _dayPc.jumpToPage(target);
+    if (mounted) setState(() {});
+  }
+
+  /// 「更多」菜单的分发。
+  void _onMenu(String v) {
+    switch (v) {
+      case 'addCourse':
+        _courseFormAdd();
+      case 'addEvent':
+        _eventForm();
+      case 'import':
+        _importAll();
+      case 'exams':
+        _importExams();
+      case 'ical':
+        _openCalendarIo();
+      case 'settings':
+        _openSettings();
+      case 'switch':
+        _pickSemester();
+      case 'refresh':
+        _ensureWeek(_shownWeek, force: true);
+    }
+  }
+
+  /// 周视图分页：只有课表格子（顶部两块在分页之外），高度固定（11 节网格）。
+  Widget _weekPager() => buildWeekPager(
+        controller: _pc,
+        weekCount: _weekCount,
+        onPageChanged: (i) {
+          setState(() => _shownWeek = i + 1);
+          _ensureWeek(i + 1);
+        },
+        gridBuilder: (week) => buildWeekGrid(
+          tt: tt,
+          week: week,
+          todayWeek: _todayWeek,
+          allCourses: _allCourses,
+          loggedIn: AppState.I.loggedIn,
+          directMode: AppState.I.direct,
+          loading: _loadingWeeks.contains(week),
+          onCourseTap: _showCourseDetail,
+          onEventTap: _showEventDetail,
         ),
       );
 
   /// 日视图分页：只有当天内容（顶部两块在分页之外）。
   /// 每天课数不同、页高只好取当周 7 天的最大值：矮的页下方留白，高的页不会被裁掉。
-  Widget _dayPager(double width) => SizedBox(
+  Widget _dayPager(double width) => buildDayPager(
+        controller: _dayPc,
+        width: width,
         height: _dayPagerH == 0 ? 320 : _dayPagerH,
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _dayPc,
-              itemCount: _weekCount * 7,
-              onPageChanged: (idx) {
-                setState(() {
-                  _shownWeek = idx ~/ 7 + 1;
-                  _shownDay = idx % 7;
-                });
-                _ensureWeek(_shownWeek);
-              },
-              // 内容按自然高度排（页高等量完再设）：先让 Column 拿到不限高，
-              // 首帧内容比兜底高度高时也不会报 RenderFlex 溢出（会被分页裁掉一瞬）
-              itemBuilder: (context, idx) => OverflowBox(
-                alignment: Alignment.topLeft,
-                minHeight: 0,
-                maxHeight: double.infinity,
-                child: _dayBody(idx ~/ 7 + 1, idx % 7),
-              ),
-            ),
-            // 量高用的不可见副本：与分页同宽、高度不受分页约束，量出当周各天的自然高度
-            for (var d = 0; d < 7; d++)
-              Positioned(
-                left: 0,
-                top: 0,
-                width: width,
-                child: Offstage(
-                  child: KeyedSubtree(
-                    key: _dayProbeKeys[d],
-                    child: _dayBody(_shownWeek, d),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        weekCount: _weekCount,
+        probeWeek: _shownWeek,
+        probeKeys: _dayProbeKeys,
+        onPageChanged: (idx) {
+          setState(() {
+            _shownWeek = idx ~/ 7 + 1;
+            _shownDay = idx % 7;
+          });
+          _ensureWeek(_shownWeek);
+        },
+        bodyBuilder: _dayBody,
       );
 
   /// 量出当周各天内容的最大高度 → 作为日视图分页高度（只在变化时重建，不会来回抖）。
@@ -1718,354 +607,50 @@ class _TimetablePageState extends State<TimetablePage> {
     }
   }
 
-  void _courseFormAdd() => _courseForm();
-
-  // 只显示「大二上」这种学期名：带上「课程表 ·」前缀会把学期名挤成省略号。
-  String get _semesterTitle {
-    final label = TimetableStore.instance.semesterLabel('$xnm-$xqm');
-    return label ?? '课程表';
-  }
-
-  Widget _guestBanner() => Container(
-        width: double.infinity,
-        margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: SemColors.infoSoft,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: SemColors.info.withValues(alpha: 0.3)),
-        ),
-        child: Text(
-          AppState.I.direct
-              ? '未填写校园凭据：手动编辑 / 调休等本地功能可正常使用，填写后可从教务导入课表与考试（需校园网）。'
-              : '未登录：手动编辑 / 调休等本地功能可正常使用，登录后可从教务导入课表与考试。',
-          style: TextStyle(fontSize: 12, color: SemColors.info, height: 1.5),
-        ),
+  Widget _dayBody(int week, int day) => buildDayBody(
+        tt: tt,
+        allCourses: _allCourses,
+        week: week,
+        day: day,
+        todayWeek: _todayWeek,
+        onCourseTap: _showCourseDetail,
+        onEventTap: _showEventDetail,
       );
 
-  Widget _todayCard() {
-    final now = DateTime.now();
-    final tw = _todayWeek;
-    final noStart = tt.startDate.isEmpty;
-    // 调休规则同样作用于今天：off → 无课，follow → 按被借星期的课表
-    final adj = tw == null ? null : _colAdjust(tw, now.weekday - 1);
-    final effDay =
-        adj == null ? now.weekday - 1 : (adj.type == 'off' ? null : adj.day);
-    List<TtCourse> courses = const [];
-    if (tw != null && effDay != null) {
-      courses = _coursesOf(tw).where((c) => c.day == effDay).toList()
-        ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
-    }
-    // 今天还没上完的课；第一门就是「最近的一节」。全部上完后为空 → 卡片显示「今天的课都上完了」。
-    // 判「上完没有」必须用**今天这一列的真实日期**：调休补课时 effDay 是被借的星期
-    // （如周六按周二的课表），拿被借那天的日期去比，今天的课会被整批判成早就上完，
-    // 卡片就变成一句课都不显示（不调休时正常）。所以只按 effDay 取课，日期仍用今天所在列。
-    final upcoming = (tw == null || effDay == null)
-        ? courses
-        : upcomingToday(
-            courses,
-            startDate: tt.startDate,
-            week: tw,
-            dayIndex: now.weekday - 1,
-            now: now,
-          );
-    final next = upcoming.isEmpty ? null : upcoming.first;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-      child: AppCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.today_rounded, size: 15, color: SemColors.accent),
-                const SizedBox(width: 6),
-                Text(
-                  noStart
-                      ? '未设置学期起点'
-                      : tw == null
-                          ? '假期中（学期外）'
-                          : '今天 · 第$tw周',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-                const Spacer(),
-                if (noStart)
-                  GestureDetector(
-                    onTap: _semSettings,
-                    child: Text(
-                      '去设置',
-                      style: TextStyle(fontSize: 12, color: SemColors.accent),
-                    ),
-                  )
-                else
-                  Text(
-                    adj?.type == 'off'
-                        ? '放假（调休）'
-                        : (adj?.type == 'follow'
-                            ? '按周${'一二三四五六日'[adj!.day]}上课'
-                            : (courses.isEmpty
-                                ? '今天没有课'
-                                : (next == null
-                                    ? '今天的课都上完了'
-                                    : '还剩 ${upcoming.length} 节'))),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: adj?.type == 'off'
-                          ? SemColors.danger
-                          : SemColors.textMuted,
-                    ),
-                  ),
-              ],
-            ),
-            if (!noStart && tw != null && next != null) ...[
-              const SizedBox(height: 8),
-              _nextClassRow(next, now),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _todayCard() => buildTodayCard(
+        tt: tt,
+        todayWeek: _todayWeek,
+        allCourses: _allCourses,
+        onOpenSemesterSettings: _semSettings,
+      );
 
-  /// 今天这一列的真实日期（yyyy-MM-dd）；学期起点未设置时返回空串。
-  String _todayISO() {
-    final tw = _todayWeek;
-    if (tw == null) return '';
-    return _colISO(tw, DateTime.now().weekday - 1);
-  }
+  Widget _examStrip() => buildExamStrip(tt: tt);
 
-  /// 今天最近一节还没上完的课（时间、节次、地点；正在上的标「正在上课」）。
-  Widget _nextClassRow(TtCourse c, DateTime now) {
-    final from = TimetableStore.slotStarts[c.slotStart.clamp(0, 10)];
-    final to = TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)];
-    final colISO = _todayISO();
-    // 正在上课 = 已到上课时刻且还没下课。原来看的是「没下课」这一个条件，于是凌晨/早读前
-    // 也会给今天第一节课挂上「正在上课」——课还没开始却写着正在上。
-    final inClass = colISO.isNotEmpty &&
-        TimetableStore.lessonPassed(colISO, from, now: now) &&
-        !TimetableStore.lessonPassed(colISO, to, now: now);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: _courseColor(c.name),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 86,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  from,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  to,
-                  style: TextStyle(fontSize: 10, color: SemColors.textMuted),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        c.name,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (inClass) ...[
-                      const SizedBox(width: 6),
-                      // 玻璃化：底色很淡 + 文字半透明 + 细描边，压在课程色块上不抢主体
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: SemColors.accent.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: SemColors.accent.withValues(alpha: 0.25),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Text(
-                          '正在上课',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            color: SemColors.accent.withValues(alpha: 0.85),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                Text(
-                  '第${c.slotStart + 1}-${c.slotEnd + 1}节'
-                  '${c.place.isEmpty ? '' : ' · ${c.place}'}'
-                  '${c.teachers.isEmpty ? '' : ' · ${c.teachers}'}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: SemColors.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _weekNav() => buildWeekNav(
+        shownWeek: _shownWeek,
+        weekCount: _weekCount,
+        onPrev: _shownWeek > 1 ? () => _jumpTo(_shownWeek - 1) : null,
+        onNext: _shownWeek < _weekCount ? () => _jumpTo(_shownWeek + 1) : null,
+        onTitleTap: () {
+          if (_navTitleTappedTwice()) {
+            final tw = _todayWeek;
+            _jumpTo(tw ?? 1);
+          }
+        },
+      );
 
-  /// 近期考试 / 日程提醒条（来自本地日程事件，考试导入后出现）。
-  /// 全局信息：不随左右切周变化（它是「接下来要发生什么」，与当前看的是哪一周无关）。
-  Widget _examStrip() {
-    final now = DateTime.now();
-    final day0 = DateTime(now.year, now.month, now.day);
-    final upcoming = <(TtEvent, int)>[];
-    for (final e in tt.events) {
-      final d = DateTime.tryParse(e.date);
-      if (d == null) continue;
-      final diff = DateTime(d.year, d.month, d.day).difference(day0).inDays;
-      if (diff >= 0 && diff <= 90) upcoming.add((e, diff));
-    }
-    if (upcoming.isEmpty) return const SizedBox.shrink();
-    upcoming.sort((a, b) => a.$2.compareTo(b.$2));
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-      child: AppCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  upcoming.first.$1.kind == 'exam'
-                      ? Icons.event_note_rounded
-                      : Icons.schedule_rounded,
-                  size: 15,
-                  color: SemColors.danger,
-                ),
-                const SizedBox(width: 6),
-                const Text(
-                  '近期日程',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                const Spacer(),
-                Text(
-                  '${upcoming.length} 项',
-                  style: TextStyle(fontSize: 12, color: SemColors.textMuted),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 32,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: math.min(5, upcoming.length),
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, i) {
-                  final (e, diff) = upcoming[i];
-                  // 今天已经结束的那条也压暗（列表本身只列今天及以后）
-                  return Opacity(
-                    opacity: _eventPast(e, e.date) && _dimPast ? 0.55 : 1,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: SemColors.dangerSoft,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${e.name} ${e.date.substring(5)} '
-                        '${diff == 0 ? '今天' : diff == 1 ? '明天' : '还有$diff天'}',
-                        style: TextStyle(fontSize: 12, color: SemColors.danger),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _weekNav() {
-    return Center(
-      child: Container(
-        decoration: BoxDecoration(
-          color: SemColors.navPill,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: SemColors.borderStrong),
-          boxShadow: [
-            BoxShadow(
-              color: SemColors.accent.withValues(alpha: 0.15),
-              blurRadius: 12,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _navBtn(
-              Icons.chevron_left,
-              _shownWeek > 1 ? () => _jumpTo(_shownWeek - 1) : null,
-            ),
-            GestureDetector(
-              onTap: () {
-                if (_navTitleTappedTwice()) {
-                  final tw = _todayWeek;
-                  _jumpTo(tw ?? 1);
-                }
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  '第 $_shownWeek 周',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            _navBtn(
-              Icons.chevron_right,
-              _shownWeek < _weekCount ? () => _jumpTo(_shownWeek + 1) : null,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _dayNav() => buildDayNav(
+        shownWeek: _shownWeek,
+        shownDay: _shownDay,
+        weekCount: _weekCount,
+        onGoDay: _goDay,
+        onTitleTap: () {
+          if (_navTitleTappedTwice()) {
+            final tw = _todayWeek;
+            _goDay(tw ?? 1, DateTime.now().weekday - 1);
+          }
+        },
+      );
 
   /// 周次标题 500ms 内被点第二次 → 回到今天。
   bool _navTitleTappedTwice() {
@@ -2076,1374 +661,17 @@ class _TimetablePageState extends State<TimetablePage> {
     return twice;
   }
 
-  Widget _navBtn(IconData icon, VoidCallback? onTap) => SizedBox(
-        width: 34,
-        height: 34,
-        child: IconButton(
-          padding: EdgeInsets.zero,
-          visualDensity: VisualDensity.compact,
-          onPressed: onTap,
-          icon: Icon(
-            icon,
-            size: 20,
-            color:
-                onTap == null ? SemColors.textMuted : SemColors.textSecondary,
-          ),
-        ),
-      );
-
-  // ── 日视图 ──
-
   void _goDay(int week, int day) {
     final idx = ((week - 1) * 7 + day).clamp(0, _weekCount * 7 - 1);
+    // 日视图分页未必已挂上（切回来那一帧）：没挂上就走「挂上再跳」，别静默丢掉
+    if (!_dayPc.hasClients) {
+      _jumpDayWhenReady(idx);
+      return;
+    }
     _dayPc.animateToPage(
       idx,
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
     );
-  }
-
-  Widget _dayNav() {
-    final idx = (_shownWeek - 1) * 7 + _shownDay;
-    return Center(
-      child: Container(
-        decoration: BoxDecoration(
-          color: SemColors.navPill,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: SemColors.borderStrong),
-          boxShadow: [
-            BoxShadow(
-              color: SemColors.accent.withValues(alpha: 0.15),
-              blurRadius: 12,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _navBtn(
-              Icons.chevron_left,
-              idx > 0 ? () => _goDay(idx ~/ 7, idx % 7 - 1) : null,
-            ),
-            GestureDetector(
-              onTap: () {
-                if (_navTitleTappedTwice()) {
-                  final tw = _todayWeek;
-                  _goDay(tw ?? 1, DateTime.now().weekday - 1);
-                }
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  '周${'一二三四五六日'[_shownDay]} · 第 $_shownWeek 周',
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            _navBtn(
-              Icons.chevron_right,
-              idx < _weekCount * 7 - 1
-                  ? () =>
-                      _goDay(idx ~/ 7 + (idx % 7 == 6 ? 1 : 0), (idx + 1) % 7)
-                  : null,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 日视图某一天的内容（不含顶部两块——它们在分页之外）。
-  /// 返回可自适应的 Column（不走自己的滚动），竖向滚动由外层统一负责。
-  Widget _dayBody(int week, int day) {
-    final colISO = _colISO(week, day);
-    final adj = _colAdjust(week, day);
-    final eff = adj == null ? day : (adj.type == 'off' ? null : adj.day);
-    final courses = (eff == null
-        ? <TtCourse>[]
-        : _allCourses
-            .where(
-              (c) => c.day == eff && TimetableStore.coversWeek(c, week),
-            )
-            .toList())
-      ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
-    final events = tt.events
-        .where(
-          (e) =>
-              e.date.isEmpty ? (eff != null && e.day == eff) : e.date == colISO,
-        )
-        .toList()
-      ..sort((a, b) => _hm(a.start).compareTo(_hm(b.start)));
-
-    final isToday = _todayWeek == week && day == DateTime.now().weekday - 1;
-    final dateText = colISO.isEmpty
-        ? '第 $week 周'
-        : '${int.tryParse(colISO.substring(5, 7)) ?? ''}月${int.tryParse(colISO.substring(8)) ?? ''}日';
-
-    final items = <(int, Widget)>[
-      for (final c in courses)
-        (
-          _hm(TimetableStore.slotStarts[c.slotStart.clamp(0, 10)]),
-          _dayCourseCard(c, week, colISO),
-        ),
-      for (final e in events)
-        (
-          _hm(e.start) < 0 ? 0 : _hm(e.start),
-          _dayEventCard(e, isToday, colISO),
-        ),
-    ]..sort((a, b) => a.$1.compareTo(b.$1));
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Text(
-                '$dateText 周${'一二三四五六日'[day]}',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (isToday) Capsule('今天', color: SemColors.accent),
-            ],
-          ),
-          if (adj != null) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: adj.type == 'off'
-                    ? SemColors.dangerSoft
-                    : SemColors.infoSoft,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                adj.type == 'off'
-                    ? '放假（调休规则：当天无课）'
-                    : '按周${'一二三四五六日'[adj.day]}的课表上课（调休规则）',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: adj.type == 'off' ? SemColors.danger : SemColors.info,
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          if (items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 60),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.event_available_outlined,
-                    size: 44,
-                    color: SemColors.textMuted,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    adj?.type == 'off' ? '放假中，当天无课' : '当天没有安排',
-                    style: TextStyle(color: SemColors.textMuted),
-                  ),
-                ],
-              ),
-            )
-          else
-            ...items.map((it) => it.$2),
-        ],
-      ),
-    );
-  }
-
-  Widget _dayCourseCard(TtCourse c, int week, String colISO) {
-    final past = _isPast(c, colISO) && _dimPast;
-    final rs = c.slotStart.clamp(0, 10);
-    final re = c.slotEnd.clamp(0, 10);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Opacity(
-        opacity: past ? 0.55 : 1,
-        child: AppCard(
-          onTap: () => _showCourseDetail(c, week),
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _courseColor(c.name),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      TimetableStore.slotStarts[rs],
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      TimetableStore.slotEnds[re.clamp(0, 10)],
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: SemColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      c.name,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '第${c.slotStart + 1}-${c.slotEnd + 1}节 · ${c.weekStart}-${c.weekEnd}周${_weekTypeLabel(c.weekType)}',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: SemColors.textMuted,
-                      ),
-                    ),
-                    if (c.place.isNotEmpty || c.teachers.isNotEmpty)
-                      Text(
-                        [
-                          if (c.place.isNotEmpty) c.place,
-                          if (c.teachers.isNotEmpty) c.teachers,
-                        ].join(' · '),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: SemColors.textSecondary,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _dayEventCard(TtEvent e, bool isToday, String colISO) {
-    final isExam = e.kind == 'exam';
-    // 日程结束后整体压暗（与课程同一套：看结束时刻过没过）
-    final past = _eventPast(e, colISO) && _dimPast;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Opacity(
-        opacity: past ? 0.55 : 1,
-        child: AppCard(
-          onTap: () => _showEventDetail(e),
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isExam ? SemColors.dangerSoft : SemColors.accentSoft,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      e.start.isEmpty ? '—' : e.start,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: isExam ? SemColors.danger : SemColors.accent,
-                      ),
-                    ),
-                    if (e.end.isNotEmpty)
-                      Text(
-                        e.end,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: SemColors.textSecondary,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            e.name,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: isExam
-                                  ? SemColors.danger
-                                  : SemColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (e.date.isEmpty)
-                          Capsule('每周', color: SemColors.info),
-                      ],
-                    ),
-                    if (e.place.isNotEmpty)
-                      Text(
-                        e.place,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: SemColors.textSecondary,
-                        ),
-                      ),
-                    if (e.note.isNotEmpty)
-                      Text(
-                        e.note,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: SemColors.textMuted,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  double _rowY(int row) {
-    if (row <= 3) return _bandH + row * _slotH;
-    if (row <= 7) {
-      return _bandH + 4 * _slotH + _noonH + _bandH + (row - 4) * _slotH;
-    }
-    return _bandH +
-        4 * _slotH +
-        _noonH +
-        _bandH +
-        4 * _slotH +
-        _gapH +
-        _bandH +
-        (row - 8) * _slotH;
-  }
-
-  double get _gridH => _rowY(10) + _slotH;
-
-  /// 周视图分页（只有格子）的固定高度：外框上下 4+4 + 格子卡片 8 + 表头 + 网格
-  double get _weekPagerH => _headerH + _gridH + 8 + 16 + 4;
-
-  /// 当周某列（0=周一）的日期 ISO；无学期起点返回空串。
-  String _colISO(int zs, int di) {
-    if (tt.startDate.isEmpty) return '';
-    return TimetableStore.iso(
-      TimetableStore.dateOfWeekDay(tt.startDate, zs, di),
-    );
-  }
-
-  TtAdjust? _colAdjust(int zs, int di) {
-    final iso = _colISO(zs, di);
-    if (iso.isEmpty) return null;
-    for (final a in tt.adjustments) {
-      if (a.date == iso) return a;
-    }
-    return null;
-  }
-
-  /// 该列实际按星期几的课表上课；off 放假返回 null。
-  int? _colEffDay(int zs, int di) {
-    final a = _colAdjust(zs, di);
-    if (a == null) return di;
-    return a.type == 'off' ? null : a.day;
-  }
-
-  List<TtCourse> _coursesOf(int zs) =>
-      _allCourses.where((c) => TimetableStore.coversWeek(c, zs)).toList();
-
-  List<String> _datesOf(int zs) {
-    if (tt.startDate.isEmpty) return List.filled(7, '');
-    return [
-      for (var di = 0; di < 7; di++)
-        _colISO(zs, di).substring(5).replaceAll('-', '/'),
-    ];
-  }
-
-  /// 周视图某一周的格子（不含顶部两块——它们在分页之外，见 build）。
-  Widget _weekGrid(int zs) {
-    final all = _allCourses;
-    final dates = _datesOf(zs);
-    final todayIdx = _todayWeek == zs ? DateTime.now().weekday - 1 : -1;
-    final hasAny = all.isNotEmpty || tt.events.isNotEmpty;
-    if (!hasAny && _loadingWeeks.contains(zs)) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (!hasAny && !AppState.I.loggedIn && zs == 1) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.edit_calendar_outlined,
-              size: 40,
-              color: SemColors.textMuted,
-            ),
-            const SizedBox(height: 8),
-            Text('还没有课程', style: TextStyle(color: SemColors.textMuted)),
-            const SizedBox(height: 4),
-            Text(
-              AppState.I.direct
-                  ? '点右上角 + 手动添加，或在连接设置填好凭据后从教务导入'
-                  : '点右上角 + 手动添加，或登录后从教务导入',
-              style: TextStyle(fontSize: 12, color: SemColors.textMuted),
-            ),
-            const SizedBox(height: 60),
-          ],
-        ),
-      );
-    }
-
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: SemColors.card,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: SemColors.border),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: SizedBox(
-              height: _headerH + _gridH + 8,
-              child: Column(
-                children: [
-                  _dayHeaders(zs, dates, todayIdx),
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        // 中午细线（11:55）
-                        Positioned(
-                          top: _bandH + 4 * _slotH + _noonH / 2 - 0.5,
-                          left: 0,
-                          right: 0,
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: _axisW,
-                                child: Text(
-                                  '11:55',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 8,
-                                    color: SemColors.textMuted,
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Container(
-                                  height: 1,
-                                  color: SemColors.border,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // 节次轴
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          width: _axisW,
-                          height: _gridH,
-                          child: Column(
-                            children: [
-                              for (final group in const [
-                                [0, 1, 2, 3],
-                                [4, 5, 6, 7],
-                                [8, 9, 10],
-                              ]) ...[
-                                for (final row in group)
-                                  SizedBox(
-                                    width: _axisW,
-                                    height: _slotH,
-                                    child: Center(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            '${row + 1}',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: SemColors.textMuted,
-                                            ),
-                                          ),
-                                          Text(
-                                            TimetableStore.slotStarts[row],
-                                            style: TextStyle(
-                                              fontSize: 7.5,
-                                              color: SemColors.textMuted,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                if (group != const [8, 9, 10])
-                                  SizedBox(
-                                    width: _axisW,
-                                    height: _bandH +
-                                        (group == const [0, 1, 2, 3]
-                                            ? _noonH
-                                            : 0) +
-                                        (group == const [4, 5, 6, 7]
-                                            ? _gapH
-                                            : 0),
-                                  ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        // 7 天列（调休规则在渲染层生效）
-                        Positioned(
-                          left: _axisW,
-                          right: 0,
-                          top: 0,
-                          height: _gridH,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: List.generate(7, (di) {
-                              final eff = _colEffDay(zs, di);
-                              final dayCourses = eff == null
-                                  ? const <TtCourse>[]
-                                  : all
-                                      .where(
-                                        (c) =>
-                                            c.day == eff &&
-                                            TimetableStore.coversWeek(c, zs),
-                                      )
-                                      .toList();
-                              // 按开始时刻排序：后开始的后画，真重叠时压在上层，
-                              // 不会被先开始的日程盖住（原来顺序取决于数据顺序）。
-                              final dayEvents = tt.events
-                                  .where(
-                                    (e) => e.date.isEmpty
-                                        ? (eff != null && e.day == eff)
-                                        : e.date == _colISO(zs, di),
-                                  )
-                                  .toList()
-                                ..sort(
-                                  (a, b) =>
-                                      _hm(a.start).compareTo(_hm(b.start)),
-                                );
-                              return Expanded(
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      // 和卡片边框（本卡片外层 Container 的 border）同色：
-                                      // 之前用 withValues(alpha: 0.7) 是**覆盖**调色板自带的
-                                      // 透明度——深色板边框本身才 15%、墨白/青竹浅色板 12%，
-                                      // 被强行拉到 70% 后白得刺眼，像一列分割线跳出来。
-                                      left: BorderSide(
-                                        color: SemColors.border,
-                                        style: BorderStyle.solid,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Stack(
-                                    children: [
-                                      for (final c in dayCourses)
-                                        _courseBlock(c, zs, _colISO(zs, di)),
-                                      for (final e in dayEvents)
-                                        ..._eventBlock(
-                                          e,
-                                          _colISO(zs, di),
-                                          // 真重叠的日程改用不透明底色：半透明叠半透明
-                                          // 会让上下两张卡的文字透过来糊成一片。
-                                          solid: _eventOverlaps(
-                                            e,
-                                            dayEvents,
-                                            dayCourses,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }),
-                          ),
-                        ),
-                        // 时段色带最后绘制：盖在天分隔竖线上方，且不进入左侧时间列
-                        _band(0, '上午'),
-                        _band(_bandH + 4 * _slotH + _noonH, '下午'),
-                        _band(
-                          _bandH +
-                              4 * _slotH +
-                              _noonH +
-                              _bandH +
-                              4 * _slotH +
-                              _gapH,
-                          '晚上',
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _dayHeaders(int zs, List<String> dates, int todayIdx) {
-    final monthLabel = dates.isEmpty || dates.first.isEmpty
-        ? ''
-        : '${int.tryParse(dates.first.split('/')[0]) ?? ''}月';
-    return SizedBox(
-      height: _headerH,
-      child: Row(
-        children: [
-          SizedBox(
-            width: _axisW,
-            child: Text(
-              monthLabel,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 9, color: SemColors.textMuted),
-            ),
-          ),
-          Expanded(
-            child: Row(
-              children: List.generate(7, (i) {
-                final isToday = i == todayIdx;
-                final adj = _colAdjust(zs, i);
-                final wdColor = adj == null
-                    ? (isToday ? SemColors.accent : SemColors.textPrimary)
-                    : (adj.type == 'off' ? SemColors.danger : SemColors.info);
-                return Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 1),
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    decoration: BoxDecoration(
-                      color: isToday ? SemColors.accentStrong : null,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '周${'一二三四五六日'[i]}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: wdColor,
-                            ),
-                          ),
-                          Text(
-                            dates.isEmpty
-                                ? '-'
-                                : (dates[i].isEmpty ? '-' : dates[i]),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: isToday
-                                  ? SemColors.accent
-                                  : SemColors.textMuted.withValues(alpha: 0.85),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _band(double top, String label) => Positioned(
-        top: top,
-        left: _axisW, // 不进入最左时间列
-        right: 0,
-        height: _bandH,
-        child: Container(
-          color: SemColors.stripe,
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              letterSpacing: 2,
-              color: SemColors.textMuted,
-            ),
-          ),
-        ),
-      );
-
-  /// 这节课是否已上完（置灰依据）：该列**当天日期 + 实际下课时刻**已过。
-  /// 不能只看「今天那一列」——本周周一~周三的课在周四看时早已上完，也该置灰（同网站 lessonPassed）。
-  bool _isPast(TtCourse c, String colISO) => TimetableStore.lessonPassed(
-        colISO,
-        TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)],
-      );
-
-  /// 是否淡化已上完的课 / 已结束的日程（「课程表设置 → 上完的课淡化显示」可关）。
-  bool get _dimPast => AppState.I.dimCompleted;
-
-  /// 日程是否已结束（置灰依据）：按**结束时刻**算——有具体日期的看那天，
-  /// date 为空的（每周重复）看这一列的日期；没写时刻（全天日程）不置灰。
-  /// 与课程 _isPast 同一套口径，所以上周的日程在周四看也会是灰的。
-  bool _eventPast(TtEvent e, String colISO) {
-    final iso = e.date.isNotEmpty ? e.date : colISO;
-    final d = DateTime.tryParse(iso);
-    if (d == null) return false;
-    final endMin = _hm(e.end) >= 0 ? _hm(e.end) : _hm(e.start);
-    if (endMin < 0) return false;
-    final at = DateTime(d.year, d.month, d.day, endMin ~/ 60, endMin % 60);
-    return at.isBefore(DateTime.now());
-  }
-
-  Widget _courseBlock(TtCourse c, int zs, String colISO) {
-    final name = c.name;
-    final past = _isPast(c, colISO) && _dimPast;
-    // slotStart/slotEnd = 小节序号，直接定位到行
-    final rowStart = c.slotStart.clamp(0, 10);
-    final rowEnd = c.slotEnd.clamp(0, 10) + 1; // 半开区间
-    final top = _rowY(rowStart);
-    final height = (rowEnd - rowStart) * _slotH - 4;
-    final (placePrefix, placeCode) = _splitPlace(c.place);
-    return Positioned(
-      top: top + 2,
-      height: height,
-      left: 2,
-      right: 2,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => _showCourseDetail(c, zs),
-        child: Opacity(
-          // 上完的课整体压暗（与单日视图 _dayCourseCard 同透明度），一眼看出已经上过
-          opacity: past ? 0.55 : 1,
-          child: Container(
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: past ? SemColors.neutralSoft : _courseColor(name),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.15,
-                child: LayoutBuilder(
-                  builder: (context, box) => _courseCardBody(
-                    context,
-                    box,
-                    c,
-                    past,
-                    rowStart,
-                    placePrefix,
-                    placeCode,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 课程卡内容：按真实像素预算取舍，不再用固定行数硬塞。
-  /// 优先级：课名（1-3 行）→ 教室号 → 上课时间 → 楼名 → 教师。
-  /// 一节课高的卡片（内高约 46px）也会保住 2 行课名 + 教室号——
-  /// 窄列里课名/楼名都会折行，唯独教室号要整段露出来。
-  Widget _courseCardBody(
-    BuildContext context,
-    BoxConstraints box,
-    TtCourse c,
-    bool past,
-    int rowStart,
-    String placePrefix,
-    String placeCode,
-  ) {
-    final w = box.maxWidth;
-    final avail = box.maxHeight - 1; // 1px 余量，避免量高和实际排版差一点点就溢出
-    final nameStyle = TextStyle(
-      fontSize: 11,
-      fontWeight: FontWeight.w600,
-      height: 1.2,
-      color: past ? SemColors.textMuted : SemColors.textPrimary,
-    );
-    final timeStyle = TextStyle(
-      fontSize: 9,
-      color: past ? SemColors.textMuted : SemColors.textSecondary,
-    );
-    final placeStyle = TextStyle(
-      fontSize: 10,
-      height: 1.15,
-      color: past ? SemColors.textMuted : SemColors.textSecondary,
-    );
-    final teacherStyle = TextStyle(fontSize: 9.5, color: SemColors.textMuted);
-
-    double nameAt(int lines) =>
-        _textHeight(context, c.name, nameStyle, maxWidth: w, maxLines: lines);
-    final codeH = placeCode.isEmpty
-        ? 0.0
-        : _textHeight(
-            context,
-            placeCode,
-            placeStyle,
-            maxWidth: w,
-            oneLine: true,
-          );
-    final prefixH1 = placePrefix.isEmpty
-        ? 0.0
-        : _textHeight(
-            context,
-            placePrefix,
-            placeStyle,
-            maxWidth: w,
-            maxLines: 1,
-          );
-    // 课名先给 3 行；地点放不下就降到 2/1 行，课名永远至少留一行。
-    // 有教室号先保编号；只有汉字楼名（没有编号）时也留一行，别把地点整个藏掉。
-    final reserveH = placeCode.isNotEmpty ? codeH : prefixH1;
-    var nameLines = 1;
-    for (final n in const [3, 2, 1]) {
-      if (nameAt(n) + reserveH <= avail) {
-        nameLines = n;
-        break;
-      }
-    }
-    var used = nameAt(nameLines);
-
-    var showCode = false;
-    if (placeCode.isNotEmpty && used + codeH <= avail) {
-      showCode = true;
-      used += codeH;
-    }
-    // 地点排在时间前面：左侧节次轴已经写着上课时间，教室号比重复的时间更该保。
-    var prefixLines = 0;
-    if (placePrefix.isNotEmpty) {
-      final h2 = _textHeight(
-        context,
-        placePrefix,
-        placeStyle,
-        maxWidth: w,
-        maxLines: 2,
-      );
-      if (used + h2 <= avail) {
-        prefixLines = 2;
-        used += h2;
-      } else if (used + prefixH1 <= avail) {
-        prefixLines = 1;
-        used += prefixH1;
-      }
-    }
-    final timeText = TimetableStore.slotStarts[rowStart];
-    final timeH = _textHeight(
-      context,
-      timeText,
-      timeStyle,
-      maxWidth: w,
-      oneLine: true,
-    );
-    var showTime = false;
-    if (used + timeH <= avail) {
-      showTime = true;
-      used += timeH;
-    }
-    final teacherH = c.teachers.isEmpty
-        ? 0.0
-        : _textHeight(
-            context,
-            c.teachers,
-            teacherStyle,
-            maxWidth: w,
-            maxLines: 1,
-          );
-    var showTeacher = false;
-    if (c.teachers.isNotEmpty && used + teacherH <= avail) {
-      showTeacher = true;
-      used += teacherH;
-    }
-    final pushDown =
-        avail - used >= 6 && (showCode || prefixLines > 0 || showTeacher);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (showTime)
-          Text(
-            timeText,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: timeStyle,
-          ),
-        Text(
-          c.name,
-          maxLines: nameLines,
-          overflow: TextOverflow.ellipsis,
-          style: nameStyle,
-        ),
-        if (pushDown) const Spacer(),
-        if (prefixLines > 0)
-          Text(
-            placePrefix,
-            maxLines: prefixLines,
-            overflow: TextOverflow.ellipsis,
-            style: placeStyle,
-          ),
-        if (showCode)
-          Text(
-            placeCode,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: placeStyle,
-          ),
-        if (showTeacher)
-          Text(
-            c.teachers,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: teacherStyle,
-          ),
-      ],
-    );
-  }
-
-  /// 用和 [Text] 一样的样式、宽度和文字缩放来量高度：
-  /// 卡片据此决定放哪几行，量出来放不下就不放，避免靠 Clip 硬裁或文字叠字。
-  static double _textHeight(
-    BuildContext context,
-    String text,
-    TextStyle style, {
-    required double maxWidth,
-    int maxLines = 1,
-    bool oneLine = false,
-  }) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: DefaultTextStyle.of(context).style.merge(style),
-      ),
-      maxLines: maxLines,
-      textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout(maxWidth: oneLine ? double.infinity : maxWidth);
-    final h = tp.height;
-    tp.dispose();
-    return h;
-  }
-
-  static double _textWidth(BuildContext context, String text, TextStyle style) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: DefaultTextStyle.of(context).style.merge(style),
-      ),
-      maxLines: 1,
-      textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout();
-    final w = tp.width;
-    tp.dispose();
-    return w;
-  }
-
-  /// 地点拆成「楼名 + 教室编号」：「第二教学楼 A301 多媒体教室」→（第二教学楼, A301）。
-  /// 单独的「3」多半是「3号楼」的楼号，不当教室号拆出来。
-  static (String, String) _splitPlace(String place) {
-    final p = place.trim();
-    if (p.isEmpty) return ('', '');
-    final matches = RegExp(r'[A-Za-z]*\d[A-Za-z0-9-]*').allMatches(p).toList();
-    if (matches.isEmpty) return (p, '');
-    final m = matches.last;
-    final code = m.group(0)!;
-    if (code.length < 2 && !RegExp(r'[A-Za-z]').hasMatch(code)) return (p, '');
-    final prefix =
-        p.substring(0, m.start).replaceAll(RegExp(r'[\s·,，、/|-]+$'), '').trim();
-    return (prefix, code);
-  }
-
-  /// 日程 / 考试块：按真实时刻定位（同网站日程卡规则）。
-  /// 不再吸附到整节——09:00–09:30 和 09:30–10:00 原来都会落到第 2 节，
-  /// 两张卡直接叠在一起；按分钟插值后它们首尾相接、互不遮挡。
-  List<Widget> _eventBlock(TtEvent e, String colISO, {bool solid = false}) {
-    final sm = _hm(e.start);
-    final em = _hm(e.end);
-    if (sm < 0 || em < 0) return const [];
-    var first = -1;
-    for (var s = 0; s <= 10; s++) {
-      final bMin = _hm(TimetableStore.slotStarts[s]);
-      final eMin = _hm(TimetableStore.slotEnds[s]);
-      if (em > bMin && sm < eMin && first < 0) first = s;
-    }
-    final isExam = e.kind == 'exam';
-    if (first < 0) {
-      // 16:30–18:00 没有节次（晚饭空档）。这里不落任何节次行，
-      // 但用户的日程确实在这个时段：单独画在空档行里，别让它「保存了却看不见」。
-      final gapStart = _hm(TimetableStore.slotEnds[7]);
-      final gapEnd = _hm(TimetableStore.slotStarts[8]);
-      if (em <= gapStart || sm >= gapEnd) return const [];
-      final gapTop = _bandH + 4 * _slotH + _noonH + _bandH + 4 * _slotH;
-      return [
-        Positioned(
-          top: gapTop + 2,
-          height: _gapH - 4,
-          left: 2,
-          right: 2,
-          child: GestureDetector(
-            onTap: () => _showEventDetail(e),
-            child: Opacity(
-              opacity: _eventPast(e, colISO) && _dimPast ? 0.55 : 1,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: _eventBg(isExam, solid),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: (isExam ? SemColors.danger : SemColors.accent)
-                        .withValues(alpha: 0.4),
-                  ),
-                ),
-                child: MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1.15,
-                  child: LayoutBuilder(
-                    builder: (context, box) =>
-                        _eventCardBody(context, box, e, isExam, compact: true),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ];
-    }
-    final gridTop = _hm(TimetableStore.slotStarts.first);
-    final gridBottom = _hm(TimetableStore.slotEnds.last);
-    final from = math.max(sm, gridTop);
-    final to = math.min(em, gridBottom);
-    final top = _yOfMinute(from);
-    var bottom = _yOfMinute(to);
-    // 太短的日程给一个能放下一行字的可见高度（不吸附回整节，避免又和邻居叠上）
-    if (bottom - top < 26) bottom = math.min(top + 26, _gridH);
-    return [
-      Positioned(
-        top: top + 2,
-        height: math.max(bottom - top - 4, 8),
-        left: 2,
-        right: 2,
-        // 周视图的日程块原先没有点击手势，点它没反应（只有日视图能点开详情）
-        child: GestureDetector(
-          onTap: () => _showEventDetail(e),
-          // 时间过了的日程跟课一样压暗（0.55，与 _courseBlock / 日视图卡片一致）
-          child: Opacity(
-            opacity: _eventPast(e, colISO) && _dimPast ? 0.55 : 1,
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: _eventBg(isExam, solid),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: (isExam ? SemColors.danger : SemColors.accent)
-                      .withValues(alpha: 0.4),
-                ),
-              ),
-              child: MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.15,
-                child: LayoutBuilder(
-                  builder: (context, box) =>
-                      _eventCardBody(context, box, e, isExam),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ];
-  }
-
-  /// 一天中的分钟 → 网格 y。节次内按分钟线性插值，午休 / 晚饭空档
-  /// 按空档自身高度插值，所以 09:20 的日程不会从 09:10 那一行顶部开始画。
-  double _yOfMinute(int minute) {
-    for (var s = 0; s <= 10; s++) {
-      final st = _hm(TimetableStore.slotStarts[s]);
-      final en = _hm(TimetableStore.slotEnds[s]);
-      if (minute <= st) return _rowY(s);
-      if (minute <= en) return _rowY(s) + (minute - st) / (en - st) * _slotH;
-      if (s < 10) {
-        final nextSt = _hm(TimetableStore.slotStarts[s + 1]);
-        if (minute < nextSt) {
-          final segTop = _rowY(s) + _slotH;
-          final segBottom = _rowY(s + 1);
-          return segTop + (minute - en) / (nextSt - en) * (segBottom - segTop);
-        }
-      }
-    }
-    return _rowY(10) + _slotH;
-  }
-
-  /// 日程卡内容：课名优先，其次时间，再放地点/座位；
-  /// 每一行都按真实像素高度量过，放不下就不放，避免文字折行撑出卡片。
-  Widget _eventCardBody(
-    BuildContext context,
-    BoxConstraints box,
-    TtEvent e,
-    bool isExam, {
-    bool compact = false,
-  }) {
-    final w = box.maxWidth;
-    final avail = box.maxHeight - 1;
-    final nameStyle = TextStyle(
-      fontSize: compact ? 9.5 : 10.5,
-      fontWeight: FontWeight.w600,
-      height: 1.2,
-      color: isExam ? SemColors.danger : SemColors.textPrimary,
-    );
-    final timeStyle = TextStyle(
-      fontSize: compact ? 8 : 9,
-      color: isExam ? SemColors.danger : SemColors.accent,
-    );
-    final placeStyle = TextStyle(
-      fontSize: compact ? 9 : 9.5,
-      color: SemColors.textSecondary,
-    );
-    final seatStyle = TextStyle(fontSize: 9, color: SemColors.textSecondary);
-    final (placePrefix, placeCode) = _splitPlace(e.place);
-
-    double nameAt(int lines) =>
-        _textHeight(context, e.name, nameStyle, maxWidth: w, maxLines: lines);
-    if (nameAt(1) > avail) return const SizedBox.shrink();
-
-    // 时间先压成一行；窄列放不下完整区间就只留开始时刻，别折成两行把卡片撑爆。
-    var timeText = '${e.start}${e.end.isNotEmpty ? '~${e.end}' : ''}';
-    if (e.end.isNotEmpty && _textWidth(context, timeText, timeStyle) > w) {
-      timeText = e.start;
-    }
-    final timeH = timeText.isEmpty
-        ? 0.0
-        : _textHeight(context, timeText, timeStyle, maxWidth: w, oneLine: true);
-
-    // 课名尽量多留行；为了塞时间可以把 3 行降到 2 行，但不降到 1 行——
-    // 位置本身已经说明时段，课名比时间更重要。
-    var nameLines = 1;
-    for (final n in const [3, 2, 1]) {
-      if (nameAt(n) <= avail) {
-        nameLines = n;
-        break;
-      }
-    }
-    var used = nameAt(nameLines);
-    var showTime = false;
-    if (timeH > 0 && used + timeH <= avail) {
-      showTime = true;
-      used += timeH;
-    } else if (nameLines > 2 && nameAt(2) + timeH <= avail) {
-      nameLines = 2;
-      used = nameAt(2) + timeH;
-      showTime = true;
-    }
-
-    final codeH = placeCode.isEmpty
-        ? 0.0
-        : _textHeight(
-            context,
-            placeCode,
-            placeStyle,
-            maxWidth: w,
-            oneLine: true,
-          );
-    var showCode = false;
-    if (placeCode.isNotEmpty && used + codeH <= avail) {
-      showCode = true;
-      used += codeH;
-    }
-    var prefixLines = 0;
-    if (placePrefix.isNotEmpty) {
-      final h2 = _textHeight(
-        context,
-        placePrefix,
-        placeStyle,
-        maxWidth: w,
-        maxLines: 2,
-      );
-      final h1 = _textHeight(
-        context,
-        placePrefix,
-        placeStyle,
-        maxWidth: w,
-        maxLines: 1,
-      );
-      if (used + h2 <= avail) {
-        prefixLines = 2;
-        used += h2;
-      } else if (used + h1 <= avail) {
-        prefixLines = 1;
-        used += h1;
-      }
-    }
-    final seatH = e.seat.isEmpty
-        ? 0.0
-        : _textHeight(
-            context,
-            '座位 ${e.seat}',
-            seatStyle,
-            maxWidth: w,
-            maxLines: 1,
-            oneLine: true,
-          );
-    var showSeat = false;
-    if (e.seat.isNotEmpty && used + seatH <= avail) {
-      showSeat = true;
-      used += seatH;
-    }
-    final pushDown = !compact &&
-        avail - used >= 6 &&
-        (showCode || prefixLines > 0 || showSeat);
-
-    return Column(
-      mainAxisAlignment:
-          compact ? MainAxisAlignment.center : MainAxisAlignment.start,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (showTime)
-          Text(
-            timeText,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: timeStyle,
-          ),
-        Text(
-          e.name,
-          maxLines: nameLines,
-          overflow: TextOverflow.ellipsis,
-          style: nameStyle,
-        ),
-        if (pushDown) const Spacer(),
-        if (prefixLines > 0)
-          Text(
-            placePrefix,
-            maxLines: prefixLines,
-            overflow: TextOverflow.ellipsis,
-            style: placeStyle,
-          ),
-        if (showCode)
-          Text(
-            placeCode,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: placeStyle,
-          ),
-        if (showSeat)
-          Text(
-            '座位 ${e.seat}',
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: seatStyle,
-          ),
-      ],
-    );
-  }
-
-  /// 重叠的日程用不透明底色（先把玻璃卡面压到底色上）：
-  /// 半透明卡叠半透明卡时，下面那张的文字会透上来，看起来就是「重叠在一起」。
-  static Color _eventBg(bool isExam, bool solid) {
-    final soft = isExam ? SemColors.dangerSoft : SemColors.accentSoft;
-    if (!solid) return soft;
-    final grid = Color.alphaBlend(SemColors.card, SemColors.bg);
-    return Color.alphaBlend(soft, grid);
-  }
-
-  /// 这条日程是否和同一天的其他日程 / 课程在时间上真重叠。
-  static bool _eventOverlaps(
-    TtEvent e,
-    List<TtEvent> events,
-    List<TtCourse> courses,
-  ) {
-    final sm = _hm(e.start);
-    final em = _hm(e.end);
-    if (sm < 0 || em < 0) return false;
-    bool hit(int start, int end) => start < em && end > sm;
-    for (final o in events) {
-      if (identical(o, e)) continue;
-      final os = _hm(o.start);
-      final oe = _hm(o.end);
-      if (os >= 0 && oe >= 0 && hit(os, oe)) return true;
-    }
-    for (final c in courses) {
-      final cs = _hm(TimetableStore.slotStarts[c.slotStart.clamp(0, 10)]);
-      final ce = _hm(TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)]);
-      if (hit(cs, ce)) return true;
-    }
-    return false;
-  }
-
-  static int _hm(String s) {
-    final p = s.split(':');
-    if (p.length != 2) return -1;
-    return (int.tryParse(p[0]) ?? -1) * 60 + (int.tryParse(p[1]) ?? -1);
-  }
-
-  Widget _detailRow(String k, String v) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 72,
-              child: Text(k, style: TextStyle(color: SemColors.textSecondary)),
-            ),
-            Expanded(child: Text(v)),
-          ],
-        ),
-      );
-
-  /// 与网站一致：课名哈希 → 5 色相（蓝紫/青绿/橙/绿/粉），16% 透明度底色。
-  static const _hues = [258.0, 174.0, 25.0, 145.0, 335.0];
-
-  Color _courseColor(String name) {
-    var h = 0;
-    for (final ch in name.codeUnits) {
-      h = (h * 31 + ch) % 100000;
-    }
-    final hue = _hues[h % _hues.length];
-    // 深色下提亮提饱和，玻璃底上保持课块色彩辨识度（文字仍为 textPrimary）
-    return SemColors.isDark
-        ? HSLColor.fromAHSL(0.30, hue, 0.55, 0.68).toColor()
-        : HSLColor.fromAHSL(0.16, hue, 0.70, 0.58).toColor();
   }
 }

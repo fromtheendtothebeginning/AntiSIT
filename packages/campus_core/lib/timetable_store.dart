@@ -5,30 +5,34 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
-import 'json_num.dart';
 import 'app_state.dart';
+import 'json_num.dart';
 import 'plugins/course_cloud_capability.dart';
 import 'plugins/home_widget_capability.dart';
 import 'plugins/plugin.dart';
 import 'plugins/registry.dart';
 import 'plugins/reminder_capability.dart';
+import 'timetable_models.dart';
+import 'timetable_schedule.dart';
 
-/// 本地课表存储：对齐 anticraft.top 网站课程表的数据模型与算法
-/// （多学期 store、手动课程、调休规则、教务原始周数据、考试日程）。
-/// 数据存本机（SharedPreferences `campus_timetable`）；
-/// 登录后经 GET/PUT /api/timetable 与网站云端互通（updatedAt 最后写入胜）。
+// 课表模型随本文件一并暴露，外部仍可用 `campus_core.dart` 里的 TtCourse 等类型。
+export 'timetable_models.dart';
+
+/// 本地课表存储：多学期课表 + 作息表 + 与网站的云端互通（updatedAt 最后写入胜）。
 class TimetableStore {
   TimetableStore._();
   static final TimetableStore instance = TimetableStore._();
 
   static const _spKey = 'campus_timetable';
 
-  /// 自定义上课时间的存储键（与课表数据分开：云端同步不认这个字段，
-  /// 换设备不覆盖用户在**这台机器**上调的作息）。
+  /// 上一份可用的课表快照（云端整体覆盖前留的底）。主键读不出来时（写盘中断 /
+  /// 脏数据）用它兜底，避免一次坏数据就让课表变空、进而被回推云端。
+  static const _spBackupKey = 'campus_timetable_backup';
+
+  /// 自定义上课时间的存储键：云端不认这个字段，换设备不覆盖本机作息。
   static const _slotTimesKey = 'campus_slot_times';
 
-  /// 默认的 11 节上课 / 下课时刻（索引 = 节次序号，0 起），与网站一致。
-  /// 用户可以在「课程表设置 → 上课时间」里改成自己学校的作息（见 [setSlotTimes]）。
+  /// 默认的 11 节上课 / 下课时刻（索引 = 节次序号，0 起）。
   static const List<String> defaultSlotStarts = [
     '08:20', '09:10', '10:15', '11:05', '13:00', '13:50', '14:55', '15:45', '18:00', '18:50', '19:40',
   ];
@@ -36,8 +40,7 @@ class TimetableStore {
     '09:05', '09:55', '11:00', '11:50', '13:45', '14:35', '15:40', '16:30', '18:45', '19:35', '20:25',
   ];
 
-  /// 当前生效的 11 节时刻：没改过就是 [defaultSlotStarts] / [defaultSlotEnds]。
-  /// 课表页拿它画节次轴，导出日历拿它算每次课的时刻——必须是同一份表。
+  /// 当前生效的 11 节时刻：课表页、导出日历、上课提醒共用这一份表。
   static List<String> slotStarts = defaultSlotStarts;
   static List<String> slotEnds = defaultSlotEnds;
 
@@ -46,7 +49,6 @@ class TimetableStore {
       !listEquals(slotStarts, defaultSlotStarts) || !listEquals(slotEnds, defaultSlotEnds);
 
   /// 保存自定义的 11 节上课 / 下课时刻（`HH:mm`）；不传 = 恢复默认。
-  /// 课表页与导出日历下次读取就是新表，上课提醒也按新课表重排。
   static Future<void> setSlotTimes({List<String>? starts, List<String>? ends}) async {
     final sp = await SharedPreferences.getInstance();
     if (starts == null || ends == null) {
@@ -61,7 +63,7 @@ class TimetableStore {
     _rescheduleReminder();
   }
 
-  /// 读自定义时刻：缺省 / 坏数据 / 长度不是 11 节，一律回默认（不让脏数据把课表带崩）。
+  /// 读自定义时刻：缺省 / 坏数据 / 长度不是 11 节，一律回默认。
   static void _loadSlotTimes(SharedPreferences sp) {
     final raw = sp.getString(_slotTimesKey);
     if (raw == null) {
@@ -91,12 +93,10 @@ class TimetableStore {
   int updatedAt = 0;
   String? _nj;
 
-  /// 是否已经从本机读过一次课表。
-  /// 启动早期插件初始化会先跑（那时 store 还是空的），流体云不能拿空课表去清掉
-  /// 上一次排好的原生闹钟；[load] 完成（无论有没有课）后才是可信的空。
+  /// 是否已经从本机读过一次课表（load 前不可信，插件别拿空课表去清原生排期）。
   bool loaded = false;
 
-  /// 学期显示名：基于入学年 nj 换算「大一上~大四下」（与网站 semesterLabel 一致）。
+  /// 学期显示名：基于入学年换算「大一上~大四下」。
   String? semesterLabel(String key) {
     final nj = int.tryParse(_nj ?? '');
     if (nj == null || _nj!.length != 4) return null;
@@ -127,33 +127,82 @@ class TimetableStore {
     loaded = false;
   }
 
+  /// 从本机读课表（首次运行时顺带迁移旧版周缓存），完成后重排提醒。
+  ///
+  /// 本机数据坏了（写盘中断 / 旧版本格式变更）不能让启动卡死：主键解析失败就退回
+  /// 上一次的快照，快照也没有才当空课表——**绝不把空课表当成真实数据写回**。
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
     _loadSlotTimes(sp);
     final raw = sp.getString(_spKey);
+    var ok = false;
+    var repaired = false;
     if (raw != null) {
-      _adoptJson(jsonDecode(raw));
+      ok = _tryAdoptJson(raw, source: '本机');
+      if (!ok) {
+        final backup = sp.getString(_spBackupKey);
+        if (backup != null) {
+          ok = _tryAdoptJson(backup, source: '本机快照');
+          repaired = ok;
+        }
+      }
     } else {
       await _migrateLegacyCache(sp);
     }
-    // 课表到位后重排提醒。
-    // 启动早期提醒服务会先跑一遍（那时 store 还是空的，会主动跳过不排），
-    // 只有在这里补一发，用户「不刷新课表的那次启动」才不会丢提醒。
+    // 用快照救回来以后立刻把主键写回正常内容，免得每次冷启动都走一遍回退。
+    if (repaired) {
+      await sp.setString(_spKey, jsonEncode(toJson()));
+      debugPrint('[课表] 本机课表已损坏，已用上一次的快照恢复');
+    }
+    // 启动早期提醒服务会先跑一遍（那时 store 还是空的，会主动跳过），这里补一发。
     loaded = true;
     _rescheduleReminder();
-    debugPrint('[课表] 载入完成 → 重排上课提醒');
+    debugPrint('[课表] 载入完成 → 重排上课提醒${ok || raw == null ? '' : '（本机数据已损坏，本次为空课表）'}');
   }
 
-  void _adoptJson(dynamic decoded) {
+  /// 把落盘的 JSON 字符串采纳进内存；解析或结构不对时返回 false，不动现有内存状态。
+  bool _tryAdoptJson(String raw, {String source = ''}) {
+    try {
+      return _adoptJson(jsonDecode(raw));
+    } catch (e) {
+      debugPrint('[课表] $source课表解析失败，已忽略：$e');
+      return false;
+    }
+  }
+
+  /// 采纳课表 JSON：**先在临时变量里完整解析，全部成功才赋值**。
+  ///
+  /// 返回 false = 数据结构不符（被调用方当作「没读到」处理）。旧实现边解析边写字段、
+  /// 异常被吞掉，云端一份脏数据就能把本地课表换成空表并落盘，属于会丢数据的行为。
+  bool _adoptJson(dynamic decoded) {
     try {
       final m = decoded as Map<String, dynamic>;
-      _nj = m['nj'] as String?;
-      active = '${m['active'] ?? ''}';
-      updatedAt = asInt(m['updatedAt']) ?? 0;
+      final nj = m['nj'] as String?;
+      final active = '${m['active'] ?? ''}';
+      final updatedAt = _saneUpdatedAt(asInt(m['updatedAt']) ?? 0);
       final sems = (m['semesters'] as Map<String, dynamic>?) ?? {};
-      semesters =
-          sems.map((k, v) => MapEntry(k, SemesterTt.fromJson(v as Map<String, dynamic>)));
-    } catch (_) {}
+      final parsed = sems.map(
+          (k, v) => MapEntry(k, SemesterTt.fromJson(v as Map<String, dynamic>)));
+      _nj = nj;
+      this.active = active;
+      this.updatedAt = updatedAt;
+      semesters = parsed;
+      return true;
+    } catch (e) {
+      debugPrint('[课表] 课表数据格式不符，已忽略：$e');
+      return false;
+    }
+  }
+
+  /// 时钟明显不对时的时间戳（设备时间被调到未来再调回来，或数据损坏）会把同步锁死：
+  /// 本机时间戳永远「更新」，别的设备怎么改都推不进来。超出当前时间 1 天的按 0 处理。
+  static int _saneUpdatedAt(int v) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (v > now + const Duration(days: 1).inMilliseconds) {
+      debugPrint('[课表] 云端/本机 updatedAt 明显超前（$v），按 0 处理以免同步被锁死');
+      return 0;
+    }
+    return v;
   }
 
   Map<String, dynamic> toJson() => {
@@ -195,14 +244,21 @@ class TimetableStore {
   Future<void> persist({bool touch = true}) async {
     if (touch) updatedAt = DateTime.now().millisecondsSinceEpoch;
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_spKey, jsonEncode(toJson()));
+    final json = jsonEncode(toJson());
+    // 覆盖前把上一版**可解析**的内容留成快照：主键写坏时 load 还能退回上一次的课表。
+    final prev = sp.getString(_spKey);
+    if (prev != null && prev != json) {
+      try {
+        jsonDecode(prev);
+        await sp.setString(_spBackupKey, prev);
+      } catch (_) {}
+    }
+    await sp.setString(_spKey, json);
     // 课表变了，上课提醒随之重排（排期是幂等覆盖，未开启时不做事）
     _rescheduleReminder();
   }
 
-  /// 重排上课提醒：提醒能力由「上课提醒」插件提供——core 只按 id 取能力，
-  /// 不 import 那个包；没装 / 被停用时取不到，就当没有提醒这回事（课表照常用）。
-  /// 顺手让「流体云课程通知」按新课表重排（它自己会判断当前是不是流体云模式）。
+  /// 按 id 取提醒 / 课程通知 / 桌面卡片能力，插件没装或停用时取不到就跳过。
   static void _rescheduleReminder() {
     final reminder = PluginRegistry.I.capability<ReminderCapability>(PluginIds.reminder);
     if (reminder != null) unawaited(reminder.reschedule());
@@ -221,7 +277,7 @@ class TimetableStore {
           '${now.minute.toString().padLeft(2, '0')}';
       final upcoming = [for (final c in courses) if (c.end.compareTo(nowHHmm) > 0) c];
       await widget.syncTimetable(
-        day: iso(now),
+        day: ttIso(now),
         date: '${now.month}月${now.day}日 周${'一二三四五六日'[now.weekday - 1]}',
         courses: courses,
         next: upcoming.isEmpty ? null : upcoming.first,
@@ -231,18 +287,17 @@ class TimetableStore {
     }
   }
 
-  /// 今天的课（桌面课表卡片用）：调休换算后的实际星期几、单双周、节次起止
-  /// 都按当前作息（[slotStarts] / [slotEnds]）算；同一天多学期重复的课去重。
+  /// 今天的课（桌面课表卡片用）：调休换算后的星期、单双周、节次起止都按当前作息算。
   static List<HomeWidgetCourse> todayCourses({DateTime? now}) {
     final t = now ?? DateTime.now();
     final dayIndex = t.weekday - 1;
     final starts = slotStarts;
     final ends = slotEnds;
     if (starts.isEmpty || ends.isEmpty) return const [];
-    final todayIso = iso(DateTime(t.year, t.month, t.day));
+    final todayIso = ttIso(DateTime(t.year, t.month, t.day));
     final out = <HomeWidgetCourse>[];
     for (final tt in instance.semesters.values) {
-      final week = _weekOf(tt.startDate, tt.weekCount, t);
+      final week = ttWeekOf(tt.startDate, tt.weekCount, t);
       if (week == null) continue;
       var eff = dayIndex;
       for (final a in tt.adjustments) {
@@ -250,7 +305,7 @@ class TimetableStore {
         eff = a.type == 'off' ? -1 : a.day;
       }
       if (eff < 0) continue;
-      final courses = deriveImported(tt).followedBy(tt.courses);
+      final courses = ttDeriveImported(tt).followedBy(tt.courses);
       for (final c in courses) {
         if (c.name.trim().isEmpty || c.day != eff) continue;
         if (week < c.weekStart || week > c.weekEnd) continue;
@@ -273,31 +328,34 @@ class TimetableStore {
     ]..sort((a, b) => a.start.compareTo(b.start));
   }
 
-  /// [now] 所在周（[startDate] 为第 1 周周一）；不在学期内返回 null。
-  static int? _weekOf(String startDate, int weekCount, DateTime now) {
-    final start = DateTime.tryParse(startDate);
-    if (start == null || start.year <= 1970 || weekCount <= 0) return null;
-    final s0 = DateTime(start.year, start.month, start.day);
-    final n0 = DateTime(now.year, now.month, now.day);
-    final week = n0.difference(s0).inDays ~/ 7 + 1;
-    if (week < 1 || week > weekCount) return null;
-    return week;
-  }
-
   /// 本地写入 + 登录状态下回推云端（网站同款 PUT /api/timetable {data}）。
   Future<void> save() async {
     await persist();
     _pushCloud();
   }
 
+  /// 云端回推串行队列：连续两次 save 会发两次 PUT，若不排队，先发的可能后到，
+  /// 服务端按「后到者胜」存下来就会把新数据覆盖成旧数据。
+  Future<void> _pushQueue = Future.value();
+
   void _pushCloud() {
     if (!AppState.I.loggedIn || AppState.I.demo || AppState.I.direct) return;
     final data = toJson();
-    ApiClient.I.timetableCloudPut(data).catchError((_) {});
+    _pushQueue = _pushQueue.then((_) async {
+      try {
+        await ApiClient.I.timetableCloudPut(data);
+      } catch (_) {
+        // 回推失败不影响本地：下次 save / 下次登录会再推一次
+      }
+    });
   }
 
   /// 登录后拉云端合并：云端较新则整体采纳（返回 true），本地较新则回推。
   /// 直连模式没有云端课表（数据源是学校教务 + 本机存储）。
+  ///
+  /// 云端的 `data` 必须先完整解析成功才动手：解析失败当作「这次没同步」，
+  /// 既不清内存也不落盘——旧实现先 `semesters = {}` 再吞掉解析异常，
+  /// 一份脏数据就会把本地课表换成空表写盘，还会在下次回推时污染云端。
   Future<bool> syncCloud() async {
     if (!AppState.I.loggedIn || AppState.I.demo || AppState.I.direct) return false;
     try {
@@ -307,71 +365,55 @@ class TimetableStore {
         _pushCloud(); // 云端还没有数据：把本地推上去
         return false;
       }
-      final cloudAt = asInt(data['updatedAt']) ?? 0;
+      final cloudAt = _saneUpdatedAt(asInt(data['updatedAt']) ?? 0);
       if (cloudAt > updatedAt) {
-        semesters = {};
-        _adoptJson(data);
+        if (!_adoptJson(data)) return false; // 云端结构不对：保持本地原样
         await persist(touch: false);
         return true;
       }
-      if (updatedAt > cloudAt) _pushCloud();
+      if (updatedAt > cloudAt) {
+        _pushCloud();
+      } else if (updatedAt == cloudAt && semesters.isNotEmpty) {
+        // 时间戳相同不代表内容相同（两台设备同一毫秒各存一次）：内容有差异时
+        // 以本机为准回推一次，否则两边会永远各持己见、谁也发现不了分叉。
+        if (_canonicalJson(toJson()) != _canonicalJson(data)) {
+          debugPrint('[课表] 云端与本机 updatedAt 相同但内容不同，以本机为准回推');
+          _pushCloud();
+        }
+      }
     } catch (_) {}
     return false;
   }
 
-  /// 教务导入成功响应里的年级（用于学期命名），与网站 store.nj 一致。
+  /// 规范化 JSON（对象键递归排序）：只比较内容，不受键顺序 / 数字写法影响。
+  static String _canonicalJson(dynamic v) {
+    if (v is Map) {
+      final keys = v.keys.map((k) => '$k').toList()..sort();
+      return '{${keys.map((k) => '${jsonEncode(k)}:${_canonicalJson(v[k])}').join(',')}}';
+    }
+    if (v is List) return '[${v.map(_canonicalJson).join(',')}]';
+    return jsonEncode(v);
+  }
+
+  /// 教务导入成功响应里的年级（用于学期命名）。
   String? get nj => _nj;
   set nj(String? v) {
     _nj = v;
     persist();
   }
 
-  // ── 学期推算（与网站 semesterKeyOf / locateToday 一致）──
+  // ── 学期换算 / 课程推导：实现见 timetable_schedule.dart ──
 
-  static String semesterKeyOf(DateTime? start) {
-    if (start == null) return 'default';
-    final y = start.year;
-    return switch (start.month) {
-      >= 9 && <= 12 => '$y-3',
-      1 => '${y - 1}-3',
-      >= 2 && <= 6 => '${y - 1}-12',
-      _ => '${y - 1}-16',
-    };
-  }
+  static String semesterKeyOf(DateTime? start) => ttSemesterKeyOf(start);
 
-  /// 今天落在第几周（1 起），学期外或无起点返回 null。
-  static int? locateToday(String? startDate, int weekCount) {
-    final start = DateTime.tryParse(startDate ?? '');
-    if (start == null || start.year <= 1970) return null;
-    final s0 = DateTime(start.year, start.month, start.day);
-    final now = DateTime.now();
-    final n0 = DateTime(now.year, now.month, now.day);
-    final totalDays = n0.difference(s0).inDays;
-    final week = totalDays ~/ 7 + 1;
-    if (week < 1 || week > weekCount) return null;
-    return week;
-  }
+  static int? locateToday(String? startDate, int weekCount) =>
+      ttLocateToday(startDate, weekCount);
 
-  static int todayDayIndex() => DateTime.now().weekday - 1; // 0=周一
+  static int todayDayIndex() => ttTodayDayIndex();
 
-  /// 下课时刻是否已过（课表页「已上过的课置灰」依据；网站 lessonPassed 同款）。
-  /// [colISO] 是**纯日期**（yyyy-MM-dd）——直接 parse 出来是当天 00:00，
-  /// 必须把 hh:mm 拼上去再比，否则永远判成「还没下课」（曾因此整周全不置灰）。
-  static bool lessonPassed(String colISO, String endHHmm, {DateTime? now}) {
-    final day = DateTime.tryParse(colISO);
-    if (day == null) return false;
-    final parts = endHHmm.split(':');
-    if (parts.length != 2) return false;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null) return false;
-    return DateTime(day.year, day.month, day.day, h, m).isBefore(now ?? DateTime.now());
-  }
+  static bool lessonPassed(String colISO, String endHHmm, {DateTime? now}) =>
+      ttLessonPassed(colISO, endHHmm, now: now);
 
-  /// 某周某天「还没上完」的课，按上课时刻升序——课表顶部「今天最近一节课」用：
-  /// 已下课的不再返回（上完就从卡片上消失），第一门即最近的一节。
-  /// [endTimes] 是 11 节的下课时刻表（与课表页同一份），传入避免重复定义。
-  /// [startDate] 为空（未设置学期起点）时无从判断日期，原样返回。
   static List<TtCourse> upcomingOn(
     List<TtCourse> courses, {
     required String startDate,
@@ -379,19 +421,10 @@ class TimetableStore {
     required int dayIndex,
     required List<String> endTimes,
     DateTime? now,
-  }) {
-    if (startDate.isEmpty) return List.of(courses);
-    final t = now ?? DateTime.now();
-    final colISO = iso(dateOfWeekDay(startDate, week, dayIndex));
-    return courses
-        .where((c) => !lessonPassed(colISO, endTimes[c.slotEnd.clamp(0, endTimes.length - 1)],
-            now: t))
-        .toList()
-      ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
-  }
+  }) =>
+      ttUpcomingOn(courses,
+          startDate: startDate, week: week, dayIndex: dayIndex, endTimes: endTimes, now: now);
 
-  /// 某周某天「已经上完」的课，按上课时刻升序——顶部卡片里这些课淡显（透明度降低）。
-  /// 与 [upcomingOn] 互补：两者合起来就是当天全部课。
   static List<TtCourse> pastOn(
     List<TtCourse> courses, {
     required String startDate,
@@ -399,376 +432,34 @@ class TimetableStore {
     required int dayIndex,
     required List<String> endTimes,
     DateTime? now,
-  }) {
-    if (startDate.isEmpty) return const [];
-    final t = now ?? DateTime.now();
-    final colISO = iso(dateOfWeekDay(startDate, week, dayIndex));
-    return courses
-        .where((c) => lessonPassed(colISO, endTimes[c.slotEnd.clamp(0, endTimes.length - 1)],
-            now: t))
-        .toList()
-      ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
-  }
+  }) =>
+      ttPastOn(courses,
+          startDate: startDate, week: week, dayIndex: dayIndex, endTimes: endTimes, now: now);
 
-  static DateTime dateOfWeekDay(String startDate, int week, int dayIndex) {
-    final start = DateTime.tryParse(startDate)!;
-    return DateTime(start.year, start.month, start.day)
-        .add(Duration(days: (week - 1) * 7 + dayIndex));
-  }
+  static DateTime dateOfWeekDay(String startDate, int week, int dayIndex) =>
+      ttDateOfWeekDay(startDate, week, dayIndex);
 
-  static String iso(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  static String iso(DateTime d) => ttIso(d);
 
-  // ── 课程 ──
+  static bool coversWeek(TtCourse c, int zs) => ttCoversWeek(c, zs);
 
-  /// 课程是否覆盖某周（weekType: all/odd/even）。
-  static bool coversWeek(TtCourse c, int zs) {
-    if (zs < c.weekStart || zs > c.weekEnd) return false;
-    return switch (c.weekType) {
-      'odd' => zs.isOdd,
-      'even' => zs.isEven,
-      _ => true,
-    };
-  }
+  static List<TtCourse> deriveImported(SemesterTt tt) => ttDeriveImported(tt);
 
-  /// 教务导入课程：从原始周数据推导（合并键刻意不含 code/clazz），id 形如 `jw-<n>`。
-  static List<TtCourse> deriveImported(SemesterTt tt) {
-    final byKey = <String, List<int>>{};
-    final meta = <String, TtCourse>{};
-    final weekKeys = tt.jwxtWeeks.keys.map(int.parse).toList()..sort();
-    for (final zs in weekKeys) {
-      for (final o in tt.jwxtWeeks[zs.toString()] ?? const <TtCourse>[]) {
-        final key = '${o.name}|${o.place}|${o.teachers}|${o.day}|${o.slotStart}|${o.slotEnd}';
-        byKey.putIfAbsent(key, () => []).add(zs);
-        final existing = meta[key];
-        // code 取首个非 32 位 GUID 的值（同网站 GUID_RE 规则）
-        if (existing == null || (_isGuid(existing.code) && !_isGuid(o.code))) {
-          meta[key] = o;
-        }
-      }
-    }
-    final out = <TtCourse>[];
-    var n = 0;
-    for (final e in byKey.entries) {
-      final zsList = (e.value.toSet().toList()..sort());
-      for (final seg in _splitWeekRuns(zsList)) {
-        final m = meta[e.key]!;
-        out.add(TtCourse(
-          id: 'jw-${n++}',
-          name: m.name,
-          place: m.place,
-          teachers: m.teachers,
-          day: m.day,
-          slotStart: m.slotStart,
-          slotEnd: m.slotEnd,
-          weekType: seg.$1,
-          weekStart: seg.$2,
-          weekEnd: seg.$3,
-          code: m.code,
-          clazz: m.clazz,
-        ));
-      }
-    }
-    out.sort((a, b) => (a.day * 10 + a.slotStart).compareTo(b.day * 10 + b.slotStart));
-    return out;
-  }
+  static void removeImportedSegment(SemesterTt tt, TtCourse c) =>
+      ttRemoveImportedSegment(tt, c);
 
-  static final RegExp _guidRe = RegExp(r'^[0-9A-Fa-f]{32}$');
-  static bool _isGuid(String s) => _guidRe.hasMatch(s);
+  static void removeImportedOccurrence(SemesterTt tt, TtCourse item,
+          {required bool all, int week = 0}) =>
+      ttRemoveImportedOccurrence(tt, item, all: all, week: week);
 
-  /// 周号集合 → 连续段（相邻差 2 且同奇偶合并；段长 ≥2 全同奇偶 → odd/even）。
-  static List<(String, int, int)> _splitWeekRuns(List<int> zsList) {
-    final runs = <List<int>>[];
-    for (final zs in zsList) {
-      if (runs.isNotEmpty && zs - runs.last.last == 1) {
-        runs.last.add(zs);
-      } else {
-        runs.add([zs]);
-      }
-    }
-    // 间隔 2 且同奇偶的相邻段合并（如 6,8 → 双周 6-8）。
-    // 待并入的段本身也必须是单奇偶；否则合并成「all」后会把中间缺席的周也画出来
-    //（如 5,7,9,10,11 → all 5-11，让同一门课的另一个上课地点在 6、8 周重叠显示）
-    final merged = <List<int>>[];
-    for (final r in runs) {
-      if (merged.isNotEmpty &&
-          r.first - merged.last.last == 2 &&
-          merged.last.every((w) => w.isOdd == r.first.isOdd) &&
-          r.every((w) => w.isOdd == r.first.isOdd)) {
-        merged.last.addAll(r);
-      } else {
-        merged.add(r);
-      }
-    }
-    return merged.map((r) {
-      final sameParity = r.length >= 2 && r.every((w) => w.isOdd == r.first.isOdd);
-      final type = r.length == 1 ? 'all' : (sameParity ? (r.first.isOdd ? 'odd' : 'even') : 'all');
-      return (type, r.first, r.last);
-    }).toList();
-  }
+  static List<TtAdjust> mergeAdjustments(List<TtAdjust> prev, List<TtAdjust> entries) =>
+      ttMergeAdjustments(prev, entries);
 
-  static String _occKey(TtCourse c) =>
-      '${c.name}|${c.place}|${c.teachers}|${c.day}|${c.slotStart}|${c.slotEnd}';
+  static List<DateTime> expandDateRange(String start, String? end) =>
+      ttExpandDateRange(start, end);
 
-  static bool _sameParity(String weekType, int zs) => switch (weekType) {
-        'odd' => zs.isOdd,
-        'even' => zs.isEven,
-        _ => true,
-      };
+  static int addExamEvents(SemesterTt tt, List<Map<String, dynamic>> exams) =>
+      ttAddExamEvents(tt, exams);
 
-  /// 编辑教务课程 → 转手动：从原始周数据删除该课程覆盖的周次内的同键场次。
-  static void removeImportedSegment(SemesterTt tt, TtCourse c) {
-    for (var zs = c.weekStart; zs <= c.weekEnd; zs++) {
-      if (!_sameParity(c.weekType, zs)) continue;
-      final list = tt.jwxtWeeks['$zs'];
-      list?.removeWhere((o) => _occKey(o) == _occKey(c));
-      if (list != null && list.isEmpty) tt.jwxtWeeks.remove('$zs');
-    }
-  }
-
-  /// 删除教务课程：scope='week' 只删某周，scope='all' 删所有周同名场次。
-  static void removeImportedOccurrence(SemesterTt tt, TtCourse item, {required bool all, int week = 0}) {
-    tt.jwxtWeeks.forEach((zs, list) {
-      if (!all && int.parse(zs) != week) return;
-      list.removeWhere((o) => all ? o.name == item.name : _occKey(o) == _occKey(item));
-    });
-    tt.jwxtWeeks.removeWhere((_, list) => list.isEmpty);
-  }
-
-  // ── 调休规则 ──
-
-  /// 新条目按 date 覆盖旧条目，整体按日期升序。
-  static List<TtAdjust> mergeAdjustments(List<TtAdjust> prev, List<TtAdjust> entries) {
-    final dates = entries.map((e) => e.date).toSet();
-    final kept = prev.where((a) => !dates.contains(a.date)).toList();
-    return [...kept, ...entries]..sort((a, b) => a.date.compareTo(b.date));
-  }
-
-  /// 日期区间展开（含两端，上限 42 天）。
-  static List<DateTime> expandDateRange(String start, String? end) {
-    final s = DateTime.tryParse(start);
-    if (s == null) return const [];
-    if (end == null || end.isEmpty) return [s];
-    final e = DateTime.tryParse(end);
-    if (e == null || e.isBefore(s)) return [s];
-    final days = e.difference(s).inDays;
-    return [for (var i = 0; i <= days && i < 42; i++) s.add(Duration(days: i))];
-  }
-
-  // ── 考试 → 日程 ──
-
-  /// 返回实际新增条数。只收学期范围内（startDate..+weekCount*7），键去重。
-  static int addExamEvents(SemesterTt tt, List<Map<String, dynamic>> exams) {
-    final start = DateTime.tryParse(tt.startDate);
-    final end = start?.add(Duration(days: tt.weekCount * 7));
-    final keys = tt.events.map((e) => '${e.date}|${e.name}|${e.start}|${e.end}').toSet();
-    var added = 0;
-    for (final ex in exams) {
-      final date = '${ex['date'] ?? ''}';
-      if (date.isEmpty) continue;
-      final d = DateTime.tryParse(date);
-      if (start != null && end != null && d != null && (d.isBefore(start) || !d.isBefore(end))) {
-        continue;
-      }
-      final key = '$date|${ex['name']}|${ex['start']}|${ex['end']}';
-      if (keys.contains(key)) continue;
-      keys.add(key);
-      final seat = '${ex['seat'] ?? ''}';
-      tt.events.add(TtEvent(
-        id: genId(),
-        kind: 'exam',
-        name: '${ex['name'] ?? ''}',
-        place: '${ex['place'] ?? ''}',
-        date: date,
-        day: (d?.weekday ?? 1) - 1,
-        start: '${ex['start'] ?? ''}',
-        end: '${ex['end'] ?? ''}',
-        seat: seat,
-        note: ['${ex['ksmc'] ?? ''}', if (seat.isNotEmpty) '座位 $seat'].where((s) => s.isNotEmpty).join(' · '),
-      ));
-      added++;
-    }
-    return added;
-  }
-
-  static String genId() =>
-      DateTime.now().millisecondsSinceEpoch.toRadixString(36) +
-      (DateTime.now().microsecondsSinceEpoch % 920000).toRadixString(36).padLeft(4, '0');
-}
-
-// ── 数据模型（JSON 字段名与网站 store 一致，便于未来云同步互通）──
-
-class TtCourse {
-  TtCourse({
-    required this.id,
-    required this.name,
-    required this.day,
-    required this.slotStart,
-    required this.slotEnd,
-    required this.weekType,
-    required this.weekStart,
-    required this.weekEnd,
-    this.place = '',
-    this.teachers = '',
-    this.code = '',
-    this.clazz = '',
-  });
-
-  String id;
-  String name;
-  String place;
-  String teachers;
-  int day; // 0=周一
-  int slotStart; // 大节下标 0-4（0 起，含）
-  int slotEnd;
-  String weekType; // all / odd / even
-  int weekStart; // 1 起
-  int weekEnd; // 含
-  String code;
-  String clazz;
-
-  factory TtCourse.fromJson(Map<String, dynamic> j) => TtCourse(
-        id: '${j['id'] ?? ''}',
-        name: '${j['name'] ?? ''}',
-        place: '${j['place'] ?? ''}',
-        teachers: '${j['teachers'] ?? ''}',
-        day: asInt(j['day']) ?? 0,
-        slotStart: asInt(j['slotStart']) ?? 0,
-        slotEnd: asInt(j['slotEnd']) ?? 0,
-        weekType: '${j['weekType'] ?? 'all'}',
-        weekStart: asInt(j['weekStart']) ?? 1,
-        weekEnd: asInt(j['weekEnd']) ?? 1,
-        code: '${j['code'] ?? ''}',
-        clazz: '${j['clazz'] ?? ''}',
-      );
-
-  Map<String, dynamic> toJson() => {
-        'id': id, 'name': name, 'place': place, 'teachers': teachers,
-        'day': day, 'slotStart': slotStart, 'slotEnd': slotEnd,
-        'weekType': weekType, 'weekStart': weekStart, 'weekEnd': weekEnd,
-        'code': code, 'clazz': clazz,
-      };
-}
-
-class TtEvent {
-  TtEvent({
-    required this.id,
-    required this.name,
-    required this.date,
-    required this.start,
-    required this.end,
-    this.day = 0,
-    this.place = '',
-    this.seat = '',
-    this.note = '',
-    this.kind = '',
-  });
-
-  String id;
-  String name;
-  String place;
-  String date; // YYYY-MM-DD；空 = 按星期每周重复
-  int day; // 0=周一（date 为空时用于重复匹配）
-  String start; // HH:MM
-  String end;
-  String seat;
-  String note;
-  String kind; // 'exam' 或空
-
-  factory TtEvent.fromJson(Map<String, dynamic> j) => TtEvent(
-        id: '${j['id'] ?? ''}',
-        name: '${j['name'] ?? ''}',
-        place: '${j['place'] ?? ''}',
-        date: '${j['date'] ?? ''}',
-        day: asInt(j['day']) ?? 0,
-        start: '${j['start'] ?? ''}',
-        end: '${j['end'] ?? ''}',
-        seat: '${j['seat'] ?? ''}',
-        note: '${j['note'] ?? ''}',
-        kind: '${j['kind'] ?? ''}',
-      );
-
-  Map<String, dynamic> toJson() => {
-        'id': id, 'name': name, 'place': place, 'date': date, 'day': day,
-        'start': start, 'end': end, 'seat': seat, 'note': note,
-        if (kind.isNotEmpty) 'kind': kind,
-      };
-}
-
-class TtAdjust {
-  TtAdjust({required this.date, required this.type, this.day = 0});
-
-  String date; // YYYY-MM-DD，主键
-  String type; // off=放假 / follow=按周 X 上课
-  int day; // 仅 follow：0=周一
-
-  factory TtAdjust.fromJson(Map<String, dynamic> j) => TtAdjust(
-        date: '${j['date'] ?? ''}',
-        type: '${j['type'] ?? 'off'}',
-        day: asInt(j['day']) ?? 0,
-      );
-
-  Map<String, dynamic> toJson() =>
-      type == 'follow' ? {'date': date, 'type': type, 'day': day} : {'date': date, 'type': type};
-}
-
-class SemesterTt {
-  SemesterTt({
-    this.name = '',
-    this.startDate = '',
-    this.weekCount = 20,
-    List<TtCourse>? courses,
-    List<TtEvent>? events,
-    List<TtAdjust>? adjustments,
-    Map<String, List<TtCourse>>? jwxtWeeks,
-  })  : courses = courses ?? [],
-        events = events ?? [],
-        adjustments = adjustments ?? [],
-        jwxtWeeks = jwxtWeeks ?? {};
-
-  String name;
-  String startDate; // 恒为「第 1 周周一」
-  int weekCount; // 1-40
-  List<TtCourse> courses; // 手动课程
-  List<TtEvent> events;
-  List<TtAdjust> adjustments;
-  Map<String, List<TtCourse>> jwxtWeeks; // 教务原始周数据，键为字符串周号
-
-  factory SemesterTt.fromJson(Map<String, dynamic> j) => SemesterTt(
-        name: '${j['name'] ?? ''}',
-        startDate: '${j['startDate'] ?? ''}',
-        weekCount: asInt(j['weekCount']) ?? 20,
-        courses: ((j['courses'] as List?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .map(TtCourse.fromJson)
-            .toList(),
-        events: ((j['events'] as List?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .map(TtEvent.fromJson)
-            .toList(),
-        adjustments: ((j['adjustments'] as List?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .map(TtAdjust.fromJson)
-            .toList(),
-        jwxtWeeks: (((j['jwxt'] as Map<String, dynamic>?)?['weeks']
-                    as Map<String, dynamic>?) ??
-                {})
-            .map((k, v) => MapEntry(
-                k,
-                ((v as List?) ?? const [])
-                    .whereType<Map<String, dynamic>>()
-                    .map(TtCourse.fromJson)
-                    .toList())),
-      );
-
-  Map<String, dynamic> toJson() => {
-        'version': 1,
-        'name': name,
-        'startDate': startDate,
-        'weekCount': weekCount,
-        'courses': courses.map((c) => c.toJson()).toList(),
-        'events': events.map((e) => e.toJson()).toList(),
-        'adjustments': adjustments.map((a) => a.toJson()).toList(),
-        'jwxt': {'weeks': jwxtWeeks.map((k, v) => MapEntry(k, v.map((c) => c.toJson()).toList()))},
-      };
+  static String genId() => ttGenId();
 }

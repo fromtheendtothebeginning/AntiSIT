@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 需求：连接设置里滑块下方的界面也随滑块切换，且整页可以左右滑动切模式（与主界面同一套）。
-/// 两套设置并排放在一个 Stack 里跟着连续位置滑动，所以这里按**横向位置**判断谁在屏幕里。
+/// 连接设置里滑块下方的界面随滑块切换，整页也可左右滑动切模式；两套设置并排在 Stack 里，按横向位置判断谁在屏幕里。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -29,46 +28,50 @@ void main() {
   // 直连区的标记用警告条 Finder（两张卡都默认收起，内容不在树里；警告条始终在场）
   double leftOf(WidgetTester tester, Finder f) => tester.getTopLeft(f).dx;
 
-  Finder directMarker() => find.textContaining('直连模式不走服务器');
+  // 另一套设置滑出屏幕后会被 Offstage 隐藏（避免它的卡片投影渗回可见区），
+  // 查位置必须带 skipOffstage: false，否则「屏外」的断言直接找不到 widget。
+  Finder directMarker() =>
+      find.textContaining('直连模式不走服务器', skipOffstage: false);
+  Finder serverMarker() => find.text('服务器地址', skipOffstage: false);
 
   testWidgets('初始：服务器那套在屏幕内，另一套在右侧屏幕外', (tester) async {
     final w = await pumpPage(tester);
-    final rest = leftOf(tester, find.text('服务器地址'));
+    final rest = leftOf(tester, serverMarker());
     expect(rest, lessThan(80), reason: '当前是服务器模式，它这套就在屏幕里');
     expect(leftOf(tester, directMarker()), greaterThan(w), reason: '直连那套先在屏幕外右侧等着');
   });
 
   testWidgets('页面区域往左拖：下方两套跟着滑动，松手停在直连那套', (tester) async {
     final w = await pumpPage(tester);
-    final rest = leftOf(tester, find.text('服务器地址')); // 卡片内边距，作为「在屏幕里」的基准
+    final rest = leftOf(tester, serverMarker()); // 卡片内边距，作为「在屏幕里」的基准
 
-    final g = await tester.startGesture(Offset(w * 0.85, 200));
+    final g = await tester.startGesture(Offset(w * 0.85, 430));
     for (var i = 0; i < 5; i++) {
       await g.moveBy(Offset(-w * 0.15, 0)); // 分步拖过半屏（一步到位的话识别器吃不到足量位移）
       await tester.pump();
     }
     // 拖到一半多：直连那套已经滑进屏幕（不是等松手才瞬切）
     expect(leftOf(tester, directMarker()), lessThan(w * 0.6), reason: '跟着滑块一起滑进来');
-    expect(leftOf(tester, find.text('服务器地址')), lessThan(rest - w * 0.1), reason: '原来那套往左滑了出去');
+    expect(leftOf(tester, serverMarker()), lessThan(rest - w * 0.1), reason: '原来那套往左滑了出去');
 
     await g.up();
     await tester.pumpAndSettle();
     expect(leftOf(tester, directMarker()), closeTo(rest - 3, 2), reason: '松手后停在直连模式那套');
-    expect(leftOf(tester, find.text('服务器地址')), lessThan(-w * 0.9), reason: '服务器那套整块滑出屏幕');
+    expect(leftOf(tester, serverMarker()), lessThan(-w * 0.9), reason: '服务器那套整块滑出屏幕');
   });
 
   testWidgets('关掉「界面实时跟着滑块切换」：拖动中两套设置不动，松手才切', (tester) async {
     AppState.I.followSlider = false;
     addTearDown(() => AppState.I.followSlider = true);
     final w = await pumpPage(tester);
-    final rest = leftOf(tester, find.text('服务器地址'));
+    final rest = leftOf(tester, serverMarker());
 
-    final g = await tester.startGesture(Offset(w * 0.85, 200));
+    final g = await tester.startGesture(Offset(w * 0.85, 430));
     for (var i = 0; i < 5; i++) {
       await g.moveBy(Offset(-w * 0.15, 0));
       await tester.pump();
     }
-    expect(leftOf(tester, find.text('服务器地址')), closeTo(rest, 1), reason: '拖动中不跟着滑');
+    expect(leftOf(tester, serverMarker()), closeTo(rest, 1), reason: '拖动中不跟着滑');
     expect(leftOf(tester, directMarker()), greaterThan(w), reason: '另一套还在屏幕外');
 
     await g.up();
@@ -76,12 +79,45 @@ void main() {
     expect(leftOf(tester, directMarker()), closeTo(rest - 3, 2), reason: '松手后直接切到这套');
   });
 
+  testWidgets('滑动区不自己裁剪：内容能顶到屏幕边缘（同二课活动页）', (tester) async {
+    final w = await pumpPage(tester);
+
+    // 列表左右不留内边距，滑动区才能铺满整屏 —— 裁剪线才会落在屏幕边缘。
+    final listView = tester.widget<ListView>(find.byType(ListView).first);
+    final pad = listView.padding! as EdgeInsets;
+    expect(pad.left, 0, reason: '左边距 0，卡片滑动时能贴到屏幕边缘');
+    expect(pad.right, 0, reason: '右边距 0，同上');
+    expect(w, greaterThan(0));
+
+    // 滑动区内部不能再有比屏幕窄的裁剪层：那说明页面自己裁了一刀，裁剪线落在
+    // 内边距内沿，拖动时卡片会在离屏幕边 12px 处被竖直切一刀（「切边」）。
+    final g = await tester.startGesture(Offset(w * 0.85, 430));
+    for (var i = 0; i < 5; i++) {
+      await g.moveBy(Offset(-w * 0.15, 0));
+      await tester.pump();
+    }
+    final clipRects = find.descendant(
+      of: find.byType(ListView).first,
+      matching: find.byType(ClipRect, skipOffstage: false),
+    );
+    for (final e in clipRects.evaluate()) {
+      final size = (e.renderObject! as RenderBox).size;
+      expect(
+        size.width,
+        greaterThanOrEqualTo(w - 0.01),
+        reason: '裁剪层只有 ListView 的 viewport（整屏宽）才允许，页面内不要再裁',
+      );
+    }
+
+    await g.up();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('往右拖回来：回到服务器那套', (tester) async {
     final w = await pumpPage(tester);
-    final rest = leftOf(tester, find.text('服务器地址'));
-
+    final rest = leftOf(tester, serverMarker());
     // 先切到直连
-    var g = await tester.startGesture(Offset(w * 0.85, 200));
+    var g = await tester.startGesture(Offset(w * 0.85, 430));
     for (var i = 0; i < 5; i++) {
       await g.moveBy(Offset(-w * 0.15, 0));
       await tester.pump();
@@ -91,13 +127,13 @@ void main() {
     expect(leftOf(tester, directMarker()), closeTo(rest - 3, 2), reason: '警告条不在卡内，左缘比卡内文字小 3（12+12 vs 12+16）');
 
     // 再往右拖回来
-    g = await tester.startGesture(Offset(w * 0.15, 200));
+    g = await tester.startGesture(Offset(w * 0.15, 430));
     for (var i = 0; i < 5; i++) {
       await g.moveBy(Offset(w * 0.15, 0));
       await tester.pump();
     }
     await g.up();
     await tester.pumpAndSettle();
-    expect(leftOf(tester, find.text('服务器地址')), closeTo(rest, 2));
+    expect(leftOf(tester, serverMarker()), closeTo(rest, 2));
   });
 }

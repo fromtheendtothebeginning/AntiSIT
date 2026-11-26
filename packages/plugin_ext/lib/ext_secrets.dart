@@ -1,7 +1,5 @@
-/// 拓展的加密凭据存储：Cookie / Token 这类敏感值走系统 Keystore（Android）
-/// 或 Keychain（iOS），按拓展 id 隔离。
-///
-/// 普通数据仍用 `ctx.storage`（明文 SharedPreferences）；这里只放"丢了会被冒用"的值。
+/// 拓展的加密凭据存储：Cookie / Token 这类「丢了会被冒用」的值走系统 Keystore /
+/// Keychain，按拓展 id 隔离；普通数据仍用 `ctx.storage`（明文 SharedPreferences）。
 library;
 
 import 'package:campus_core/campus_core.dart';

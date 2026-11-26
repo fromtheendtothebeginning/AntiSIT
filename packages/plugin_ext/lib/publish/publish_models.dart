@@ -19,9 +19,7 @@ enum PublishProvider {
           orElse: () => PublishProvider.github);
 }
 
-/// 发布设置：发到哪个平台的哪个仓库、哪个分支。
-///
-/// Token 与签名私钥不在这里——它们走 [SecureStore]（Keystore / Keychain）。
+/// 发布设置：发到哪个平台的哪个仓库、哪个分支；Token 与私钥走 [SecureStore]。
 class PublishConfig {
   const PublishConfig({
     required this.provider,
@@ -59,14 +57,12 @@ class PublishConfig {
     );
   }
 
-  /// 源目录前缀（App 添加源后按 `<base>market.json` 拉目录）。
-  /// GitHub 走 jsDelivr（国内可达性好）；Gitee 用官方 raw。
+  /// 源目录前缀（App 添加源后按 `<base>market.json` 拉目录）：GitHub 走 jsDelivr，Gitee 用官方 raw。
   String sourceBase(String branch) => provider == PublishProvider.github
       ? 'https://cdn.jsdelivr.net/gh/$owner/$repo@$branch/'
       : 'https://gitee.com/$owner/$repo/raw/$branch/';
 
-  /// 直装包地址前缀。与源目录同一个镜像：GitHub 走 jsDelivr（国内可达性好），
-  /// 包路径里带版本号，升版本后就是新 URL，不怕 CDN 缓存旧包。
+  /// 直装包地址前缀（与源目录同镜像；包路径带版本号，升版本就是新 URL，不怕 CDN 缓存旧包）。
   String zipBase(String branch) => sourceBase(branch);
 
   /// 分享给别人「添加源」时填的值：GitHub 用 `owner/repo`（App 自动拼 jsDelivr），
@@ -76,9 +72,7 @@ class PublishConfig {
       : sourceBase(branch);
 
   /// 解析用户填的仓库：`owner/repo`、`https://github.com/owner/repo`、
-  /// `https://gitee.com/owner/repo`（可带 .git / 尾斜杠）。
-  ///
-  /// 抛 [FormatException] 时消息可以直接给用户看。
+  /// `https://gitee.com/owner/repo`（可带 .git / 尾斜杠）；[FormatException] 的消息可直接给用户看。
   static PublishConfig parse({
     required PublishProvider provider,
     required String input,

@@ -6,9 +6,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 验证码弹窗里 AI 识别与手输框是**并发**的：
-/// 弹窗立刻把图和输入框摆出来（不干等 AI），AI 在后台读图；
-/// 认出来且用户还没动手才自动填入并提交，用户先输完的、换过图的、识别失败的都退回手输。
+/// 验证码弹窗里 AI 识别与手输是并发的：图与输入框立刻摆出，AI 后台读图，认出来且用户没动手才自动填入提交，其余退回手输。
 void main() {
   // 1×1 透明 PNG：弹窗里的 Image.memory 要真能解码，随便几个字节会抛「Invalid image data」
   final image = base64Decode(

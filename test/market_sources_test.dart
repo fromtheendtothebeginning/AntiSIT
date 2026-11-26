@@ -10,15 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_ext/plugin_ext.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「第三方源」的验收（作者自己发的那种，不用 PR 到官方仓库）：
-///
-/// * 输入解析：`所有者/仓库` → jsDelivr；https 地址原样用；格式不对直接说人话；
-/// * 添加前预览：拉目录 + **用源自报的公钥验签** + 算指纹；
-/// * 公钥固定：加进来之后源换了钥匙（或有人中间替换）→ 停用并说明，不静默接受；
-/// * 反代/加速服务回 HTTP 200 的 HTML 错误页 → 单独报错，别说成「签名校验不过」；
-/// * 安装：按条目自己的源下载、校验 sha256、落 sourceId；
-/// * 同一个 id 换源装 → 拒绝（否则第三方源能顶掉官方拓展）；
-/// * 界面：添加源要核对指纹，第三方条目要标出来源与「未审核」。
+/// 第三方源：输入解析、添加前预览（源自报公钥验签 + 指纹）、公钥固定、反代 HTML 错误页单独报错、按源下载校验、换源装拒绝、界面标「未审核」。
 void main() {
   late Directory tempDir;
 
@@ -38,8 +30,6 @@ void main() {
   tearDown(() {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
-
-  // ==================== 造一个「作者的源」 ====================
 
   Future<Map<String, String>> newSigner() async {
     final kp = await Ed25519().newKeyPair();
@@ -125,8 +115,6 @@ void main() {
       throw StateError('HTTP 404：$path');
     };
   }
-
-  // ==================== 用例 ====================
 
   group('源地址解析', () {
     test('所有者/仓库 → jsDelivr；https 地址原样用（补尾斜杠）', () {

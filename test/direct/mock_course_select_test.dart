@@ -4,8 +4,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 抢课直连链路：真 HTTP 打本地模拟服务，验证
-/// 「登录 → 选课轮次 → 课程列表（分页/搜索）→ 教学班 → 选课（满员重试）→ 已选课程」。
+/// 抢课直连链路：登录 → 选课轮次 → 课程列表（分页 / 搜索）→ 教学班 → 选课（满员重试）→ 已选课程。
 void main() {
   final mock = MockCampusServer.instance;
 

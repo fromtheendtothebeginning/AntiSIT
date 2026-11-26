@@ -5,9 +5,7 @@ import 'package:plugin_reminder/plugin_reminder.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 需求：上课提醒、上完的课淡化显示收进「课程表设置」二级页，
-/// 课表页的「学期设置」「调休设置」也一并收进去；入口两处
-/// （课表页右上角菜单 /「我的 → 设置」），进的是同一页。
+/// 上课提醒、淡化已上完的课、学期设置、调休设置都收进「课程表设置」二级页，两处入口进同一页。
 void main() {
   /// 带提醒插件的注册表：验证两页各自的条目。
   PluginRegistry registry() => PluginRegistry(

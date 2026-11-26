@@ -2,9 +2,7 @@ import 'package:campus_service/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 日期/时间选择器的中文文案：App 之前没挂 flutter_localizations，
-/// showDatePicker / showTimePicker 一路显示英文（CANCEL / OK / SELECT DATE）。
-/// 这里用与 App 同一份 delegates 起一个 MaterialApp，真实弹出选择器检查中文。
+/// 日期 / 时间选择器的中文文案：用与 App 同一份 delegates 起 MaterialApp，真实弹出选择器检查中文。
 void main() {
   Widget host(Widget child) => MaterialApp(
         locale: appLocale,

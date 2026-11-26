@@ -4,17 +4,9 @@ import 'dart:typed_data';
 
 /// 网站图标（favicon）的取法。
 ///
-/// Flutter 的图片解码器**不认 `.ico`**——直接 `Image.network('.../favicon.ico')`
-/// 在多数站点上都会失败（这正是「没正确显示网站 ico」的原因），所以这里自己走一套：
-///
-/// 1. 抓一次页面 HTML，按优先级挑图标地址：`apple-touch-icon`（PNG，一般 180×180，
-///    最清楚）→ `rel="icon"` 里的位图（png / jpg / webp）→ 显式声明的 `.ico`；
-/// 2. 一个都没挑到（或页面抓不到）就退到站点根的 `/favicon.ico`；
-/// 3. 逐个取回字节：`.ico` 里如果嵌的是 PNG（现在多数是）就把**那一帧抠出来**再用；
-///    老式的 DIB 帧不硬解（没必要，退回首字徽章就行）。
-///
-/// 结果按站点缓存在内存里（一次会话内不重复请求）；任何一步失败都只是「没有图标」，
-/// 不影响别的功能。
+/// Flutter 的图片解码器**不认 `.ico`**，所以这里自己走：抓页面 HTML 挑图标地址
+/// （apple-touch-icon → 其它位图 → 显式 .ico → 站点根 `/favicon.ico`），逐个取回，
+/// `.ico` 里嵌的是 PNG 就抠那一帧再用。结果按站点缓存在内存里，失败只是「没有图标」。
 class SiteIcon {
   SiteIcon._();
 
@@ -44,8 +36,6 @@ class SiteIcon {
     }
     return null;
   }
-
-  // ==================== 纯函数（好测）====================
 
   /// 候选图标地址，按优先级排：apple-touch-icon → 其它位图 → 显式 .ico → 站点根兜底。
   /// SVG 跳过（Flutter 不认）；相对地址按页面地址解析。
@@ -123,8 +113,6 @@ class SiteIcon {
     }
     return true;
   }
-
-  // ==================== 网络（失败一律返回 null）====================
 
   static const Duration _timeout = Duration(seconds: 6);
   static const int _maxHtmlBytes = 300 * 1024;

@@ -6,10 +6,8 @@ import 'package:campus_core/campus_core.dart';
 
 import 'course_cloud_service.dart';
 
-/// 「课程表设置」里的课程通知方式（不通知 / 弹窗 / 流体云）。
-///
-/// 三选一存在 [AppState.courseNotifyMode]：上课提醒据此跳过课程通知，
-/// 流体云模式则由 [CourseCloudService] 把未来 7 天的课程窗口交给原生闹钟。
+/// 「课程表设置」里的课程通知方式（不通知 / 弹窗 / 流体云），三选一存在 [AppState.courseNotifyMode]。
+/// 上课提醒据此跳过课程通知；流体云模式由 [CourseCloudService] 把未来 7 天课程窗口交给原生闹钟。
 class CourseNotifyTile extends StatefulWidget {
   const CourseNotifyTile({super.key});
 
@@ -65,8 +63,7 @@ class _CourseNotifyTileState extends State<CourseNotifyTile> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      // 内容比半屏高（选项 + 预览卡 + 预览按钮）：允许拉高并整体滚动，
-      // 否则最下面的按钮会顶出屏幕、点不到。
+      // 内容比半屏高：允许拉高并整体滚动，否则最下面的按钮会顶出屏幕。
       isScrollControlled: true,
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -147,7 +144,7 @@ class _CourseNotifyTileState extends State<CourseNotifyTile> {
                     onPressed: () async {
                       final ok = await CourseCloudService.I.preview();
                       if (!ctx.mounted) return;
-                      // 预览失败最常见的是通知权限没开 / 渠道被系统关了，直接说清楚
+                      // 预览失败多半是通知权限没开 / 渠道被系统关了，直接说清楚。
                       ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
                         content: Text(ok
                             ? '已发送预览通知，1 分钟后自动收起'
@@ -192,9 +189,7 @@ class _CourseNotifyTileState extends State<CourseNotifyTile> {
 /// 课前 lead 分钟（与 [CourseCloudService.leadMinutes] 同一个数，文案里用）。
 const int leadMinutes = CourseCloudService.leadMinutes;
 
-/// 流体云卡片预览：按成熟实时状态卡片的信息层级画一遍
-/// （胶囊态：课程 + 剩余时间；展开态：状态 → 课程 → 地点/时间 → 进度）。
-///
+/// 流体云卡片预览：胶囊态（课程 + 剩余时间）与展开态（状态 → 课程 → 地点/时间 → 进度）。
 /// 只用于设置面板里看设计；真实样式由系统（ColorOS / OriginOS / 澎湃OS）决定。
 class _FluidCloudPreview extends StatelessWidget {
   const _FluidCloudPreview();
@@ -226,7 +221,7 @@ class _FluidCloudPreview extends StatelessWidget {
     final isCurrent = current != null;
     final remaining = isCurrent ? (hero.end - nowMin).clamp(0, 24 * 60) : leadMinutes;
     final nearEnd = isCurrent && remaining <= 15;
-    // 系统里的倒计时会跳，这里统一直给「大概时间」；最后 15 分钟固定一句话
+    // 系统里的倒计时会跳，这里统一给「大概时间」；最后 15 分钟固定一句话。
     final status = nearEnd
         ? '还有十五分钟下课'
         : isCurrent
@@ -266,7 +261,7 @@ class _FluidCloudPreview extends StatelessWidget {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          // 和 App 内的玻璃卡一致：卡面 + 细边框，不用深色渐变
+          // 与 App 内的玻璃卡一致：卡面 + 细边框，不用深色渐变。
           decoration: BoxDecoration(
             color: SemColors.card,
             borderRadius: BorderRadius.circular(18),
@@ -325,7 +320,7 @@ class _FluidCloudPreview extends StatelessWidget {
                     style: TextStyle(fontSize: 10.5, color: SemColors.textMuted),
                   ),
                   const Spacer(),
-                  // 底部信息（OPPO 组合模板的 trailing）：只放一个操作
+                  // 底部信息（OPPO 组合模板的 trailing）：只放一个操作。
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
@@ -341,7 +336,7 @@ class _FluidCloudPreview extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        // 胶囊态（状态栏 / 灵动岛那一行）
+        // 胶囊态（状态栏 / 灵动岛那一行）。
         Align(
           alignment: Alignment.centerLeft,
           child: Container(

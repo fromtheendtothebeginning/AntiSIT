@@ -1,25 +1,9 @@
-/// 拓展的原生 HTTPS 代理：给网页一个不受 CORS 限制、可以自己带 Cookie 头的请求口。
+/// 拓展的原生 HTTPS 代理：给网页一个不受 CORS 限制、可以自己带 Cookie 头的请求口
+/// （拓展页是 `loadHtmlString` 的 opaque origin，`fetch` 受 CORS 限制且不能设 Cookie 头）。
 ///
-/// 为什么不让网页直接 `fetch`：拓展页是 `loadHtmlString` 的 opaque origin，
-/// 跨域请求受 CORS 限制，而且 `fetch` 不允许设置 `Cookie` 头。学校系统这类
-/// 需要登录态的接口只能走原生发。
-///
-/// 这是通用能力，不包含任何学校专用逻辑；App 不解析响应，只把文本回给拓展。
-/// 安全约束：
-/// * 默认只允许 https；
-/// * 拒绝 localhost / 内网 / 链路本地 / 保留地址（防 SSRF）；
-/// * 过滤 Host / Content-Length / Connection 这类由底层接管的头；
-/// * 响应最多 2 MB，超时 30 秒。
-///
-/// **例外：`campus` 接口**（`net.campus`，需 `campus_net` 权限）。校内不少教学站点
-/// 只有 `http://10.x` / `http://210.x` 这种明文内网地址，上面的默认约束把它们全挡住了，
-/// 所以单开一条通道：
-/// * 只允许 http（校内站点没有证书，https 直接连不上）；
-/// * 目标可以落在内网，但仍拒绝本机 / 回环 / 链路本地 / CGNAT（防把手机当跳板）；
-/// * 可选 `proxy`：把请求交给校园隧道代理（`http://host:port`，服务器模式下由
-///   隧道容器提供），设备自己不在校园网时也能连上；
-/// * 不跟随重定向（每条请求由拓展显式发起，避免被 302 带去别处）；
-/// * 响应上限同样是 2 MB。
+/// 默认只允许 https、拒绝 localhost / 内网 / 保留地址（防 SSRF）、响应上限 2 MB、
+/// 超时 30 秒；`net.campus` 例外：只允许 http、可打内网但仍拒本机 / 回环 / CGNAT，
+/// 可带校园隧道代理、不跟随重定向。
 library;
 
 import 'dart:async';
@@ -65,8 +49,7 @@ class ExtNetService {
     'proxy-authorization',
   };
 
-  /// 发起一次请求。返回 `{status, url, headers, setCookies, text, truncated, bytes}`。
-  ///
+  /// 发起一次请求，返回 `{status, url, headers, setCookies, text, truncated, bytes}`；
   /// [onHost] 在每个新域名（含重定向）发出前调用一次，宿主用它做逐域授权。
   Future<Map<String, Object?>> request(
     Map<String, Object?> args, {
@@ -118,14 +101,8 @@ class ExtNetService {
     }
   }
 
-  /// 校内明文通道：`net.campus`。
-  ///
-  /// 与 [request] 的区别只有三处（其余头过滤、体积上限、超时都相同）：
-  /// 1. 只允许 `http`——校内教学站点没有证书，https 连不上；
-  /// 2. 目标**可以**是内网地址，但本机 / 回环 / 链路本地 / CGNAT 仍然拒绝；
-  /// 3. 可带 [proxyUrl]（校园隧道代理），设备不在校园网时也能到达。
-  ///
-  /// 不跟随重定向：调用方在哪一跳停下自己决定，避免 302 把请求带去别的主机。
+  /// 校内明文通道 `net.campus`：与 [request] 的区别是只允许 http、目标可以是内网
+  /// （仍拒绝本机 / 回环 / 链路本地 / CGNAT）、可带 [proxyUrl] 隧道代理、不跟随重定向。
   Future<Map<String, Object?>> campusRequest(
     Map<String, Object?> args, {
     Future<void> Function(String host)? onHost,

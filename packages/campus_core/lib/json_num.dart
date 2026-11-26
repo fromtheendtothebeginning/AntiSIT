@@ -1,5 +1,4 @@
-/// 服务器字段宽容取数：数值字段可能返回数字也可能返回字符串
-/// （校付宝 / 教务接口常见，如 "12.5"），统一安全转成 num，避免运行时类型转换崩溃。
+/// 服务器字段宽容取数：数值字段可能是数字或字符串（如 "12.5"），统一安全转 num。
 num? asNum(dynamic v) {
   if (v is num) return v;
   if (v is String) return num.tryParse(v.trim());

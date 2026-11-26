@@ -4,22 +4,9 @@ import 'timetable_store.dart';
 
 /// 课表 ↔ 日历文件（iCalendar，RFC 5545）。
 ///
-/// **为什么是这个格式**：系统日历、Google / Apple 日历与主流课表 App 的
-/// 「导入 / 导出日历」都认 `.ics`（RFC 5545 定义的 iCalendar）——它是跨应用交换
-/// 日程的通用格式；课表类应用把课表推进系统日历走的也是这条路。
-///
-/// **为什么不写 RRULE**：单双周、周次区间、调休这些课表特有规则要表达成
-/// `RRULE` + `EXDATE` + `BYDAY` 才勉强等价，而各客户端对 RECUR 的支持参差不齐
-/// （RFC 5545 §3.3.10 也把 COUNT / UNTIL / BYDAY 的组合限制得很细）。
-/// 这里一律**展开成逐次发生的 VEVENT**（每条 = 一次课）：到哪个客户端都一样，
-/// 调休也天然正确；代价是学期导出约几百条事件，体积仍在百 KB 量级。
-///
-/// 时间一律用**本地浮动时刻**（`DTSTART:20260901T082000`，不带 Z / TZID）：
-/// 课表是「墙上时钟」的时间表，浮动时刻在任何客户端都按当地时间摆放；
-/// 另附 `X-WR-TIMEZONE:Asia/Shanghai` 供认这条属性的客户端参考。
-///
-/// 折行与转义按 RFC 5545：物理行不超过 75 个八位组（续行以 CRLF + 空格开头），
-/// TEXT 值里的 `\` `;` `,` 换行要转义。
+/// 一律展开成逐次发生的 VEVENT（不写 RRULE）：单双周 / 周次区间 / 调休在
+/// 各客户端都能正确显示。时间用本地浮动时刻（不带 Z / TZID），另附
+/// `X-WR-TIMEZONE:Asia/Shanghai`；折行与转义按 RFC 5545。
 class TimetableIcs {
   const TimetableIcs._();
 
@@ -27,9 +14,9 @@ class TimetableIcs {
   static const _timezone = 'Asia/Shanghai';
   static const _lineEnd = '\r\n';
 
-  // ==================== 导出 ====================
+  // ── 导出 ──
 
-  /// 一次具体的课 / 一条日程（导出的一条 VEVENT）。
+  /// 一段范围内逐次发生的课 / 日程（导出的一条 VEVENT）。
   static List<TtOccurrence> occurrences({
     required SemesterTt tt,
     required List<TtCourse> courses,
@@ -180,8 +167,7 @@ class TimetableIcs {
     );
   }
 
-  /// 某一天按课表实际该上星期几的课：调休 off = 放假（null），follow = 按另一天，
-  /// 没有规则就是自己。与课表页 `_colEffDay` 同一套判据。
+  /// 某一天按课表实际该上星期几的课：off = 放假（null），follow = 按另一天，否则自己。
   static int? _effectiveDay(SemesterTt tt, DateTime date, int day) {
     final iso = TimetableStore.iso(date);
     for (final a in tt.adjustments) {
@@ -197,7 +183,7 @@ class TimetableIcs {
         _ => '每周',
       };
 
-  // ==================== 导入 ====================
+  // ── 导入 ──
 
   /// 解析 .ics 文本 → 逐条事件（[IcsEvent]）。坏行跳过，不整份失败。
   static List<IcsEvent> parse(String text) {
@@ -221,9 +207,8 @@ class TimetableIcs {
     return out;
   }
 
-  /// 一条 VEVENT → 一至多条事件：简单的「每周重复」且没有次数限制时，折成
-  /// 我们的「每周日程」（date 空 + 星期几）；带 COUNT / UNTIL 的按次数展开成逐条；
-  /// 复杂的重复规则（按月 / 按年 / 多星期几…）只取首次发生并标记 [IcsEvent.simplified]。
+  /// 一条 VEVENT → 一至多条事件：简单「每周重复」折成「每周日程」（date 空 + 星期几）；
+  /// 带 COUNT / UNTIL 的展开成逐条；复杂重复规则只取首次发生并标记 simplified。
   static List<IcsEvent>? _toEvent(
       Map<String, ({String value, Map<String, String> params})> props) {
     final start = _parseDate(props['DTSTART']);
@@ -377,7 +362,7 @@ class TimetableIcs {
       .replaceAll('\\;', ';')
       .replaceAll('\\\\', '\\');
 
-  // ==================== 文本格式（RFC 5545 §3.1 / §3.3.11）====================
+  // ── 文本格式（RFC 5545 §3.1 / §3.3.11）──
 
   static String _esc(String s) => s
       .replaceAll('\\', '\\\\')

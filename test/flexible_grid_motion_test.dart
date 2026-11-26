@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:campus_core/campus_core.dart';
 
-/// 邻居卡片「让位」的动画语义：
-/// * 时长不短于 0.2 秒（太快会像瞬移）；
-/// * 动画播放期间目标又变时，从**当前位置**接着走（差项），不跳回起点重播。
+/// 邻居卡片「让位」的动画语义：时长不短于 0.2 秒，动画播放期间目标又变时从当前位置接着走（不重播）。
 void main() {
   Future<GlobalKey<_HarnessState>> pump(WidgetTester tester) async {
     tester.view.physicalSize = const Size(400, 900);

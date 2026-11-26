@@ -12,15 +12,9 @@ import 'package:campus_core/campus_core.dart';
 
 import 'webview_policy.dart';
 
-/// 内核自带的整页浏览器：加载 [url] 或 [html]，带加载进度与出错提示。
-/// 供 [WebViewCapabilityImpl.openPage] 推入导航栈。
-///
-/// 带 [bridge] 时给页面注入一条网页 ↔ App 的通道：内核只管收发（垫片 `antiSIT`
-/// + 原始通道 `antiSITBridge` + Promise 回填），支持哪些方法由 [bridge] 决定。
-///
-/// **导航**：内联 html（压缩包拓展）是一份自包含页面，主框架只许走本地方案，
-/// 点到 http(s) 外链会拦下来交给系统浏览器（见 [decideMainFrameNavigation]）；
-/// 网址形态就是普通浏览，不拦。
+/// 内核自带的整页浏览器：加载 [url] 或 [html]，带加载进度与出错提示；供 [WebViewCapabilityImpl.openPage] 推入导航栈。
+/// 带 [bridge] 时注入网页 ↔ App 通道（垫片 `antiSIT` + 原始通道 `antiSITBridge` + Promise 回填）。
+/// **导航**：内联 html（压缩包拓展）的主框架只许走本地方案，点到 http(s) 外链交系统浏览器；网址形态正常浏览。
 class WebViewPage extends StatefulWidget {
   const WebViewPage({
     super.key,
@@ -49,8 +43,8 @@ class _WebViewPageState extends State<WebViewPage>
   double _progress = 0; // 0 = 没在加载
   String? _error;
 
-  /// 网页下载交给 Android DownloadManager（见 `ExtWebViewFilesBridge.kt`）。
-  /// DownloadListener 是挂在原生 WebView 上的，每个页面装一次即可。
+  /// 网页下载交给 Android DownloadManager（见 `ExtWebViewFilesBridge.kt`）；
+  /// DownloadListener 挂在原生 WebView 上，每个页面装一次即可。
   static const MethodChannel _webFilesChannel = MethodChannel(
     'antisit/webview_files',
   );
@@ -91,7 +85,7 @@ class _WebViewPageState extends State<WebViewPage>
           },
           onNavigationRequest: _onNavigationRequest,
           onWebResourceError: (e) {
-            // 主文档失败才提示；子资源（图片等）失败不打扰
+            // 主文档失败才提示；子资源（图片等）失败不打扰。
             if (e.isForMainFrame ?? false) {
               if (mounted) setState(() => _error = e.description);
             }
@@ -121,7 +115,7 @@ class _WebViewPageState extends State<WebViewPage>
       try {
         await _controller.setBackgroundColor(SemColors.bg);
       } catch (_) {
-        // 旧内核 / 平台不支持时忽略
+        // 旧内核 / 平台不支持时忽略。
       }
     }());
   }
@@ -134,15 +128,13 @@ class _WebViewPageState extends State<WebViewPage>
     super.dispose();
   }
 
-  /// 网页告诉我们它的页面栈空了没有。栈里还有页面时拦下系统返回，
-  /// 先让它回退一层；否则保持默认行为（返回直接关掉这页）。
+  /// 网页告诉我们它的页面栈空了没有：还有页面时拦下系统返回，先让它回退一层。
   void _onBackGuard(bool canGoBack) {
     if (!mounted || _hasStackPage == canGoBack) return;
     setState(() => _hasStackPage = canGoBack);
   }
 
-  /// 系统返回 / 左上角返回箭头：先问网页能不能自己回退。
-  /// 网页返回 false（或已经不在）才关掉整页，避免把用户困在拓展里。
+  /// 系统返回 / 左上角返回箭头：先问网页能不能自己回退，不能才关掉整页。
   Future<void> _backFromStack() async {
     var handled = false;
     try {
@@ -203,15 +195,14 @@ class _WebViewPageState extends State<WebViewPage>
     if (!ok && mounted) setState(() => _error = '打不开这个链接：$url');
   }
 
-  /// 网页里的 `<input type=file>`：Android 走系统文件选择器，选完把文件 URI 交回
-  /// WebView。上传兼容性只在这一层做，不给网页任何额外接口。
+  /// 网页里的 `<input type=file>`：Android 走系统文件选择器，选完把文件 URI 交回 WebView。
   Future<void> _configureFileChooser() async {
     final platform = _controller.platform;
     if (platform is! AndroidWebViewController) return;
     try {
       await platform.setOnShowFileSelector(_onShowFileSelector);
     } catch (_) {
-      // 旧内核没有这个回调：网页上传保持不可用，不影响浏览
+      // 旧内核没有这个回调：网页上传保持不可用，不影响浏览。
     }
   }
 
@@ -242,20 +233,18 @@ class _WebViewPageState extends State<WebViewPage>
           : [if (await openFile(acceptedTypeGroups: groups) case final f?) f];
       return [for (final f in files) _fileUri(f.path)];
     } catch (_) {
-      // 用户取消 / 选择器不可用：回空列表，网页收到一次空的 change
+      // 用户取消 / 选择器不可用：回空列表，网页收到一次空的 change。
       return const [];
     }
   }
 
-  /// file_selector 给的是本地路径；WebView 的 file chooser 要 URI。
-  /// 已经带 scheme 的（content://）原样返回。
+  /// file_selector 给的是本地路径，WebView 的 file chooser 要 URI；已带 scheme 的原样返回。
   static String _fileUri(String path) {
     final uri = Uri.tryParse(path);
     return uri != null && uri.hasScheme ? path : Uri.file(path).toString();
   }
 
-  /// 挂原生下载监听：点击下载链接时交给系统 DownloadManager（通知栏进度 +
-  /// 下载完成可点开），不在 WebView 里硬开一个二进制页面。
+  /// 挂原生下载监听：点击下载链接交给系统 DownloadManager（通知栏进度 + 可点开），不在 WebView 里开二进制页面。
   Future<void> _installDownloadListener() async {
     if (_downloadListenerInstalled || !mounted) return;
     final platform = _controller.platform;
@@ -267,7 +256,7 @@ class _WebViewPageState extends State<WebViewPage>
       );
       _downloadListenerInstalled = ok == true;
     } catch (_) {
-      // 桌面 / iOS / 旧内核：保持默认行为
+      // 桌面 / iOS / 旧内核：保持默认行为。
     }
   }
 
@@ -281,7 +270,7 @@ class _WebViewPageState extends State<WebViewPage>
       }
       await _controller.loadRequest(uri);
     } else if (widget.html != null) {
-      // 内联页：垫片写进 html 本身，网页第一个同步脚本就能用 antiSIT
+      // 内联页：垫片写进 html 本身，网页第一个同步脚本就能用 antiSIT。
       final html = widget.bridge == null
           ? widget.html!
           : injectBridgeShim(widget.html!, kWebViewBridgeShim);
@@ -289,15 +278,15 @@ class _WebViewPageState extends State<WebViewPage>
     }
   }
 
-  /// 页面加载完成后注入垫片：网页里才有 `window.antiSIT` 可用。
-  /// 只给拓展自己的页面注入；跨站导航后不注入（直接调通道的也会在 [_onBridgeCall] 被拒）。
+  /// 页面加载完成后注入垫片：网页里才有 `window.antiSIT`；跨站导航后不注入，
+  /// 直接调通道的也会在 [_onBridgeCall] 被拒。
   Future<void> _injectBridge() async {
     if (widget.bridge == null) return;
     if (!_canUseBridge) return;
     try {
       await _controller.runJavaScript(kWebViewBridgeShim);
     } catch (_) {
-      // 注入失败（页面拒绝执行脚本之类）不该把整页搞崩：网页仍可正常使用
+      // 注入失败（页面拒绝执行脚本之类）不该把整页搞崩：网页仍可正常使用。
     }
   }
 
@@ -316,7 +305,7 @@ class _WebViewPageState extends State<WebViewPage>
       final result = await bridge.call('${req['method']}', req['args']);
       await _reply('__antiSITResolve', id, result);
     } catch (e) {
-      // 分发出错（未知方法 / 参数不对）也要回给网页，否则它的 Promise 永远悬着
+      // 分发出错（未知方法 / 参数不对）也要回给网页，否则它的 Promise 永远悬着。
       await _reply('__antiSITReject', id, '$e');
     }
   }
@@ -327,14 +316,14 @@ class _WebViewPageState extends State<WebViewPage>
         'window.$fn(${jsonEncode(id)}, ${jsonEncode(payload)})',
       );
     } catch (_) {
-      // 页面已经走了：没人接就没人接
+      // 页面已经走了：没人接就没人接。
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return PopScope<Object?>(
-      // 栈里有页面时先拦下返回，交给网页自己的页面栈回退
+      // 栈里有页面时先拦下返回，交给网页自己的页面栈回退。
       canPop: !_hasStackPage,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
@@ -343,10 +332,9 @@ class _WebViewPageState extends State<WebViewPage>
       child: ListenableBuilder(
         listenable: AppState.I,
         builder: (context, _) {
-          // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+          // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
           final topInset = glassTopInset(context);
           return Scaffold(
-            // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
             extendBodyBehindAppBar: glassTopBarEnabled,
             appBar: glassAppBar(
               context,
@@ -354,7 +342,7 @@ class _WebViewPageState extends State<WebViewPage>
                 widget.title.isEmpty ? '网页' : widget.title,
                 overflow: TextOverflow.ellipsis,
               ),
-              // 加载进度条照旧是顶栏的 bottom，玻璃化后保留
+              // 加载进度条是顶栏的 bottom。
               bottom: _progress > 0 && _progress < 1
                   ? PreferredSize(
                       preferredSize: const Size.fromHeight(2),
@@ -365,7 +353,7 @@ class _WebViewPageState extends State<WebViewPage>
                     )
                   : null,
             ),
-            // 平台视图不滚动：用 Padding 把网页从悬浮顶栏下面顶出来
+            // 平台视图不滚动：用 Padding 把网页从悬浮顶栏下面顶出来。
             body: GlassFadedBody(
               barHeight: topInset,
               child: Padding(

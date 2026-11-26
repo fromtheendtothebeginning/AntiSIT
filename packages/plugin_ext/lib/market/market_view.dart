@@ -5,32 +5,28 @@ import 'package:flutter/material.dart';
 import 'package:campus_core/campus_core.dart';
 
 import '../extension_item.dart';
-import '../ext_icon.dart';
 import '../ext_open.dart';
-import '../ext_permissions.dart';
 import 'market_entry.dart';
 import 'market_installer.dart';
 import 'market_source.dart';
 import 'market_sources.dart';
 import 'market_sources_view.dart';
+import 'market_view_tiles.dart';
 
-/// 「插件市场」页（拓展页里的第二个标签）：
-/// 列出市场目录里的拓展，装 / 更新 / 打开 / 卸载。
+/// 「插件市场」页：列出市场目录里的拓展，装 / 更新 / 打开 / 卸载。
 ///
-/// 目录必须**验签**通过才显示（见 [MarketSource]），装的时候还要对 sha256；
-/// 市场装的拓展按清单声明的权限放行（见 `ExtBridge`），安装弹窗把权限摊给用户看。
+/// 目录必须验签通过才显示，安装时再校 sha256；市场拓展按清单声明的权限放行，
+/// 安装弹窗把敏感权限摊给用户看。
 class MarketView extends StatefulWidget {
   const MarketView({super.key, this.onInstalled, this.focusId, this.topPadding = 0});
 
   /// 装完 / 更新完说一句（拓展页拿它弹提示）。
   final void Function(String message)? onInstalled;
 
-  /// 要定位的拓展 id：从拓展页「可更新」卡片跳进来时带上。
-  /// 目录就绪后自动把搜索框设为它的名字（列表只剩它和同名项），卡片加「已定位」标。
+  /// 要定位的拓展 id：从拓展页「可更新」卡片跳进来时带上，目录就绪后自动过滤到它。
   final String? focusId;
 
-  /// 列表顶部额外留白：市场页是悬浮玻璃顶栏，列表要从顶栏下方开始，
-  /// 但滚动时仍从顶栏底下穿过去（所以留白放在滚动内容里，而不是外面套 Padding）。
+  /// 列表顶部额外留白：市场页是悬浮玻璃顶栏，留白放在滚动内容里才能滚穿顶栏。
   final double topPadding;
 
   @override
@@ -71,8 +67,7 @@ class _MarketViewState extends State<MarketView> {
     if (mounted) setState(() {});
   }
 
-  /// 定位只做一次：目录（官方 + 第三方源）里找到目标后，把搜索框设为它的名字。
-  /// 用户随时可以点搜索框的 ✕ 清掉过滤，看完整市场。
+  /// 定位只做一次：目录里找到目标后把搜索框设为它的名字，用户可随时清掉过滤。
   void _applyFocus() {
     if (_focusApplied || widget.focusId == null) return;
     for (final e in _all) {
@@ -85,7 +80,7 @@ class _MarketViewState extends State<MarketView> {
     }
   }
 
-  /// 本机版本号：判「需要升级 App」。读不到就当没要求（软门，不挡人）。
+  /// 本机版本号：读不到就当没要求（软门，不挡人）。
   Future<void> _readAppVersion() async {
     final v = await ExtensionItem.appVersionLoader();
     if (mounted && v.isNotEmpty) setState(() => _appVersion = v);
@@ -100,8 +95,6 @@ class _MarketViewState extends State<MarketView> {
         behavior: SnackBarBehavior.floating,
       ));
   }
-
-  // ==================== 过滤 ====================
 
   /// 官方目录 + 所有第三方源（第三方排在后面，卡片上标来源）。
   List<MarketEntry> get _all => [..._source.entries, ..._sources.allEntries];
@@ -130,8 +123,7 @@ class _MarketViewState extends State<MarketView> {
   }
 
   /// 所有已装且有新版的条目（官方 + 第三方源），不受当前搜索 / 分类过滤影响。
-  /// 同一 id 由多个源提供时只认已装的那个源（换源安装本来就会被拒）；
-  /// 需要更高版本 App 的更新装不动，不算进来（卡片上仍标「有新版 / 需升级 App」）。
+  /// 同一 id 由多个源提供时只认已装的那个源；需要更高版本 App 的不算进来。
   List<MarketEntry> get _updatable {
     final installer = MarketInstaller();
     final out = <String, MarketEntry>{};
@@ -145,12 +137,17 @@ class _MarketViewState extends State<MarketView> {
     return out.values.toList();
   }
 
-  // ==================== 安装 / 更新 / 卸载 ====================
-
   Future<void> _install(MarketEntry e) async {
     final installer = MarketInstaller();
     final update = installer.hasUpdate(e);
-    final ok = await _confirmInstall(e, update: update);
+    final ok = await showMarketInstallDialog(
+      context,
+      e,
+      update: update,
+      installedVersion: installer.installed(e.id)?.version,
+      thirdPartyLabel: '${_sources.byId(e.sourceId)?.label ?? e.sourceId}'
+          '${e.author.isEmpty ? '' : '（${e.author}）'}',
+    );
     if (ok != true) return;
 
     setState(() => _busy = true);
@@ -212,7 +209,7 @@ class _MarketViewState extends State<MarketView> {
           await MarketInstaller().install(e);
           done++;
         } catch (err) {
-          failed.add('${e.name}：${_short(err)}');
+          failed.add('${e.name}：${shortMarketError(err)}');
         }
       }
     } finally {
@@ -265,99 +262,45 @@ class _MarketViewState extends State<MarketView> {
     await openExtension(context, item, onMessage: _say);
   }
 
-  /// 装之前把来源 / 版本 / 大小 / 权限摊开说清楚。
-  Future<bool?> _confirmInstall(MarketEntry e, {required bool update}) {
-    final perms = describeSensitivePermissions(e.permissions);
-    final installed = update ? MarketInstaller().installed(e.id) : null;
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(update ? '更新「${e.name}」？' : '安装「${e.name}」？'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _kv(
-                  '来源',
-                  e.official
-                      ? '插件市场 · ${e.author.isEmpty ? '佚名' : e.author}'
-                      : '第三方源 · ${_sources.byId(e.sourceId)?.label ?? e.sourceId}'
-                          '${e.author.isEmpty ? '' : '（${e.author}）'}'),
-              if (e.version.isNotEmpty) _kv('版本', update ? '${installed?.version} → ${e.version}' : e.version),
-              if (e.isBundle && e.size > 0) _kv('大小', _size(e.size)),
-              _kv('分类', e.category),
-              if (e.desc.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(e.desc, style: const TextStyle(fontSize: 12.5, height: 1.6)),
-              ],
-              const SizedBox(height: 12),
-              Text('它要用的接口', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
-              const SizedBox(height: 6),
-              if (perms.isEmpty)
-                Text('只是读配色、弹提示、改自己的卡片这类界面接口。',
-                    style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6))
-              else
-                for (final p in perms)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
-                    child: Text('· $p',
-                        style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.5)),
-                  ),
-              const SizedBox(height: 10),
-              if (!e.official) ...[
-                Text('第三方源：内容由作者自己发布，没有经过官方审核（收录 ≠ 背书）。',
-                    style: TextStyle(fontSize: 11.5, color: SemColors.danger, height: 1.6)),
-                const SizedBox(height: 6),
-              ],
-              Text(
-                e.isBundle
-                    ? (update
-                        ? '更新只换页面内容，拓展里存的数据（设置、历史）留着。'
-                        : '内容来自插件市场，已过签名与哈希校验；装好后随时能卸载。')
-                    : '网址型：打开的是第三方网站，内容由站点控制、随时可能变化，'
-                        'App 只保证「这个地址是市场登记的」。',
-                style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(update ? '更新' : '安装')),
-        ],
-      ),
-    );
-  }
-
-  // ==================== 界面 ====================
-
   @override
   Widget build(BuildContext context) {
     _applyFocus();
     return Stack(
       children: [
         RefreshIndicator(
+          // 刷新圈落在悬浮切换器下面，别贴着屏幕最上沿（issue #14）
+          edgeOffset: widget.topPadding,
           onRefresh: () => _source.load(force: true),
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-
               SliverToBoxAdapter(child: _top()),
               // 官方目录拉不到时，第三方源照样要能列（一个源坏掉不该带崩整页）
               if (_visible.isNotEmpty)
                 SliverList.builder(
                   itemCount: _visible.length,
-                  itemBuilder: (_, i) => _card(_visible[i]),
+                  itemBuilder: (_, i) {
+                    final e = _visible[i];
+                    final installer = MarketInstaller();
+                    return MarketEntryCard(
+                      entry: e,
+                      installed: installer.installed(e.id),
+                      update: installer.hasUpdate(e),
+                      needsApp: e.needsNewerApp(_appVersion),
+                      focused: e.id == widget.focusId,
+                      busy: _busy,
+                      onOpen: () => _open(e),
+                      onInstall: () => _install(e),
+                      onUninstall: () => _uninstall(e),
+                    );
+                  },
                 )
               else if (_source.status == MarketStatus.ready)
-                SliverToBoxAdapter(child: _empty())
+                SliverToBoxAdapter(
+                    child: MarketEmpty(catalogEmpty: _source.entries.isEmpty))
               else
                 const SliverToBoxAdapter(child: SizedBox(height: 0)),
-              // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：列表底部让出底栏这一截，
-              // 最后一条源/拓展才不会被玻璃压住
+              // 底栏是玻璃浮层：列表底部让出底栏这一截，最后一条才不会被压住
               SliverToBoxAdapter(
                   child: SizedBox(height: MediaQuery.paddingOf(context).bottom)),
             ],
@@ -401,7 +344,11 @@ class _MarketViewState extends State<MarketView> {
             ),
             if (_updatable.isNotEmpty) ...[
               const SizedBox(height: 8),
-              _updateAllBanner(_updatable.length),
+              MarketUpdateBanner(
+                count: _updatable.length,
+                busy: _busy,
+                onUpdateAll: _updateAll,
+              ),
             ],
             if (_categories.length > 1) ...[
               const SizedBox(height: 10),
@@ -444,275 +391,22 @@ class _MarketViewState extends State<MarketView> {
             ),
             for (final src in _sources.sources)
               if (_sources.errorsBySource.containsKey(src.id))
-                _sourceErrorBox(src.label, _sources.errorsBySource[src.id]!),
-            if (_source.status == MarketStatus.failed) _errorBox(),
+                MarketSourceErrorBox(
+                  label: src.label,
+                  message: _sources.errorsBySource[src.id]!,
+                  onRetry: () => unawaited(_sources.refresh()),
+                ),
+            if (_source.status == MarketStatus.failed)
+              MarketErrorBox(
+                message: _source.error,
+                onRetry: () => _source.load(force: true),
+              ),
             if (_source.status == MarketStatus.ready && _source.fromCache)
-              _noteBox('网络没通，用的是上次缓存的目录（${_when(_source.fetchedAt)}）'),
+              MarketNoteBox(
+                text: '网络没通，用的是上次缓存的目录（${formatMarketWhen(_source.fetchedAt)}）',
+              ),
             const SizedBox(height: 6),
           ],
         ),
       );
-
-  Widget _errorBox() => Padding(
-        padding: const EdgeInsets.only(top: 10),
-        child: AppCard(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('市场目录用不了',
-                  style: TextStyle(
-                      fontSize: 13.5, fontWeight: FontWeight.bold, color: SemColors.danger)),
-              const SizedBox(height: 6),
-              Text(_source.error,
-                  style: TextStyle(fontSize: 12, color: SemColors.textSecondary, height: 1.6)),
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.tonal(
-                    onPressed: () => _source.load(force: true), child: const Text('重试')),
-              ),
-            ],
-          ),
-        ),
-      );
-
-  /// 「N 个拓展有新版 + 全部更新」：只在有可更新条目时出现，不占常驻空间。
-  Widget _updateAllBanner(int count) => Container(
-        padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
-        decoration: BoxDecoration(
-          color: SemColors.accent.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: SemColors.accent.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.system_update_alt_rounded, size: 18, color: SemColors.accent),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text('$count 个拓展有新版',
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-            ),
-            FilledButton.tonal(
-              onPressed: _busy ? null : _updateAll,
-              style: FilledButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-              ),
-              child: const Text('全部更新', style: TextStyle(fontSize: 12)),
-            ),
-          ],
-        ),
-      );
-
-  Widget _noteBox(String text) => Padding(
-        padding: const EdgeInsets.only(top: 10),
-        child: Text(text,
-            style: TextStyle(fontSize: 11.5, color: SemColors.textMuted, height: 1.6)),
-      );
-
-  Widget _sourceErrorBox(String label, String message) => Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: AppCard(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.error_outline, size: 16, color: SemColors.danger),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('源「$label」用不了',
-                        style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
-                            color: SemColors.danger)),
-                    const SizedBox(height: 4),
-                    Text(message,
-                        style: TextStyle(
-                            fontSize: 11.5, color: SemColors.textSecondary, height: 1.6)),
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () => unawaited(_sources.refresh()),
-                        child: const Text('重试', style: TextStyle(fontSize: 12)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-
-  Widget _empty() => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 20, 12, 24),
-        child: Center(
-          child: Text(
-            _source.entries.isEmpty
-                ? '市场里还没有拓展。想放一个上来？看市场仓库的投稿说明。'
-                : '没找到符合条件的拓展。',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: SemColors.textMuted, height: 1.7),
-          ),
-        ),
-      );
-
-  Widget _card(MarketEntry e) {
-    final installer = MarketInstaller();
-    final installed = installer.installed(e.id);
-    final update = installer.hasUpdate(e);
-    final needsApp = e.needsNewerApp(_appVersion);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: AppCard(
-        padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-        onTap: installed != null ? () => _open(e) : null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ExtIcon(item: _asItem(e)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(e.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                          ),
-                          if (e.version.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Text('v${e.version}',
-                                style: TextStyle(fontSize: 11, color: SemColors.textMuted)),
-                          ],
-                          if (update) ...[
-                            const SizedBox(width: 6),
-                            Capsule('有新版', color: SemColors.accent),
-                          ],
-                          if (e.id == widget.focusId) ...[
-                            const SizedBox(width: 6),
-                            Capsule('已定位', color: SemColors.warning),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(e.desc,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 11.5, height: 1.45, color: SemColors.textSecondary)),
-                      const SizedBox(height: 5),
-                      Text(
-                        [
-                          if (e.author.isNotEmpty) e.author,
-                          e.category,
-                          if (!e.isBundle) '网址',
-                          if (!e.official) '第三方',
-                        ].join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (needsApp)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Text('需要升级 App（≥${e.minAppVersion}）',
-                        style: TextStyle(fontSize: 11.5, color: SemColors.danger)),
-                  ),
-                if (installed != null && !update)
-                  IconButton(
-                    tooltip: '卸载',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _uninstall(e),
-                    icon: Icon(Icons.delete_outline, size: 18, color: SemColors.textMuted),
-                  ),
-                if (installed != null && !update)
-                  const SizedBox(width: 6),
-                if (installed != null && !update)
-                  OutlinedButton(onPressed: () => _open(e), child: const Text('打开'))
-                else if (needsApp)
-                  const FilledButton(onPressed: null, child: Text('装不了'))
-                else
-                  FilledButton(
-                    onPressed: _busy ? null : () => _install(e),
-                    child: Text(update ? '更新' : '安装'),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 市场条目画成卡片图标要的样子（本地包没有 favicon 可抓，所以 bundled 留空：
-  /// 图标走 emoji / 图片网址 / 名称首字）。
-  static ExtensionItem _asItem(MarketEntry e) => ExtensionItem(
-        id: e.id,
-        name: e.name,
-        url: e.url,
-        icon: e.icon,
-        // bundle 条目的 url 是空的（真正的地址在 base + zip），标成 bundled
-        // 图标就走 emoji / 首字，不会去抓站点图标
-        bundled: e.isBundle,
-      );
-
-  Widget _kv(String k, String v) => Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 44,
-              child: Text(k, style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
-            ),
-            Expanded(
-              child: Text(v,
-                  style: const TextStyle(fontSize: 12.5, height: 1.5)),
-            ),
-          ],
-        ),
-      );
-
-  static String _size(int bytes) => bytes < 1024
-      ? '$bytes B'
-      : bytes < 1024 * 1024
-          ? '${(bytes / 1024).toStringAsFixed(1)} KB'
-          : '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB';
-
-  static String _when(DateTime? t) {
-    if (t == null) return '时间未知';
-    final d = DateTime.now().difference(t);
-    if (d.inMinutes < 1) return '刚刚';
-    if (d.inHours < 1) return '${d.inMinutes} 分钟前';
-    if (d.inDays < 1) return '${d.inHours} 小时前';
-    return '${d.inDays} 天前';
-  }
-
-  static String _short(Object e) {
-    final s = '$e'.replaceFirst('Exception: ', '').replaceFirst('Bad state: ', '');
-    return s.length > 120 ? '${s.substring(0, 120)}…' : s;
-  }
 }

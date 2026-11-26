@@ -1,8 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_grades/plugin_grades.dart';
 
-/// 成绩卡标签的回归用例（issue #2）：学校对部分课程不回「课程类别 / 考核方式 / 学年学期」，
-/// 老代码把这些 null 直接插值进标签文本，成绩卡上就出现一排写着字面量 "null" 的标签。
+/// 成绩卡标签回归（issue #2）：学校对部分课程不回类别 / 考核方式 / 学期，老代码把 null 插值成字面量标签。
 void main() {
   test('字段全缺：一个标签都不生成', () {
     expect(gradeTags({'kclbmc': null, 'khfsmc': null, 'xnmmc': null, 'xqmmc': null}), isEmpty);

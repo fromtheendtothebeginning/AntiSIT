@@ -2,10 +2,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 
 /// 工具宫格：卡片全部由工具插件贡献，这里只负责排版、预取与整理。
-///
-/// 整理（长按 / 标题栏「整理」）后可以：
-/// * 直接拖卡片换位置（顺序存在注册表里，重启不丢）；
-/// * 顶部尺寸条在 1×1 / 1×3 / 2×3（默认）/ 2×2 间切换，或拖右下角弧线细调（尺寸也落在本机）。
+/// 整理后可直接拖卡片换位置，尺寸条在 1×1 / 1×3 / 2×3（默认）/ 2×2 间切换或拖右下角细调。
 class ToolsPage extends StatefulWidget {
   const ToolsPage({super.key});
 
@@ -34,7 +31,7 @@ class _ToolsPageState extends State<ToolsPage> {
   }
 
   Future<void> _openSorter() async {
-    // 用整页而不是底部弹层：弹层自带「下拉关闭」手势，会跟拖拽手柄抢
+    // 用整页而不是底部弹层：弹层的「下拉关闭」手势会跟拖拽手柄抢。
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const ToolOrderPage()));
@@ -46,7 +43,7 @@ class _ToolsPageState extends State<ToolsPage> {
     setState(() {
       _editing = value;
       if (value) {
-        // 从「整理卡片」按钮进来时先选第一张，尺寸条马上可用；长按入口随后会改成被按住那张。
+        // 先选第一张，尺寸条立即可用；长按入口随后会改成被按住那张。
         final entries = PluginRegistry.I.toolEntries;
         _selectedCardId = entries.isEmpty ? null : entries.first.$1;
       } else {
@@ -63,17 +60,14 @@ class _ToolsPageState extends State<ToolsPage> {
   @override
   Widget build(BuildContext context) {
     final tools = PluginRegistry.I.toolCards;
-    // 整页监听 AppState：「悬浮玻璃顶栏」开关改完要连 Scaffold 一起重建
-    // （extendBodyBehindAppBar / appBar / 顶部留白都在 build 里定死）
+    // 整页监听 AppState：顶栏开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算：extendBodyBehindAppBar 之后 body 里的
-        // MediaQuery 已扣掉状态栏，放进 body 再算会少一个状态栏的高度
+        // 先算顶栏留白：extendBodyBehindAppBar 之后 body 里的 MediaQuery 已扣掉状态栏，
+        // 放进 body 再算会少一个状态栏的高度。
         final topInset = glassTopInset(context);
         return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，顶栏那层渐变模糊才有东西可糊。
-          // 首个滚动区的顶部留白按 glassTopInset 补（见下面的 FlexibleCardGrid padding）。
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
             context,
@@ -110,7 +104,7 @@ class _ToolsPageState extends State<ToolsPage> {
               ],
             ],
           ),
-          // 自己监听注册表：启停插件 / 换顺序 / 改尺寸后立刻重排，不用等壳层来重建
+          // 自己监听注册表：启停插件 / 换顺序 / 改尺寸后立刻重排，不等壳层重建。
           body: GlassFadedBody(
             barHeight: topInset,
             child: ListenableBuilder(
@@ -140,16 +134,14 @@ class _ToolsPageState extends State<ToolsPage> {
                         ),
                       )
                     : GestureDetector(
-                        // 点空白 / 列表下方退出整理。卡片自己在整理态里吸收点击，
-                        // 宫格也有一层空白点击（点卡片缝里也能退），这里补上整页范围。
+                        // 点空白 / 列表下方退出整理：卡片与宫格已各有一层，这里补整页范围。
                         behavior: HitTestBehavior.translucent,
                         onTap: _editing ? () => _setEditing(false) : null,
                         child: Column(
                           children: [
                             Expanded(
                               child: ListView(
-                                // 底栏是玻璃浮层（壳层 Scaffold.extendBody）：底部多让出底栏这一截。
-                                // 整理态时尺寸条就贴在底栏上方，这份留白交给它，别再重复叠一次。
+                                // 底部让出玻璃浮层底栏；整理态时这份留白交给尺寸条，不重复叠。
                                 padding: EdgeInsets.only(
                                   bottom: _editing
                                       ? 12
@@ -160,7 +152,6 @@ class _ToolsPageState extends State<ToolsPage> {
                                 ),
                                 children: [
                                   FlexibleCardGrid(
-                                    // 顶部留白 = 悬浮顶栏（状态栏 + 标题栏）
                                     padding: EdgeInsets.fromLTRB(
                                       12,
                                       4 + topInset,
@@ -193,8 +184,7 @@ class _ToolsPageState extends State<ToolsPage> {
                                 ],
                               ),
                             ),
-                            // 尺寸条放在页面下方、底栏上方：顶部那块地方留给标题，
-                            // 单手握持时拇指正好够得着（顶栏那排按钮要伸上去）。
+                            // 尺寸条放页面下方、底栏上方：顶部留给标题，单手拇指够得着。
                             if (_editing)
                               Padding(
                                 padding: EdgeInsets.fromLTRB(
@@ -233,7 +223,7 @@ class _ToolsPageState extends State<ToolsPage> {
     bool editing,
   ) {
     final scheme = Theme.of(context).colorScheme;
-    // 排版按尺寸档位的「取向」分，而不是逐个比大小：以后加档位只需在这里补一种排法
+    // 排版按尺寸档位的「取向」分，而不是逐个比大小：加档位只需在这里补一种排法。
     final kind = size.kind;
     final tile = kind == GridCardKind.iconOnly;
     final bar = kind == GridCardKind.row;
@@ -246,8 +236,7 @@ class _ToolsPageState extends State<ToolsPage> {
         });
 
     if (tile) {
-      // 1x1 小方格：**只显示图标**（居中，略放大）。这么小的一格放名字只会被截成
-      // 两三个字，图标反而更好认；名称靠长按选中后顶部尺寸条那一行、或放大后再看。
+      // 1x1 只显示图标：这么小放名字会被截成两三个字，图标反而更好认。
       return AppCard(
         bottomGap: 0,
         radius: 14,
@@ -276,7 +265,7 @@ class _ToolsPageState extends State<ToolsPage> {
     );
 
     if (bar) {
-      // 1x3 横条：图标在左、标题和状态在右，只占一行高
+      // 1x3 横条：图标在左、标题与状态在右，只占一行高。
       return AppCard(
         bottomGap: 0,
         radius: 16,
@@ -321,8 +310,7 @@ class _ToolsPageState extends State<ToolsPage> {
     }
 
     if (narrow) {
-      // 2x1 竖条：卡面只有 55dp 宽、内容区约 40dp。图标块要够小（20+2×6=32），
-      // 标题按 11.5 号竖排两行，副标题放不下就不放——信息密度交给 2x3。
+      // 2x1 竖条：卡面仅 55dp 宽，图标块 32dp、标题竖排两行，副标题放不下。
       return AppCard(
         bottomGap: 0,
         radius: 16,
@@ -377,7 +365,7 @@ class _ToolsPageState extends State<ToolsPage> {
     );
 
     return AppCard(
-      // 宫格自己控制间距：卡片必须正好填满单元，否则拖起来会比占位框小一圈
+      // 宫格自己控制间距：卡片必须正好填满单元，否则拖起来比占位框小一圈。
       bottomGap: 0,
       radius: 16,
       padding: EdgeInsets.all(tall ? 10 : 14),
@@ -428,14 +416,13 @@ class _ToolOrderPageState extends State<ToolOrderPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 排序页也要跟着 AppState 重建（「悬浮玻璃顶栏」开关改了 Scaffold 的取参）
+    // 排序页也要跟着 AppState 重建：顶栏开关改了 Scaffold 的取参。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
             context,
@@ -455,7 +442,6 @@ class _ToolOrderPageState extends State<ToolOrderPage> {
           body: GlassFadedBody(
             barHeight: topInset,
             child: ListView(
-            // 顶部让出悬浮顶栏
             padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
             children: [
               Padding(

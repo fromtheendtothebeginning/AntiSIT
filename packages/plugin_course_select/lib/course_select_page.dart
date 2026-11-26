@@ -4,12 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-/// 抢课：正方教务 9.0「学生选课」。
-///
-/// 流程：选课轮次 → 课程列表（可搜索）→ 展开教学班 → 点击「抢课」后按 1.5 秒
-/// 间隔自动提交，直到成功 / 手动停止 / 名额以外需要人工处理的错误。
-///
-/// 选课是写操作，暂只支持直连模式；服务器模式的开放接口没有选课端点。
+part 'course_select_service.dart';
+
+/// 抢课：正方教务 9.0「学生选课」——选课轮次 → 课程列表（可搜索）→ 展开教学班 → 自动提交抢课。
+/// 选课是写操作，只支持直连模式；服务器模式的开放接口没有选课端点。
 class CourseSelectPage extends StatefulWidget {
   const CourseSelectPage({super.key});
 
@@ -17,41 +15,15 @@ class CourseSelectPage extends StatefulWidget {
   State<CourseSelectPage> createState() => _CourseSelectPageState();
 }
 
-class _CourseSelectPageState extends State<CourseSelectPage> {
-  bool _loadingScopes = true;
-  String? _scopesErr;
-  List<CourseScope> _scopes = [];
-  int _scopeIndex = 0;
-
-  final TextEditingController _search = TextEditingController();
-  String _keyword = '';
-  List<CourseOffer> _offers = [];
-  bool _loadingOffers = false;
-  String? _offersErr;
-  bool _hasMore = false;
-  int _offersSeq = 0;
-
-  final Map<String, List<CourseSection>> _sections = {};
-  final Set<String> _loadingSections = {};
-  final Map<String, String> _sectionErrors = {};
-  String? _expanded;
-
-  Timer? _grabTimer;
-  CourseOffer? _grabOffer;
-  CourseSection? _grabSection;
-  int _grabAttempt = 0;
-  bool _grabActive = false;
-  bool _grabBusy = false;
-  String _grabText = '';
-
-  static const int _grabIntervalMs = 1500;
-  static const int _grabMaxAttempts = 120;
-
+class _CourseSelectPageState extends State<CourseSelectPage>
+    with _CourseSelectService {
+  @override
   CourseScope? get _scope => _scopes.isEmpty || _scopeIndex >= _scopes.length
       ? null
       : _scopes[_scopeIndex];
 
   /// 能拿选课数据：直连模式，或演示模式（演示走本地假数据）。
+  @override
   bool get _isDirect => AppState.I.direct || AppState.I.demo;
 
   @override
@@ -67,275 +39,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     super.dispose();
   }
 
-  // ==================== 数据加载 ====================
-
-  Future<void> _loadScopes() async {
-    if (!_isDirect) {
-      setState(() => _loadingScopes = false);
-      return;
-    }
-    _stopGrab(silent: true);
-    setState(() {
-      _loadingScopes = true;
-      _scopesErr = null;
-    });
-    try {
-      final scopes = await ApiClient.I.courseScopes();
-      if (!mounted) return;
-      setState(() {
-        _scopes = scopes;
-        _scopeIndex = 0;
-        _loadingScopes = false;
-        _offers = [];
-        _offersErr = null;
-        _hasMore = false;
-        _sections.clear();
-        _sectionErrors.clear();
-        _expanded = null;
-      });
-      if (scopes.isEmpty) return;
-      await _loadOffers(reset: true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _scopesErr = e is ApiError ? e.message : e.toString();
-        _loadingScopes = false;
-      });
-    }
-  }
-
-  Future<void> _loadOffers({bool reset = false, bool more = false}) async {
-    final scope = _scope;
-    if (scope == null || _loadingOffers) return;
-    final seq = ++_offersSeq;
-    setState(() {
-      _loadingOffers = true;
-      _offersErr = null;
-      if (reset) {
-        _offers = [];
-        _hasMore = false;
-        _sections.clear();
-        _sectionErrors.clear();
-        _expanded = null;
-      }
-    });
-    try {
-      final start = reset ? 0 : _offers.length;
-      final list = await ApiClient.I.courseOffers(
-        scope,
-        keyword: _keyword,
-        start: start,
-      );
-      if (!mounted || seq != _offersSeq) return;
-      setState(() {
-        _offers = reset ? list : [..._offers, ...list];
-        _hasMore = list.length >= 50;
-      });
-    } catch (e) {
-      if (!mounted || seq != _offersSeq) return;
-      setState(() => _offersErr = e is ApiError ? e.message : e.toString());
-    } finally {
-      if (mounted && seq == _offersSeq) {
-        setState(() => _loadingOffers = false);
-      }
-    }
-  }
-
-  Future<void> _loadSections(CourseOffer offer, {bool force = false}) async {
-    final key = _keyOf(offer);
-    if (!force && _sections.containsKey(key)) return;
-    if (_loadingSections.contains(key)) return;
-    setState(() {
-      _loadingSections.add(key);
-      _sectionErrors.remove(key);
-    });
-    try {
-      final list = await ApiClient.I.courseSections(offer);
-      if (!mounted) return;
-      setState(() => _sections[key] = list);
-    } catch (e) {
-      if (!mounted) return;
-      setState(
-        () => _sectionErrors[key] = e is ApiError ? e.message : e.toString(),
-      );
-    } finally {
-      if (mounted) setState(() => _loadingSections.remove(key));
-    }
-  }
-
-  String _keyOf(CourseOffer offer) => '${offer.scopeId}|${offer.id}';
-
-  void _switchScope(int index) {
-    if (index == _scopeIndex) return;
-    _stopGrab(silent: true);
-    setState(() {
-      _scopeIndex = index;
-      _offers = [];
-      _offersErr = null;
-      _hasMore = false;
-      _sections.clear();
-      _sectionErrors.clear();
-      _expanded = null;
-    });
-    _loadOffers(reset: true);
-  }
-
-  void _searchNow() {
-    _keyword = _search.text.trim();
-    _loadOffers(reset: true);
-  }
-
-  // ==================== 抢课 ====================
-
-  Future<void> _confirmGrab(CourseOffer offer, CourseSection section) async {
-    if (_grabActive) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('确认抢课'),
-        content: Text(
-          '课程：${offer.name}\n'
-          '教学班：${section.name.isEmpty ? '默认教学班' : section.name}\n\n'
-          '将每 ${_grabIntervalMs ~/ 1000} 秒向教务提交一次选课请求，'
-          '名额满时会继续等待，直到成功或你手动停止。\n\n'
-          '选课是写操作：若出现网络超时等结果不确定的情况，会立即停止并提示你到'
-          '「已选课程」确认，不会盲目重试。',
-          style: const TextStyle(fontSize: 13.5, height: 1.6),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('开始抢课'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && mounted) _startGrab(offer, section);
-  }
-
-  void _startGrab(CourseOffer offer, CourseSection section) {
-    _stopGrab(silent: true);
-    setState(() {
-      _grabOffer = offer;
-      _grabSection = section;
-      _grabAttempt = 0;
-      _grabActive = true;
-      _grabBusy = false;
-      _grabText = '准备抢课…';
-    });
-    _grabTimer = Timer.periodic(
-      const Duration(milliseconds: _grabIntervalMs),
-      (_) => _grabTick(),
-    );
-    _grabTick();
-  }
-
-  Future<void> _grabTick() async {
-    final offer = _grabOffer;
-    final section = _grabSection;
-    if (!_grabActive || _grabBusy || offer == null || section == null) return;
-    if (_grabAttempt >= _grabMaxAttempts) {
-      _stopGrab(
-        message: '已尝试 $_grabMaxAttempts 次，先停下来；稍后可以重新开始',
-        success: false,
-      );
-      return;
-    }
-    setState(() {
-      _grabBusy = true;
-      _grabAttempt++;
-      _grabText = '第 $_grabAttempt 次提交中…';
-    });
-    try {
-      final result = await ApiClient.I.selectCourse(offer, section);
-      if (!mounted || !_grabActive) return;
-      switch (result.status) {
-        case CourseSelectStatus.success:
-        case CourseSelectStatus.alreadySelected:
-          _stopGrab(
-            message: result.message.isEmpty ? '选课成功' : result.message,
-            success: true,
-          );
-          _loadSections(offer, force: true);
-          _loadOffers(reset: true);
-        case CourseSelectStatus.noCapacity:
-          setState(
-            () => _grabText =
-                '第 $_grabAttempt 次 · 名额已满，继续等待…${result.message.isEmpty ? '' : '\n${result.message}'}',
-          );
-        case CourseSelectStatus.roundClosed:
-          _stopGrab(
-            message: result.message.isEmpty ? '当前不属于选课阶段' : result.message,
-          );
-        case CourseSelectStatus.needCaptcha:
-          _stopGrab(
-            message:
-                result.message.isEmpty ? '教务要求验证码，请重新登录后再试' : result.message,
-          );
-        case CourseSelectStatus.sessionExpired:
-          _stopGrab(message: '教务登录已失效，请返回重新进入后重试');
-        case CourseSelectStatus.conflict:
-        case CourseSelectStatus.creditLimit:
-          _stopGrab(
-            message: result.message.isEmpty ? '选课被学校拒绝' : result.message,
-          );
-        case CourseSelectStatus.networkRetryable:
-        case CourseSelectStatus.unknown:
-          _stopGrab(
-            message: '提交结果不确定，已停止自动重试。请到「已选课程」确认是否已选上'
-                '${result.message.isEmpty ? '' : '\n${result.message}'}',
-          );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      final msg = e is ApiError ? e.message : e.toString();
-      final uncertain = RegExp(
-        r'超时|网络|连接|Socket|timed out',
-        caseSensitive: false,
-      ).hasMatch(msg);
-      _stopGrab(
-        message: uncertain ? '请求结果不确定，已停止自动重试。请到「已选课程」确认是否已选上\n$msg' : msg,
-      );
-    } finally {
-      if (mounted && _grabActive) setState(() => _grabBusy = false);
-    }
-  }
-
-  void _stopGrab({String? message, bool success = false, bool silent = false}) {
-    _grabTimer?.cancel();
-    _grabTimer = null;
-    final wasActive = _grabActive;
-    if (mounted) {
-      setState(() {
-        _grabActive = false;
-        _grabBusy = false;
-        _grabOffer = null;
-        _grabSection = null;
-        _grabText = '';
-      });
-    } else {
-      _grabActive = false;
-      _grabBusy = false;
-      _grabOffer = null;
-      _grabSection = null;
-      _grabText = '';
-    }
-    if (!silent && wasActive && message != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: success ? SemColors.success : null,
-          duration: Duration(seconds: success ? 3 : 5),
-        ),
-      );
-    }
-  }
-
+  /// 查看本轮的已选课程（底部弹层）。
   Future<void> _showSelected() async {
     final scope = _scope;
     if (scope == null) return;
@@ -411,18 +115,15 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     }
   }
 
-  // ==================== UI ====================
-
   @override
   Widget build(BuildContext context) {
-    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：顶栏样式开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
             context,
@@ -444,7 +145,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
           body: GlassFadedBody(
             barHeight: topInset,
             child: !_isDirect
-              // 非直连时是居中的整块提示，用 Padding 顶出悬浮顶栏
+              // 非直连时整块提示：用 Padding 顶出悬浮顶栏。
               ? Padding(
                   padding: EdgeInsets.only(top: topInset),
                   child: _modeGate(),
@@ -457,10 +158,11 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
                   emptyText: '当前没有开放的选课轮次',
                   onRetry: _loadScopes,
                   child: RefreshIndicator(
+                    // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
+                    edgeOffset: topInset,
                     onRefresh: () => _loadOffers(reset: true),
                     child: ListView(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      // 顶部让出悬浮顶栏
                       padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
                       children: [
                         if (_scopes.length > 1) _scopeChips(),
@@ -514,6 +216,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     );
   }
 
+  /// 非直连模式的说明与跳转。
   Widget _modeGate() => Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -544,6 +247,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
         ),
       );
 
+  /// 选课轮次切换条。
   Widget _scopeChips() => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Wrap(
@@ -562,6 +266,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
         ),
       );
 
+  /// 课程搜索框。
   Widget _searchBar() => Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: Row(
@@ -601,6 +306,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
         ),
       );
 
+  /// 抢课进行中的横幅：进度文案 + 停止按钮。
   Widget _grabBanner() {
     final offer = _grabOffer;
     final section = _grabSection;
@@ -658,6 +364,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     );
   }
 
+  /// 课程卡片：点开加载教学班并展开。
   Widget _offerCard(CourseOffer offer) {
     final key = _keyOf(offer);
     final expanded = _expanded == key;
@@ -733,6 +440,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     );
   }
 
+  /// 教学班一行：教师 / 时间 / 地点 + 名额 + 抢课按钮。
   Widget _sectionRow(CourseOffer offer, CourseSection section) {
     final detail = <String>[
       if (section.teacher.isNotEmpty) section.teacher,
@@ -800,6 +508,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     );
   }
 
+  /// 名额胶囊：已满标红，否则显示余量。
   Widget _capacityCapsule(int? capacity, int? selected) {
     if (capacity == null && selected == null) return const SizedBox.shrink();
     final full = capacity != null &&
@@ -819,6 +528,7 @@ class _CourseSelectPageState extends State<CourseSelectPage> {
     return Capsule(text, color: full ? SemColors.danger : SemColors.success);
   }
 
+  /// 课程卡片里的一行元信息。
   Widget _row(String text) => Padding(
         padding: const EdgeInsets.only(top: 2),
         child: Text(

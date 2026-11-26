@@ -4,10 +4,7 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 活动报名（学工工作流 hdsq）的回归用例：动态表单的预填字段必须**原样回传**学校
-/// （学籍 / 身份证 / 学期码等只能由学校生成，客户端不得自行拼装）、复合字段
-/// hdkssj|hdjssj 拆成两项、附件字段 bmfj 剔除、自述字段（bmyy 等）透传，
-/// 以及重复提交被学校侧原文拒绝。跑本地模拟校园服务，协议与真实系统同款。
+/// 活动报名（hdsq）回归：动态表单预填字段原样回传、复合字段 hdkssj|hdjssj 拆分、附件字段剔除、自述字段透传；跑本地模拟校园服务。
 void main() {
   final mock = MockCampusServer.instance;
 

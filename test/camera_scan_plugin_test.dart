@@ -6,11 +6,7 @@ import 'package:plugin_scan/plugin_scan.dart';
 import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 摄像头插件与扫一扫插件的接线验收：
-/// * 两个插件是独立的包：扫一扫硬依赖摄像头（停用摄像头会连带停用扫一扫）；
-/// * 扫码页只认 [CameraCapability]：换掉能力实现（测试替身）照样能取景识码，
-///   说明页面不再直接碰 `mobile_scanner`；
-/// * 能力缺席时页面给出启用提示，不开天窗。
+/// 摄像头 / 扫一扫插件接线：扫一扫硬依赖摄像头，扫码页只认 [CameraCapability]（换测试替身照样取景识码），能力缺席时给启用提示。
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 

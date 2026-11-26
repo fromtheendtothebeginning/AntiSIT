@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,134 +5,29 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'direct/school.dart';
-import 'json_num.dart';
 import 'secure_store.dart';
+import 'tool_cache.dart';
 import 'tool_page_cache.dart';
 
-/// 二课分数快照（/score 的 data 节点）：宫格副标题与「学籍信息」的常用字段
-/// 强类型访问；详情页要挖别的字段走 [raw]。
-class ScoreSnapshot {
-  const ScoreSnapshot._(this.raw);
-
-  factory ScoreSnapshot.fromJson(Map<String, dynamic> j) => ScoreSnapshot._(j);
-
-  final Map<String, dynamic> raw;
-
-  /// 已得分 / 达标分（缺字段按 0，副标题不至于显示 null）。
-  /// 学工接口的 zxs/sjxf 是字符串（如 "8.0"），只认 num 会让卡面显示 0/0。
-  num get credit => asNum(raw['credit']) ?? 0;
-  num get total => asNum(raw['total']) ?? 0;
-
-  /// 学籍信息节点（院系 / 专业 / 班级），「我的 → 学籍信息」用。
-  Map<String, dynamic>? get student => raw['student'] is Map<String, dynamic>
-      ? raw['student'] as Map<String, dynamic>
-      : null;
-}
-
-/// 宿舍电费快照（/electricity/query 的 data 节点）。
-class ElectricitySnapshot {
-  const ElectricitySnapshot._(this.raw);
-
-  factory ElectricitySnapshot.fromJson(Map<String, dynamic> j) =>
-      ElectricitySnapshot._(j);
-
-  final Map<String, dynamic> raw;
-
-  /// 当前余额（元）。
-  num get balance => asNum(raw['balance']) ?? 0;
-}
-
-/// 工具页与子页共享的缓存数值（用于宫格卡面速览）。
-///
-/// 快照同时写入闪存：进程被系统回收后重开，卡面副标题仍是上次的值；
-/// 工具页子界面打开时也能立刻有数据，不必先转圈等网络。
-class ToolCache {
-  static const _scoreKey = 'tool_cache_score';
-  static const _electricityKey = 'tool_cache_electricity';
-
-  static ScoreSnapshot? _score;
-  static ElectricitySnapshot? _electricity;
-
-  static ScoreSnapshot? get score => _score;
-  static ElectricitySnapshot? get electricity => _electricity;
-
-  static set score(ScoreSnapshot? v) {
-    _score = v;
-    unawaited(_persist(_scoreKey, v?.raw));
-  }
-
-  static set electricity(ElectricitySnapshot? v) {
-    _electricity = v;
-    unawaited(_persist(_electricityKey, v?.raw));
-  }
-
-  /// data 节点缺失 / 类型不对时给 null，把判空集中在这一处。
-  static ScoreSnapshot? scoreOf(Object? data) =>
-      data is Map<String, dynamic> ? ScoreSnapshot.fromJson(data) : null;
-
-  static ElectricitySnapshot? electricityOf(Object? data) =>
-      data is Map<String, dynamic> ? ElectricitySnapshot.fromJson(data) : null;
-
-  /// 启动时读回上次的快照（失败当作没有，不影响后续刷新）。
-  static Future<void> load() async {
-    try {
-      final sp = await SharedPreferences.getInstance();
-      final score = _decode(sp.getString(_scoreKey));
-      if (score != null) _score = ScoreSnapshot.fromJson(score);
-      final ele = _decode(sp.getString(_electricityKey));
-      if (ele != null) _electricity = ElectricitySnapshot.fromJson(ele);
-    } catch (_) {}
-  }
-
-  /// 退出登录 / 换账号时清空，别把上一个账号的数据留给下一个人。
-  static Future<void> clear() async {
-    _score = null;
-    _electricity = null;
-    try {
-      final sp = await SharedPreferences.getInstance();
-      await sp.remove(_scoreKey);
-      await sp.remove(_electricityKey);
-    } catch (_) {}
-  }
-
-  static Map<String, dynamic>? _decode(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-    try {
-      final j = jsonDecode(raw);
-      return j is Map ? j.cast<String, dynamic>() : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Future<void> _persist(String key, Map<String, dynamic>? raw) async {
-    try {
-      final sp = await SharedPreferences.getInstance();
-      if (raw == null) {
-        await sp.remove(key);
-      } else {
-        await sp.setString(key, jsonEncode(raw));
-      }
-    } catch (_) {}
-  }
-}
+// 工具页快照（ScoreSnapshot / ElectricitySnapshot / ToolCache）随本文件一并暴露。
+export 'tool_cache.dart';
 
 /// 数据来源模式：
 /// - server：服务器账号登录远程服务器，由服务器代连校园内网（原模式）
 /// - direct：用校园凭据直接访问学校系统，不走服务器，需设备在校园网 / 校内 VPN 内
 enum AppMode { server, direct }
 
-/// 全局登录态与设置（内存态 + SharedPreferences 持久化）。
-/// 服务器模式登录 = 服务器账号换 30 天 JWT；直连模式登录 = 本机保存的校园凭据。
 /// 预测式返回（系统返回手势）的视觉样式。
 enum PredictiveBackStyle {
   /// 默认：手势跟手就用默认返回动画的那一套观感（整页位移 + 旧页压暗）。
   slide,
 
-  /// 旧样式：当前页整页**淡化**并轻微缩小、带圆角滑出，露出下层页（透明背景），
-  /// 下层页在手势前 1/3 逐步淡入并隔着磨砂露出。
+  /// 旧样式：当前页整页淡化并轻微缩小、带圆角滑出，露出下层页（透明背景）。
   fade,
 }
+
+/// 全局登录态与设置（内存态 + SharedPreferences 持久化）。
+/// 服务器模式登录 = 服务器账号换 30 天 JWT；直连模式登录 = 本机保存的校园凭据。
 class AppState extends ChangeNotifier {
   AppState._();
   static final AppState I = AppState._();
@@ -151,42 +45,31 @@ class AppState extends ChangeNotifier {
   String? password; // 仅勾选「记住密码」时持久化
   bool remember = true;
 
-  /// 外观模式：跟随系统 / 浅色 / 深色（液态玻璃主题）。
+  /// 外观模式：跟随系统 / 浅色 / 深色。
   ThemeMode themeMode = ThemeMode.system;
 
-  /// 课表：是否把「已上完」的课淡化（关掉则与未上完的课一样显示正常彩色）。
+  /// 课表：是否把「已上完」的课淡化。
   bool dimCompleted = true;
 
-  /// 课程通知方式：`none` 不通知 / `popup` 弹窗通知（系统通知）/ `cloud` 流体云通知
-  /// （课前亮起常驻倒计时，下课前收起）。由「流体云课程通知」插件在课程表设置里改；
-  /// 上课提醒据此跳过课程通知，二者不会重复弹。
+  /// 课程通知方式：`none` 不通知 / `popup` 弹窗通知 / `cloud` 流体云通知。
   String courseNotifyMode = 'popup';
 
-  /// 界面是否实时跟着滑块切换：开（默认）= 拖动时下方界面跟着滑块连续滑动、
-  /// 并在拖过一半时就换（主界面底栏切页 / 连接设置都算）；
-  /// 关 = 松手落位后才切换（旧行为，省一点重绘）。开关在「我的 → 设置 → 外观」里。
+  /// 界面是否实时跟着滑块切换：开 = 拖动时连续滑动并在拖过一半时切换，关 = 松手落位后切换。
   bool followSlider = true;
 
-  /// 预测式返回动画开关：开（默认）= 系统返回手势跟手预览、松手可反悔；
-  /// 关 = 手势期间画面不动，松手按普通返回（淡入淡出）。开关在「我的 → 设置 → 外观」里。
+  /// 预测式返回动画开关：关 = 手势期间画面不动，松手按普通返回。
   bool predictiveBack = true;
 
-  /// 预测式返回的视觉样式（见 [PredictiveBackStyle]）：默认 [PredictiveBackStyle.slide]
-  /// ——手势跟手就是用默认返回动画（斗位移 + 旧页压暗）；[PredictiveBackStyle.fade]
-  /// 是早先那套「整页淡化 + 露出下层页」的观感。选择器在「我的 → 设置 → 外观」里。
+  /// 预测式返回的视觉样式（见 [PredictiveBackStyle]）。
   PredictiveBackStyle predictiveBackStyle = PredictiveBackStyle.slide;
 
-  /// 顶栏是否用「悬浮玻璃」样式：开（默认）= 顶栏浮在内容上、内容从它底下穿过去，
-  /// 靠近顶栏的内容被渐变高斯模糊糊掉；关 = 普通 AppBar，内容排在它下面。
-  /// 开关在「我的 → 设置 → 外观」里。
+  /// 顶栏是否用「悬浮玻璃」样式：开 = 顶栏浮在内容上，靠近它的内容被模糊。
   bool glassTopBar = true;
 
-  /// 工具页（电费 / 二课 / 活动 / 考试 / 成绩）进入时是否自动刷新。
-  /// 关掉后只展示本机缓存，由页面右上角的手动刷新按钮更新。开关在「我的 → 配置」里。
+  /// 工具页进入时是否自动刷新；关掉后只展示本机缓存，靠右上角按钮更新。
   bool autoRefreshTools = true;
 
-  /// 校园码换码间隔（秒）：动态付款码每 N 秒重取一张。可在「我的 → 配置」调整。
-  /// 服务端给的有效期更短时仍听服务端的（见 ecardCountdownSeconds）。
+  /// 校园码换码间隔（秒）：动态付款码每 N 秒重取一张，服务端给的有效期更短时听服务端的。
   int ecardRefreshSeconds = 10;
 
   /// 直连模式：学校档案（可多个）+ 当前学校 + 校园凭据。
@@ -202,6 +85,7 @@ class AppState extends ChangeNotifier {
 
   bool get direct => mode == AppMode.direct;
 
+  /// 读回持久化的设置与加密凭据，并做旧明文值的迁移。
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
     final secure = SecureStore.I;
@@ -313,8 +197,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// 敏感值写加密存储；顺带清掉早期版本可能留在明文里的同名 key。
-  /// 值为 null / 空表示删除。
+  /// 敏感值写加密存储；顺带清掉早期版本可能留在明文里的同名 key。值为 null / 空表示删除。
   static Future<void> _putSecure(
     SecureStore secure,
     SharedPreferences sp,
@@ -344,7 +227,7 @@ class AppState extends ChangeNotifier {
     required String username,
     String? password,
   }) async {
-    // 只有真的换账号才清工具页缓存：token 续期 / 掉线自动重登也是走这里，
+    // 只有真的换账号才清工具页缓存：token 续期 / 掉线自动重登也走这里，
     // 每次都清会把用户上次看过的数据全抹掉，再进二级页就只剩转圈。
     final switchedAccount =
         username.isNotEmpty &&
@@ -399,13 +282,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 「外观」滑块拖动中的实时深浅（0 = 全浅色、1 = 全深色，见 `appearanceDarkness`）；
-  /// null = 没在拖，按 [themeMode] 走。**不持久化**：它只是拖动时的预览，
-  /// 静止时其值与该档对应的配色一致，所以松手不会跳。
+  /// 「外观」滑块拖动中的实时深浅（0 = 全浅色、1 = 全深色）；null = 没在拖。
+  /// **不持久化**：它只是拖动时的预览。
   double? appearancePreviewDark;
 
-  /// 拖动「外观」滑块时更新预览。整站配色是全局的（`SemColors`），每帧重建界面太贵，
-  /// 所以**量化到 5% 一步**再通知：视觉上仍是连续渐变，重建次数少一个数量级。
+  /// 拖动「外观」滑块时更新预览：量化到 5% 一步再通知，避免每帧重建整站配色。
   void setAppearancePreview(double? v) {
     if (v == null) {
       if (appearancePreviewDark == null) return;
@@ -419,14 +300,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 课表：是否淡化「已上完」的课（关掉则显示正常彩色）。
+  /// 课表：是否淡化「已上完」的课。
   Future<void> setDimCompleted(bool v) async {
     dimCompleted = v;
     await _persist();
     notifyListeners();
   }
 
-  /// 课程通知方式（`none` / `popup` / `cloud`，见 [courseNotifyMode]）。
+  /// 课程通知方式（`none` / `popup` / `cloud`）。
   Future<void> setCourseNotifyMode(String v) async {
     if (courseNotifyMode == v) return;
     courseNotifyMode = v;
@@ -434,21 +315,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 界面是否实时跟着滑块切换（见 [followSlider]）。
+  /// 界面是否实时跟着滑块切换。
   Future<void> setFollowSlider(bool v) async {
     followSlider = v;
     await _persist();
     notifyListeners();
   }
 
-  /// 预测式返回动画开关（见 [predictiveBack]）。
+  /// 预测式返回动画开关。
   Future<void> setPredictiveBack(bool v) async {
     predictiveBack = v;
     await _persist();
     notifyListeners();
   }
 
-  /// 预测式返回样式（见 [predictiveBackStyle]）。
+  /// 预测式返回样式。
   Future<void> setPredictiveBackStyle(PredictiveBackStyle v) async {
     if (predictiveBackStyle == v) return;
     predictiveBackStyle = v;
@@ -456,7 +337,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 顶栏是否用悬浮玻璃样式（见 [glassTopBar]）。
+  /// 顶栏是否用悬浮玻璃样式。
   Future<void> setGlassTopBar(bool v) async {
     if (glassTopBar == v) return;
     glassTopBar = v;
@@ -464,14 +345,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 工具页进入时是否自动刷新（见 [autoRefreshTools]）。
+  /// 工具页进入时是否自动刷新。
   Future<void> setAutoRefreshTools(bool v) async {
     autoRefreshTools = v;
     await _persist();
     notifyListeners();
   }
 
-  /// 校园码换码间隔（见 [ecardRefreshSeconds]），限制在 5–30 秒。
+  /// 校园码换码间隔，限制在 5–30 秒。
   Future<void> setEcardRefreshSeconds(int v) async {
     ecardRefreshSeconds = v.clamp(5, 30);
     await _persist();
@@ -485,7 +366,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 新增 / 更新学校档案（按名称或域名匹配覆盖）。
+  /// 新增 / 更新学校档案（按名称匹配覆盖）。
   Future<void> upsertSchool(SchoolProfile s) async {
     final i = schools.indexWhere((e) => e.name == s.name);
     if (i >= 0) {
@@ -506,11 +387,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 清除会话；[keepCreds] 为 true 时保留记住的账号密码。
-  ///
-  /// [manual] 为 true 表示「用户主动点了退出登录」：这是明确的要走信号，
-  /// 所以连「记住密码并自动重登」一起关掉——否则下次有请求 401 时，
-  /// [ApiClient] 会拿加密存储里的旧密码自动重登，用户会看到「退出了又自己登上」。
+  /// 清除会话；[manual] 为 true（用户主动退出）时连记住密码一起关掉，
+  /// 否则下次 401 会用加密存储里的旧密码自动重登。
   Future<void> clearSession({
     bool keepCreds = true,
     bool manual = false,
@@ -533,9 +411,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// 直连模式退出：清校园密码（保留学号/寝室/姓名便于再次登录）。
-  ///
-  /// [manual] 为 true（用户主动退出）时连「记住密码并自动重登」一起关掉：
-  /// 直连凭据里的密码就是自动登录用的那把钥匙，不清就会在下次查询时自己登回去。
+  /// [manual] 为 true 时连记住密码一起关掉，否则下次查询会自己登回去。
   Future<void> clearDirectSession({bool manual = false}) async {
     creds.password = '';
     creds.payPassword = '';

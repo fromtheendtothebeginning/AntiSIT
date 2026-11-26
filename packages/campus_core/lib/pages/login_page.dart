@@ -7,9 +7,7 @@ import '../host.dart';
 import '../widgets/common.dart';
 import 'connect_page.dart';
 
-/// 登录页：**两种接入方式二选一**。
-/// - 直连模式（首选）：App 用校园凭据（学号 + 统一身份认证密码）直接连学校系统，需校园网/校内 VPN；
-/// - 服务器模式：填服务器域名或 IP，登录该服务器上的 anticraft 账号，由服务器代连校园内网。
+/// 登录页：直连模式（校园凭据直连学校系统，需校园网 / 校内 VPN）与服务器模式二选一。
 /// 不强制登录：可「先逛逛」进入游客模式。
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, this.initialError});
@@ -23,16 +21,14 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _form = GlobalKey<FormState>();
 
-  // 服务器模式
   final _server = TextEditingController();
   final _user = TextEditingController();
   final _pwd = TextEditingController();
 
-  // 直连模式
   final _sid = TextEditingController();
   final _campusPwd = TextEditingController();
 
-  late int _mode; // 0=直连（首选） 1=服务器
+  late int _mode; // 0 = 直连（首选）、1 = 服务器。
   bool _busy = false;
   bool _hidePwd = true;
   bool _hideCampusPwd = true;
@@ -42,7 +38,7 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     final st = AppState.I;
-    // 首选直连：已配过服务器地址（说明是服务器模式的老用户）时默认停在服务器页
+    // 首选直连；已配过服务器地址（服务器模式老用户）时默认停在服务器页。
     _mode = st.direct || st.serverUrl.isEmpty ? 0 : 1;
     _server.text = st.serverUrl;
     _user.text = st.username ?? '';
@@ -124,8 +120,8 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  /// 回主壳：主壳属于宿主包，core 不认识它，由宿主注入 builder。
   void _goHome() {
-    // 主壳属于宿主包，core 不认识它：由宿主注入 builder（见 host.dart）
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => hostShellBuilder()),
       (route) => false,
@@ -160,7 +156,7 @@ class _LoginPageState extends State<LoginPage> {
                       child: Image.asset('assets/sit-mark.png',
                           width: 76,
                           height: 76,
-                          // 测试环境拿不到 asset，缺图不该让整页报错
+                          // 测试环境拿不到 asset，缺图不该让整页报错。
                           errorBuilder: (_, __, ___) =>
                               const Icon(Icons.school_outlined, size: 64)),
                     ),
@@ -179,7 +175,7 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     const SizedBox(height: 18),
 
-                    // 接入方式二选一（默认直连）
+                    // 接入方式二选一（默认直连）。
                     GlassTabs(
                       labels: const ['直连模式', '服务器模式'],
                       index: _mode,
@@ -274,7 +270,7 @@ class _LoginPageState extends State<LoginPage> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    // 从组件边上挪下来的说明，统一沉到页底
+                    // 说明文案统一沉到页底。
                     PageNotes(lines: [
                       direct
                           ? '直连模式：用学号和统一身份认证密码直接连学校系统'

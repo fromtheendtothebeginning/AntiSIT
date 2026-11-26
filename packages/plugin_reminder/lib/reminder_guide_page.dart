@@ -6,11 +6,9 @@ import 'package:campus_core/campus_core.dart';
 
 import 'class_reminder_service.dart';
 
-/// 上课提醒的二级页：自检结果 + 引导。
-///
-/// 为什么单独一页：排期成功 ≠ 能弹出来——通知权限、精确闹钟、厂商省电策略任意一项不对，
-/// 用户那边都是「提醒不来」，而这三项都只有系统设置页能改。设置列表里塞不下这些解释，
-/// 所以开关下面只留一行摘要，详情与一键入口都放这儿。
+/// 上课提醒的二级页：自检结果 + 各项系统设置入口。
+/// 排期成功 ≠ 能弹出来——通知权限、精确闹钟、厂商省电策略任一项不对，用户那边都是「提醒不来」，
+/// 而这三项都只有系统设置页能改，所以详情与一键入口都放这儿。
 class ReminderGuidePage extends StatefulWidget {
   const ReminderGuidePage({super.key});
 
@@ -49,11 +47,11 @@ class _ReminderGuidePageState extends State<ReminderGuidePage>
   @override
   Widget build(BuildContext context) {
     final h = _health;
-    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
+    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建。
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣掉状态栏）
+        // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
@@ -68,7 +66,6 @@ class _ReminderGuidePageState extends State<ReminderGuidePage>
                   ),
                 )
               : ListView(
-                  // 顶部让出悬浮顶栏
                   padding: EdgeInsets.fromLTRB(12, 4 + topInset, 12, 24),
                   children: [
                     _verdict(h),

@@ -4,12 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 校园码底图的像素校验：服务端 `_qr_png_base64` 生成的必须是**透明底**二维码，
-/// 否则 App / 网页上会出现「二维码背后一个白色正方形」（用户报过的问题）。
-///
-/// 这里解码 PNG 的原始像素（png 只有单 IDAT、无隔行，Flutter 测试依赖里没有图像解码器，
-/// 所以自己解 zlib + 逐行反滤波），验证角上与静默区透明、深色模块存在且内部留白。
-/// 解码后的图像：(宽, 高, RGBA 像素)
+/// 校园码底图像素校验：必须是透明底二维码；自己解 PNG 原始像素（zlib + 逐行反滤波）验证角上与静默区透明、深色模块存在。
 typedef _Decoded = ({int width, int height, Uint8List rgba});
 
 _Decoded _pngPixels(Uint8List png) {

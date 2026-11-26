@@ -4,11 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 「导入 JSON 主题」的验收：
-/// * 合法 JSON 解析出主题，缺省 success/danger 给默认值；
-/// * 各类坏输入（坏 JSON / 缺字段 / 坏颜色）给出人话报错；
-/// * 注册表导入后出现在 themes 里并自动启用；同 id 覆盖；删除回落默认；
-/// * 重新 load 能从存档里读回来。
+/// 导入 JSON 主题：解析与默认值、坏输入的人话报错、注册表导入 / 同 id 覆盖 / 删除回落、重新 load 读得回。
 const _validJson = '''
 {
   "name": "月白",

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'sm4_boxes.dart';
 
 // SM4-ECB + PKCS#7 + base64：校付宝支付密码加密。
-// 移植自 index 后端 campus/electricity.py（纯算法，未用任何加密库）。
 
 const int _mask = 0xFFFFFFFF;
 const String _defaultKey = 'IhaIWKKs9AJpn5ip';

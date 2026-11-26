@@ -44,11 +44,8 @@ CordisManifest readBundleManifest(List<int> bytes) {
 
 /// 把 zip 解开到 [dir]，返回 Cordis 清单与入口。
 ///
-/// 约定（也写给拓展作者看，见 docs/extensions.md）：
-/// * 所有文件都在同一个顶层目录里时自动去掉这层（`zip -r x.zip myapp/` 也能直接用）；
-/// * 根目录必须有 `ext.json`，其中 `main` 指向入口 `.js`；
-/// * **安全**：绝对路径 / `..` / 盘符这类条目整条丢掉，绝不写到目标目录外面（zip-slip）。
-///
+/// 所有文件都在同一个顶层目录时自动去掉这层；根目录必须有 `ext.json`；**安全**：
+/// 绝对路径 / `..` / 盘符这类条目整条丢掉，绝不写到目标目录外面（zip-slip）。
 /// 清单不合法 / 缺入口抛 [FormatException]，消息直接拿去给用户看。
 ExtBundle extractBundle({required List<int> bytes, required String dir}) {
   final entries = <String, ArchiveFile>{};

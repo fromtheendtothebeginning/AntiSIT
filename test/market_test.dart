@@ -13,15 +13,7 @@ import 'package:plugin_theme_glass/plugin_theme_glass.dart';
 import 'package:plugin_webview/plugin_webview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 插件市场的验收（目录验签 / 下载校验 / 安装更新卸载）：
-///
-/// * **目录必须验签**：签名不对、公钥不认识、内容被改过一个字节 → 一律不认，装不了；
-/// * **拓展包必须对得上 sha256**：改过的包不解压、不落盘；
-/// * 装完能与内核配合打开（zip 型解压成本地入口页，与手动导入压缩包同一条路）；
-/// * 更新保持拓展 id 不变 → 它的数据（`plugin.ext.data.<id>.*`）留着；
-/// * 卸载清条目 + 解压目录 + 数据；
-/// * 网址型：只记一条网址，没有版本概念；
-/// * minAppVersion 高于当前 App → 市场里显示「需要升级 App」，装不了。
+/// 插件市场：目录必须验签、包必须对得上 sha256、装完能与内核配合打开、更新保 id 留数据、卸载清干净、minAppVersion 不满足就装不了。
 void main() {
   late Directory tempDir;
 
@@ -49,8 +41,6 @@ void main() {
   tearDown(() {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
-
-  // ==================== 造一份真目录（自己签） ====================
 
   /// 测试里的「维护者」：现生成一对密钥，公钥塞给 App，私钥用来签目录。
   Future<Map<String, String>> newSigner() async {
@@ -143,8 +133,6 @@ void main() {
     };
   }
 
-  // ==================== 目录 ====================
-
   group('目录', () {
     test('验签通过：拿得到条目', () async {
       final signer = await newSigner();
@@ -229,9 +217,7 @@ void main() {
     });
 
     test('自建镜像排第一：CDN 的长缓存 + 目录与签名分开缓存会把新版本挡住', () {
-      // jsDelivr 对分支路径 s-maxage 12h，且 market.json 与 market.json.sig 是
-      // 两个独立缓存条目：发版后可能给出「新目录 + 旧签名」，验签必然失败。
-      // 实测就是这样「拓展发了新版，市场里一直看不到更新」。
+      // jsDelivr 对分支路径缓存 12h，且目录与签名是两个独立缓存条目：发版后可能给出「新目录 + 旧签名」，验签必然失败。
       expect(kMarketMirrors.first, 'https://anticraft.top/market/');
       expect(kMarketMirrors, contains(contains('cdn.jsdelivr.net')));
     });
@@ -259,8 +245,6 @@ void main() {
       }
     });
   });
-
-  // ==================== 安装 / 更新 / 卸载 ====================
 
   group('安装', () {
     Future<MarketEntry> readyEntry(Map<String, String> signer,

@@ -8,12 +8,16 @@ import 'evaluate_api.dart';
 import 'evaluate_cache.dart';
 import 'evaluate_model.dart';
 
+/// 评分表单列表的内边距：留白必须进列表自己的 padding，内容才能从悬浮顶栏 /
+/// 底栏底下穿过去（issue #15）。
+EdgeInsets evaluateFormListPadding(
+  double topInset, {
+  double bottomInset = 0,
+}) =>
+    EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24 + bottomInset);
+
 /// 单个老师的评分页：一列题 + 一条「统一分数」滑条 + 保存 / 提交。
-///
-/// 两个写操作的口径不同：
-/// * **保存**：可反复覆盖，提交前后都能存；
-/// * **提交**：不可撤销，必须二次确认，并且**写完之后要复查**
-///   （学校服务端对非法请求也会先回「成功」再静默丢弃，返回值不可信）。
+/// 保存可反复覆盖；提交不可撤销且必须写完复查（服务端对非法请求也会先回「成功」）。
 class EvaluateFormPage extends StatefulWidget {
   const EvaluateFormPage({
     super.key,
@@ -65,8 +69,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
     });
     try {
       final form = await widget.api.fetchForm(widget.target);
-      // 本机记下的「上次我打的分」优先级最高：教务对已保存的评教不回填具体分数，
-      // 只有本机这份能让用户接着上次的分数改。
+      // 本机记下的「上次我打的分」优先级最高：教务对已保存的评教不回填分数
       final local = await EvaluationLocalScores.read(widget.target);
       if (!mounted) return;
       setState(() {
@@ -149,7 +152,7 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
               _scores,
               comment: _comment.text.trim(),
             );
-      // 本地也留一份：下次打开（或从缓存进来）默认显示这套分数
+      // 本地也留一份：下次打开默认显示这套分数
       await EvaluationLocalScores.write(widget.target, _scores);
       // 返回值不可信：以列表 / 汇总为准再核一遍
       final verdict = await _verify(submit: submit);
@@ -265,35 +268,39 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
   @override
   Widget build(BuildContext context) {
     final form = _form;
-    // 整页监听 AppState：悬浮玻璃顶栏开关改完要连 Scaffold 一起重建
     return ListenableBuilder(
       listenable: AppState.I,
       builder: (context, _) {
-        // 顶栏留白要在建 Scaffold 之前算（body 里的 MediaQuery 已扣掉状态栏）
+        // 两处留白都要在建 Scaffold 之前算（body 里的 MediaQuery 已被扣过一遍）
         final topInset = glassTopInset(context);
+        final bottomInset = glassBottomInset(context);
         return Scaffold(
-          // 顶栏是悬浮玻璃条：内容从它底下穿过去，渐变模糊才有东西可糊
           extendBodyBehindAppBar: glassTopBarEnabled,
+          extendBody: glassBottomBarEnabled && form != null && _error == null,
           appBar: glassAppBar(
             context,
             title: Text(widget.target.course, overflow: TextOverflow.ellipsis),
           ),
-          // 表单主体是整块内容（加载 / 出错 / 表单三态），用 Padding 顶出顶栏这一截
+          // 留白必须进视图内 ListView 的 padding：内容要从顶栏 / 底栏底下穿过去（issue #15）。
           body: GlassFadedBody(
             barHeight: topInset,
-            child: Padding(
-            padding: EdgeInsets.only(top: topInset),
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Padding(
+                    padding: EdgeInsets.only(top: topInset),
+                    child: const Center(child: CircularProgressIndicator()),
+                  )
                 : (_error != null
-                    ? _errorView()
+                    ? Padding(
+                        padding: EdgeInsets.only(top: topInset),
+                        child: _errorView(),
+                      )
                     : (form == null
                         ? const SizedBox.shrink()
-                        : _formView(form))),
+                        : _formView(form, topInset, bottomInset))),
           ),
-          ),
-          bottomNavigationBar:
-              form == null || _error != null ? null : _actionBar(),
+          bottomNavigationBar: form == null || _error != null
+              ? null
+              : glassBottomBar(context, child: _actionBar()),
         );
       },
     );
@@ -323,8 +330,8 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
         ),
       );
 
-  Widget _formView(EvalForm form) => ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+  Widget _formView(EvalForm form, double topInset, double bottomInset) => ListView(
+        padding: evaluateFormListPadding(topInset, bottomInset: bottomInset),
         children: [
           if (_busy && _log.isNotEmpty)
             Padding(
@@ -543,35 +550,34 @@ class _EvaluateFormPageState extends State<EvaluateFormPage> {
     );
   }
 
-  Widget _actionBar() => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _save(submit: false),
-                  icon: const Icon(Icons.save_outlined, size: 18),
-                  label: const Text('保存'),
-                ),
+  /// 操作条内容（安全区与玻璃胶囊由 [glassBottomBar] 提供）。
+  Widget _actionBar() => SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : () => _save(submit: false),
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text('保存'),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : () => _save(submit: true),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check_rounded, size: 18),
-                  label: const Text('提交评教'),
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : () => _save(submit: true),
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check_rounded, size: 18),
+                label: const Text('提交评教'),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
 }

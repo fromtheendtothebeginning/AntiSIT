@@ -27,12 +27,10 @@ class GlmProvider extends AiProviderPlugin {
   @override
   String get logo => 'packages/plugin_ai_glm/assets/glm.svg';
 
-  /// 不关思考：index 里 glm 的思考字段格式不确定，加了怕 400，交给模型默认。
+  /// 不关思考：思考字段格式不确定，硬加可能 400，交给模型默认。
   @override
   Map<String, dynamic> thinkingOff(String model) => const {};
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_AI_GLM=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_GLM=true 时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(providers: [GlmProvider()]);

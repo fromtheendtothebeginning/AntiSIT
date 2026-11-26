@@ -6,8 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 服务器模式第一次查询要建校园网隧道：服务端回 202 让客户端等几秒重试，最长能等两分钟。
-/// 这期间界面必须说明白在等什么（原来只有一个光转的圈，看着就像卡死）。
+/// 服务器模式首次查询要建校园网隧道：服务端回 202 让客户端等几秒重试，这期间界面必须说明在等什么。
 void main() {
   late HttpServer server;
   late int port;
@@ -15,8 +14,7 @@ void main() {
   late String mode;
 
   setUp(() async {
-    // 真 HTTP 打本地假服务：必须清掉测试框架换上的 HttpClient 假实现（它一律回 400）。
-    // 放在 setUp 里而不是 main() 顶部——本文件还有 testWidgets，绑定注册时就会装上假实现。
+    // 真 HTTP 打本地假服务，必须清掉框架换上的 HttpClient 假实现；放 setUp 而不是 main 顶部，因为同文件还有 testWidgets。
     HttpOverrides.global = null;
     SharedPreferences.setMockInitialValues({});
     await AppState.I.load();

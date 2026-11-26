@@ -4,16 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 日程时间结束后也要淡下去（和周视图里「已上完的课」同一套：0.55 透明度）。
-/// 判定按**结束时刻**，所以上周/昨天的日程在别处看也是灰的。
+/// 日程时间结束后也要淡下去（0.55，同周视图里已上完的课），判定按结束时刻。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await AppState.I.load();
     AppState.I.dimCompleted = true; // 「上完的课淡化」开关默认开
 
-    // 学期起点放三天前 → 今天落在第 1 周中间：这样「三天前」和「三天后」都在同一周里，
-    // 无论测试什么时候跑，一个必定已结束、一个必定还没到（都在课表格子的时间范围内）。
+    // 学期起点放三天前：今天落在第 1 周中间，「三天前」和「三天后」同在一周且一个必定已结束、一个必定还没到。
     final now = DateTime.now();
     final start = now.subtract(const Duration(days: 3));
     final (xnm, xqm) = AppState.inferSemester(now);

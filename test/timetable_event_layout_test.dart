@@ -4,9 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_timetable/plugin_timetable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 回归用例：同一节次范围内的前后两条日程（09:00–09:30 / 09:30–10:00）
-/// 原来都会被吸附到第 2 节整行，两张卡完全叠在一起。
-/// 现在按真实分钟定位，前一条的底边必须落在后一条顶边之上。
+/// 回归：同一节次内前后两条日程（09:00–09:30 / 09:30–10:00）曾都吸附到第 2 节整行叠在一起，现在按真实分钟定位。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});

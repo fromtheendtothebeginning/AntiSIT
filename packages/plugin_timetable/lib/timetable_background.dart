@@ -4,10 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 课表自定义背景：本机图片路径 + 淡显程度。
-///
-/// 存 SharedPreferences 的独立键上（**不进云端课表**——课表 store 会整体
-/// 上传同步，本地文件路径同步出去没有意义）。
+/// 课表自定义背景：本机图片路径 + 淡显程度（存 SharedPreferences 独立键，
+/// 不进云端课表——本地文件路径同步出去没有意义）。
 class TtBackground extends ChangeNotifier {
   TtBackground._();
   static final TtBackground I = TtBackground._();
@@ -15,7 +13,7 @@ class TtBackground extends ChangeNotifier {
   static const _kPath = 'tt_background_path';
   static const _kOpacity = 'tt_background_opacity';
 
-  /// 默认淡显：照片垫在课表底下要浅到不干扰读课，0.16 是稳妥起点。
+  /// 默认淡显：照片垫在课表底下要浅到不干扰读课。
   static const double defaultOpacity = 0.16;
   static const double minOpacity = 0.05;
   static const double maxOpacity = 0.5;
@@ -31,6 +29,7 @@ class TtBackground extends ChangeNotifier {
     this.opacity = opacity;
   }
 
+  /// 从本地设置读取背景路径与淡显程度。
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
     path = sp.getString(_kPath);

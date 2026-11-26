@@ -7,10 +7,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-/// [CameraCapability] 的本机实现：`mobile_scanner` 负责取景与识码，
-/// `image_picker` 负责相册取图。
-///
-/// 只覆盖 Android / iOS：桌面端 [available] 为假，消费方据此降级。
+/// [CameraCapability] 的本机实现：`mobile_scanner` 取景识码，`image_picker` 相册取图。
+/// 只覆盖 Android / iOS，桌面端 [available] 为假，消费方据此降级。
 class CameraCapabilityImpl extends CameraCapability {
   const CameraCapabilityImpl();
 
@@ -28,14 +26,14 @@ class CameraCapabilityImpl extends CameraCapability {
       _ScannerSession(onDetected: onDetected, errorBuilder: errorBuilder);
 }
 
-/// 一路相机会话：包住一个 [MobileScannerController]。
+/// 一路相机会话，包住一个 [MobileScannerController]。
 class _ScannerSession implements CameraSession {
   _ScannerSession({
     required this.onDetected,
     this.errorBuilder,
   }) : _controller = MobileScannerController(
-          formats: const [BarcodeFormat.qrCode], // 只扫二维码：误识别更少、解码更快
-          autoZoom: true, // 二维码离得远时自动变焦，远距离扫码也能对上
+          formats: const [BarcodeFormat.qrCode],
+          autoZoom: true,
         );
 
   final ValueChanged<String> onDetected;
@@ -69,7 +67,7 @@ class _ScannerSession implements CameraSession {
     if (code != null) onDetected(code);
   }
 
-  /// 把相机内核的异常归一成 [CameraFailure]：权限被拒要单独标出来。
+  /// 把相机内核异常归一成 [CameraFailure]，权限被拒单独标出。
   CameraFailure _failure(MobileScannerException error) => CameraFailure(
         message: error.errorDetails?.message ?? error.errorCode.name,
         permissionDenied: error.errorCode == MobileScannerErrorCode.permissionDenied,

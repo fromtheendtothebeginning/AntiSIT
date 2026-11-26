@@ -1,39 +1,96 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// 敏感凭据（登录 token / 账号密码 / 校园凭据——里面还有能直接扣款的支付密码 /
-/// 直连模式会话 Cookie / AI 服务 API Key）的存储口。明文 SharedPreferences 在
-/// root / adb backup / 维修导数据面前裸奔，这类值一律走这里：
-/// 真机上是 Keystore 加密的 [FlutterSecureStore]。
+/// 敏感凭据（token / 账号密码 / 支付密码 / 会话 Cookie / AI Key）的存储口。
 ///
-/// 默认给 [MemorySecureStore]（进程内内存，不持久化）：**flutter_test 里没有平台
-/// 实现，平台调用挂起不返回**（不是抛 MissingPluginException，testWidgets 的
-/// fake async 又让超时计时器永不到点），所以真机实现必须由宿主 `main()` 显式
-/// 装上（见 lib/main.dart），测试不装就自然是内存版，怎么跑都安全。
+/// 默认 [MemorySecureStore]：flutter_test 无平台实现且调用会挂起，真机实现由宿主
+/// `main()` 装到 [SecureStore.I]，测试不装就自然是内存版。
 abstract class SecureStore {
   Future<String?> read(String key);
   Future<void> write(String key, String value);
   Future<void> remove(String key);
 
-  /// 宿主 `main()` 装上真机实现（flutter_secure_storage）；测试注入内存假实现。
+  /// 宿主 `main()` 装上真机实现；测试注入内存假实现。
   static SecureStore I = MemorySecureStore();
 }
 
-/// 生产实现：Android Keystore / iOS Keychain / Windows DPAPI
-/// （flutter_secure_storage 默认配置）。只应在真机 / 桌面 App 进程里使用。
+/// 底层加密存储的最小接口：真机是 [FlutterSecureStorage]，测试注入假实现。
+abstract interface class SecureStorageBackend {
+  Future<String?> read(String key);
+  Future<void> write(String key, String value);
+  Future<void> delete(String key);
+  Future<void> deleteAll();
+}
+
+class _PlatformBackend implements SecureStorageBackend {
+  const _PlatformBackend(this._s);
+
+  final FlutterSecureStorage _s;
+
+  @override
+  Future<String?> read(String key) => _s.read(key: key);
+  @override
+  Future<void> write(String key, String value) => _s.write(key: key, value: value);
+  @override
+  Future<void> delete(String key) => _s.delete(key: key);
+  @override
+  Future<void> deleteAll() => _s.deleteAll();
+}
+
+/// 生产实现：Android Keystore / iOS Keychain / Windows DPAPI。
 class FlutterSecureStore implements SecureStore {
-  FlutterSecureStore();
+  FlutterSecureStore({SecureStorageBackend? backend})
+      : _storage = backend ?? const _PlatformBackend(_secureStorage);
 
-  static const _storage = FlutterSecureStorage();
+  /// 显式写 `resetOnError`：插件默认就是 true，但这是「密文解不开就清空重建」
+  /// 的兜底开关，写出来免得哪天默认值变了悄悄退化成一直读空。
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(resetOnError: true),
+  );
 
-  /// 进程内副本：真机上 Keystore 偶发失败的机型本次会话仍可用（AppState 本就常驻）。
+  final SecureStorageBackend _storage;
+
+  /// 进程内副本：Keystore 偶发失败时本次会话仍可用。
   final Map<String, String> _mem = {};
+
+  /// 本进程已经清过一次存储：避免每条 key 失败都删一遍。
+  bool _resetDone = false;
+
+  /// 密钥类故障：Keystore 别名失效 / 换签名重装 / 模拟器快照回滚，
+  /// 都会让历史密文**永远**解不开（Android 侧表现为 SecurityException:
+  /// Could not decrypt key）。这种情况下留着旧密文只会让每次冷启动都读空、
+  /// 用户反复「莫名掉登录态」，所以整个清掉让插件重建密钥。
+  static bool _isKeyLost(Object e) {
+    final msg = '$e';
+    return msg.contains('decrypt') ||
+        msg.contains('SecurityException') ||
+        msg.contains('GeneralSecurityException') ||
+        msg.contains('KeyStore') ||
+        msg.contains('AEADBadTag');
+  }
+
+  /// 解不开就清空重建（同一进程只做一次）。
+  ///
+  /// 只删盘上的坏密文，**不清 [_mem]**：本次会话里写进去的值是眼下唯一可用的副本。
+  Future<void> _resetIfKeyLost(Object e) async {
+    if (!_isKeyLost(e)) return;
+    if (_resetDone) return;
+    _resetDone = true;
+    debugPrint('[安全存储] 密文解不开，清空重建：$e');
+    try {
+      await _storage.deleteAll();
+    } catch (_) {
+      // 连清理都失败：本次会话退化成纯内存，下次启动再试
+    }
+  }
 
   @override
   Future<String?> read(String key) async {
     try {
-      return await _storage.read(key: key) ?? _mem[key];
-    } catch (_) {
-      return _mem[key]; // Keystore 偶发失败：本次会话退回内存副本，别让调用方崩
+      return await _storage.read(key) ?? _mem[key];
+    } catch (e) {
+      await _resetIfKeyLost(e);
+      return _mem[key];
     }
   }
 
@@ -41,9 +98,10 @@ class FlutterSecureStore implements SecureStore {
   Future<void> write(String key, String value) async {
     _mem[key] = value;
     try {
-      await _storage.write(key: key, value: value);
-    } catch (_) {
-      // 写盘失败不该把登录/配置流程打断；内存副本仍可用，下次启动可能丢失
+      await _storage.write(key, value);
+    } catch (e) {
+      await _resetIfKeyLost(e);
+      // 写盘失败不打断登录/配置流程，内存副本仍可用
     }
   }
 
@@ -51,8 +109,10 @@ class FlutterSecureStore implements SecureStore {
   Future<void> remove(String key) async {
     _mem.remove(key);
     try {
-      await _storage.delete(key: key);
-    } catch (_) {}
+      await _storage.delete(key);
+    } catch (e) {
+      await _resetIfKeyLost(e);
+    }
   }
 }
 

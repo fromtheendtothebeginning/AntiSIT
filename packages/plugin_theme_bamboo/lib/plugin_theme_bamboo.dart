@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-/// 青竹：浅青底 + 深青强调色，冷暖介于玻璃与墨白之间。
-/// 色板由少量基色派生（GlassPalette.flat），不必手写 26 个令牌。
+/// 青竹：浅青底 + 深青强调色，柔和不刺眼。
 class BambooTheme extends ThemePlugin {
   const BambooTheme();
 
@@ -20,6 +19,7 @@ class BambooTheme extends ThemePlugin {
   GlassPalette palette(Brightness brightness) =>
       brightness == Brightness.dark ? _dark : _light;
 
+  /// 色板由少量基色派生，不必手写 26 个令牌。
   static final _light = GlassPalette.flat(
     isDark: false,
     bg: const Color(0xFFEDF1EC),
@@ -43,6 +43,5 @@ class BambooTheme extends ThemePlugin {
   );
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// 编译期常量开关 EXCLUDE_THEME_BAMBOO 为真时，这一条连同包内代码一起被摇掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；EXCLUDE_THEME_BAMBOO 为真时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(themes: [BambooTheme()]);

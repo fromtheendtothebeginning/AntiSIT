@@ -16,8 +16,7 @@ class GlassNavBarItem {
   final String label;
 }
 
-/// 液态玻璃底栏：thumb 可拖拽、带动量回弹（与 [GlassTabs] 同一物理）。
-/// 页面区域横滑时由外壳通过 [dragPosition] 驱动同一个位置，两者不会打架。
+/// 液态玻璃底栏：thumb 可拖拽、带动量回弹；页面横滑时由外壳通过 [dragPosition] 驱动同一位置。
 class GlassNavBar extends StatefulWidget {
   const GlassNavBar({
     super.key,
@@ -32,13 +31,10 @@ class GlassNavBar extends StatefulWidget {
   final int index;
   final ValueChanged<int> onChanged;
 
-  /// 页面区域横滑时外壳给的连续位置（单位 = 格：1.4 = 从第 2 格往第 3 格拖了 40%）。
-  /// 非 null（拖动中）滑块直接跟手、不跑自己的弹簧；松手时外壳置回 null，
-  /// 滑块从当前位置弹到落点（[index]）。
+  /// 页面区域横滑时外壳给的连续位置（单位 = 格）；非 null（拖动中）滑块跟手，置回 null 后弹到落点。
   final ValueListenable<double?>? dragPosition;
 
-  /// 把「当前连续位置」写出来（每帧都写）：页面照着它位移，就能跟滑块**同一套弹簧**动，
-  /// 切页时不会突兀地跳。弹簧本身仍藏在底栏里（谁都不用在别处再实现一遍物理）。
+  /// 把「当前连续位置」写出来（每帧都写）：页面照着它位移，就能与滑块共用同一套弹簧。
   final ValueNotifier<double>? position;
 
   @override
@@ -46,14 +42,16 @@ class GlassNavBar extends StatefulWidget {
 }
 
 class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStateMixin {
-  // unbounded：set value 不被默认 [0,1] 钳制，拖拽边界由自身 clamp 管理
+  // unbounded：set value 不被默认 [0,1] 钳制，拖拽边界由自身 clamp 管理。
   late final AnimationController _ctrl = AnimationController.unbounded(
       vsync: this, duration: const Duration(milliseconds: 600))
     ..value = widget.index.toDouble();
   int _target = -1;
 
+  /// 欠阻尼弹簧：轻微过冲的回弹手感。
   static final _spring = SpringDescription.withDampingRatio(mass: 1, stiffness: 220, ratio: 0.75);
 
+  /// 弹到目标格（可带初速度）。
   void _springTo(double target, [double velocity = 0]) {
     _target = target.round();
     _ctrl.animateWith(SpringSimulation(_spring, _ctrl.value, target, velocity));
@@ -82,7 +80,7 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
   @override
   void didUpdateWidget(covariant GlassNavBar old) {
     super.didUpdateWidget(old);
-    // 页面区域拖动中位置由外壳给，别在这儿再弹一次（会跟手指打架）
+    // 页面区域拖动中位置由外壳给，别在这儿再弹一次（会跟手指打架）。
     if (widget.dragPosition?.value != null) return;
     if (old.index != widget.index && widget.index != _target) {
       _springTo(widget.index.toDouble());
@@ -108,7 +106,7 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
           height: 66,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
-            // 投影留在玻璃**外面**：里面那层要交给 ClipRRect 裁圆，裁完就画不出外投影了
+            // 投影留在玻璃外面：里面那层交给 ClipRRect 裁圆，裁完就画不出外投影。
             boxShadow: [
               BoxShadow(color: SemColors.shadow, offset: const Offset(0, 8), blurRadius: 24),
             ],
@@ -116,8 +114,7 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
           child: ClipRRect(
             borderRadius: BorderRadius.circular(22),
             child: BackdropFilter(
-              // 毛玻璃底：把从底栏下面穿过去的页面内容糊掉，玻璃面再压在上面——
-              // 底栏因此和内容分成两层，而不是一块和内容糊在一起的半透明色板
+              // 毛玻璃底：把从底栏下面穿过去的页面内容糊掉，玻璃面再压在上面。
               filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
               child: _face(n),
             ),
@@ -127,8 +124,7 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
     );
   }
 
-  /// 玻璃面：底下那层已经被外层 [BackdropFilter] 糊过，这里再压一层半透明面——
-  /// 内容只透出模糊色块，字不会糊在玻璃上；透光度沿用玻璃卡面（card），与卡片同一档。
+  /// 玻璃面：压在外层模糊之上，透光度沿用玻璃卡面（card）。
   Widget _face(int n) => Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
@@ -151,7 +147,7 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
             return AnimatedBuilder(
               animation: drag == null ? _ctrl : Listenable.merge([_ctrl, drag]),
               builder: (context, _) {
-                // 页面区域拖动中滑块跟手（外壳给的位置）；否则用自身的弹簧位置
+                // 页面区域拖动中滑块跟手（外壳给的位置）；否则用自身的弹簧位置。
                 final pos = (drag?.value ?? _ctrl.value).clamp(0.0, (n - 1).toDouble());
                 final visual = pos.round().clamp(0, n - 1);
                 return Stack(
@@ -159,9 +155,7 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
                     Positioned(
                       left: pos * segW,
                       width: segW,
-                      // 高度交给容器内区（66 − 边框 1×2 − 内边距 4×2 = 56），别写死：
-                      // 原来 height: 58 比内区高 2px，超出部分被 Stack 的 Clip.hardEdge
-                      // 从底部切平——滑块的下边框与下方两个圆角正好被切掉
+                      // 高度交给容器内区（66 − 边框 − 内边距），写死会超出被 Stack 裁掉。
                       top: 0,
                       bottom: 0,
                       child: Container(
@@ -204,10 +198,10 @@ class _GlassNavBarState extends State<GlassNavBar> with SingleTickerProviderStat
                                   _ctrl.value = (_ctrl.value + d.primaryDelta! / segW)
                                       .clamp(0.0, (n - 1).toDouble()),
                               onHorizontalDragEnd: (d) {
-                                // 段/秒；速度估计可能爆炸，先饱和
+                                // 速度按「段/秒」，并先饱和，避免估计值爆炸。
                                 final v =
                                     (d.velocity.pixelsPerSecond.dx / segW).clamp(-8.0, 8.0);
-                                // 慢速拖拽就近落段；快速甩动（flick）借动量多滑 1 段
+                                // 慢速拖拽就近落段；快速甩动（flick）借动量多滑 1 段。
                                 var target = _ctrl.value.round().clamp(0, n - 1);
                                 final next = target + (v > 0 ? 1 : -1);
                                 if (v.abs() >= 5.0 && next >= 0 && next <= n - 1) {

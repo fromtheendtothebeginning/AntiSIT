@@ -6,13 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_reminder/plugin_reminder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 上课提醒的引导分两层：
-/// * 「课程表设置」二级页里开关下面只留**一行摘要**（状态 + 待处理项数），不占地方；
-/// * 状态详情、一件件的「去系统设置」以及「为什么提醒不来」的说明，
-///   都在二级页 [ReminderGuidePage]。
-///
-/// 假的 Android 通知平台实现：测试进程里没有真的平台通道，
-/// 用官方那套 `FlutterLocalNotificationsPlatform.instance` 注入点伪造两项权限状态。
+/// 上课提醒引导分两层：二级页只留一行摘要，状态详情 / 去系统设置 / 为什么提醒不来都在 ReminderGuidePage；平台通知用假实现注入。
 class _FakeAndroidNotifications extends AndroidFlutterLocalNotificationsPlugin {
   _FakeAndroidNotifications({this.notifications = true, this.exact = true});
 
@@ -30,8 +24,7 @@ void main() {
   const systemChannel = MethodChannel('antisit/system');
   final systemCalls = <String>[];
 
-  /// 自检是异步探测（平台通道 + 插件查询），多 pump 几帧让 Future 链跑完；
-  /// 页面上的「自检中…」不是动画，pumpAndSettle 等不到它。
+  /// 自检是异步探测：多 pump 几帧让 Future 链跑完（「自检中…」不是动画，pumpAndSettle 等不到）。
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 20));

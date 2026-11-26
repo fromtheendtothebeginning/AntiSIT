@@ -9,10 +9,8 @@ import 'market_source.dart';
 
 /// 一个「第三方源」：别人在自己仓库里发布的一份签名目录。
 ///
-/// 与官方目录的区别只有两点：
-/// * 公钥是**源自报**的（写在目录里）——所以首次添加时要把它连同**指纹**拿给用户确认，
-///   确认之后固定住（存在这里），以后每次刷新都用固定的那把验签；
-/// * 内容没有经过官方审核，界面上必须标注（收录 ≠ 背书）。
+/// 公钥是**源自报**的：首次添加时把指纹给用户确认并固定住，之后都用固定的那把验签；
+/// 内容没有经过官方审核，界面上必须标注（收录 ≠ 背书）。
 class ExtSource {
   const ExtSource({
     required this.id,
@@ -70,8 +68,7 @@ class ExtSource {
 
 /// 第三方源的清单：添加 / 移除 / 刷新 / 按源下载。
 ///
-/// 界面监听它重建。刷新时**用固定的公钥**验签：源自报的公钥与固定值不一致就停用它
-/// （作者换了钥匙，或有人在中间替换，都要用户自己核对指纹后重新添加）。
+/// 界面监听它重建；刷新时用固定的公钥验签，源自报公钥与固定值不一致就停用该源。
 class ExtSourceStore extends ChangeNotifier {
   ExtSourceStore();
 
@@ -82,8 +79,7 @@ class ExtSourceStore extends ChangeNotifier {
 
   static const String _kSources = 'plugin.ext.market.sources';
 
-  /// 一次拉取的体积上限：目录只是条目列表（官方那份不到 2 KB），
-  /// 第三方源给到 8 MB 已经很宽松，再大就是拿手机内存开玩笑。
+  /// 一次拉取的体积上限：目录只是条目列表，8 MB 已经很宽松。
   static const int maxCatalogBytes = 8 * 1024 * 1024;
 
   List<ExtSource> sources = const [];
@@ -131,9 +127,8 @@ class ExtSourceStore extends ChangeNotifier {
   }
 
   /// 把用户输入解析成源地址并**试拉一次**（不保存）——给「添加源」对话框用：
-  /// 先让用户看到源的名称、条目数与**指纹**，确认了才真正加进来。
-  ///
-  /// 抛 [StateError] 时消息可以直接给用户看。
+  /// 先让用户看到源的名称、条目数与**指纹**，确认了才真正加进来；抛
+  /// [StateError] 时消息可以直接给用户看。
   Future<({ExtSource draft, List<MarketEntry> entries})> preview(String input) async {
     final base = resolveBase(input);
     final (bytes: catalog, base: effective) = await _fetchCatalog(base);
@@ -225,11 +220,8 @@ class ExtSourceStore extends ChangeNotifier {
         timeout: const Duration(seconds: 60));
   }
 
-  // ==================== 输入解析 ====================
-
-  /// 把用户输入变成目录地址前缀。
-  /// * `owner/repo` → jsDelivr；分支不是 main 时，取数那步会自动退到 master；
-  /// * 完整 `https://…` 地址 → 原样用（作者自建托管也行）。
+  /// 把用户输入变成目录地址前缀：`owner/repo` → jsDelivr（分支不是 main 时取数那步
+  /// 会自动退到 master）；完整 `https://…` 地址原样用（作者自建托管也行）。
   static String resolveBase(String input) {
     final s = input.trim();
     if (s.isEmpty) throw StateError('填一个源：`所有者/仓库`，或一个 https 地址');
@@ -260,13 +252,9 @@ class ExtSourceStore extends ChangeNotifier {
   static String? _masterFallback(String base) =>
       base.contains('@main/') ? base.replaceFirst('@main/', '@master/') : null;
 
-  // ==================== 取数 ====================
-
-  /// 取 `market.json`：先按地址试，`@main` 不行退 `@master`；
-  /// 体积超限、**不是 JSON** 都单独报错。
-  ///
-  /// 后半句是跟 dsh 的市场学的：公共反代/加速服务出错时常回一个 HTTP 200 的 HTML
-  /// 错误页，要是只说「签名校验不过」，排查方向会被带偏。
+  /// 取 `market.json`：先按地址试，`@main` 不行退 `@master`；体积超限、
+  /// **不是 JSON** 都单独报错（反代常回 HTTP 200 的 HTML 错误页，只说「验签不过」
+  /// 会把排查方向带偏）。
   Future<({List<int> bytes, String base})> _fetchCatalog(String base) async {
     final candidates = [base, if (_masterFallback(base) != null) _masterFallback(base)!];
     List<int>? bytes;

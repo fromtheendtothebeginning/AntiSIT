@@ -4,6 +4,7 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:cryptography/cryptography.dart';
 
+import '../workshop/workshop_models.dart';
 import '../workshop/workshop_store.dart';
 import 'publish_models.dart';
 import 'publish_repository.dart';
@@ -12,11 +13,8 @@ import 'publish_settings.dart';
 typedef PublishRepositoryFactory = PublishRepository Function(
     PublishConfig config, String token);
 
-/// 把工坊草稿发布成一份「第三方市场源」：
-/// 仓库里维护 `ext/<id>/`、`dist/<id>/<版本>.zip`、`market.json` 与签名。
-///
-/// 目录用本机生成的 Ed25519 私钥签名、并内嵌公钥；别人在 App 里添加这个源时
-/// 会看到公钥指纹，之后刷新都用固定的公钥验签。私钥只在本机加密存储，绝不上传。
+/// 把工坊草稿发布成一份「第三方市场源」：仓库里维护 `ext/<id>/`、
+/// `dist/<id>/<版本>.zip`、`market.json` 与签名；私钥只在本机加密存储，绝不上传。
 class PublishService {
   PublishService({WorkshopStore? workshop, PublishRepositoryFactory? repositoryFactory})
       : workshop = workshop ?? WorkshopStore(),

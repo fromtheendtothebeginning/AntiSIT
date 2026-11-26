@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 回归用例：16:30–18:00（晚饭空档）没有节次，日程不能因此从周视图里消失。
-/// 典型场景：17:40–18:00 的临时事项。
+/// 回归：16:30–18:00 没有节次，日程不能因此从周视图里消失（典型是 17:40 的临时事项）。
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});

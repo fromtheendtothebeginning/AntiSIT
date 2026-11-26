@@ -3,6 +3,7 @@ library;
 
 export 'evaluate_api.dart';
 export 'evaluate_batch.dart';
+export 'evaluate_batch_dialogs.dart';
 export 'evaluate_cache.dart';
 export 'evaluate_form_page.dart';
 export 'evaluate_model.dart';

@@ -5,9 +5,7 @@ import 'package:plugin_activities/plugin_activities.dart';
 import 'package:plugin_score/plugin_score.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 二课筛选的验收：加分明细 / 活动广场的类别 tag 筛选（一级 → 二级级联）
-/// 与「拼音搜汉字」搜索（全拼 / 首字母都能命中）。
-/// 页面用演示数据泵（demo_data 的活动 / 加分明细自带大类类别字段）。
+/// 二课筛选：加分明细 / 活动广场的类别 tag 级联筛选，以及「拼音搜汉字」（全拼 / 首字母都能命中）。
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});

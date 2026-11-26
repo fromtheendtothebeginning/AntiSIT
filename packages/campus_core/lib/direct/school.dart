@@ -1,7 +1,6 @@
 import 'dart:convert';
 
-/// 学校档案：直连模式下 App 直接访问的校园系统地址。
-/// 默认值对照 index 后端 campus/config.py（默认上海应用技术大学 SIT，迁移他校改这里）。
+/// 学校档案：直连模式下 App 直接访问的校园系统地址（默认上海应用技术大学 SIT）。
 class SchoolProfile {
   SchoolProfile({
     required this.name,
@@ -20,9 +19,7 @@ class SchoolProfile {
   String ecardBase; // 校付宝（校园码/电费）
   String dektAesKey; // isEncrypt 响应解密密钥，留空表示不加密（SIT 默认未启用）
 
-  /// 是否允许这些主机使用自签 / 无效证书。默认 **false**：TLS 校验失败就断开，
-  /// 避免校园网 MITM 用假证书替换登录页（进而拿到密码）。只有学校系统确实用
-  /// 自签证书、且用户确认过风险时才在「连接设置 → 高级」里打开。
+  /// 是否允许这些主机使用自签 / 无效证书；默认 false，避免校园网 MITM 用假证书替换登录页。
   bool allowSelfSigned;
 
   static SchoolProfile sit() => SchoolProfile(
@@ -91,9 +88,7 @@ class SchoolProfile {
   }
 }
 
-/// 直连模式的校园凭据（学号 / 统一身份认证密码 / 校付宝支付密码 / 寝室 / 姓名）。
-/// 仅用于本机直连学校系统；由 [AppState] 序列化后写入 `SecureStore`
-/// （Android Keystore / iOS Keychain / Windows DPAPI），不落明文 SharedPreferences。
+/// 直连模式的校园凭据（学号 / 统一认证密码 / 校付宝支付密码 / 寝室 / 姓名），经 SecureStore 加密保存。
 class CampusCreds {
   String studentId = '';
   String password = ''; // 统一身份认证密码（= VPN 密码）

@@ -2,15 +2,9 @@ import 'package:campus_core/campus_core.dart';
 
 import 'webview_capability_impl.dart';
 
-/// WebView 内核：自定义「热插拔插件」的运行基座。
-///
-/// 热插拔插件 = 以网页（HTML/JS）为前端的插件，内容可以不随 App 发版更新。
-/// 本插件只实现**内核**——引擎封装（[WebViewCapabilityImpl]：可嵌入网页视图 +
-/// 整页打开网页），不实现任何前端页面；所以它没有底栏页、没有工具卡片、
-/// 没有设置条目，插件列表里只是安静地躺着。
-///
-/// **默认开启**（[defaultEnabled]）：当前消费方是默认开启的「拓展」；
-/// 关掉内核会把依赖它的拓展一起停掉，用户随时能在「插件管理」里改。
+/// WebView 内核：以网页（HTML/JS）为前端的热插拔插件的运行基座。
+/// 只实现内核（可嵌入网页视图 + 整页打开），没有底栏页、工具卡片与设置条目。
+/// 默认开启：关掉会把依赖它的「拓展」一起停掉，用户可在插件管理里改。
 class WebViewPlugin extends FeaturePlugin {
   const WebViewPlugin();
 
@@ -27,12 +21,8 @@ class WebViewPlugin extends FeaturePlugin {
   bool get defaultEnabled => true;
 }
 
-/// 插件包入口：清单生成器（tool/gen_plugins.dart）按包名登记这个常量。
-/// `capabilities` 的 key 就是本插件 id：热插拔插件按「WebViewCapability 接口
-/// + PluginIds.webview 这个 id」取用内核，不 import 本包；本插件被停用时
-/// 查不到能力。（注释里不写完整的取用调用式——生成器按源码字面扫描能力引用。）
-/// 编译期常量开关为真时（--dart-define=EXCLUDE_WEBVIEW=true），这一条连同包内代码
-/// 一起变成不可达代码，被 AOT 摇树丢掉。
+/// 插件包入口：tool/gen_plugins.dart 按包名登记；能力 key 为 PluginIds.webview，
+/// 热插拔插件按「WebViewCapability 接口 + 该 id」取用，停用时查不到能力；EXCLUDE_WEBVIEW 为真时整包被摇掉。
 const PluginBundle pluginBundle = PluginBundle(
   features: [WebViewPlugin()],
   capabilities: {PluginIds.webview: WebViewCapabilityImpl()},
