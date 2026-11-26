@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -73,6 +73,8 @@ Future<void> importExtensionBundle({
     runtime: ExtensionItem.runtimeCordis,
     version: manifest.version,
     permissions: manifest.permissions,
+    // 压缩包同样是别人给的代码：走权限门（确认弹窗里列的权限要真的执行）
+    permissionsEnforced: true,
     minAppVersion: manifest.minAppVersion,
   );
   final item = await showDialog<ExtensionItem>(

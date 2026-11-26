@@ -152,6 +152,10 @@ Future<SecureSocket> startNoSniTls(
 /// 校验证书是否属于 [expected]（CN / SAN 里出现该域名，或其父域通配）。
 ///
 /// [startNoSniTls] 不校验主机名，这一步是它的补丁：证书对不上就拒绝继续，别把密码发给不明服务端。
+///
+/// ⚠️ 必须按 **DNS 标签边界**比对：早先的实现是纯子串匹配（`text.contains(want)`），
+/// 证书里写 `a.jwxt.sit.edu.cn.attacker.tld` 也能命中 `.sit.edu.cn` 而通过校验——
+/// 这恰好是要防的中间人场景（校园网内伪造证书把凭据骗走）。
 bool verifyHost(X509Certificate cert, String expected) {
   final want = expected.trim().toLowerCase();
   if (want.isEmpty) return true;
@@ -162,11 +166,43 @@ bool verifyHost(X509Certificate cert, String expected) {
         .replaceAll(RegExp(r'\s+'), '');
     texts.add(utf8.decode(base64Decode(body), allowMalformed: true).toLowerCase());
   } catch (_) {}
+  // 只认证书里「声明为主机名」的那几个位置：subject 的 CN= 与 SAN 的 DNS:。
+  // 早先是把整段证书文本做子串搜索，等于只要证书任何一处出现目标域名就算过——
+  // 连扩展字段里塞个字符串都能骗过校验。
+  final names = <String>{};
   for (final text in texts) {
     if (text.isEmpty) continue;
-    if (text.contains(want)) return true;
-    final dot = want.indexOf('.');
-    if (dot > 0 && text.contains(want.substring(dot))) return true;
+    for (final m in RegExp(r'(?:cn|dns)\s*[:=]\s*([a-z0-9*][a-z0-9*.-]*\.[a-z]{2,})')
+        .allMatches(text)) {
+      names.add(m.group(1)!);
+    }
   }
-  return false;
+  return names.any((name) => certNameMatches(name, want));
+}
+
+/// 一条证书名是否覆盖 [want]，比对必须落在 **DNS 标签边界**上：
+///
+/// 1. 完全相同；
+/// 2. 通配符只覆盖一级子域（`*.sit.edu.cn` 覆盖 `jwxt.sit.edu.cn`，不覆盖 `a.b.sit.edu.cn`）；
+/// 3. 学校按整域签的证书（`sit.edu.cn`）覆盖其子域——这是旧实现的本意，
+///    但要求该名字至少是「三级标签」（挡掉 `edu.cn` / `com` 这种一匹配一大片的）。
+///
+/// 关键反例：`a.jwxt.sit.edu.cn.attacker.tld` 不能命中 `sit.edu.cn`——
+/// 旧实现的 `text.contains('.sit.edu.cn')` 恰好会让它通过。
+bool certNameMatches(String certName, String want) {
+  final name = certName.trim().toLowerCase().replaceAll(RegExp(r'\.+$'), '');
+  final host = want.trim().toLowerCase().replaceAll(RegExp(r'\.+$'), '');
+  if (name.isEmpty || host.isEmpty) return false;
+  if (name == host) return true;
+  if (name.startsWith('*.')) {
+    final suffix = name.substring(1); // ".sit.edu.cn"
+    if (!host.endsWith(suffix)) return false;
+    final head = host.substring(0, host.length - suffix.length);
+    // 通配符只吃一级：a.sit.edu.cn 命中，a.b.sit.edu.cn 不命中
+    return head.isNotEmpty && !head.contains('.');
+  }
+  // 整域证书覆盖子域，但必须是完整校验过的域名（≥3 段），
+  // 否则 `edu.cn` / `com` 这种名字会覆盖一大片。
+  if (name.split('.').length < 3) return false;
+  return host.endsWith('.$name');
 }

@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
+import '../cordis_bundle.dart' show CordisManifest;
 import '../extension_item.dart' show compareVersions;
 
 /// 市场目录（`market.json`）里的一条：只带「装得下来」需要的东西。
@@ -87,6 +89,13 @@ class MarketEntry {
     final id = str('id');
     final type = str('type');
     if (id.isEmpty || (type != 'bundle' && type != 'web')) return null;
+    // id 直接拼进安装目录 `<文档目录>/ext/<id>`：目录（含第三方源）里写 `../../x` 就能
+    // 让安装在任意路径递归删除 + 写文件。包内 ext.json 的 id 有 idPattern 管，但那是
+    // 解压之后才比对，太晚了——这里先按同一套规则挡掉。
+    if (!CordisManifest.idPattern.hasMatch(id)) {
+      debugPrint('[market] 目录条目 id 不合法已跳过：$id');
+      return null;
+    }
     final size = raw['size'];
     final perms = raw['permissions'];
     return MarketEntry(

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:campus_core/campus_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -287,7 +288,23 @@ class ExtensionStore extends ChangeNotifier {
       () async => (await getApplicationDocumentsDirectory()).path;
 
   /// 某个拓展的解压根目录：`<文档目录>/ext/<id>`。
-  Future<String> bundleDir(String id) async => '${await documentsDirectory()}/ext/$id';
+  ///
+  /// id 会拼进文件系统路径，**必须拦住带分隔符 / `..` 的 id**（目录里写
+  /// `../../x` 就成了任意目录递归删除 + 写文件）。各处安装入口虽然都校验过，
+  /// 这里再兜一道底：id 必须是单段名，且算出来的路径要落在 `ext/` 下面。
+  Future<String> bundleDir(String id) async {
+    final root = p.normalize('${await documentsDirectory()}/ext');
+    final dir = p.normalize(p.join(root, id));
+    final singleSegment = id.isNotEmpty &&
+        !id.contains('/') &&
+        !id.contains('\\') &&
+        id != '.' &&
+        id != '..';
+    if (!singleSegment || !p.isWithin(root, dir)) {
+      throw StateError('拓展 id 不合法（$id）');
+    }
+    return dir;
+  }
 
   Future<void> _deleteBundle(String id) async {
     try {

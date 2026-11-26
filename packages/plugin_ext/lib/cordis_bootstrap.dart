@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'extension_item.dart';
 
@@ -18,6 +18,8 @@ String buildCordisBootstrap({
       'permissions': item.permissions,
       'appVersion': appVersion,
       'fromMarket': item.fromMarket,
+      // 网络 / 下载钩子按「权限门是否生效」判断：扫码与压缩包导入的包同样受限
+      'gated': item.gated,
     });
     return '''
 (function () {
@@ -83,7 +85,7 @@ String buildCordisBootstrap({
   // 拦下带 download 的链接，转成 ctx.files.save 交给系统「保存到」。
   // http(s) 下载由内核的 DownloadManager 监听处理，这里不碰。
   function installDownloadHook() {
-    var canSave = !META.fromMarket ||
+    var canSave = !META.gated ||
       (META.permissions || []).indexOf('files') >= 0;
     if (!canSave || !window.AntiUI) return;
     var EXT = {

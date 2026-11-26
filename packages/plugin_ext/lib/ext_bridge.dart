@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -216,11 +216,16 @@ class ExtBridge extends WebBridge {
     }
   }
 
-  /// 权限门：市场装的拓展按清单里声明的权限放行，没声明就报错回网页；
-  /// 用户自己填网址 / 自己挑压缩包装的拓展全量放行（来源是他自己选的）。
+  /// 权限门：**别人写的包**按清单里声明的权限放行，没声明就报错回网页。
+  ///
+  /// 生效来源：市场装的（[ExtensionItem.fromMarket]）、扫码安装 / 导入压缩包这类
+  /// 「别人给的包」（[ExtensionItem.permissionsEnforced]）。只有用户自己手动填网址
+  /// 加的远程书签仍全量放行（内容是他自己选的，且没有可读的清单可声明）。
+  /// 早先这里只看 `fromMarket`，于是扫码装的拓展权限门完全失效——安装弹窗列的
+  /// 权限一条都没执行，比不列更误导。
   void _checkPermission(String method) {
     final it = item;
-    if (it == null || !it.fromMarket) return;
+    if (it == null || !it.gated) return;
     final need = kMethodPermissions[method];
     if (need == null) return;
     if (!it.permissions.contains(need)) {

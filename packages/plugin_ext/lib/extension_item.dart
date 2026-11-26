@@ -19,6 +19,7 @@ class ExtensionItem {
     this.sha256 = '',
     this.permissions = const [],
     this.fromMarket = false,
+    this.permissionsEnforced = false,
     this.sourceId = '',
     this.minAppVersion = '',
     this.runtime = runtimeWeb,
@@ -69,6 +70,17 @@ class ExtensionItem {
   /// 来自插件市场：接口按 [permissions] 放行；用户自己加的照旧能用全套接口。
   final bool fromMarket;
 
+  /// 静态权限门是否生效（[fromMarket] 之外，**别人写的包**也一律生效）。
+  ///
+  /// 扫码安装 / 导入的压缩包都来自「别人写的代码」：内容只保证 sha256 一致、
+  /// 不保证作者可信。早先权限门只看 [fromMarket]，于是这些来源的拓展不声明也能
+  /// 用 storage / secrets / net / clipboard / notify——安装弹窗列的权限根本不执行，
+  /// 比不列更误导。为兼容老数据，落盘缺这个字段时按 false（只认 [fromMarket]）。
+  final bool permissionsEnforced;
+
+  /// 权限门 / 网络开关的总闸：市场装的，或显式标记为「别人写的包」。
+  bool get gated => fromMarket || permissionsEnforced;
+
   /// 装它的是哪个源：官方目录是 `''`，第三方源是那个源的 id；
   /// 用来挡住「另一个源拿同一 id 把已装的插件顶掉」。
   final String sourceId;
@@ -116,6 +128,7 @@ class ExtensionItem {
     String? sha256,
     List<String>? permissions,
     bool? fromMarket,
+    bool? permissionsEnforced,
     String? sourceId,
     String? minAppVersion,
     String? runtime,
@@ -132,6 +145,7 @@ class ExtensionItem {
         sha256: sha256 ?? this.sha256,
         permissions: permissions ?? this.permissions,
         fromMarket: fromMarket ?? this.fromMarket,
+        permissionsEnforced: permissionsEnforced ?? this.permissionsEnforced,
         sourceId: sourceId ?? this.sourceId,
         minAppVersion: minAppVersion ?? this.minAppVersion,
         runtime: runtime ?? this.runtime,
@@ -141,11 +155,11 @@ class ExtensionItem {
   ExtensionItem withCard({String? name, String? desc, String? icon}) =>
       copyWith(name: name, desc: desc, icon: icon);
 
-  /// 卡片副标题那行：市场装的写来源与版本、本地包说明来源，远程拓展直接写网址。
+  /// 卡片副标题那行：市场装的写来源与版本、别人给的包说明来源、远程拓展直接写网址。
   String get urlLine {
     if (!bundled) return url;
     if (runtime == runtimeLegacy) return '旧版网页拓展（需迁移）';
-    if (!fromMarket) return '本地 Cordis 拓展';
+    if (!fromMarket) return permissionsEnforced ? '本地导入的 Cordis 拓展' : '本地 Cordis 拓展';
     return version.isEmpty ? '插件市场 · Cordis' : '插件市场 · Cordis · v$version';
   }
 
@@ -160,6 +174,7 @@ class ExtensionItem {
         if (sha256.isNotEmpty) 'sha256': sha256,
         if (permissions.isNotEmpty) 'permissions': permissions,
         if (fromMarket) 'market': true,
+        if (permissionsEnforced) 'enforced': true,
         if (sourceId.isNotEmpty) 'source': sourceId,
         if (minAppVersion.isNotEmpty) 'minAppVersion': minAppVersion,
         if (runtime != runtimeWeb) 'runtime': runtime,
@@ -213,6 +228,8 @@ class ExtensionItem {
       sha256: '${raw['sha256'] ?? ''}'.trim(),
       permissions: perms is List ? [for (final p in perms) '$p'] : const [],
       fromMarket: raw['market'] == true,
+      // 老数据没有这个字段：只认市场来源（保持原有行为，不把用户自己加的也锁上）
+      permissionsEnforced: raw['enforced'] == true,
       sourceId: '${raw['source'] ?? ''}'.trim(),
       minAppVersion: '${raw['minAppVersion'] ?? ''}'.trim(),
       runtime: runtime,

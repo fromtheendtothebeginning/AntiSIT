@@ -90,6 +90,9 @@ class ScannedBundleInstaller {
       version: manifest.version,
       sha256: bundle.sha256,
       permissions: manifest.permissions,
+      // 扫码装的包来自「别人写的代码」：内容只保证 sha256 一致，不保证作者可信。
+      // 必须走权限门，否则安装弹窗里列给用户的权限一条都不会执行。
+      permissionsEnforced: true,
       minAppVersion: manifest.minAppVersion,
     );
     await store.add(item);

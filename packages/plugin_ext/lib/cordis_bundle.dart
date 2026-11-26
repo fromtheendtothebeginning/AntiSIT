@@ -151,7 +151,7 @@ class CordisBundleLoader {
       item: item,
       mainJs: mainJs,
       css: css,
-      allowNetwork: item.fromMarket && item.permissions.contains('network'),
+      allowNetwork: item.gated && item.permissions.contains('network'),
       appVersion: appVersion,
     );
   }
