@@ -97,7 +97,7 @@ void main() {
 
     Navigator.of(tester.element(find.text('第二页'))).pop();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 90)); // 300ms 的前 30%
+    await tester.pump(const Duration(milliseconds: 80)); // 260ms 的前 31%
 
     final popping = tester.getTopLeft(find.text('第二页', skipOffstage: false)).dx;
     expect(popping, greaterThan(newSettled), reason: '返回时当前页应当向右滑出');
@@ -127,8 +127,8 @@ void main() {
     double? prevCov;
     final topMoves = <double>[];
     final covMoves = <double>[];
-    // 300ms / 16ms ≈ 19 帧；采 18 帧，动画还没结束
-    for (var i = 0; i < 18; i++) {
+    // 260ms / 16ms ≈ 16 帧；采 16 帧，动画还没结束
+    for (var i = 0; i < 16; i++) {
       await tester.pump(const Duration(milliseconds: 16));
       final top = tester.getTopLeft(find.text('第二页', skipOffstage: false)).dx - settledTop;
       final cov =
@@ -171,7 +171,7 @@ void main() {
     double? prevOld;
     final newMoves = <double>[];
     final oldMoves = <double>[];
-    for (var i = 0; i < 18; i++) {
+    for (var i = 0; i < 16; i++) {
       await tester.pump(const Duration(milliseconds: 16));
       final nu = tester.getTopLeft(find.text('第二页')).dx;
       final od = tester.getTopLeft(find.text('push', skipOffstage: false)).dx;
@@ -198,11 +198,11 @@ void main() {
     expect(find.text('第二页'), findsOneWidget);
   });
 
-  testWidgets('返回时长 300ms（比原先 320ms 更短），前进仍是 520ms', (tester) async {
+  testWidgets('返回时长 260ms（比原先 320ms 更短），前进仍是 520ms', (tester) async {
     await pumpApp(tester);
     const builder = SlidePageTransitionsBuilder();
     expect(builder.reverseTransitionDuration,
-        const Duration(milliseconds: 300));
+        const Duration(milliseconds: 260));
     expect(builder.transitionDuration, const Duration(milliseconds: 520),
         reason: '前进时长不动，只缩短返回');
 
@@ -211,10 +211,10 @@ void main() {
 
     Navigator.of(tester.element(find.text('第二页'))).pop();
     await tester.pump();
-    // 260ms：300ms 时长下应仍在动画中
-    await tester.pump(const Duration(milliseconds: 260));
+    // 220ms：260ms 时长下应仍在动画中
+    await tester.pump(const Duration(milliseconds: 220));
     expect(find.text('第二页', skipOffstage: false), findsOneWidget,
-        reason: '300ms 时长下 260ms 还应处于动画中');
+        reason: '260ms 时长下 220ms 还应处于动画中');
 
     await tester.pumpAndSettle();
     expect(find.text('第二页'), findsNothing);

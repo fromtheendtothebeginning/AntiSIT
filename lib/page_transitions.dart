@@ -46,11 +46,11 @@ class SlidePageTransitionsBuilder extends PageTransitionsBuilder {
 
   /// 返回时长。
   ///
-  /// 比原先的 320ms 短：返回是「回到刚才」的动作，拖沓会显得迟钝。
-  /// 320 → 400 是把时长拉长来摊薄单帧位移，但曲线放缓后单帧位移本身已经降下来
-  /// （见 [_popCurve]），再拖长就只是慢。取 320ms 的 0.94 倍 = 300ms，
-  /// 单帧位移与原先持平，观感明显更利索。
-  static const Duration popDuration = Duration(milliseconds: 300);
+  /// 返回是「回到刚才」的动作，越利索越好。曲线放缓后单帧位移已经不高
+  /// （见 [_popCurve]），所以不再靠拉长时长来摊薄——直接缩短：
+  /// 320 → 300 → 260ms。260ms 下单帧最大位移约 130px（12% 屏宽），
+  /// 比最初 320ms + 陡曲线的 120px 略高，但曲线缓、两层同步，观感仍是顺的。
+  static const Duration popDuration = Duration(milliseconds: 260);
 
   @override
   Duration get transitionDuration => pushDuration;
