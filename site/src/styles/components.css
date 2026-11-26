@@ -1,0 +1,362 @@
+/* ==========================================================================
+   组件层：面板 / 按钮 / 选项卡 / 徽章 / 代码块 / 卡片 / 步骤条 / 时间线
+   每个组件只读设计令牌，不写死颜色 —— 换肤不需要动这里。
+   ========================================================================== */
+
+/* ---------- 面板 ---------- */
+.panel {
+  background: var(--bg-card);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), transparent 50%);
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  padding: 26px 28px;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+}
+
+.panel.flat {
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-style: dashed;
+}
+
+.panel h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-bottom: 10px;
+}
+
+.panel h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.hint {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 22px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 16px;
+  cursor: pointer;
+  border: 1px solid var(--cta-border);
+  background: var(--cta-bg);
+  color: var(--cta-text);
+  box-shadow: 0 4px 20px rgba(228, 184, 99, 0.15), inset 0 1px 0 rgba(243, 220, 168, 0.35);
+  transition: background-color 0.5s var(--ease-spring), border-color 0.5s var(--ease-spring),
+    color 0.5s var(--ease-spring), box-shadow 0.5s var(--ease-spring), transform 0.5s var(--ease-spring);
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--cta-bg-hover);
+  border-color: var(--cta-border-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 32px rgba(228, 184, 99, 0.22), inset 0 1px 0 rgba(243, 220, 168, 0.45);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-duration: 0.15s;
+}
+
+.btn.ghost {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--neutral-soft);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn.small {
+  height: 34px;
+  padding: 0 15px;
+  font-size: 12.5px;
+  border-radius: 12px;
+}
+
+/* ---------- 徽章 / 胶囊 ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 11px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--accent-1-soft);
+  border: 1px solid var(--accent-1-border);
+  color: var(--accent-1);
+}
+
+.badge.gold {
+  background: var(--accent-2-soft);
+  border-color: var(--accent-2-border);
+  color: var(--accent-2);
+}
+
+.badge.green {
+  background: var(--brand-green-soft);
+  border-color: var(--brand-green-border);
+  color: var(--brand-green);
+}
+
+.badge.muted {
+  background: var(--neutral-soft);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+/* ---------- 代码块 ---------- */
+.code {
+  position: relative;
+  margin: 12px 0;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: rgba(3, 7, 18, 0.35);
+  overflow: hidden;
+}
+
+:root[data-theme="light"] .code {
+  background: rgba(11, 19, 34, 0.05);
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+}
+
+.code-title {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.code pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  tab-size: 2;
+}
+
+.code-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent-2);
+  background: var(--accent-2-soft);
+  border: 1px solid var(--accent-2-border);
+  padding: 1px 8px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+
+/* 行号式注释（在代码里以 # 开头）不做染色，保持可拷贝 */
+
+/* ---------- 液态选项卡（GlassTabs 变体：滑块跟随） ---------- */
+.glass-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  width: fit-content;
+  position: relative;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.glass-tabs::-webkit-scrollbar { display: none; }
+
+.gtab {
+  position: relative;
+  z-index: 1;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.4s var(--ease-spring);
+}
+
+.gtab:hover { color: var(--text-primary); }
+
+.gtab.active { color: #16233a; }
+
+:root[data-theme="light"] .gtab.active { color: #f7fbff; }
+
+/* 滑块：绝对定位、随激活项移动 */
+.slide-thumb {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  z-index: 0;
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(196, 214, 236, 0.78));
+  box-shadow: 0 4px 14px rgba(3, 7, 18, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: left 0.5s var(--ease-spring), width 0.5s var(--ease-spring), opacity 0.3s;
+}
+
+:root[data-theme="light"] .slide-thumb {
+  background: linear-gradient(160deg, #3e639b, #2c4d80);
+  box-shadow: 0 4px 14px rgba(62, 99, 155, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 22px;
+  border-radius: 18px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.09), transparent 55%);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  transition: transform 0.5s var(--ease-spring), border-color 0.5s var(--ease-spring),
+    box-shadow 0.5s var(--ease-spring), background-color 0.5s var(--ease-spring);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.card-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--accent-1-soft);
+  border: 1px solid var(--accent-1-border);
+  color: var(--accent-1);
+}
+
+.card h3 {
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.card p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.72;
+}
+
+.card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+/* ---------- 步骤条 ---------- */
+.steps {
+  display: grid;
+  gap: 14px;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.step-no {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--accent-2);
+  background: var(--accent-2-soft);
+  border: 1px solid var(--accent-2-border);
+}
+
+.step-body h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.step-body p {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ---------- 定义行（文档里的「字段 → 说明」） ---------- */
+.kv {
+  display: grid;
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  gap: 10px 18px;
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--border-color);
+  font-size: 13.5px;
+}
+
+.kv:last-child { border-bottom: none; }
+
+.kv-k {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--accent-1);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.kv-v { color: var(--text-secondary); }
+
+@media (max-width: 640px) {
+  .kv { grid-template-columns: 1fr; gap: 2px; }
+}

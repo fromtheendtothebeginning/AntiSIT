@@ -106,6 +106,7 @@ class FakeNotifier implements ExtNotificationService {
   @override
   Future<void> show({
     required String extId,
+    String? extName,
     String? key,
     required String title,
     String? body,
@@ -143,6 +144,9 @@ class FakeNotifier implements ExtNotificationService {
     calls.add('cancelAll');
     this.extId = extId;
   }
+
+  @override
+  void watchForeground() {}
 }
 
 /// 市场装的拓展条目（桥的权限门用例用）。

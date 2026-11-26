@@ -2,6 +2,9 @@
 
 校园服务 App —— 课程表 / 校园码 / 成绩 / 第二课堂 / 电费，一站式校园助手。
 
+**官网**：<https://anticraft.top/antiSIT/>（源码在 [site/](site/)，React + Vite 纯静态，
+改内容动 `site/src/lib/data.js`，部署见 [site/README.md](site/README.md)）。
+
 Flutter 编写的 Android / Windows 客户端。同一套接口支持两种接入方式（「我的 → 连接设置」切换）：
 
 | 接入方式 | 需要填写 | 校园数据怎么来 |

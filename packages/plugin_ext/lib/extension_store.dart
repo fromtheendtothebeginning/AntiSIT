@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'builtin_extensions.dart';
+import 'ext_consent.dart';
 import 'ext_notification.dart';
 import 'extension_item.dart';
 
@@ -138,6 +139,12 @@ class ExtensionStore extends ChangeNotifier {
   bool isBuiltin(String id) => builtins.any((e) => e.id == id);
 
   Future<void> load() async {
+    // 旧版把「弹不出来」存成了「用户拒绝」：先按新规则清一遍假拒绝（幂等，只跑一次）
+    try {
+      await ExtConsentService.migrateLegacyDenials();
+    } catch (e) {
+      debugPrint('[ext] 授权记录迁移失败，按原样继续：$e');
+    }
     final sp = await SharedPreferences.getInstance();
     _items = [
       ...builtins,

@@ -1,0 +1,190 @@
+/* ==========================================================================
+   设计令牌 —— Nocturne Glassmorphism（夜航玻璃拟态）
+   移植自 anticlass 设计体系：深墨夜景 + 大半径柔和光斑，面板统一
+   rgba 白 + backdrop-blur + saturate(180%)，阴影三件套（外深 + 顶高光 + 底暗缘）。
+   强调双色分工：--accent-1 月光钢蓝（链接 / 激活 / 次要高亮）；
+   --accent-2 香槟金（唯一强调色：主 CTA、关键数字、需要「被看见」的点）。
+   本站只依赖令牌与组件层，改配色只需改这一个文件。
+   ========================================================================== */
+:root {
+  --bg-primary: #0b1322;
+  --bg-card: rgba(255, 255, 255, 0.08);
+  --bg-elevated: rgba(255, 255, 255, 0.06);
+  --bg-solid: #111a2b;
+
+  --text-primary: rgba(255, 255, 255, 0.95);
+  --text-secondary: rgba(255, 255, 255, 0.64);
+  --text-muted: rgba(255, 255, 255, 0.42);
+
+  --accent-1: #93b1d4;
+  --accent-1-light: #b7cde8;
+  --accent-1-hover: #a9c3e2;
+  --accent-1-soft: rgba(147, 177, 212, 0.12);
+  --accent-1-soft-strong: rgba(147, 177, 212, 0.2);
+  --accent-1-border: rgba(147, 177, 212, 0.35);
+
+  --accent-2: #e4b863;
+  --accent-2-hover: #f3dca8;
+  --accent-2-soft: rgba(228, 184, 99, 0.14);
+  --accent-2-border: rgba(228, 184, 99, 0.4);
+
+  /* 品牌绿：沿用校徽基础色，只用于「服务点位」这类点缀 */
+  --brand-green: #00c46a;
+  --brand-green-soft: rgba(0, 196, 106, 0.14);
+  --brand-green-border: rgba(0, 196, 106, 0.38);
+
+  --success: #3ddc97;
+  --success-soft: rgba(61, 220, 151, 0.16);
+  --danger: #ff6b5e;
+  --danger-soft: rgba(255, 90, 74, 0.14);
+  --danger-border: rgba(255, 107, 94, 0.4);
+
+  --border-color: rgba(255, 255, 255, 0.15);
+  --border-strong: rgba(255, 255, 255, 0.32);
+  --hover-tint: rgba(255, 255, 255, 0.06);
+  --neutral-soft: rgba(255, 255, 255, 0.1);
+  --neutral-soft-hover: rgba(255, 255, 255, 0.16);
+  --overlay: rgba(3, 7, 18, 0.6);
+  --menu-bg: rgba(17, 26, 43, 0.96);
+
+  --cta-bg: rgba(228, 184, 99, 0.15);
+  --cta-bg-hover: rgba(228, 184, 99, 0.22);
+  --cta-border: rgba(228, 184, 99, 0.4);
+  --cta-border-hover: rgba(228, 184, 99, 0.55);
+  --cta-text: #f3dca8;
+
+  --shadow-sm: 0 2px 8px rgba(3, 7, 18, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --shadow-md: 0 8px 24px rgba(3, 7, 18, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(2, 6, 16, 0.3);
+  --shadow-lg: 0 16px 48px rgba(3, 7, 18, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25), inset 0 -1px 0 rgba(2, 6, 16, 0.35);
+  --ring: 0 0 0 3px rgba(228, 184, 99, 0.18);
+  --thumb-bg: rgba(255, 255, 255, 0.16);
+
+  --glass-blur: 40px;
+  --scene-wells: radial-gradient(640px circle at 85% 8%, rgba(124, 156, 196, 0.28), transparent 62%),
+    radial-gradient(560px circle at 8% 92%, rgba(51, 81, 122, 0.35), transparent 60%),
+    radial-gradient(480px circle at 55% 45%, rgba(228, 184, 99, 0.1), transparent 60%);
+
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --max-width: 1200px;
+  --nav-height: 62px;
+
+  --mono: "JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace;
+  color-scheme: dark;
+}
+
+/* 晨光玻璃变体：同一机制，亮场景暗文字（主题由顶栏开关或系统偏好决定） */
+:root[data-theme="light"] {
+  --bg-primary: #e3e9f2;
+  --bg-card: rgba(255, 255, 255, 0.58);
+  --bg-elevated: rgba(255, 255, 255, 0.42);
+  --bg-solid: #f2f5fa;
+
+  --text-primary: #16233a;
+  --text-secondary: rgba(22, 35, 58, 0.75);
+  --text-muted: rgba(22, 35, 58, 0.52);
+
+  --accent-1: #3e639b;
+  --accent-1-light: #54789f;
+  --accent-1-hover: #476eab;
+  --accent-1-soft: rgba(62, 99, 155, 0.1);
+  --accent-1-soft-strong: rgba(62, 99, 155, 0.16);
+  --accent-1-border: rgba(62, 99, 155, 0.32);
+
+  --accent-2: #8a6420;
+  --accent-2-hover: #6e5018;
+  --accent-2-soft: rgba(228, 184, 99, 0.22);
+  --accent-2-border: rgba(138, 100, 32, 0.38);
+
+  --brand-green: #0a9e5c;
+  --brand-green-soft: rgba(0, 196, 106, 0.12);
+  --brand-green-border: rgba(10, 158, 92, 0.34);
+
+  --success: #1e7f46;
+  --success-soft: rgba(52, 199, 89, 0.16);
+  --danger: #c3372b;
+  --danger-soft: rgba(255, 59, 48, 0.12);
+  --danger-border: rgba(195, 55, 43, 0.38);
+
+  --border-color: rgba(255, 255, 255, 0.72);
+  --border-strong: rgba(255, 255, 255, 0.95);
+  --hover-tint: rgba(11, 19, 34, 0.045);
+  --neutral-soft: rgba(255, 255, 255, 0.5);
+  --neutral-soft-hover: rgba(255, 255, 255, 0.72);
+  --overlay: rgba(11, 19, 34, 0.35);
+  --menu-bg: rgba(248, 250, 253, 0.96);
+
+  --cta-bg: rgba(228, 184, 99, 0.3);
+  --cta-bg-hover: rgba(228, 184, 99, 0.42);
+  --cta-border: rgba(138, 100, 32, 0.45);
+  --cta-border-hover: rgba(138, 100, 32, 0.62);
+  --cta-text: #4a3708;
+
+  --shadow-sm: 0 2px 8px rgba(3, 7, 18, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --shadow-md: 0 8px 24px rgba(3, 7, 18, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(11, 19, 34, 0.05);
+  --shadow-lg: 0 16px 48px rgba(3, 7, 18, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(11, 19, 34, 0.06);
+  --ring: 0 0 0 3px rgba(228, 184, 99, 0.4);
+  --thumb-bg: rgba(255, 255, 255, 0.85);
+
+  --scene-wells: radial-gradient(640px circle at 85% 8%, rgba(124, 156, 196, 0.5), transparent 62%),
+    radial-gradient(560px circle at 8% 92%, rgba(228, 184, 99, 0.28), transparent 60%),
+    radial-gradient(520px circle at 45% 40%, rgba(51, 81, 122, 0.16), transparent 62%);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg-primary: #e3e9f2;
+    --bg-card: rgba(255, 255, 255, 0.58);
+    --bg-elevated: rgba(255, 255, 255, 0.42);
+    --bg-solid: #f2f5fa;
+    --text-primary: #16233a;
+    --text-secondary: rgba(22, 35, 58, 0.75);
+    --text-muted: rgba(22, 35, 58, 0.52);
+    --accent-1: #3e639b;
+    --accent-1-light: #54789f;
+    --accent-1-hover: #476eab;
+    --accent-1-soft: rgba(62, 99, 155, 0.1);
+    --accent-1-soft-strong: rgba(62, 99, 155, 0.16);
+    --accent-1-border: rgba(62, 99, 155, 0.32);
+    --accent-2: #8a6420;
+    --accent-2-hover: #6e5018;
+    --accent-2-soft: rgba(228, 184, 99, 0.22);
+    --accent-2-border: rgba(138, 100, 32, 0.38);
+    --brand-green: #0a9e5c;
+    --brand-green-soft: rgba(0, 196, 106, 0.12);
+    --brand-green-border: rgba(10, 158, 92, 0.34);
+    --success: #1e7f46;
+    --success-soft: rgba(52, 199, 89, 0.16);
+    --danger: #c3372b;
+    --danger-soft: rgba(255, 59, 48, 0.12);
+    --danger-border: rgba(195, 55, 43, 0.38);
+    --border-color: rgba(255, 255, 255, 0.72);
+    --border-strong: rgba(255, 255, 255, 0.95);
+    --hover-tint: rgba(11, 19, 34, 0.045);
+    --neutral-soft: rgba(255, 255, 255, 0.5);
+    --neutral-soft-hover: rgba(255, 255, 255, 0.72);
+    --overlay: rgba(11, 19, 34, 0.35);
+    --menu-bg: rgba(248, 250, 253, 0.96);
+    --cta-bg: rgba(228, 184, 99, 0.3);
+    --cta-bg-hover: rgba(228, 184, 99, 0.42);
+    --cta-border: rgba(138, 100, 32, 0.45);
+    --cta-border-hover: rgba(138, 100, 32, 0.62);
+    --cta-text: #4a3708;
+    --shadow-sm: 0 2px 8px rgba(3, 7, 18, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    --shadow-md: 0 8px 24px rgba(3, 7, 18, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      inset 0 -1px 0 rgba(11, 19, 34, 0.05);
+    --shadow-lg: 0 16px 48px rgba(3, 7, 18, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(11, 19, 34, 0.06);
+    --ring: 0 0 0 3px rgba(228, 184, 99, 0.4);
+    --thumb-bg: rgba(255, 255, 255, 0.85);
+    --scene-wells: radial-gradient(640px circle at 85% 8%, rgba(124, 156, 196, 0.5), transparent 62%),
+      radial-gradient(560px circle at 8% 92%, rgba(228, 184, 99, 0.28), transparent 60%),
+      radial-gradient(520px circle at 45% 40%, rgba(51, 81, 122, 0.16), transparent 62%);
+    color-scheme: light;
+  }
+}

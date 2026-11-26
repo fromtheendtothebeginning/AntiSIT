@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'ext_notification.dart';
+import 'extension_store.dart';
 import 'extensions_page.dart';
 
 /// 拓展：网页形态的小功能，用户自己填网址 / 导入 JSON 添加，点开就是对应网页。
@@ -30,6 +32,24 @@ class ExtPlugin extends FeaturePlugin {
 
   @override
   bool get defaultEnabled => true;
+
+  /// 启动就把「前台巡检」挂上：到点的拓展定时通知由系统闹钟在进程外拉起，
+  /// 前台时 Android 会压掉横幅，只能靠巡检从通知栏捞出来补一条页内横幅。
+  @override
+  Future<void> init() async {
+    // 横幅上要显示「哪个拓展发的」：把清单查询注入给通知模块，避免它反向依赖清单
+    ExtNotificationService.extNameResolver = (extId) {
+      for (final item in ExtensionStore.I.items) {
+        if (item.id == extId) return item.name;
+      }
+      return '';
+    };
+    try {
+      ExtNotificationService.instance.watchForeground();
+    } catch (e) {
+      debugPrint('[ext] 通知巡检启动失败：$e');
+    }
+  }
 
   @override
   List<PluginNavItem> navItems(PluginRegistry registry, ValueListenable<int> tab) => [
