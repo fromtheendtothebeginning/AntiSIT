@@ -106,35 +106,6 @@ Widget buildDayNav({
   );
 }
 
-/// 等 PageView 挂载后跳到目标页（最多等 60 帧 ≈ 1 秒，防无限等）。
-/// 未挂载时 hasClients=false，直接跳会静默丢失、指示器与内容停在不同的周。
-void jumpPageWhenReady({
-  required PageController controller,
-  required int targetPage,
-  required bool Function() isMounted,
-  bool animate = false,
-}) {
-  void attempt(int tries) {
-    if (!isMounted()) return;
-    if (controller.hasClients) {
-      if (animate) {
-        controller.animateToPage(
-          targetPage,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
-        );
-      } else {
-        controller.jumpToPage(targetPage);
-      }
-      return;
-    }
-    if (tries >= 60) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) => attempt(tries + 1));
-  }
-
-  WidgetsBinding.instance.addPostFrameCallback((_) => attempt(0));
-}
-
 Widget _navBtn(IconData icon, VoidCallback? onTap) => SizedBox(
       width: 34,
       height: 34,

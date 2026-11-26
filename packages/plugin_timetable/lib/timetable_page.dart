@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
@@ -20,7 +21,21 @@ import 'timetable_shell.dart';
 /// 课程表：周 / 日视图、教务与考试导入、调休规则、学期设置（底栏第 1 页）。
 /// 本地课表（手动课程 / 调休规则 / 考试日程）不依赖登录；教务导入需登录。
 class TimetablePage extends StatefulWidget {
-  const TimetablePage({super.key});
+  const TimetablePage({super.key, this.activeTab, this.myTab = 0});
+
+  /// 主页当前 Tab。课表页是底栏常驻页（切走不销毁），只有靠它才知道「用户又回到
+  /// 课表了」——回到本页时把内容拉回本周，满足 issue #13 的诉求。
+  final ValueListenable<int>? activeTab;
+
+  /// 本页在底栏里的位置（插件能被停用，下标会变，不能写死常量）。
+  final int myTab;
+
+  /// 离开课表多久之后、再切回来时把内容拉回本周。
+  ///
+  /// 立刻来回切页不复位（不然用户点错了去看一眼校园码，正在翻的周就没了）；
+  /// 隔了一段时间才复位——这同时兜住「App 在后台放了半天，回到课表还停在上周」。
+  @visibleForTesting
+  static Duration todayResetAfter = const Duration(minutes: 30);
 
   /// 今天下一个「下课」时刻——只看节次时间，与星期几无关；今天没有了返回 null。
   /// 抽成纯函数是为了不等到真的下课也能测。
@@ -67,8 +82,14 @@ class _TimetablePageState extends State<TimetablePage> {
   late String xnm;
   late String xqm;
 
-  final PageController _pc = PageController();
-  final PageController _dayPc = PageController();
+  /// 两个分页控制器都挂 `onAttach`：PageView 一挂上就来消费「待跳页」。
+  /// 这是「跳页不丢」的关键——冷启动 / 切周视图 / 切日视图时 PageView 都是后建的，
+  /// 建好之前 `hasClients` 为 false，直接跳会静默丢失。
+  ///
+  /// ⚠️ `onAttach` 是在**布局阶段**回调的（ScrollPosition 正在 attach）：那里不能
+  /// `setState`、也不该当时就 `jumpToPage`，一律排到帧末。
+  late final PageController _pc = PageController(onAttach: (_) => _schedulePendingWeek());
+  late final PageController _dayPc = PageController(onAttach: (_) => _schedulePendingDay());
   int _shownWeek = 1;
   int _shownDay = 0; // 0=周一
   DateTime? _lastNavTap; // 上次点击周次标题的时间：500ms 内点两次回今天
@@ -77,6 +98,19 @@ class _TimetablePageState extends State<TimetablePage> {
   final Set<int> _loadingWeeks = {};
   List<Map<String, dynamic>>? _terms; // 成绩接口返回的学期列表（登录后）
   Timer? _tick;
+
+  /// 上一次「显示本周」的时刻：从别的 Tab 回到课表时，隔了一段时间才复位回本周，
+  /// 短暂来回不会把用户正在看的周弹走。
+  DateTime? _leftTodayAt;
+
+  /// 待跳的周视图页码（null = 没有待办）：等 PageView 挂上后由 [_applyPendingWeek] 消费。
+  int? _pendingWeekPage;
+
+  /// 待跳时是否用动画（挂上就跳的那一刻才知道，所以和页码一起记）。
+  bool _pendingWeekAnimate = false;
+
+  /// 日视图待跳页码（同上，日报不可跨周：切回周视图时按当前周重算）。
+  int? _pendingDayPage;
 
   /// 下课那一刻的精确重绘（见 [_scheduleFlip]）。
   Timer? _flip;
@@ -118,8 +152,53 @@ class _TimetablePageState extends State<TimetablePage> {
     AppState.I.addListener(_onAppChange);
     // 提醒插件的启停决定 AppBar 上那颗铃铛在不在，跟着注册表一起刷新
     PluginRegistry.I.addListener(_onAppChange);
+    // 底栏切页：课表页常驻不销毁，靠它知道「用户又回来了」
+    widget.activeTab?.addListener(_onTabChanged);
+    _wasActive = _isActiveTab;
     _wasLoggedIn = AppState.I.loggedIn;
     _init();
+  }
+
+  bool _wasActive = true;
+
+  bool get _isActiveTab => widget.activeTab?.value == widget.myTab;
+
+  /// 底栏切回课表：把内容拉回本周（issue #13 的原始诉求）。
+  ///
+  /// 只在「离开过一会儿再回来」时复位：立刻来回切页不会把用户正在翻的周弹走；
+  /// 用户手动翻到第 8 周看安排、切去校园码再回来，也还停在第 8 周。
+  void _onTabChanged() {
+    final active = _isActiveTab;
+    if (active == _wasActive) return;
+    _wasActive = active;
+    if (!active) {
+      // 记住离开的时刻：下次回来据此判断隔了多久
+      _leftTodayAt = DateTime.now();
+      return;
+    }
+    final leftAt = _leftTodayAt;
+    _leftTodayAt = null;
+    if (leftAt != null &&
+        DateTime.now().difference(leftAt) < TimetablePage.todayResetAfter) {
+      return;
+    }
+    if (mounted) setState(() {});
+    _returnToToday();
+  }
+
+  /// 把内容拉回「今天」那一周 / 那一天。
+  ///
+  /// 加载期（`_booting`）收到也不丢：`_init` 走完本来就会 `_jumpTo(今天)`，
+  /// 那次跳页会把指示器和内容一起安顿好，不需要额外记账。
+  void _returnToToday() {
+    if (_booting) return;
+    final tw = _todayWeek;
+    if (tw == null) return;
+    if (_dayView) {
+      _goDay(tw, DateTime.now().weekday - 1);
+    } else {
+      _jumpTo(tw, animate: false);
+    }
   }
 
   /// 在下课那一刻再重绘一次（只有 60s 心跳时，09:55 下课的课最晚 09:55:59 才变灰）。
@@ -155,6 +234,7 @@ class _TimetablePageState extends State<TimetablePage> {
     _flip?.cancel();
     AppState.I.removeListener(_onAppChange);
     PluginRegistry.I.removeListener(_onAppChange);
+    widget.activeTab?.removeListener(_onTabChanged);
     _pc.dispose();
     _dayPc.dispose();
     super.dispose();
@@ -179,28 +259,51 @@ class _TimetablePageState extends State<TimetablePage> {
     _fixWeekCount();
     // 记下「课表现在显示的是哪个学期」：从「我的 → 课程表设置」进来时靠它定位学期。
     TimetableStore.instance.active = '$xnm-$xqm';
-    final tw = _todayWeek;
-    _shownWeek = tw ?? 1;
+    // 只定「日」，**不动周指示器**：周指示器等跳页真正落地时再由 _applyPendingWeek
+    // 一起写。否则数据慢 / PageView 还没挂上时，指示器已经跳到本周、内容还停在第 1 周，
+    // 就是 issue #13 那个分裂。
     _shownDay = DateTime.now().weekday - 1;
     if (mounted) setState(() => _booting = false);
-    if (AppState.I.loggedIn) await _ensureWeek(_shownWeek);
-    final tw2 = _todayWeek;
-    if (tw2 != null) _shownWeek = tw2;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _jumpTo(_shownWeek, animate: false);
-    });
+    if (AppState.I.loggedIn) await _ensureWeek(_todayWeek ?? 1);
+    _jumpTo(_todayWeek ?? 1, animate: false);
   }
 
   void _fixWeekCount() => fixSemesterWeekCount(tt);
 
+  /// 跳到第 [zs] 周（1 起）。**指示器只在真正跳页时赋值**（见 [_applyPendingWeek]）。
   void _jumpTo(int zs, {bool animate = true}) {
-    final target = zs.clamp(1, _weekCount) - 1;
-    jumpPageWhenReady(
-      controller: _pc,
-      targetPage: target,
-      isMounted: () => mounted,
-      animate: animate,
-    );
+    _pendingWeekPage = zs.clamp(1, _weekCount) - 1;
+    _pendingWeekAnimate = animate;
+    // 可能在 build / layout 里被调（守护条件：不可用时下次再来），一律排到帧末
+    _schedulePendingWeek();
+  }
+
+  /// 帧末消费一次「待跳页」（onAttach 与各处请求都走它，同一帧只排一次）。
+  void _schedulePendingWeek() {
+    if (_pendingWeekScheduled) return;
+    _pendingWeekScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingWeekScheduled = false;
+      _applyPendingWeek();
+    });
+  }
+
+  bool _pendingWeekScheduled = false;
+
+  /// 跳页收尾：PageView 挂上、能跳了才动，**跳成功的那一次同时写指示器**。
+  void _applyPendingWeek() {
+    final target = _pendingWeekPage;
+    if (target == null || !_pc.hasClients) return;
+    _pendingWeekPage = null;
+    if (_pendingWeekAnimate) {
+      _pc.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _pc.jumpToPage(target);
+    }
     _shownWeek = target + 1;
     if (mounted) setState(() {});
   }
@@ -433,25 +536,44 @@ class _TimetablePageState extends State<TimetablePage> {
   /// 顶栏的周 / 日视图切换：换算成对侧分页的页码后再切，避免落到第一页。
   void _toggleView() {
     if (!_dayView) {
-      // 切到日视图：目标页 = 当前显示的周/日；跳转同样等挂载就绪后执行
+      // 切到日视图：目标页 = 当前显示的周/日；周/日指示器与目标页同源，不会分裂
       final target = (_shownWeek - 1) * 7 + _shownDay;
-      setState(() => _dayView = true);
-      jumpPageWhenReady(
-        controller: _dayPc,
-        targetPage: target,
-        isMounted: () => mounted,
-      );
-      _shownWeek = target ~/ 7 + 1;
-      _shownDay = target % 7;
-      if (mounted) setState(() {});
+      setState(() {
+        _dayView = true;
+        _shownWeek = target ~/ 7 + 1;
+        _shownDay = target % 7;
+      });
+      _jumpDayWhenReady(target);
     } else {
+      final week = _shownWeek;
       setState(() => _dayView = false);
-      jumpPageWhenReady(
-        controller: _pc,
-        targetPage: _shownWeek - 1,
-        isMounted: () => mounted,
-      );
+      _jumpTo(week, animate: false);
     }
+  }
+
+  /// 日视图分页的「挂上就跳」：与周视图同一套（不落地就不改指示器）。
+  void _jumpDayWhenReady(int targetPage) {
+    _pendingDayPage = targetPage;
+    _schedulePendingDay();
+  }
+
+  void _schedulePendingDay() {
+    if (_pendingDayScheduled) return;
+    _pendingDayScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingDayScheduled = false;
+      _applyPendingDay();
+    });
+  }
+
+  bool _pendingDayScheduled = false;
+
+  void _applyPendingDay() {
+    final target = _pendingDayPage;
+    if (target == null || !_dayPc.hasClients) return;
+    _pendingDayPage = null;
+    _dayPc.jumpToPage(target);
+    if (mounted) setState(() {});
   }
 
   /// 「更多」菜单的分发。
@@ -585,6 +707,11 @@ class _TimetablePageState extends State<TimetablePage> {
 
   void _goDay(int week, int day) {
     final idx = ((week - 1) * 7 + day).clamp(0, _weekCount * 7 - 1);
+    // 日视图分页未必已挂上（切回来那一帧）：没挂上就走「挂上再跳」，别静默丢掉
+    if (!_dayPc.hasClients) {
+      _jumpDayWhenReady(idx);
+      return;
+    }
     _dayPc.animateToPage(
       idx,
       duration: const Duration(milliseconds: 250),
