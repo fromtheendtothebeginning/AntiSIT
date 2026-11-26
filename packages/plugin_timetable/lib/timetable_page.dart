@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 
 import 'package:campus_core/campus_core.dart';
 
@@ -29,13 +30,6 @@ class TimetablePage extends StatefulWidget {
 
   /// 本页在底栏里的位置（插件能被停用，下标会变，不能写死常量）。
   final int myTab;
-
-  /// 离开课表多久之后、再切回来时把内容拉回本周。
-  ///
-  /// 立刻来回切页不复位（不然用户点错了去看一眼校园码，正在翻的周就没了）；
-  /// 隔了一段时间才复位——这同时兜住「App 在后台放了半天，回到课表还停在上周」。
-  @visibleForTesting
-  static Duration todayResetAfter = const Duration(minutes: 30);
 
   /// 今天下一个「下课」时刻——只看节次时间，与星期几无关；今天没有了返回 null。
   /// 抽成纯函数是为了不等到真的下课也能测。
@@ -99,10 +93,6 @@ class _TimetablePageState extends State<TimetablePage> {
   List<Map<String, dynamic>>? _terms; // 成绩接口返回的学期列表（登录后）
   Timer? _tick;
 
-  /// 上一次「显示本周」的时刻：从别的 Tab 回到课表时，隔了一段时间才复位回本周，
-  /// 短暂来回不会把用户正在看的周弹走。
-  DateTime? _leftTodayAt;
-
   /// 待跳的周视图页码（null = 没有待办）：等 PageView 挂上后由 [_applyPendingWeek] 消费。
   int? _pendingWeekPage;
 
@@ -165,23 +155,13 @@ class _TimetablePageState extends State<TimetablePage> {
 
   /// 底栏切回课表：把内容拉回本周（issue #13 的原始诉求）。
   ///
-  /// 只在「离开过一会儿再回来」时复位：立刻来回切页不会把用户正在翻的周弹走；
-  /// 用户手动翻到第 8 周看安排、切去校园码再回来，也还停在第 8 周。
+  /// 每次切回来都回本周：用户翻到别的周看完后再去别的页，回来默认看「现在」，
+  /// 不会停在一个已经过期的周上。翻页本身仍是即时的——同一屏内的来回切周不受影响。
   void _onTabChanged() {
     final active = _isActiveTab;
     if (active == _wasActive) return;
     _wasActive = active;
-    if (!active) {
-      // 记住离开的时刻：下次回来据此判断隔了多久
-      _leftTodayAt = DateTime.now();
-      return;
-    }
-    final leftAt = _leftTodayAt;
-    _leftTodayAt = null;
-    if (leftAt != null &&
-        DateTime.now().difference(leftAt) < TimetablePage.todayResetAfter) {
-      return;
-    }
+    if (!active) return;
     if (mounted) setState(() {});
     _returnToToday();
   }
@@ -279,13 +259,26 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   /// 帧末消费一次「待跳页」（onAttach 与各处请求都走它，同一帧只排一次）。
+  ///
+  /// **能立刻跳就立刻跳**：点击「上一周 / 下一周」、双击周次标题这些都在 idle 阶段
+  /// 进这里，此时跳页没有任何理由等——`addPostFrameCallback` 自己**不会排帧**，
+  /// 一律延后就会变成「点了没反应，要等下个 60s 心跳才生效」。
+  /// 只有在 build / layout 期间（onAttach、切视图那类）才必须延到帧末。
   void _schedulePendingWeek() {
+    final binding = WidgetsBinding.instance;
+    if (_pendingWeekPage == null) return;
+    if (binding.schedulerPhase == SchedulerPhase.idle && _pc.hasClients) {
+      _applyPendingWeek();
+      return;
+    }
     if (_pendingWeekScheduled) return;
     _pendingWeekScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    binding.addPostFrameCallback((_) {
       _pendingWeekScheduled = false;
       _applyPendingWeek();
     });
+    // addPostFrameCallback 不排帧：不在帧中时得主动要一帧，回调才会跑
+    binding.ensureVisualUpdate();
   }
 
   bool _pendingWeekScheduled = false;
@@ -558,12 +551,19 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   void _schedulePendingDay() {
+    final binding = WidgetsBinding.instance;
+    if (_pendingDayPage == null) return;
+    if (binding.schedulerPhase == SchedulerPhase.idle && _dayPc.hasClients) {
+      _applyPendingDay();
+      return;
+    }
     if (_pendingDayScheduled) return;
     _pendingDayScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    binding.addPostFrameCallback((_) {
       _pendingDayScheduled = false;
       _applyPendingDay();
     });
+    binding.ensureVisualUpdate();
   }
 
   bool _pendingDayScheduled = false;

@@ -15,7 +15,6 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await AppState.I.load();
-    TimetablePage.todayResetAfter = const Duration(minutes: 30);
 
     // 学期起点 = 4 周前的周一，保证「今天」落在第 5 周左右（≠ 第 1 周，才看得出有没有跳）
     final now = DateTime.now();
@@ -35,8 +34,6 @@ void main() {
     };
     TimetableStore.instance.active = '$xnm-$xqm';
   });
-
-  tearDown(() => TimetablePage.todayResetAfter = const Duration(minutes: 30));
 
   Future<void> pumpPage(WidgetTester tester, {ValueNotifier<int>? tab, int myTab = 0}) async {
     tester.view.physicalSize = const Size(1080, 2400);
@@ -89,7 +86,7 @@ void main() {
         reason: '跳页不能静默丢失（旧实现 60 帧后放弃 -> 内容停在第 1 周）');
   });
 
-  testWidgets('翻到别的周 → 立刻切走再回来：保留用户正在看的周', (tester) async {
+  testWidgets('翻到别的周 → 切走再切回：回本周（每次都回，不看过多久）', (tester) async {
     final tab = ValueNotifier<int>(0);
     addTearDown(tab.dispose);
     await pumpPage(tester, tab: tab);
@@ -97,37 +94,48 @@ void main() {
     // 手动翻到下一周
     await tester.tap(find.byIcon(Icons.chevron_right));
     await tester.pumpAndSettle();
-    final flipped = shownWeek(tester);
-    expect(flipped, todayWeek + 1);
-
-    // 立刻切走再切回（远小于 30 分钟阈值）
-    tab.value = 1;
-    await tester.pumpAndSettle();
-    tab.value = 0;
-    await tester.pumpAndSettle();
-
-    expect(shownWeek(tester), flipped, reason: '短暂来回切页不该把用户翻的周弹走');
-  });
-
-  testWidgets('离开一段时间后切回课表：自动回到本周', (tester) async {
-    final tab = ValueNotifier<int>(0);
-    addTearDown(tab.dispose);
-    await pumpPage(tester, tab: tab);
-
-    await tester.tap(find.byIcon(Icons.chevron_right));
-    await tester.pumpAndSettle();
     expect(shownWeek(tester), todayWeek + 1);
 
-    // 把阈值设成 0：等价于「离开了很久」
-    TimetablePage.todayResetAfter = Duration.zero;
+    // 切走再切回（立刻回来也一样）
     tab.value = 1;
     await tester.pumpAndSettle();
     tab.value = 0;
     await tester.pumpAndSettle();
 
-    expect(shownWeek(tester), todayWeek, reason: '回到课表应复位到本周');
+    expect(shownWeek(tester), todayWeek, reason: '回到课表就回本周');
     final pv = tester.widget<PageView>(find.byType(PageView).first);
     expect(pv.controller!.page?.round(), todayWeek - 1,
         reason: '内容也要跟着回到本周（不能只有指示器回去）');
+  });
+
+  testWidgets('双击周数标题立刻回到本周（不用等下一次刷新 / 心跳）', (tester) async {
+    await pumpPage(tester);
+
+    // 先翻到别的周
+    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.chevron_right));
+    await tester.pumpAndSettle();
+    expect(shownWeek(tester), todayWeek + 2);
+
+    // 双击「第 N 周」周次标题（500ms 内两次）
+    final title = find.textContaining('第 ${todayWeek + 2} 周');
+    expect(title, findsOneWidget);
+    await tester.tap(title);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(title);
+    // ⚠️ 只 pump 一帧：回归的就是「点了必须当场生效」。
+    // 旧实现在这里什么都不会发生——addPostFrameCallback 不排帧，
+    // 于是要等下个 60s 心跳才回来。
+    await tester.pump();
+
+    expect(shownWeek(tester), todayWeek,
+        reason: '双击后当场就要回到本周，不能等下一次刷新');
+
+    // 内容跟着回到本周（PageView 的位置要等这一帧布局后才可读）
+    await tester.pumpAndSettle();
+    final pv = tester.widget<PageView>(find.byType(PageView).first);
+    expect(pv.controller!.page?.round(), todayWeek - 1,
+        reason: '内容也要回到本周');
   });
 }
