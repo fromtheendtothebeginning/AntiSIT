@@ -1,7 +1,6 @@
 import 'package:campus_core/campus_core.dart';
 import 'package:campus_service/main.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -80,34 +79,35 @@ void main() {
     expect(leftOf(tester, directMarker()), closeTo(rest - 3, 2), reason: '松手后直接切到这套');
   });
 
-  testWidgets('滑动中：裁剪区铺到屏幕边缘，卡片不会切在内边距处', (tester) async {
+  testWidgets('滑动区不自己裁剪：内容能顶到屏幕边缘（同二课活动页）', (tester) async {
     final w = await pumpPage(tester);
+
+    // 列表左右不留内边距，滑动区才能铺满整屏 —— 裁剪线才会落在屏幕边缘。
+    final listView = tester.widget<ListView>(find.byType(ListView).first);
+    final pad = listView.padding! as EdgeInsets;
+    expect(pad.left, 0, reason: '左边距 0，卡片滑动时能贴到屏幕边缘');
+    expect(pad.right, 0, reason: '右边距 0，同上');
+    expect(w, greaterThan(0));
+
+    // 滑动区内部不能再有比屏幕窄的裁剪层：那说明页面自己裁了一刀，裁剪线落在
+    // 内边距内沿，拖动时卡片会在离屏幕边 12px 处被竖直切一刀（「切边」）。
     final g = await tester.startGesture(Offset(w * 0.85, 430));
     for (var i = 0; i < 5; i++) {
       await g.moveBy(Offset(-w * 0.15, 0));
       await tester.pump();
     }
-
-    // 滑动中那块 ClipRect 的裁剪矩形必须比自身左右各宽出列表内边距（12），
-    // 裁剪线才落在屏幕边缘；否则卡片会在离屏幕边 12 处被竖直切一刀（「切边」）。
-    final clips = <(Size, Rect)>[];
-    for (final e in find.byType(ClipRect, skipOffstage: false).evaluate()) {
-      final widget = e.widget as ClipRect;
-      final clipper = widget.clipper;
-      final render = e.renderObject;
-      if (clipper == null || render is! RenderClipRect) continue;
-      final size = render.size;
-      clips.add((size, clipper.getClip(size)));
+    final clipRects = find.descendant(
+      of: find.byType(ListView).first,
+      matching: find.byType(ClipRect, skipOffstage: false),
+    );
+    for (final e in clipRects.evaluate()) {
+      final size = (e.renderObject! as RenderBox).size;
+      expect(
+        size.width,
+        greaterThanOrEqualTo(w - 0.01),
+        reason: '裁剪层只有 ListView 的 viewport（整屏宽）才允许，页面内不要再裁',
+      );
     }
-    expect(clips, isNotEmpty, reason: '滑动中的裁剪层应该在');
-
-    const sidePad = 12.0;
-    final aligned = clips.where((c) {
-      final (size, rect) = c;
-      return rect.left <= -sidePad + 0.01 &&
-          rect.right >= size.width + sidePad - 0.01;
-    });
-    expect(aligned, isNotEmpty, reason: '裁剪区要左右各宽出内边距，裁剪线落在屏幕边缘');
 
     await g.up();
     await tester.pumpAndSettle();

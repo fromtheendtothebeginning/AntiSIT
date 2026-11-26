@@ -171,12 +171,14 @@ class _ConnectPageState extends State<ConnectPage> {
 
   /// 两套设置并排放在同一个 Stack 里：最贴近滑块的那套决定高度，另一套跟着位置滑进滑出。
   ///
-  /// 三处细节都是为了不出现「奇怪的阴影」：
-  /// * 已被滑到屏外的那套用 [Offstage] 彻底不画 —— 它的 AppCard 外投影（blur 24）
-  ///   会从屏幕另一侧渗回来，在左右边缘各留一条暗带，且随模式切换左右换边。
-  /// * 裁剪只裁横向、且**仅滑动中才裁**：静止时还裁的话，[ClipRect] 会沿着卡片
-  ///   左右边缘把柔和的圆角外投影竖直切断，卡片下方就留下一条带硬直边的矩形暗带。
-  ///   见 [_HorizontalClipper]。
+  /// 结构与二课活动 / 二课分数页一致：两页各自**整屏宽**，按 `(i - pos) * w` 平移，
+  /// 横向裁剪交给外层 ListView 的 viewport —— 裁剪线正好落在屏幕边缘。
+  /// （以前这块留在 ListView 的 12px 内边距里、自己用 ClipRect 裁，裁剪线落在内边距
+  /// 内沿，拖动时卡片会在离屏幕边 12px 处被竖直切一刀，也就是「切边」。）
+  ///
+  /// 另外两处细节：
+  /// * 完全滑出屏幕的那套用 [Offstage] 彻底不画 —— 它的 AppCard 外投影会渗回可见区；
+  /// * 高度由最贴近滑块的那套决定，另一套用 Positioned 按自身高度布局。
   Widget _slidingSections(AppState st) => ValueListenableBuilder<double>(
         valueListenable: _tabPos,
         builder: (context, rawPos, _) {
@@ -185,9 +187,11 @@ class _ConnectPageState extends State<ConnectPage> {
           final w = MediaQuery.sizeOf(context).width;
           final active = pos.round().clamp(0, 1);
           final other = 1 - active;
-          // 弹簧收尾不是精确落点（可能停在 0.999x），阈值留一点余量。
-          final sliding = (pos - active).abs() > 0.002;
-          Widget panel(int i) => i == 0 ? _serverPanel(st) : _directPanel(st);
+          // 两套各自补上水平内边距，页面本身铺满整屏（见下方说明）。
+          Widget panel(int i) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: _sidePad),
+                child: i == 0 ? _serverPanel(st) : _directPanel(st),
+              );
           return AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
@@ -195,34 +199,31 @@ class _ConnectPageState extends State<ConnectPage> {
             alignment: Alignment.topCenter,
             // 纵向不裁：默认 hardEdge 会沿这块的边界把 AppCard 的外投影切断。
             clipBehavior: Clip.none,
-            child: ClipRect(
-              clipper: _HorizontalClipper(sliding: sliding, sidePad: _sidePad),
-              child: Stack(
-                children: [
-                  // 当前这套：既是滑动的一方，也决定这块的高度。
-                  Transform.translate(
-                    offset: Offset((active - pos) * w, 0),
-                    child: panel(active),
-                  ),
-                  // 另一套按自身高度布局（不能 Positioned.fill：会被拉成当前那套的高度）。
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    child: Transform.translate(
-                      offset: Offset((other - pos) * w, 0),
-                      // 完全滑出屏幕后不再绘制：投影不会渗回可见区域。
-                      child: Offstage(
-                        offstage: (other - pos).abs() >= 0.999,
-                        child: TickerMode(
-                          enabled: (other - pos).abs() < 0.999,
-                          child: panel(other),
-                        ),
-                      ),
+            child: Stack(
+              // 横向也不裁：滑到屏幕外的那半交给外层 ListView 的 viewport 按屏幕
+              // 边缘切。在这里再裁一次，裁剪线会落在这块的内边距内沿（离屏幕边
+              // 12px），拖动时卡片就被竖直切一刀——二课活动 / 二课分数页没有这个。
+              clipBehavior: Clip.none,
+              children: [
+                // 当前这套：既是滑动的一方，也决定这块的高度。
+                Transform.translate(
+                  offset: Offset((active - pos) * w, 0),
+                  child: panel(active),
+                ),
+                // 另一套按自身高度布局（不能 Positioned.fill：会被拉成当前那套的高度）。
+                Positioned(
+                  left: (other - pos) * w,
+                  top: 0,
+                  width: w,
+                  child: Offstage(
+                    offstage: (other - pos).abs() >= 0.999,
+                    child: TickerMode(
+                      enabled: (other - pos).abs() < 0.999,
+                      child: panel(other),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },
@@ -547,10 +548,12 @@ class _ConnectPageState extends State<ConnectPage> {
                 onHorizontalDragEnd: _onTabDragEnd,
                 onHorizontalDragCancel: () => _tabDrag.value = null,
                 child: ListView(
+                  // 左右不留内边距：滑动区要能顶到屏幕边缘（横向裁剪线才落在屏幕边），
+                  // 各家自己的 12 由内部 Padding 给（见 [_sidePad]）。
                   padding: EdgeInsets.fromLTRB(
-                    _sidePad,
+                    0,
                     8 + topInset + _tabsRowHeight,
-                    _sidePad,
+                    0,
                     24,
                   ),
                   children: [
@@ -558,55 +561,64 @@ class _ConnectPageState extends State<ConnectPage> {
                     _slidingSections(st),
                 if (_error != null) ...[
                   const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: SemColors.dangerSoft,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: SemColors.danger.withValues(alpha: 0.3),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: _sidePad),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: SemColors.dangerSoft,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: SemColors.danger.withValues(alpha: 0.3),
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: SemColors.danger,
-                        height: 1.6,
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: SemColors.danger,
+                          height: 1.6,
+                        ),
                       ),
                     ),
                   ),
                 ],
                 if (_ok != null) ...[
                   const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: SemColors.successSoft,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: SemColors.success.withValues(alpha: 0.35),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: _sidePad),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: SemColors.successSoft,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: SemColors.success.withValues(alpha: 0.35),
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      _ok!,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: SemColors.success,
-                        height: 1.6,
+                      child: Text(
+                        _ok!,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: SemColors.success,
+                          height: 1.6,
+                        ),
                       ),
                     ),
                   ),
                 ],
                 // 说明文案统一沉到页底。
-                const PageNotes(
-                  lines: [
-                    '服务器模式：由服务器代连校园内网；登录用该服务器的账号密码，'
-                        '校园凭据（学号 / 校园网密码）在该服务器的网站「我的 → 校园服务」配置一次。',
-                    '直连模式：本机凭据直连学校系统，数据不经过任何服务器；需设备在校园网 / 校内 VPN 内。',
-                    '校园凭据仅保存在本机，不会上传到任何服务器。',
-                    '直连模式的「姓名」留空时查学工会自动补全（校园卡登录用）。',
-                  ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: _sidePad),
+                  child: const PageNotes(
+                    lines: [
+                      '服务器模式：由服务器代连校园内网；登录用该服务器的账号密码，'
+                          '校园凭据（学号 / 校园网密码）在该服务器的网站「我的 → 校园服务」配置一次。',
+                      '直连模式：本机凭据直连学校系统，数据不经过任何服务器；需设备在校园网 / 校内 VPN 内。',
+                      '校园凭据仅保存在本机，不会上传到任何服务器。',
+                      '直连模式的「姓名」留空时查学工会自动补全（校园卡登录用）。',
+                    ],
+                  ),
                 ),
                   ],
                 ),
@@ -619,36 +631,3 @@ class _ConnectPageState extends State<ConnectPage> {
   }
 }
 
-/// 裁掉屏外那套设置的横向溢出，但不碰纵向的投影。
-///
-/// 关键：裁剪区要比这块（`_slidingSections`）**左右各宽出列表的水平内边距**，
-/// 让裁剪线落在屏幕边缘，而不是内边距内沿。落在内沿的话，滑动中卡片会在离屏幕
-/// 边缘 12px 处被竖直切一刀——就是二课活动 / 二课分数页不会出现的那种「切边」。
-/// 真正裁到屏幕边的是外层 ListView 的 viewport。
-///
-/// [sliding] 为 false（已经停在某一格）时返回一个远大于视口的矩形 = 完全不裁：
-/// 静止时两套设置没有横向溢出，还裁只会把 AppCard 柔和的 blur 24 外投影沿着
-/// 卡片左右边缘竖直切断，卡片下方出现一条带硬直边的矩形暗带。
-class _HorizontalClipper extends CustomClipper<Rect> {
-  const _HorizontalClipper({required this.sliding, required this.sidePad});
-
-  /// 是否正在跟随滑块滑动（两套设置同时在画，需要挡住溢出的那套）。
-  final bool sliding;
-
-  /// 这块内容与屏幕边缘的距离（= ListView 的水平内边距）。
-  final double sidePad;
-
-  @override
-  Rect getClip(Size size) => sliding
-      ? Rect.fromLTWH(
-          -sidePad,
-          -2000,
-          size.width + sidePad * 2,
-          size.height + 4000,
-        )
-      : Rect.fromLTWH(-4000, -2000, size.width + 8000, size.height + 4000);
-
-  @override
-  bool shouldReclip(_HorizontalClipper oldClipper) =>
-      oldClipper.sliding != sliding || oldClipper.sidePad != sidePad;
-}
