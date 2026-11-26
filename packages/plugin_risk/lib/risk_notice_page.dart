@@ -60,14 +60,19 @@ class _RiskNoticePageState extends State<RiskNoticePage> {
       builder: (context, _) {
         // 先算顶栏留白：body 里的 MediaQuery 已扣掉状态栏。
         final topInset = glassTopInset(context);
+        // 确认态底部有操作条：悬浮玻璃底栏，内容从它底下穿过去（同评教表单页）。
+        final hasBar = widget.confirmMode;
+        final barHeight = _actionBarHeight;
+        final bottomInset = hasBar ? glassBottomInset(context, barHeight: barHeight) : 0.0;
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
+          extendBody: hasBar && glassBottomBarEnabled,
           appBar: glassAppBar(context, title: const Text(RiskTerms.title)),
           body: GlassFadedBody(
             barHeight: topInset,
             child: ListView(
             controller: _scroll,
-            padding: EdgeInsets.fromLTRB(16, 8 + topInset, 16, 24),
+            padding: EdgeInsets.fromLTRB(16, 8 + topInset, 16, 24 + bottomInset),
             children: [
               if (widget.confirmMode)
                 Container(
@@ -91,59 +96,81 @@ class _RiskNoticePageState extends State<RiskNoticePage> {
             ],
           ),
           ),
-          bottomNavigationBar: widget.confirmMode
-              ? SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (!_readToEnd) ...[
-                          Text(
-                            '条款全文阅读完毕后，「已阅读并同意，停用本组件」按钮方为可用。',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: SemColors.textMuted,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: SemColors.textSecondary,
-                                ),
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('不同意'),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              flex: 2,
-                              child: FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: SemColors.danger,
-                                  disabledBackgroundColor: SemColors.stripe,
-                                ),
-                                onPressed: _readToEnd
-                                    ? () => Navigator.pop(context, true)
-                                    : null,
-                                child: const Text('已阅读并同意，停用本组件'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+          bottomNavigationBar: hasBar
+              ? glassBottomBar(
+                  context,
+                  height: barHeight,
+                  child: _actionBar(),
                 )
               : null,
         );
       },
     );
   }
+
+  /// 操作条内容高度（不含 [glassBottomBar] 自己的胶囊内边距）。
+  /// 未读完时上面多一行提示，条要跟着长高，否则按钮会被竖向挤扁。
+  /// 数值留了几像素余量：按钮本身有最小高度，卡太紧会报 RenderFlex overflow。
+  double get _actionBarHeight => _readToEnd ? 40 : 62;
+
+  /// 操作条内容（安全区、玻璃胶囊与内边距由 [glassBottomBar] 提供）。
+  Widget _actionBar() => Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!_readToEnd) ...[
+            Text(
+              '条款全文阅读完毕后，「已阅读并同意，停用本组件」按钮方为可用。',
+              style: TextStyle(fontSize: 10.5, color: SemColors.textMuted),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+          ],
+          SizedBox(
+            height: 36,
+            child: Row(
+              // stretch：按钮撑满这 36px，否则 minimumSize.zero 会让它们缩成文字高度（约 20px）。
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: SemColors.textSecondary,
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('不同意', maxLines: 1),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: SemColors.danger,
+                      disabledBackgroundColor: SemColors.stripe,
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: _readToEnd
+                        ? () => Navigator.pop(context, true)
+                        : null,
+                    child: const Text(
+                      '已阅读并同意，停用本组件',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
 }
 
 /// 条款正文（一条一张卡）；拦截引导、设置入口与确认页共用，改文案只改 [RiskTerms]。
