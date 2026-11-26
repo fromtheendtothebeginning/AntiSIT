@@ -46,10 +46,11 @@ class SlidePageTransitionsBuilder extends PageTransitionsBuilder {
 
   /// 返回时长。
   ///
-  /// 比原先的 320ms 长 25%：返回时整屏要滑过一整页宽，320ms 下单帧位移接近
-  /// 屏宽 11%，中低端机掉帧时看得很明显（issue #16）。拉长到 400ms 后单帧
-  /// 位移降到 8% 左右，同时曲线也放缓，见 [_popCurve]。
-  static const Duration popDuration = Duration(milliseconds: 400);
+  /// 比原先的 320ms 短：返回是「回到刚才」的动作，拖沓会显得迟钝。
+  /// 320 → 400 是把时长拉长来摊薄单帧位移，但曲线放缓后单帧位移本身已经降下来
+  /// （见 [_popCurve]），再拖长就只是慢。取 320ms 的 0.94 倍 = 300ms，
+  /// 单帧位移与原先持平，观感明显更利索。
+  static const Duration popDuration = Duration(milliseconds: 300);
 
   @override
   Duration get transitionDuration => pushDuration;
@@ -73,7 +74,12 @@ class SlidePageTransitionsBuilder extends PageTransitionsBuilder {
 ///
 /// 不要用极端 expo-out（如 `Cubic(0.16, 1, 0.3, 1)`）：25% 时长走完一半以上，
 /// 观感是「旧页闪一下就被盖住，后面几乎不动」。
-const Curve _pushCurve = Cubic(0.20, 0.85, 0.20, 1.0);
+///
+/// 这里比原来缓一档：原先 `Cubic(0.20, 0.85, 0.20, 1.0)` 25% 时长就走完 79%
+/// （峰值速度 4.3 倍平均速度），顶页单帧要横move 149px（1080 宽下 13.8% 屏宽），
+/// 掉一帧就是肉眼可见的跳。现在 25% 走 55%、峰值 2.3 倍，配合下面的「两层同步」，
+/// 前进看起来是一整块平移而不是「闪一下」。
+const Curve _pushCurve = Cubic(0.30, 0.60, 0.30, 1.0);
 
 /// 返回缓动：起步柔和、全程匀速感更强。
 ///
@@ -85,16 +91,15 @@ const Curve _pushCurve = Cubic(0.20, 0.85, 0.20, 1.0);
 /// 这条曲线，改这里跟手位移会自动跟着变。
 const Curve _popCurve = Cubic(0.35, 0.42, 0.40, 1.0);
 
-/// 被盖住的旧页：前进时延后 22% 才开始退让，避免「闪一下就被推开」。
-const Curve _coveredCurve = Interval(0.22, 1.0, curve: _pushCurve);
-
-/// 返回时被盖页（下层）该不该按「返回节奏」走。
+/// 前进时被盖住的旧页该不该按「前进节奏」走。
 ///
-/// 返回时下层要从 -20% 归位，如果沿用前进那条「延后 22% + 陡」的曲线，动画在
-/// 时间轴上是反放的：前 60% 几乎不动、中段猛冲、最后 22% 完全停住——和顶页的
-/// 匀速离开完全脱节，观感就是「一顿一顿」（issue #16 说的卡顿）。
-/// 返回时让两层共用一个曲线（下层用 [_popCurve] 正放、顶页用同一条反向），速度
-/// 比恒定 0.20，看起来就是整块一起平移。
+/// 前进时下层要从 0 退到 -20%。原先它延后 22% 才开始动、且用 Interval 截断，
+/// 结果是：顶页已经滑过大半屏，下层才刚起步，最后 22% 下层又完全静止——
+/// 两层各走一套节奏，观感是「上层飞进来、下层才慢吞吞让开」，也就是前进方向的
+/// 不同步（和返回那个卡顿是同一个病根，只是方向相反）。
+///
+/// 现在前进 / 返回都让两层共用同一条曲线：下层用 [_pushCurve] / [_popCurve] 正放，
+/// 顶页用同一条反向，速度比恒为 `oldShift`（20%），看起来是整块一起平移。
 bool _isReturning(Animation<double> secondaryAnimation) =>
     predictiveBackGesturing ||
     secondaryAnimation.status == AnimationStatus.reverse;
@@ -137,12 +142,11 @@ class _SlidePageTransition extends StatelessWidget {
         if (covered) {
           // 被上层页推走：前进 0 → -20%，返回 -20% → 0（同一公式，动画值反向）。
           //
-          // 前进：动作延后（前 22% 时长原地不动），否则旧页闪一下就被推开。
-          // 返回：跟顶页共用 [_popCurve]，两层位移速度比恒定，不会「下层先顿住、
-          // 再猛冲、最后停住」——那正是返回卡顿的来源。
-          final s = _isReturning(secondaryAnimation)
-              ? _popCurve.transform(secondaryAnimation.value)
-              : _coveredCurve.transform(secondaryAnimation.value);
+          // 前进和返回都跟顶页共用同一条曲线（各用自己方向那条），两层位移速度比
+          // 恒为 oldShift，整体像一块板平移。以前前进是「延后 22% + Interval 截断」，
+          // 会造成上层已经滑过大半、下层才刚起步，最后一段下层又静止。
+          final s = (_isReturning(secondaryAnimation) ? _popCurve : _pushCurve)
+              .transform(secondaryAnimation.value);
           shift = -SlidePageTransitionsBuilder.oldShift * width * s;
           dim = SlidePageTransitionsBuilder.oldDim * s;
         } else {
