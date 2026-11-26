@@ -99,7 +99,39 @@ int compareVersions(String a, String b) {
   if (pa == pb) return 0;
   if (pa.isEmpty) return 1; // 正式版 > 预发布
   if (pb.isEmpty) return -1;
-  return pa.compareTo(pb);
+  // 预发布段不能按字典序比：`rc10` < `rc2`、`alpha` < `beta` 都会反。
+  return _comparePreRelease(pa, pb);
+}
+
+/// 预发布段比较：先按 `.` / `-` 切段，每段再拆「字母前缀 + 数字后缀」按 (alpha, num) 比。
+/// 这样 `rc2 < rc10`、`alpha < beta`、`rc1 < rc1.1`；纯数字段比纯字母段新。
+int _comparePreRelease(String a, String b) {
+  final pa = a.split(RegExp(r'[.-]')).where((s) => s.isNotEmpty).toList();
+  final pb = b.split(RegExp(r'[.-]')).where((s) => s.isNotEmpty).toList();
+  final len = pa.length > pb.length ? pa.length : pb.length;
+  for (var i = 0; i < len; i++) {
+    if (i >= pa.length) return -1; // 前缀相同，段多的更新（rc1 < rc1.1）
+    if (i >= pb.length) return 1;
+    final c = _compareSegment(pa[i], pb[i]);
+    if (c != 0) return c;
+  }
+  return 0;
+}
+
+/// 单个预发布段比较：`rc10` 拆成 ('rc', 10)，`10` 拆成 ('', 10)，`beta` 拆成 ('beta', -1)。
+int _compareSegment(String a, String b) {
+  final (ka, na) = _splitSegment(a);
+  final (kb, nb) = _splitSegment(b);
+  if (ka != kb) return ka.compareTo(kb) > 0 ? 1 : -1;
+  if (na == nb) return 0;
+  return na > nb ? 1 : -1;
+}
+
+(String, int) _splitSegment(String s) {
+  final m = RegExp(r'^([A-Za-z]*)(\d*)$').firstMatch(s);
+  if (m == null) return (s.toLowerCase(), -1); // 认不出的段按整串文字比
+  final num = m.group(2)!;
+  return (m.group(1)!.toLowerCase(), num.isEmpty ? -1 : int.parse(num));
 }
 
 /// 'v1.13.5+92' → ([1, 13, 5], '')；'1.14.0-rc1' → ([1, 14, 0], 'rc1')。

@@ -35,6 +35,9 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   /// 服务端声明的总大小（0 = 没给 Content-Length，进度条转圈）。
   int total = 0;
 
+  /// 安装器的拉起正在进行中（防「安装」按钮被连点两次拉起两个系统安装器）。
+  bool installing = false;
+
   /// 失败原因（error 状态时给弹窗显示）。
   String? error;
 
@@ -160,6 +163,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     status = 'downloading';
     received = 0;
     total = 0;
+    _notified = 0;
     error = null;
     installNote = null;
     notifyListeners();
@@ -175,8 +179,7 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
 
       final res = debugStream != null
           ? await debugStream!(Uri.parse(apk))
-          : await (_client = client = http.Client())
-              .send(http.Request('GET', Uri.parse(apk)));
+          : await _sendVerified(apk, client = _client = http.Client());
       if (res.statusCode != 200) throw http.ClientException('HTTP ${res.statusCode}');
       total = res.contentLength ?? 0;
 
@@ -234,6 +237,9 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> install() async {
     final path = readyPath;
     if (path == null) return;
+    // 连点两次「安装」会拉起两个系统安装器（native 侧两个 startActivityForResult）。
+    if (installing) return;
+    installing = true;
     // 失败后点「重试安装」：回到就绪态再发起，别让界面一直停在 error 上
     if (status != 'ready') {
       status = 'ready';
@@ -249,6 +255,8 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       // 通道异常也带上原因（MissingPluginException / PlatformException 各有不同修法），只留第一行。
       r = 'error: ${'$e'.split('\n').first}';
+    } finally {
+      installing = false;
     }
     _awaitingSettings = r == 'settings';
     installNote = switch (r) {
@@ -357,9 +365,37 @@ class UpdateDownloader extends ChangeNotifier with WidgetsBindingObserver {
     debugVerifySignature = null;
   }
 
+  /// GET 安装包，**手动逐跳校验重定向**。
+  ///
+  /// `http.Client.send` 默认自动跟随 301/302 到任意 host，白名单只校验了初始 URL——
+  /// 更新源被劫持时 APK 就能从任意服务器拉。sha256 文件与 APK 同源同通道，被同源
+  /// 替换时哈希校验也一并失守，只剩 native 签名校验一道防线。这里每一跳都过白名单。
+  Future<http.StreamedResponse> _sendVerified(String url, http.Client client) async {
+    var uri = Uri.parse(url);
+    for (var hop = 0; hop <= 5; hop++) {
+      if (!isAllowedUpdateUrl(uri)) {
+        throw http.ClientException('下载重定向到非白名单地址：${uri.host}');
+      }
+      final req = http.Request('GET', uri)..followRedirects = false;
+      final res = await client.send(req);
+      final location = res.headers['location'] ?? '';
+      final isRedirect = const {301, 302, 303, 307, 308}.contains(res.statusCode);
+      if (!isRedirect || location.isEmpty) return res;
+      final next = uri.resolve(location);
+      await res.stream.drain<void>().catchError((_) {});
+      uri = next;
+    }
+    throw http.ClientException('下载重定向次数过多');
+  }
+
   /// 取发布页挂的 `.apk.sha256`。调用方已保证 [sha256Url] 非空且在发布域白名单内。
+  ///
+  /// 必须有超时：APK 那步有 30s 空闲超时，唯独这一步原本没有——校验文件被代理
+  /// 挂起时状态永远停在 verifying，进度区无限转圈。
   Future<String> _sha256Of(String url) async =>
-      (await (debugText?.call(Uri.parse(url)) ?? http.read(Uri.parse(url)))).trim();
+      (await (debugText?.call(Uri.parse(url)) ??
+              http.read(Uri.parse(url)).timeout(const Duration(seconds: 15))))
+          .trim();
 
   Future<String> _digestOf(File file) async =>
       (await crypto.sha256.bind(file.openRead()).first).toString();
