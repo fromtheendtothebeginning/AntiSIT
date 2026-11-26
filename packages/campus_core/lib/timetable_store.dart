@@ -25,6 +25,10 @@ class TimetableStore {
 
   static const _spKey = 'campus_timetable';
 
+  /// 上一份可用的课表快照（云端整体覆盖前留的底）。主键读不出来时（写盘中断 /
+  /// 脏数据）用它兜底，避免一次坏数据就让课表变空、进而被回推云端。
+  static const _spBackupKey = 'campus_timetable_backup';
+
   /// 自定义上课时间的存储键：云端不认这个字段，换设备不覆盖本机作息。
   static const _slotTimesKey = 'campus_slot_times';
 
@@ -124,31 +128,81 @@ class TimetableStore {
   }
 
   /// 从本机读课表（首次运行时顺带迁移旧版周缓存），完成后重排提醒。
+  ///
+  /// 本机数据坏了（写盘中断 / 旧版本格式变更）不能让启动卡死：主键解析失败就退回
+  /// 上一次的快照，快照也没有才当空课表——**绝不把空课表当成真实数据写回**。
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
     _loadSlotTimes(sp);
     final raw = sp.getString(_spKey);
+    var ok = false;
+    var repaired = false;
     if (raw != null) {
-      _adoptJson(jsonDecode(raw));
+      ok = _tryAdoptJson(raw, source: '本机');
+      if (!ok) {
+        final backup = sp.getString(_spBackupKey);
+        if (backup != null) {
+          ok = _tryAdoptJson(backup, source: '本机快照');
+          repaired = ok;
+        }
+      }
     } else {
       await _migrateLegacyCache(sp);
+    }
+    // 用快照救回来以后立刻把主键写回正常内容，免得每次冷启动都走一遍回退。
+    if (repaired) {
+      await sp.setString(_spKey, jsonEncode(toJson()));
+      debugPrint('[课表] 本机课表已损坏，已用上一次的快照恢复');
     }
     // 启动早期提醒服务会先跑一遍（那时 store 还是空的，会主动跳过），这里补一发。
     loaded = true;
     _rescheduleReminder();
-    debugPrint('[课表] 载入完成 → 重排上课提醒');
+    debugPrint('[课表] 载入完成 → 重排上课提醒${ok || raw == null ? '' : '（本机数据已损坏，本次为空课表）'}');
   }
 
-  void _adoptJson(dynamic decoded) {
+  /// 把落盘的 JSON 字符串采纳进内存；解析或结构不对时返回 false，不动现有内存状态。
+  bool _tryAdoptJson(String raw, {String source = ''}) {
+    try {
+      return _adoptJson(jsonDecode(raw));
+    } catch (e) {
+      debugPrint('[课表] $source课表解析失败，已忽略：$e');
+      return false;
+    }
+  }
+
+  /// 采纳课表 JSON：**先在临时变量里完整解析，全部成功才赋值**。
+  ///
+  /// 返回 false = 数据结构不符（被调用方当作「没读到」处理）。旧实现边解析边写字段、
+  /// 异常被吞掉，云端一份脏数据就能把本地课表换成空表并落盘，属于会丢数据的行为。
+  bool _adoptJson(dynamic decoded) {
     try {
       final m = decoded as Map<String, dynamic>;
-      _nj = m['nj'] as String?;
-      active = '${m['active'] ?? ''}';
-      updatedAt = asInt(m['updatedAt']) ?? 0;
+      final nj = m['nj'] as String?;
+      final active = '${m['active'] ?? ''}';
+      final updatedAt = _saneUpdatedAt(asInt(m['updatedAt']) ?? 0);
       final sems = (m['semesters'] as Map<String, dynamic>?) ?? {};
-      semesters =
-          sems.map((k, v) => MapEntry(k, SemesterTt.fromJson(v as Map<String, dynamic>)));
-    } catch (_) {}
+      final parsed = sems.map(
+          (k, v) => MapEntry(k, SemesterTt.fromJson(v as Map<String, dynamic>)));
+      _nj = nj;
+      this.active = active;
+      this.updatedAt = updatedAt;
+      semesters = parsed;
+      return true;
+    } catch (e) {
+      debugPrint('[课表] 课表数据格式不符，已忽略：$e');
+      return false;
+    }
+  }
+
+  /// 时钟明显不对时的时间戳（设备时间被调到未来再调回来，或数据损坏）会把同步锁死：
+  /// 本机时间戳永远「更新」，别的设备怎么改都推不进来。超出当前时间 1 天的按 0 处理。
+  static int _saneUpdatedAt(int v) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (v > now + const Duration(days: 1).inMilliseconds) {
+      debugPrint('[课表] 云端/本机 updatedAt 明显超前（$v），按 0 处理以免同步被锁死');
+      return 0;
+    }
+    return v;
   }
 
   Map<String, dynamic> toJson() => {
@@ -190,7 +244,16 @@ class TimetableStore {
   Future<void> persist({bool touch = true}) async {
     if (touch) updatedAt = DateTime.now().millisecondsSinceEpoch;
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_spKey, jsonEncode(toJson()));
+    final json = jsonEncode(toJson());
+    // 覆盖前把上一版**可解析**的内容留成快照：主键写坏时 load 还能退回上一次的课表。
+    final prev = sp.getString(_spKey);
+    if (prev != null && prev != json) {
+      try {
+        jsonDecode(prev);
+        await sp.setString(_spBackupKey, prev);
+      } catch (_) {}
+    }
+    await sp.setString(_spKey, json);
     // 课表变了，上课提醒随之重排（排期是幂等覆盖，未开启时不做事）
     _rescheduleReminder();
   }
@@ -271,14 +334,28 @@ class TimetableStore {
     _pushCloud();
   }
 
+  /// 云端回推串行队列：连续两次 save 会发两次 PUT，若不排队，先发的可能后到，
+  /// 服务端按「后到者胜」存下来就会把新数据覆盖成旧数据。
+  Future<void> _pushQueue = Future.value();
+
   void _pushCloud() {
     if (!AppState.I.loggedIn || AppState.I.demo || AppState.I.direct) return;
     final data = toJson();
-    ApiClient.I.timetableCloudPut(data).catchError((_) {});
+    _pushQueue = _pushQueue.then((_) async {
+      try {
+        await ApiClient.I.timetableCloudPut(data);
+      } catch (_) {
+        // 回推失败不影响本地：下次 save / 下次登录会再推一次
+      }
+    });
   }
 
   /// 登录后拉云端合并：云端较新则整体采纳（返回 true），本地较新则回推。
   /// 直连模式没有云端课表（数据源是学校教务 + 本机存储）。
+  ///
+  /// 云端的 `data` 必须先完整解析成功才动手：解析失败当作「这次没同步」，
+  /// 既不清内存也不落盘——旧实现先 `semesters = {}` 再吞掉解析异常，
+  /// 一份脏数据就会把本地课表换成空表写盘，还会在下次回推时污染云端。
   Future<bool> syncCloud() async {
     if (!AppState.I.loggedIn || AppState.I.demo || AppState.I.direct) return false;
     try {
@@ -288,16 +365,34 @@ class TimetableStore {
         _pushCloud(); // 云端还没有数据：把本地推上去
         return false;
       }
-      final cloudAt = asInt(data['updatedAt']) ?? 0;
+      final cloudAt = _saneUpdatedAt(asInt(data['updatedAt']) ?? 0);
       if (cloudAt > updatedAt) {
-        semesters = {};
-        _adoptJson(data);
+        if (!_adoptJson(data)) return false; // 云端结构不对：保持本地原样
         await persist(touch: false);
         return true;
       }
-      if (updatedAt > cloudAt) _pushCloud();
+      if (updatedAt > cloudAt) {
+        _pushCloud();
+      } else if (updatedAt == cloudAt && semesters.isNotEmpty) {
+        // 时间戳相同不代表内容相同（两台设备同一毫秒各存一次）：内容有差异时
+        // 以本机为准回推一次，否则两边会永远各持己见、谁也发现不了分叉。
+        if (_canonicalJson(toJson()) != _canonicalJson(data)) {
+          debugPrint('[课表] 云端与本机 updatedAt 相同但内容不同，以本机为准回推');
+          _pushCloud();
+        }
+      }
     } catch (_) {}
     return false;
+  }
+
+  /// 规范化 JSON（对象键递归排序）：只比较内容，不受键顺序 / 数字写法影响。
+  static String _canonicalJson(dynamic v) {
+    if (v is Map) {
+      final keys = v.keys.map((k) => '$k').toList()..sort();
+      return '{${keys.map((k) => '${jsonEncode(k)}:${_canonicalJson(v[k])}').join(',')}}';
+    }
+    if (v is List) return '[${v.map(_canonicalJson).join(',')}]';
+    return jsonEncode(v);
   }
 
   /// 教务导入成功响应里的年级（用于学期命名）。

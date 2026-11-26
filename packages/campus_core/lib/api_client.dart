@@ -92,9 +92,16 @@ class ApiClient {
           resp = await http.Response.fromStream(streamed)
               .timeout(const Duration(seconds: 60));
         } on TimeoutException {
-          throw ApiError('请求超时，首次调用可能正在建立校园网隧道，请稍后重试');
+          throw ApiError('请求超时，首次调用可能正在建立校园网隧道，请稍后重试', null, true);
         } catch (e) {
-          throw ApiError('网络错误，请检查网络或服务器地址');
+          throw ApiError('网络错误，请检查网络或服务器地址', null, true);
+        }
+
+        if (resp.statusCode == 202 && once) {
+          // once = 绝不重试的写操作（充值 / 断隧道）：202 只表示「服务器还在建隧道」，
+          // 请求根本没被处理。不能落进下面的 2xx 成功分支，否则调用方会拿着
+          // {"retry_after":5} 当充值成功提示用户。
+          throw ApiError('校园网隧道尚未建立，本次请求未执行，请稍后重试', 202, false);
         }
 
         if (resp.statusCode == 202 && !once) {
@@ -105,6 +112,8 @@ class ApiClient {
             final j = jsonDecode(utf8.decode(resp.bodyBytes));
             if (j is Map && j['retry_after'] is num) retryAfter = (j['retry_after'] as num).toInt();
           } catch (_) {}
+          // 服务端回 0 / 负数（或巨值）时不能让循环空转：夹到 1-60 秒。
+          retryAfter = retryAfter.clamp(1, 60);
           waited += retryAfter;
           await Future.delayed(Duration(seconds: retryAfter));
           continue;

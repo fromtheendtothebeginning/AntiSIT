@@ -238,13 +238,15 @@ class HttpSession {
       } on ApiError {
         rethrow;
       } on TimeoutException {
-        throw ApiError(_netHint(host, '连接超时'));
+        // 网络层失败标成「写操作结果未确认」：请求可能已经到达学校系统
+        // （扣款 / 报名这类写操作必须让用户先核实，不能被提示成「失败请重试」）。
+        throw ApiError(_netHint(host, '连接超时'), null, true);
       } on SocketException {
-        throw ApiError(_netHint(host, '无法连接'));
+        throw ApiError(_netHint(host, '无法连接'), null, true);
       } on HttpException {
-        throw ApiError(_netHint(host, '无法连接'));
+        throw ApiError(_netHint(host, '无法连接'), null, true);
       } catch (e) {
-        throw ApiError('访问学校系统失败（$host）：$e');
+        throw ApiError('访问学校系统失败（$host）：$e', null, true);
       }
       _storeCookies(host, resp.headersSplitValues);
       final location = resp.headersSplitValues['location']?.first ?? '';

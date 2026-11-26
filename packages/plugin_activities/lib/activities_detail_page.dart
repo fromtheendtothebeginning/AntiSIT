@@ -136,7 +136,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         );
         return null;
       }
-      final uncertain = e.message.contains('超时') || e.message.contains('网络错误');
+      // 口径：只有「确定没被执行」才说失败，连接重置 / 502 / 504 一律按结果未确认，
+      // 否则用户会当成失败立即重提，而学校可能已经生成了一条申请。
+      final uncertain = writeOutcomeUncertain(e);
       if (uncertain) {
         showDialog(
           context: context,

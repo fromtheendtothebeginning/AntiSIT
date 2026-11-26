@@ -13,6 +13,12 @@ class ElectricityPage extends StatefulWidget {
 class _ElectricityPageState extends State<ElectricityPage> {
   bool _loading = true;
   bool _historyLoading = false;
+
+  /// 充值进行中：**必须与 [_loading] 分开**。充值成功后要立刻 `_load()` 刷新余额，
+  /// 而 `_load()` 开头有「正在查询就跳过」的并发守卫——复用同一个标志会让刷新被
+  /// 直接 return，页面停在充值前的旧余额，用户以为没到账再充一次（重复扣款）。
+  bool _recharging = false;
+
   String? _err;
   Map<String, dynamic>? _data;
   List<Map<String, dynamic>> _history = [];
@@ -201,7 +207,9 @@ class _ElectricityPageState extends State<ElectricityPage> {
     );
     if (confirmed != true) return;
     final amount = num.tryParse(controller.text.trim());
-    if (amount == null || amount < 0.01 || amount > 500) {
+    // NaN 必须单独挡：num.tryParse('NaN') 不是 null，而 NaN 与任何数比较都是 false，
+    // 于是 `NaN < 0.01` 和 `NaN > 500` 同时不成立，会让 NaN 通过校验送到扣款接口。
+    if (amount == null || amount.isNaN || amount < 0.01 || amount > 500) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -211,7 +219,8 @@ class _ElectricityPageState extends State<ElectricityPage> {
       );
       return;
     }
-    setState(() => _loading = true);
+    if (_recharging) return; // 双击防抖：扣款接口不能进两次
+    setState(() => _recharging = true);
     try {
       await ApiClient.I.electricityRecharge(amount);
       if (!mounted) return;
@@ -221,15 +230,17 @@ class _ElectricityPageState extends State<ElectricityPage> {
           behavior: SnackBarBehavior.floating,
         ),
       );
-      await _load();
+      await _load(); // 刷新余额：确认到账，避免用户以为没充上而重复充值
+      if (mounted) await _loadHistory();
     } catch (e) {
       if (!mounted) return;
       final msg = e is ApiError ? e.message : e.toString();
-      final uncertain = msg.contains('超时') || msg.contains('网络');
+      // 口径：只有「确定没被执行」才说失败，其余一律按结果未确认处理。
+      final uncertain = writeOutcomeUncertain(e);
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('充值结果未确认'),
+          title: Text(uncertain ? '充值结果未确认' : '充值失败'),
           content: Text(
             uncertain
                 ? '网络异常：$msg\n\n为防重复扣款，本次充值不会自动重试。请稍后在电费查询中确认是否到账。'
@@ -243,8 +254,10 @@ class _ElectricityPageState extends State<ElectricityPage> {
           ],
         ),
       );
+      // 失败后也刷一次：直连模式下请求可能已扣款，余额是最直接的证据。
+      if (uncertain && mounted) await _load();
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _recharging = false);
     }
   }
 
@@ -335,7 +348,7 @@ class _ElectricityPageState extends State<ElectricityPage> {
                         Row(
                           children: [
                             FilledButton(
-                              onPressed: _loading ? null : _recharge,
+                              onPressed: _loading || _recharging ? null : _recharge,
                               style: FilledButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
                                 padding: const EdgeInsets.symmetric(

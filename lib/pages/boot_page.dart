@@ -24,18 +24,44 @@ class _BootPageState extends State<BootPage> {
   }
 
   /// 依次加载设置、插件清单、课表与插件初始化，然后跳主页。
+  ///
+  /// 每一步都可能因为本机数据损坏 / 单个插件 init 抛错而失败。启动页是唯一入口，
+  /// **任何一步失败都不能把用户永久锁在转圈页**：记下第一个失败、继续往下走，
+  /// 保证「打开 App 至少能进主页」。
   Future<void> _boot() async {
-    await AppState.I.load();
+    Object? bootError;
+    StackTrace? bootStack;
+    Future<void> step(String name, Future<void> Function() run) async {
+      try {
+        await run();
+      } catch (e, s) {
+        bootError ??= e;
+        bootStack ??= s;
+        debugPrint('[启动] $name 失败，继续启动：$e\n$s');
+      }
+    }
+
+    await step('设置', () => AppState.I.load());
     // 插件清单：读启停状态与当前主题，此后底栏、工具宫格、设置项都按启用集合组装
-    await PluginRegistry.I.load();
+    await step('插件清单', () => PluginRegistry.I.load());
     // 课表要在插件初始化前读出来：流体云 / 上课提醒 / 桌面卡片都靠它在启动时排期
-    await TimetableStore.instance.load();
-    await PluginRegistry.I.initAll();
+    await step('课表', () => TimetableStore.instance.load());
+    await step('插件初始化', () => PluginRegistry.I.initAll());
     // 上一次更新下载的安装包装完就没用了，启动时顺手清扫；不阻塞首屏
     unawaited(UpdateDownloader.I.sweepCache());
     if (!mounted) return;
+    if (bootError != null) {
+      // 报给崩溃日志（release 下不进 UI），但不拦启动
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: bootError!,
+        stack: bootStack,
+        library: 'antisit boot',
+        context: ErrorDescription('启动初始化'),
+      ));
+    }
     Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
   }
+
 
   @override
   Widget build(BuildContext context) {
