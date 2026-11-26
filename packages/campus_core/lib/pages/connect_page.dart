@@ -196,7 +196,7 @@ class _ConnectPageState extends State<ConnectPage> {
             // 纵向不裁：默认 hardEdge 会沿这块的边界把 AppCard 的外投影切断。
             clipBehavior: Clip.none,
             child: ClipRect(
-              clipper: _HorizontalClipper(sliding: sliding),
+              clipper: _HorizontalClipper(sliding: sliding, sidePad: _sidePad),
               child: Stack(
                 children: [
                   // 当前这套：既是滑动的一方，也决定这块的高度。
@@ -505,6 +505,9 @@ class _ConnectPageState extends State<ConnectPage> {
   /// 悬浮切换器占的高度（列表顶部要让出这么多，内容才不会被它压住）。
   static const double _tabsRowHeight = 50;
 
+  /// 列表的水平内边距；滑动裁剪要按它把裁剪线推到屏幕边缘（见 [_HorizontalClipper]）。
+  static const double _sidePad = 12;
+
   /// 悬浮玻璃胶囊里的模式切换器（外层玻璃面由 [FloatingTabsHeader] 提供）。
   Widget _tabsRow() => GlassTabs(
         flat: true,
@@ -545,9 +548,9 @@ class _ConnectPageState extends State<ConnectPage> {
                 onHorizontalDragCancel: () => _tabDrag.value = null,
                 child: ListView(
                   padding: EdgeInsets.fromLTRB(
-                    12,
+                    _sidePad,
                     8 + topInset + _tabsRowHeight,
-                    12,
+                    _sidePad,
                     24,
                   ),
                   children: [
@@ -618,21 +621,34 @@ class _ConnectPageState extends State<ConnectPage> {
 
 /// 裁掉屏外那套设置的横向溢出，但不碰纵向的投影。
 ///
+/// 关键：裁剪区要比这块（`_slidingSections`）**左右各宽出列表的水平内边距**，
+/// 让裁剪线落在屏幕边缘，而不是内边距内沿。落在内沿的话，滑动中卡片会在离屏幕
+/// 边缘 12px 处被竖直切一刀——就是二课活动 / 二课分数页不会出现的那种「切边」。
+/// 真正裁到屏幕边的是外层 ListView 的 viewport。
+///
 /// [sliding] 为 false（已经停在某一格）时返回一个远大于视口的矩形 = 完全不裁：
 /// 静止时两套设置没有横向溢出，还裁只会把 AppCard 柔和的 blur 24 外投影沿着
 /// 卡片左右边缘竖直切断，卡片下方出现一条带硬直边的矩形暗带。
 class _HorizontalClipper extends CustomClipper<Rect> {
-  const _HorizontalClipper({required this.sliding});
+  const _HorizontalClipper({required this.sliding, required this.sidePad});
 
   /// 是否正在跟随滑块滑动（两套设置同时在画，需要挡住溢出的那套）。
   final bool sliding;
 
+  /// 这块内容与屏幕边缘的距离（= ListView 的水平内边距）。
+  final double sidePad;
+
   @override
   Rect getClip(Size size) => sliding
-      ? Rect.fromLTWH(0, -2000, size.width, size.height + 4000)
+      ? Rect.fromLTWH(
+          -sidePad,
+          -2000,
+          size.width + sidePad * 2,
+          size.height + 4000,
+        )
       : Rect.fromLTWH(-4000, -2000, size.width + 8000, size.height + 4000);
 
   @override
   bool shouldReclip(_HorizontalClipper oldClipper) =>
-      oldClipper.sliding != sliding;
+      oldClipper.sliding != sliding || oldClipper.sidePad != sidePad;
 }
