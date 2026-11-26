@@ -111,36 +111,100 @@ class AppCard extends StatelessWidget {
     final top = Color.alphaBlend(Colors.white.withValues(alpha: 0.10), base);
     return Padding(
       padding: EdgeInsets.only(bottom: bottomGap),
-      child: DecoratedBox(
-        // 阴影画在 Material/Ink 之外：InkFeature 会被 Material 画布裁剪，透出方形阴影角。
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(r),
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [top, base],
-            stops: const [0, 0.5],
-          ),
-          border: Border.all(color: SemColors.border),
-          boxShadow: [
-            BoxShadow(
-                color: SemColors.shadow, offset: const Offset(0, 8), blurRadius: 24),
-          ],
+      child: CustomPaint(
+        // 投影只画在卡片**外面**。卡片面是半透明的（白 55%），把投影直接画在卡面
+        // 底下会从卡面里透上来：卡底压出一条暗带、下一张卡的顶部又吃到上一张卡的
+        // 投影再来一条——多卡堆叠时就是「多处奇怪的阴影」。
+        // 所以投影层不能垫在卡面下面，而是用「卡片形状取反」的区域裁掉卡内部分。
+        painter: _OutsideShadowPainter(
+          color: SemColors.shadow,
+          radius: r,
+          offset: const Offset(0, 8),
+          blurRadius: 24,
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
+        child: DecoratedBox(
+          // 卡面（渐变 + 描边）；不再带 boxShadow。
+          decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(r),
-            onTap: onTap,
-            child: Padding(
-              padding: padding ?? const EdgeInsets.all(16),
-              child: child,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [top, base],
+              stops: const [0, 0.5],
+            ),
+            border: Border.all(color: SemColors.border),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(r),
+              onTap: onTap,
+              child: Padding(
+                padding: padding ?? const EdgeInsets.all(16),
+                child: child,
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// 卡片外投影：只画在圆角矩形**外面**，卡内一点不落。
+///
+/// 正常做法是给卡片自己的 `BoxDecoration.boxShadow` —— 但本 App 的卡面是半透明的
+/// （浅色下白 55%），投影垫在卡面底下会透上来，卡内出现一条随位置变化的暗带；
+/// 多张卡上下堆叠时，上一张卡的投影还会透进下一张卡的顶部，看起来就是
+/// 「卡片之间和卡片里各有一条灰带」。这里用「大矩形减去卡片圆角矩形」的环状区域
+/// 裁一刀，把投影严格限制在卡片外面。
+class _OutsideShadowPainter extends CustomPainter {
+  const _OutsideShadowPainter({
+    required this.color,
+    required this.radius,
+    required this.offset,
+    required this.blurRadius,
+  });
+
+  final Color color;
+  final double radius;
+  final Offset offset;
+  final double blurRadius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty || color.a == 0) return;
+    final card = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+    // 投影最大可视范围：blur 的高斯尾巴约等于 blurRadius，再加偏移量。
+    final reach = blurRadius + offset.distance + 2;
+    final outer = (Offset.zero & size).inflate(reach);
+    final ring = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(outer),
+      Path()..addRRect(card),
+    );
+    if (ring.getBounds().isEmpty) return;
+    canvas.save();
+    canvas.clipPath(ring);
+    canvas.drawRRect(
+      card.shift(offset),
+      Paint()
+        ..color = color
+        // Flutter 的 BoxShadow 内部就是 blurRadius/2 的 σ，保持一致。
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurRadius / 2),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_OutsideShadowPainter old) =>
+      old.color != color ||
+      old.radius != radius ||
+      old.offset != offset ||
+      old.blurRadius != blurRadius;
 }
 
 /// 提供商品牌 logo：按当前主题着色的单色 SVG；[asset] 为空时回退成字母徽章。
