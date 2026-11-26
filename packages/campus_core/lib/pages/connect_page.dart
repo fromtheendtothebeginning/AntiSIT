@@ -7,7 +7,7 @@ import '../direct/epay.dart';
 import '../direct/mock_campus_server.dart';
 import '../direct/school.dart';
 import '../widgets/common.dart';
-import 'connect_common.dart';
+import '../widgets/floating_tabs_header.dart';
 import 'connect_credentials_card.dart';
 import 'connect_direct_section.dart';
 import 'connect_mock_card.dart';
@@ -170,6 +170,12 @@ class _ConnectPageState extends State<ConnectPage> {
   }
 
   /// 两套设置并排放在同一个 Stack 里：最贴近滑块的那套决定高度，另一套跟着位置滑进滑出。
+  ///
+  /// 两处细节都是为了不出现「奇怪的阴影」：
+  /// * 已被滑到屏外的那套用 [Offstage] 彻底不画 —— 它的 AppCard 外投影（blur 24）
+  ///   会从屏幕另一侧渗回来，在左右边缘各留一条暗带，且随模式切换左右换边。
+  /// * 裁剪只裁横向：普通 ClipRect 会把最后一张卡的**纵向**投影齐腰切断，
+  ///   卡片之间就出现一条硬边暗带。见 [_HorizontalClipper]。
   Widget _slidingSections(AppState st) => ValueListenableBuilder<double>(
         valueListenable: _tabPos,
         builder: (context, rawPos, _) {
@@ -185,6 +191,7 @@ class _ConnectPageState extends State<ConnectPage> {
             // 顶部锚定：默认的居中会让内容在高度动画期间整体上下漂移。
             alignment: Alignment.topCenter,
             child: ClipRect(
+              clipper: const _HorizontalClipper(),
               child: Stack(
                 children: [
                   // 当前这套：既是滑动的一方，也决定这块的高度。
@@ -199,7 +206,14 @@ class _ConnectPageState extends State<ConnectPage> {
                     top: 0,
                     child: Transform.translate(
                       offset: Offset((other - pos) * w, 0),
-                      child: panel(other),
+                      // 完全滑出屏幕后不再绘制：投影不会渗回可见区域。
+                      child: Offstage(
+                        offstage: (other - pos).abs() >= 0.999,
+                        child: TickerMode(
+                          enabled: (other - pos).abs() < 0.999,
+                          child: panel(other),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -483,6 +497,21 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
+  /// 悬浮切换器占的高度（列表顶部要让出这么多，内容才不会被它压住）。
+  static const double _tabsRowHeight = 50;
+
+  /// 悬浮玻璃胶囊里的模式切换器（外层玻璃面由 [FloatingTabsHeader] 提供）。
+  Widget _tabsRow() => GlassTabs(
+        flat: true,
+        labels: const ['服务器模式', '直连模式'],
+        index: _tabIndex,
+        position: _tabPos,
+        dragPosition: _tabDrag,
+        onChanged: _setTab,
+        height: 32,
+        fontSize: 11.5,
+      );
+
   @override
   Widget build(BuildContext context) {
     final st = AppState.I;
@@ -497,38 +526,28 @@ class _ConnectPageState extends State<ConnectPage> {
           appBar: glassAppBar(context, title: const Text('连接设置')),
           body: GlassFadedBody(
             barHeight: topInset,
-            child: GestureDetector(
-            // 页面区域横滑切模式；页面内部真接住横滑的组件（滑块自己）照旧优先。
-            behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: _onTabDragStart,
-            onHorizontalDragUpdate: _onTabDragUpdate,
-            onHorizontalDragEnd: _onTabDragEnd,
-            onHorizontalDragCancel: () => _tabDrag.value = null,
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
-              children: [
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ConnectSectionTitle(
-                        icon: Icons.alt_route_rounded,
-                        title: '数据来源',
-                      ),
-                      const SizedBox(height: 10),
-                      GlassTabs(
-                        labels: const ['服务器模式', '直连模式'],
-                        index: _tabIndex,
-                        position: _tabPos,
-                        dragPosition: _tabDrag,
-                        onChanged: _setTab,
-                      ),
-                    ],
+            // 模式切换器悬浮在顶栏下方：下划收起、上滑展开（同二课活动 / 分数页）。
+            child: FloatingTabsHeader(
+              topInset: topInset,
+              header: _tabsRow(),
+              dragPosition: _tabDrag,
+              child: GestureDetector(
+                // 页面区域横滑切模式；页面内部真接住横滑的组件（滑块自己）照旧优先。
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragStart: _onTabDragStart,
+                onHorizontalDragUpdate: _onTabDragUpdate,
+                onHorizontalDragEnd: _onTabDragEnd,
+                onHorizontalDragCancel: () => _tabDrag.value = null,
+                child: ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    8 + topInset + _tabsRowHeight,
+                    12,
+                    24,
                   ),
-                ),
-                const SizedBox(height: 10),
-                // 下方两套设置跟着滑块一起左右滑动（与主界面切页同一套观感）。
-                _slidingSections(st),
+                  children: [
+                    // 下方两套设置跟着滑块一起左右滑动（与主界面切页同一套观感）。
+                    _slidingSections(st),
                 if (_error != null) ...[
                   const SizedBox(height: 10),
                   Container(
@@ -581,12 +600,25 @@ class _ConnectPageState extends State<ConnectPage> {
                     '直连模式的「姓名」留空时查学工会自动补全（校园卡登录用）。',
                   ],
                 ),
-              ],
+                  ],
+                ),
+              ),
             ),
-          ),
           ),
         );
       },
     );
   }
+}
+
+/// 只裁左右、不裁上下：滑动的两套设置并排在同一行里，需要挡住屏外那套的横向溢出，
+/// 但如果连纵向一起裁，最后一张卡的底部投影就会被齐腰切断，卡片之间多出一条硬边暗带。
+class _HorizontalClipper extends CustomClipper<Rect> {
+  const _HorizontalClipper();
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTWH(0, -2000, size.width, size.height + 4000);
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Rect> oldClipper) => false;
 }
