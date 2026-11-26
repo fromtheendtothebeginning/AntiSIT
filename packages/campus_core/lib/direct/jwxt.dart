@@ -80,7 +80,7 @@ class JwxtClient {
   Never _sessionLost() {
     loggedIn = false;
     _http.clearCookies();
-    throw ApiError('教务登录已失效，请重新导入/查询');
+    throw ApiError('教务登录已失效，请重新导入/查询', null, null, true);
   }
 
   /// 会话是否已失效：过期会话可能回 302，也可能回 200 + 登录页 HTML 或不含预期字段的 JSON。
@@ -465,7 +465,7 @@ class JwxtClient {
               path: isPlanCourse ? academicNonCoursePath : academicCoursesPath);
         }
       } on ApiError catch (e) {
-        if (e.message.contains('失效')) rethrow; // 会话失效要走自动重登
+        if (e.sessionLost) rethrow; // 会话失效要走自动重登
         cat['courses'] = const [];
         cat['coursesError'] = e.message;
       }

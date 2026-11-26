@@ -78,7 +78,11 @@ Widget buildDayNav({
         children: [
           _navBtn(
             Icons.chevron_left,
-            idx > 0 ? () => onGoDay(idx ~/ 7, idx % 7 - 1) : null,
+            // 「上一天」= 全局日索引减一后换算回 (周, 周几)：周一（idx%7==0）要落到
+            // 上一周周日。不能拿 idx%7-1（= -1，会被调用方 clamp 成 0，直接跳过 6 天）。
+            idx > 0
+                ? () => onGoDay((idx - 1) ~/ 7 + 1, (idx - 1) % 7)
+                : null,
           ),
           GestureDetector(
             onTap: onTitleTap,
@@ -95,9 +99,10 @@ Widget buildDayNav({
           ),
           _navBtn(
             Icons.chevron_right,
+            // 同理按「全局日索引 + 1」换算：(周, 周几) 里的周是 1 起的，
+            // 直接拿 idx ~/ 7 当周数会整体差一周（第 5 周点下一天变第 4 周）。
             idx < weekCount * 7 - 1
-                ? () =>
-                    onGoDay(idx ~/ 7 + (idx % 7 == 6 ? 1 : 0), (idx + 1) % 7)
+                ? () => onGoDay((idx + 1) ~/ 7 + 1, (idx + 1) % 7)
                 : null,
           ),
         ],

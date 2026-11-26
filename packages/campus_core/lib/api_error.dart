@@ -11,7 +11,14 @@ class ApiError implements Exception {
   /// - `null`：未标注，由 [writeOutcomeUncertain] 按错误类型推断。
   final bool? writeUncertain;
 
-  ApiError(this.message, [this.code, this.writeUncertain]);
+  /// 这是「登录态失效」信号（被学校打回登录页 / Cookie 作废）。
+  ///
+  /// 自动重登只认这个标记，**不再靠文案里含「失效」判断**：学校的业务文案里
+  /// 也有「二维码已失效」「签到时间已失效」，靠关键词会让写操作（报名 / 签到）
+  /// 在业务失败后重登再提交一次，凭空多出一条申请记录。
+  final bool sessionLost;
+
+  ApiError(this.message, [this.code, this.writeUncertain, this.sessionLost = false]);
   @override
   String toString() => message;
 }

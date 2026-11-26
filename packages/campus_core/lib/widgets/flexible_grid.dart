@@ -429,6 +429,12 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
     }
   }
 
+  /// 手势被系统取消（来电 / 通知下拉 / 竞技场被抢）：**回滚**，不提交尺寸。
+  void _cancelResize() {
+    if (_resize == null) return;
+    setState(() => _resize = null);
+  }
+
   void _syncEdgeScroll() {
     final drag = _drag;
     if (drag == null) {
@@ -517,6 +523,7 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           onResizeStart: _startResize,
           onResizeUpdate: _updateResize,
           onResizeEnd: _endResize,
+          onResizeCancel: _cancelResize,
         );
         _lastSizes = layers.nextSizes;
 

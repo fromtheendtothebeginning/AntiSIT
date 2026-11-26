@@ -248,6 +248,10 @@ class CampusDirect {
   }
 
   /// 会话可能在两次查询之间失效：一旦认出失效就自动重登一次再试。
+  ///
+  /// 只认 [ApiError.sessionLost] 标记，**不再按文案匹配「失效」**：学校业务错误里
+  /// 也有「二维码已失效」「签到时间已失效」，靠关键词会让写操作（报名 / 签到）
+  /// 在业务失败后重登重发一次，凭空多出一条申请记录。
   Future<T> _withReloginT<T>(
     Future<T> Function() run,
     Future<void> Function() login,
@@ -255,7 +259,7 @@ class CampusDirect {
     try {
       return await run();
     } on ApiError catch (e) {
-      if (!e.message.contains('失效')) rethrow;
+      if (!e.sessionLost) rethrow;
       await login();
       return run();
     }

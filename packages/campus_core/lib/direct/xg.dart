@@ -45,7 +45,7 @@ class XgClient {
   Never _sessionLost() {
     loggedIn = false;
     _http.clearCookies();
-    throw ApiError('学工登录已失效，请重新查询');
+    throw ApiError('学工登录已失效，请重新查询', null, null, true);
   }
 
   /// 可达性探测（连接设置页「测试连接」）。
@@ -180,7 +180,10 @@ class XgClient {
     if (!loggedIn) throw ApiError('未登录学工系统');
     final resp = await _http.postJson('$_api/hdgl/getHdgcHdList.zf', {}, headers: _xgHeaders);
     final j = _parse(resp);
-    if (j is! Map || j['code'] != 0) _sessionLost();
+    // 只有「根本不是 JSON」（被打回登录页 / 门户页）才算会话失效；
+    // code != 0 是学校的业务结果（系统繁忙、无权限…），按原文抛给用户。
+    if (j is! Map) _sessionLost();
+    if (j['code'] != 0) throw ApiError('${j['msg'] ?? '查询活动失败'}');
     final out = <Map<String, dynamic>>[];
     for (final gRaw in ((j['data'] as Map?)?['resultList'] as List?) ?? const []) {
       final g = gRaw is Map ? gRaw : const {};
@@ -205,7 +208,8 @@ class XgClient {
     final resp = await _http
         .get('$_api/hdgl/details.zf?id=${Uri.encodeComponent('$id')}', headers: _xgHeaders);
     final j = _parse(resp);
-    if (j is! Map || j['code'] != 0) _sessionLost();
+    if (j is! Map) _sessionLost();
+    if (j['code'] != 0) throw ApiError('${j['msg'] ?? '查询活动详情失败'}');
     final data = Map<String, dynamic>.from((j['data'] as Map?) ?? const {});
     final hdms = (data['hdms'] ?? '').toString();
     if (hdms.isNotEmpty) _hdmsCache['$id'] = hdms;

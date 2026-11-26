@@ -314,10 +314,7 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
   /// 收尾动画播完后清除手势标记。
   void _onAnimationTick() {
     if (!_settling) return;
-    if (!widget.animation.isAnimating) {
-      _settling = false;
-      predictiveBackGesturing = false;
-    }
+    if (!widget.animation.isAnimating) _clearGestureFlag();
   }
 
   @override
@@ -345,6 +342,16 @@ class _PredictiveOrFadeThroughState extends State<_PredictiveOrFadeThrough>
     _settling = true;
     // 取消：从当前位置正播回 1（框架内部 forward，不吃掉已有进度）。
     widget.route.handleCancelBackGesture();
+    // 手势刚从 0 开始就松手时，controller 已在 1（isCompleted），框架不会启动
+    // 任何动画，也就不会再有 tick 来清标记 —— 那样 predictiveBackGesturing 会
+    // 永久为 true，之后所有前进转场都错误地套用返回曲线。这里当机立断清掉。
+    if (!widget.animation.isAnimating) _clearGestureFlag();
+  }
+
+  /// 收尾动画不会再来的情况下，立即清掉「正在预测式返回」的全局标记。
+  void _clearGestureFlag() {
+    _settling = false;
+    predictiveBackGesturing = false;
   }
 
   @override

@@ -90,6 +90,7 @@ class GridCardFace extends StatelessWidget {
     this.onResizeStart,
     this.onResizeUpdate,
     this.onResizeEnd,
+    this.onResizeCancel,
   });
 
   final FlexibleGridItem item;
@@ -111,6 +112,9 @@ class GridCardFace extends StatelessWidget {
   final ValueChanged<Offset>? onResizeStart;
   final ValueChanged<Offset>? onResizeUpdate;
   final VoidCallback? onResizeEnd;
+
+  /// 手势被系统取消（来电、通知下拉、父级竞技场抢走）：**回滚**，不能当确认提交。
+  final VoidCallback? onResizeCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -253,7 +257,18 @@ class GridCardFace extends StatelessWidget {
             ? null
             : (d) => onResizeUpdate!(d.globalPosition),
         onPanEnd: onResizeEnd == null ? null : (_) => onResizeEnd!(),
-        onPanCancel: onResizeEnd,
+        // 系统取消（来电 / 通知下拉 / 竞技场被抢）不是用户确认：回滚，不提交尺寸。
+        onPanCancel: onResizeCancel ?? onResizeEnd,
+        // 按住不动超过长按阈值时，外层的「拖动卡片」识别器会先赢竞技场，
+        // 角标就再也收不到 pan —— 这里注册同款长按，把按下之后的手势留在缩放上。
+        onLongPressStart: onResizeStart == null
+            ? null
+            : (d) => onResizeStart!(d.globalPosition),
+        onLongPressMoveUpdate: onResizeUpdate == null
+            ? null
+            : (d) => onResizeUpdate!(d.globalPosition),
+        onLongPressEnd: onResizeEnd == null ? null : (_) => onResizeEnd!(),
+        onLongPressCancel: onResizeCancel ?? onResizeEnd,
         child: SizedBox(
           width: hit,
           height: hit,
@@ -331,6 +346,7 @@ class GridSlotPlaceholder extends StatelessWidget {
   required void Function(FlexibleGridItem item, Offset global) onResizeStart,
   required ValueChanged<Offset> onResizeUpdate,
   required VoidCallback onResizeEnd,
+  required VoidCallback onResizeCancel,
 }) {
   FlexibleGridItem? itemById(String id) {
     for (final item in items) {
@@ -349,6 +365,7 @@ class GridSlotPlaceholder extends StatelessWidget {
         onResizeStart: (g) => onResizeStart(item, g),
         onResizeUpdate: onResizeUpdate,
         onResizeEnd: onResizeEnd,
+        onResizeCancel: onResizeCancel,
       );
 
   final cards = <Widget>[];
@@ -412,6 +429,7 @@ class GridSlotPlaceholder extends StatelessWidget {
               onResizeStart: (g) => onResizeStart(resizeItem, g),
               onResizeUpdate: onResizeUpdate,
               onResizeEnd: onResizeEnd,
+              onResizeCancel: onResizeCancel,
             ),
           ),
         ),

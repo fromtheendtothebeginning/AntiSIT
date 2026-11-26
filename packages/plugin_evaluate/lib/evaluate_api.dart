@@ -277,7 +277,20 @@ class EvaluateApi {
     if (bodyBytes != null) channel.add(bodyBytes);
     await channel.flush();
 
-    final bytes = await channel.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+    // 连接已建立，但读响应没有超时：校园代理半开（对端不回包也不断开）时这里会
+    // 永久挂起，页面上的 _busy 永远是 true，保存 / 提交按钮全部禁用，只能杀 App。
+    final List<int> bytes;
+    try {
+      bytes = await channel
+          .fold<List<int>>(<int>[], (a, b) => a..addAll(b))
+          .timeout(const Duration(seconds: 30), onTimeout: () {
+        channel.destroy();
+        throw const EvaluateError('教务响应超时，请检查校园网络后重试');
+      });
+    } catch (e) {
+      channel.destroy();
+      rethrow;
+    }
     channel.destroy();
     final resp = _Resp.parse(Uint8List.fromList(bytes));
     session.absorbCookies(host, resp.setCookies);
