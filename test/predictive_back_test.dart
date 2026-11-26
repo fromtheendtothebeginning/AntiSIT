@@ -91,7 +91,7 @@ void main() {
 
     Navigator.of(tester.element(find.text('第二页'))).pop();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120)); // 320ms 的前 37%
+    await tester.pump(const Duration(milliseconds: 120)); // 400ms 的前 30%
 
     final popping = tester.getTopLeft(find.text('第二页', skipOffstage: false)).dx;
     expect(popping, greaterThan(newSettled), reason: '返回时当前页应当向右滑出');
@@ -103,6 +103,72 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(find.text('push')).dx,
         closeTo(oldCovered + 0.2 * width, 2), reason: '落位后下层页回到原位');
+  });
+
+  testWidgets('普通返回：下层页全程与顶页同步平移，没有「先顿住、再猛冲、最后停住」',
+      (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+
+    final settledTop = tester.getTopLeft(find.text('第二页')).dx;
+    final startCovered = tester.getTopLeft(find.text('push', skipOffstage: false)).dx;
+
+    Navigator.of(tester.element(find.text('第二页'))).pop();
+    await tester.pump();
+
+    double? prevTop;
+    double? prevCov;
+    final topMoves = <double>[];
+    final covMoves = <double>[];
+    // 400ms / 16ms ≈ 25 帧；只采到 384ms，动画还没结束
+    for (var i = 0; i < 24; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final top = tester.getTopLeft(find.text('第二页', skipOffstage: false)).dx - settledTop;
+      final cov =
+          tester.getTopLeft(find.text('push', skipOffstage: false)).dx - startCovered;
+      if (prevTop != null) {
+        topMoves.add(top - prevTop);
+        covMoves.add(cov - prevCov!);
+      }
+      prevTop = top;
+      prevCov = cov;
+    }
+
+    // 顶页还在动的时候，下层页必须也在动（旧实现这里会有连续几帧纹丝不动）
+    for (var i = 0; i < topMoves.length; i++) {
+      if (topMoves[i].abs() <= 2) continue;
+      expect(covMoves[i].abs(), greaterThan(0.2),
+          reason: '第 $i 帧：顶页动了 ${topMoves[i]}px，下层页却只动 '
+              '${covMoves[i]}px——返回时两层脱节就是卡顿的来源');
+    }
+
+    // 两层位移速度比恒定 = 20%（旧实现在中后段会突然飙到 40%+ 再归零）
+    for (var i = 0; i < topMoves.length; i++) {
+      if (topMoves[i].abs() <= 2) continue;
+      expect((covMoves[i] / topMoves[i]).abs(), closeTo(0.20, 0.03),
+          reason: '第 $i 帧：两层速度比 ${covMoves[i] / topMoves[i]}，应恒为 20%');
+    }
+
+    // 返回时长确实放宽到 400ms：过了旧时长 320ms 仍未落位
+    await tester.pumpAndSettle();
+    expect(find.text('第二页'), findsNothing);
+  });
+
+  testWidgets('普通返回时长 400ms（比原先 320ms 放缓）', (tester) async {
+    await pumpApp(tester);
+    await tester.tap(find.text('push'));
+    await tester.pumpAndSettle();
+
+    Navigator.of(tester.element(find.text('第二页'))).pop();
+    await tester.pump();
+    // 340ms：旧时长 320ms 到这里已经落位、页面被移除；400ms 下还应处于动画中
+    await tester.pump(const Duration(milliseconds: 340));
+    expect(find.text('第二页', skipOffstage: false), findsOneWidget,
+        reason: '400ms 时长下 340ms 还应处于动画中');
+
+    await tester.pumpAndSettle();
+    expect(find.text('第二页'), findsNothing);
   });
 
   testWidgets('预测式返回：手势期间严格线性 + 放大（小幅度手指动作触发大幅度动画）', (tester) async {
