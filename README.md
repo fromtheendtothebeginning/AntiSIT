@@ -11,7 +11,8 @@
 ## 下载
 
 - **Android 7.0+**：[GitHub Releases](https://github.com/fromtheendtothebeginning/AntiSIT/releases) 或 [Gitee Releases](https://gitee.com/ender123/AntiSIT/releases) 下载 `AntiSIT-x.y.z.apk` 直接安装（首次需允许「未知来源」），同名 `.sha256` 可校验完整性。
-- **应用内更新**：「我的 → 检查更新」可直接下载（先校验 `.sha256`，再核对包名与签名才交给系统安装器）；更新源 Gitee 优先，GitHub 与 anticraft.top 镜像兜底；装完自动删包，不会一直占空间。
+- **应用内更新**：「我的 → 检查更新」是二级页面——分别显示**稳定版**与**内测版**有没有更高版本，可一键切渠道，也能关掉新版本弹窗；下载先校验 `.sha256`，再核对包名与签名才交给系统安装器；更新源 Gitee 优先，GitHub 与 anticraft.top 镜像兜底；装完自动删包，不会一直占空间。
+- **两个发布渠道**：稳定版打 `v1.48.0` tag 发正式 Release；内测版 `version` 写成 `1.48.0-dev.2+…`、打 `dev-1.48.0-dev.2` tag 发 prerelease。App 按版本号里的预发布段区分两条线。
 - **Windows**：CI 不发 Windows 包，需自行构建（见下方「构建」）。
 
 同一套接口支持两种接入方式（「我的 → 连接设置」切换）：
@@ -28,25 +29,25 @@
 - **课程表**：多学期、周视图 / 日视图、下课即置灰；教务课表与考试安排导入；手动课程与日程事件（单次 / 每周重复），支持「仅本周」拆分；调休设置。服务器模式与网站共用同一份云端数据（最后写入胜），直连模式只存本机；未登录也可用本地功能。
 - **成绩 / 学业情况 / 考试安排**：全部学期或按学期查询，平均绩点、学分绩点、各类别学分要求与课程明细。
 - **学生评教**（插件 `evaluate`，原生界面）：直接复用已登录的教务会话，读出本轮待评列表；统一分数滑条 + 快捷档，逐条保存、全部打分、全部提交（提交不可撤销，写完回查教务确认）。
-- **第二课堂**：达标分数、加分明细与活动看板，支持拼音搜索（全拼 / 首字母）与类别级联筛选。
+- **第二课堂**：达标分数、加分明细与活动看板，支持拼音搜索（全拼 / 首字母）与类别级联筛选；还能开「新活动提醒」——每小时后台检查一次，只在你选的大类 / 小类出现新活动时弹通知（「我的 → 配置」里设置）。
 - **校园码 / 扫一扫**：30 秒刷新的动态付款码与余额，亮码期间常亮；扫一扫识别二维码（含相册识图、手电筒），可分流到第二课堂签到、拓展安装码与内置 WebView 打开网址。
 - **宿舍电费**：余额、充值（防重复扣款）、7 / 30 / 90 天历史折线图。
 - **抢课**（仅直连）：正方 9.0 选课轮次、余量与自动重试。
-- **拓展与插件市场**：基于 **Cordis** 的运行时，一个拓展 = `ext.json` + `main.js`；`ctx.ui` / `storage` / `net` / `ai` / `notify` 等宿主服务，敏感权限在清单声明并在安装时展示。插件市场从签名目录发现并安装拓展，也支持「添加第三方源」粘贴仓库名 + 核对公钥指纹，不必官方收录。详见 [docs/extensions.md](docs/extensions.md)。
+- **拓展与插件市场**：基于 **Cordis** 的运行时，一个拓展 = `ext.json` + `main.js`；`ctx.ui` / `storage` / `net` / `ai` / `notify` 等宿主服务，敏感权限在清单声明并在安装时展示。市场拓展分**依赖插件**（只暴露接口、不画界面）与**应用插件**（可创建一个或多个前端组件、也能用依赖插件的接口）；装应用插件会按**拓扑顺序**自动补齐依赖，过程用树状进度显示。插件市场从签名目录发现并安装拓展，也支持「添加第三方源」粘贴仓库名 + 核对公钥指纹。详见 [docs/extensions.md](docs/extensions.md)。
 - **拓展工坊**：内置 Cordis 拓展，用自然语言让 Agent 写 / 改拓展；DSH Go 风格移动端 Agent 界面（流式输出、可折叠思考、计划模式 / 完全访问、多段对话、技能、一键发布到 GitHub / Gitee 并生成直装二维码）。
 - **流体云课程通知**（插件 `course_cloud`，默认关闭）：课前 15 分钟常驻倒计时，ColorOS 流体云 / OriginOS 原子通知 / 澎湃OS 焦点通知按系统通知规则接入（Android 16+ 用 `ProgressStyle`），无需厂商 SDK；OPPO 官方卡片见 [oppo_card/README.md](oppo_card/README.md)。
 - **桌面卡片与快捷方式**（插件 `home_widget`）：主屏「今日课程」与「校园卡余额」小部件 + 长按图标快捷方式，标准 AppWidget，各桌面通用。
 - **备份与恢复**（插件 `backup`）：导出课表 / 设置 / 学校档案 / 插件偏好为 JSON，不含密码、登录态、AI Key、Cookie 与拓展数据。
 - **界面**：悬浮玻璃顶栏、可预测式返回（Android 14+ 跟手返回）、工具卡片与拓展卡片长按整理（1×1 / 1×3 / 2×3 / 2×2 四档尺寸）、演示模式。
-- **插件管理**：一个插件 = 一个 Dart 包（`packages/plugin_*`），底栏页、工具卡片、设置条目、主题色板均由插件贡献；可逐项启停并查看依赖图。详见 [docs/plugins.md](docs/plugins.md)。
+- **插件管理**：**一个插件 = 一个文件夹**（`packages/plugin_*`，一个文件夹可以贡献多个部件：底栏页 / 工具卡片 / 设置条目 / 主题色板 / AI 提供商），可逐项启停并查看依赖图。详见 [docs/plugins.md](docs/plugins.md) 与 [AGENTS.md](AGENTS.md)。
 
 ## 开发
 
-仓库是一个 pub workspace：宿主 + `packages/campus_core`（契约层：服务、组件库、插件接口）+ 每功能 / 主题一个 `packages/plugin_*`。
+仓库是一个 pub workspace：宿主 + `packages/campus_core`（契约层：服务、组件库、插件接口）+ 每功能 / 主题一个 `packages/plugin_*`（**一个插件 = 一个文件夹**，文件夹里可有多个部件）。动手前先看 [AGENTS.md](AGENTS.md)。
 
 ```bash
 flutter pub get                     # 根目录一次解析全部包
-dart run tool/gen_plugins.dart       # 改了插件依赖后重新生成 lib/plugins/manifest.g.dart
+dart run tool/gen_plugins.dart       # 改了插件依赖后重新生成清单 / 依赖表 / assets/plugin_folders.json
 flutter test
 flutter analyze
 ```
