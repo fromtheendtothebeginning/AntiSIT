@@ -1,5 +1,5 @@
 // 内容数据层：功能、插件、展示图、文档目录 —— 页面只负责渲染，改文案不用碰组件。
-// 事实来源：仓库 README.md / docs/plugins.md / docs/extensions.md / docs/campus-api.md（2026-11）。
+// 事实来源：仓库 README.md / AGENTS.md / docs/plugins.md / docs/extensions.md / docs/campus-api.md（2026-11）。
 //
 // 写文案的几条约定（踩过「像接口文档不像给人看」的坑之后定的）：
 // * 先说「对你有什么用」，再补一句怎么做到；不在营销页堆实现细节（sha256 / pubspec / 目录格式属于文档页）

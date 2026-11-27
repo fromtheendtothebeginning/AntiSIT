@@ -11,7 +11,7 @@ from PIL import Image
 SRC = os.path.join("build", "site_shots")
 DST = os.path.join("site", "public", "img", "shots")
 TARGET_W = 900
-PAGES = ["timetable", "ecard", "grades", "activities", "tools"]
+PAGES = ["timetable", "ecard", "grades", "activities", "tools", "update"]
 PALETTES = ["dark", "light"]
 
 os.makedirs(DST, exist_ok=True)

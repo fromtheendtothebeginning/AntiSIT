@@ -7,7 +7,10 @@ import '../widgets/update_dialog.dart';
 
 /// 检查更新二级页：本机版本、稳定版与内测版各自的最新版本，渠道切换与弹窗开关。
 class UpdateCenterPage extends StatefulWidget {
-  const UpdateCenterPage({super.key});
+  const UpdateCenterPage({super.key, this.autoPrompt = true});
+
+  /// 进页面查到新版本时是否自动弹引导弹窗（官网截图等场景传 false）。
+  final bool autoPrompt;
 
   @override
   State<UpdateCenterPage> createState() => _UpdateCenterPageState();
@@ -38,7 +41,7 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
   /// 进页面自动查一次：用户点「检查更新」进来就是为了看有没有新版。
   Future<void> _autoCheck() async {
     await _refresh();
-    await _promptIfAny();
+    if (widget.autoPrompt) await _promptIfAny();
   }
 
   Future<void> _manualCheck() async {

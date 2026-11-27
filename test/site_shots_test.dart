@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 
 import 'package:campus_core/campus_core.dart';
 import 'package:campus_service/main.dart';
+import 'package:campus_service/pages/update_center_page.dart';
+import 'package:campus_service/update_check.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -172,4 +174,49 @@ void main() {
   // 拓展页不种演示数据：官网展示不想出现「演示记事本」这种假卡片
   shots('extensions', () => const ExtensionsPage(), extraMs: 800, demo: false);
   shots('tools', () => const ToolsPage(), extraMs: 800);
+  // 检查更新二级页：稳定版 / 内测版并列，官网用来展示「双渠道」。
+  // 截图里不联网：注入一份假的 Release 列表，展示「稳定版有新版本、内测版更高」的真实观感。
+  testWidgets('update-dark', (tester) async {
+    UpdateChecker.I.reset();
+    UpdateChecker.I.current = '1.47.4';
+    UpdateChecker.I.debugFetch = () async => [
+      {
+        'tag_name': 'v1.48.0',
+        'html_url': 'https://github.com/fromtheendtothebeginning/AntiSIT/releases/tag/v1.48.0',
+        'body': '### 本次更新\n- 检查更新改成二级页面',
+        'assets': const [],
+      },
+      {
+        'tag_name': 'v1.49.0-dev.1',
+        'html_url': 'https://github.com/fromtheendtothebeginning/AntiSIT/releases/tag/v1.49.0-dev.1',
+        'body': '### 本次更新\n- 内测版新功能',
+        'assets': const [],
+      },
+    ];
+    await loadFonts();
+    await shoot(tester, 'update', const UpdateCenterPage(autoPrompt: false),
+        palette: GlassPalette.dark, extraMs: 800, demo: false);
+  }, skip: !enabled);
+
+  testWidgets('update-light', (tester) async {
+    UpdateChecker.I.reset();
+    UpdateChecker.I.current = '1.47.4';
+    UpdateChecker.I.debugFetch = () async => [
+      {
+        'tag_name': 'v1.48.0',
+        'html_url': 'https://github.com/fromtheendtothebeginning/AntiSIT/releases/tag/v1.48.0',
+        'body': '### 本次更新\n- 检查更新改成二级页面',
+        'assets': const [],
+      },
+      {
+        'tag_name': 'v1.49.0-dev.1',
+        'html_url': 'https://github.com/fromtheendtothebeginning/AntiSIT/releases/tag/v1.49.0-dev.1',
+        'body': '### 本次更新\n- 内测版新功能',
+        'assets': const [],
+      },
+    ];
+    await loadFonts();
+    await shoot(tester, 'update', const UpdateCenterPage(autoPrompt: false),
+        palette: GlassPalette.light, extraMs: 800, demo: false);
+  }, skip: !enabled);
 }
