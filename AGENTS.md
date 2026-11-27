@@ -67,6 +67,12 @@ AntiXiaoYing/
    滚动时是掉帧主因（issue #20）。`GlassFadedBody` 也是同色遮罩，不用 `ShaderMask`。
 7. **本机数据兼容**：`ai_config`、`class_reminder_on`、`campus_timetable`、`update_skipped_version`
    等键名不要改（改 = 丢用户数据）；要迁移就写一次性迁移逻辑。
+8. **直连模式修了校园数据 bug，服务器模式必须同步**：两种模式是**两条独立实现**
+   （`packages/campus_core/lib/direct/` 直连、服务器侧在隔壁仓库 `/d/anticraft/index`
+   的 `backend/campus/dekt.py` + `backend/features/campus_open.py`）。协议字段、
+   上游接口（例如二课「我的报名」必须走 `bizFlow groupCode=xshd`、「加分明细」走
+   `xsrd`）与错误处理要一起改，否则会出现「直连好了、服务器模式还是老样子」。
+   改服务器侧只改本地工作树，**部署要等用户明确说「发布到服务器」**。
 
 ## 常用命令
 

@@ -365,7 +365,9 @@
 
 `GET /api/campus-open/activities/signed`（Bearer，隧道类，学工）
 
-上游：`POST /zftal-xgxt-web/hdgl/list.zf`，表单 `all=0`（`all=1` 是全部活动），逐页取 `data.items`。
+上游：`POST /zftal-xgxt-web/bizFlow/result/group/list.zf`，表单 `groupCode=xshd`（学工「第二课堂 → 活动管理 → 报名结果查询」），逐页取 `data.rows`。
+
+> ⚠️ **不要用 `hdgl/list.zf?all=0`**：那个接口匿名可访问，返回的是全校公共活动池，与登录身份无关。2026-11 直连模式实测：400 条里没有一条本人已报名，本人 49 条报名全在 bizFlow `xshd` 里。服务器侧 `DektClient.fetch_signed_activities` 已同步改为同一上游。
 
 ```json
 {
@@ -386,15 +388,18 @@
 
 | 字段 | 说明 |
 |---|---|
-| status_text | 上游 `hdbmzt` 状态码 → 文案：1 流程设置中 / 2 报名已截止 / 3 报名未开始 / 4 报名已满 / 5 已报名 / 6 无需报名；未知为空串 |
-| signed | 上游 `bm == 1`（本人已报名/已参与） |
+| status_text | 上游审批流状态 `flowstatusmc` / `FLOWSTATUS`：`通过` → 「已报名」，其余透传原文 |
+| signed | 恒为 true（这条数据源本身就是本人报名记录） |
 | place | 上游 `hddd`（线上/线下） |
+| dlmc / lbmc | 上游 `dldm` / `lbmc`（bizFlow 行里没有小类中文名时 `lbmc` 为空串） |
 
 ### 3.5.2 第二课堂加分明细
 
 `GET /api/campus-open/score/credits`（Bearer，隧道类，学工）
 
-上游：`POST /zftal-xgxt-web/bizFlow/result/group/list.zf`，表单 `groupCode=xshd`，逐页取 `data.rows`。
+上游：`POST /zftal-xgxt-web/bizFlow/result/group/list.zf`，表单 `groupCode=xsrd`（学工「第二课堂 → 学分明细查询」的学分认定结果），逐页取 `data.rows`。
+
+> ⚠️ **必须是 `xsrd`**：`xshd` 是报名结果查询，那边 `hdxf` 多为空，会出现「有活动没分数」。认定学分在 `rdxs` 字段。
 
 ```json
 {
@@ -415,7 +420,7 @@
 
 | 字段 | 说明 |
 |---|---|
-| credit | 上游 `hdxf`（活动学分），缺失时退 `jcxsxf` |
+| credit | 上游 `rdxs`（认定学分），缺失时退 `xss` / `hdxf` / `jcxsxf` |
 | status | 上游 `flowstatusmc` / `FLOWSTATUS`（如「通过」） |
 | date | 上游 `CREATE_TIME`（记录创建时间） |
 | id | 上游 `INSTANCE_ID` / `ID` / `hdid` |
