@@ -1,3 +1,5 @@
+import 'cordis_bundle.dart' show CordisManifest;
+
 import 'extension_item.dart' show compareVersions;
 
 /// 拓展对外暴露的接口（依赖插件用）：宿主按名字登记，应用插件按名字取用。
@@ -57,6 +59,17 @@ class ExtApiRegistry {
   }
 
   void clear() => _entries.clear();
+}
+
+/// 从一个拓展清单登记它声明的接口（装好 / 更新后调；依赖插件不画界面，只登记接口）。
+void registerManifestApis(CordisManifest manifest) {
+  for (final name in manifest.api) {
+    ExtApiRegistry.I.register(ExtApiEntry(
+      extId: manifest.id,
+      name: name,
+      reference: 'ext.${manifest.id}.$name',
+    ));
+  }
 }
 
 /// 应用插件缺哪些接口（依赖插件没装或没声明）：缺了就不算可用。

@@ -18,6 +18,9 @@ class CordisManifest {
     this.style = '',
     this.permissions = const [],
     this.minAppVersion = '',
+    this.role = 'application',
+    this.requires = const [],
+    this.api = const [],
   });
 
   final String id;
@@ -28,6 +31,15 @@ class CordisManifest {
   final String style;
   final List<String> permissions;
   final String minAppVersion;
+
+  /// `application`（应用插件）/ `dependency`（依赖插件，只暴露接口不画界面）。
+  final String role;
+
+  /// 依赖的其他拓展声明的接口名（装本插件前要能满足）。
+  final List<String> requires;
+
+  /// 本插件对外暴露的接口名（依赖插件必填；应用插件也可声明）。
+  final List<String> api;
 
   static const int nameMaxLength = ExtensionItem.nameMaxLength;
   static const int descMaxLength = ExtensionItem.descMaxLength;
@@ -86,6 +98,8 @@ class CordisManifest {
         if (!permissions.contains(value)) permissions.add(value);
       }
     }
+    final rawRequires = json['requires'];
+    final rawApi = json['api'];
     return CordisManifest(
       id: id,
       name: name,
@@ -95,6 +109,17 @@ class CordisManifest {
       style: style,
       permissions: permissions,
       minAppVersion: s('minAppVersion'),
+      role: s('role') == 'dependency' ? 'dependency' : 'application',
+      requires: [
+        if (rawRequires is List)
+          for (final r in rawRequires)
+            if (r is String && r.trim().isNotEmpty) r.trim(),
+      ],
+      api: [
+        if (rawApi is List)
+          for (final a in rawApi)
+            if (a is String && a.trim().isNotEmpty) a.trim(),
+      ],
     );
   }
 
@@ -107,6 +132,9 @@ class CordisManifest {
         if (style.isNotEmpty) 'style': style,
         if (permissions.isNotEmpty) 'permissions': permissions,
         if (minAppVersion.isNotEmpty) 'minAppVersion': minAppVersion,
+        if (role != 'application') 'role': role,
+        if (requires.isNotEmpty) 'requires': requires,
+        if (api.isNotEmpty) 'api': api,
       };
 }
 

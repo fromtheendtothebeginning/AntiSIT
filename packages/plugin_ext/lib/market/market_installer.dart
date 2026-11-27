@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:campus_core/campus_core.dart';
 import 'package:crypto/crypto.dart';
 
+import '../api_registry.dart';
 import '../bundle_import.dart';
 import '../extension_item.dart';
 import '../extension_store.dart';
@@ -184,6 +185,9 @@ class MarketInstaller {
       );
       await store.update(item);
     }
+    // 装好 / 更新后把包内 ext.json 声明的接口登记到注册表（依赖插件只提供接口、不画界面；
+    // 应用插件声明的接口也能给后面装的应用插件用）。
+    registerManifestApis(bundle.manifest);
     return item;
   }
 
@@ -277,8 +281,12 @@ class MarketInstaller {
     return ExtInstallReport(done: done, failures: failed);
   }
 
-  /// 卸载：清单条目、解压目录、它的数据一起清（与拓展页里的删除同一个动作）。
-  Future<void> uninstall(String id) => store.remove(id);
+  /// 卸载：清单条目、解压目录、它的数据一起清（与拓展页里的删除同一个动作），
+  /// 它登记的接口也从注册表里撤掉（依赖它的应用插件会开始报「缺少依赖插件」）。
+  Future<void> uninstall(String id) async {
+    ExtApiRegistry.I.unregisterOwner(id);
+    await store.remove(id);
+  }
 }
 
 /// 一次「装应用插件 + 它的依赖」的结果。

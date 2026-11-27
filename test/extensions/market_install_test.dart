@@ -1,12 +1,17 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path_provider/path_provider.dart' as path_provider;
+import 'package:plugin_ext/api_registry.dart';
+import 'package:plugin_ext/market/market_entry.dart';
+import 'package:plugin_ext/market/market_installer.dart';
 
 import 'harness.dart';
 
 void main() {
   setUpExtensionEnv();
-
   group('市场装的拓展（版本 / 来源 / 权限）', () {
     final installed = ExtensionItem(
       id: 'sit.demo-counter',
@@ -77,5 +82,86 @@ void main() {
       expect(store.items, isEmpty);
     });
   });
-}
 
+
+  group('依赖插件 / 应用插件（安装即登记接口）', () {
+    test('装好一个带 api 的拓展：接口登记到注册表，卸载后消失', () async {
+      ExtensionStore.documentsDirectory = () async => Directory.systemTemp.createTempSync('ext-api').path;
+      // 用例结束后把取目录函数还原成生产实现（别让下个用例读到临时目录）
+      addTearDown(() {
+        ExtensionStore.documentsDirectory =
+            () async => (await path_provider.getApplicationDocumentsDirectory()).path;
+      });
+      ExtApiRegistry.I = ExtApiRegistry();
+      final store = ExtensionStore.I;
+      await store.load();
+
+      final installer = MarketInstaller();
+      installer.downloadOverride = (entry) async {
+        return makeZip({
+          'ext.json': jsonEncode({
+            'id': 'sit.lib-core',
+            'name': '核心库',
+            'version': '1.2.0',
+            'main': 'main.js',
+            'role': 'dependency',
+            'api': ['core.format', 'core.time'],
+          }),
+          'main.js': 'export default { name: "core", apply() {} };',
+        });
+      };
+      const entry = MarketEntry(
+        id: 'sit.lib-core',
+        name: '核心库',
+        desc: '依赖插件',
+        author: '',
+        category: '工具',
+        icon: '',
+        type: 'bundle',
+        version: '1.2.0',
+        url: '',
+        homepage: '',
+        zip: 'pkg/sit.lib-core.zip',
+        sha256: '',
+        size: 10,
+        permissions: [],
+        minAppVersion: '',
+        runtime: 'cordis',
+        role: 'dependency',
+        requires: [],
+        api: ['core.format', 'core.time'],
+      );
+      // sha256 要真的对上：先算一份
+      final bytes = await installer.downloadOverride!(entry);
+      await installer.install(
+        MarketEntry(
+          id: entry.id,
+          name: entry.name,
+          desc: entry.desc,
+          author: entry.author,
+          category: entry.category,
+          icon: entry.icon,
+          type: entry.type,
+          version: entry.version,
+          url: entry.url,
+          homepage: entry.homepage,
+          zip: entry.zip,
+          sha256: sha256.convert(bytes).toString(),
+          size: entry.size,
+          permissions: entry.permissions,
+          minAppVersion: entry.minAppVersion,
+          runtime: entry.runtime,
+          role: entry.role,
+          requires: entry.requires,
+          api: entry.api,
+        ),
+      );
+
+      expect(ExtApiRegistry.I.byName('core.format')?.extId, 'sit.lib-core');
+      expect(ExtApiRegistry.I.apisOf('sit.lib-core'), containsAll(['core.format', 'core.time']));
+
+      await installer.uninstall('sit.lib-core');
+      expect(ExtApiRegistry.I.byName('core.format'), isNull, reason: '卸载要撤掉它登记的接口');
+    });
+  });
+}
