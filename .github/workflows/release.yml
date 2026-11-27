@@ -199,11 +199,15 @@ jobs:
             echo "- 校验下载：\`sha256sum -c ${APK_NAME}.sha256\`"
             echo
             echo "### 本次更新"
-            PREV=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null || true)
-            if [ -n "$PREV" ]; then
-              git log --no-merges --pretty='- %s' "$PREV..HEAD"
-            else
-              git log --no-merges --pretty='- %s' -n 15
+            # 优先用 App 内更新日志里这一版的条目（那是写给用户看的人话），
+            # 取不到才退回 git log（「发版：…」「测试：…」这类工程提交用户看不懂）。
+            if ! PYTHONIOENCODING=utf-8 bash tool/release_notes.sh "${VERSION}" 2>/dev/null; then
+              PREV=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null || true)
+              if [ -n "$PREV" ]; then
+                git log --no-merges --pretty='- %s' "$PREV..HEAD"
+              else
+                git log --no-merges --pretty='- %s' -n 15
+              fi
             fi
           } > release-notes.md
 
