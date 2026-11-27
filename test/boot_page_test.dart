@@ -29,14 +29,16 @@ void main() {
     });
   });
 
-  testWidgets('装配动画在动：连续两帧的校徽尺寸不同', (tester) async {
+  testWidgets('装配动画在动：连续两帧的校徽底板尺寸不同', (tester) async {
     await tester.pumpWidget(const MaterialApp(
       home: Scaffold(body: BootSplash(stage: '正在加载插件…')),
     ));
-    await tester.pump(const Duration(milliseconds: 300));
-    final a = tester.getRect(find.byType(Image).first);
-    await tester.pump(const Duration(milliseconds: 400));
-    final b = tester.getRect(find.byType(Image).first);
+    await tester.pump(const Duration(milliseconds: 120));
+    final a = tester.getRect(find.byKey(const ValueKey('boot-plate')));
+    await tester.pump(const Duration(milliseconds: 120));
+    final b = tester.getRect(find.byKey(const ValueKey('boot-plate')));
+    // 底板是普通 Container：不依赖图片解码，尺寸一定量得到
+    expect(a.width, isNot(0));
     expect(a.width, isNot(b.width), reason: '校徽在装配缩放');
   });
 

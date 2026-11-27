@@ -105,6 +105,9 @@ class _BootSplashState extends State<BootSplash> with TickerProviderStateMixin {
                               Transform.scale(
                                 scale: plateT,
                                 child: Container(
+                                  // 测试据此量「动画真的在动」：图片解码是异步的，
+                                  // 拿 Image 的 rect 量不到东西（未解码时尺寸恒为 0）。
+                                  key: const ValueKey('boot-plate'),
                                   width: 136,
                                   height: 136,
                                   // 白底板：校徽是三色图形（浅蓝 + 深蓝 + 绿），压在深色底上
