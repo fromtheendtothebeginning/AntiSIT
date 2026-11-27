@@ -213,7 +213,6 @@ void main() {
       expect(picked.dev!.version, '1.48.0-dev.2');
       expect(picked.devShared, isFalse);
     });
-
   });
 
   group('检查更新二级页', () {
@@ -269,6 +268,27 @@ void main() {
 
       expect(find.text('已是最新'), findsOneWidget);
       expect(find.textContaining('发现新版本'), findsNothing);
+    });
+
+    testWidgets('守着内测版时点「稍后」，也记在内测版这一档（下次不再弹同一个包）', (tester) async {
+      SharedPreferences.setMockInitialValues({'update_channel': 'dev'});
+      UpdateChecker.I.debugFetch = () async => [releaseJson('v1.13.6')];
+      await pumpProfile(tester);
+      await openCenter(tester);
+      await tester.tap(find.text('稍后'));
+      await tester.pumpAndSettle();
+
+      expect(UpdateChecker.I.skipped, '1.13.6', reason: '当前渠道记住了');
+      expect(
+        (await SharedPreferences.getInstance()).getString('update_skipped_dev'),
+        '1.13.6',
+      );
+      // 重新 load + check：不再自动弹
+      UpdateChecker.I.stableAvailable = null;
+      UpdateChecker.I.devAvailable = null;
+      await UpdateChecker.I.load();
+      await UpdateChecker.I.check();
+      expect(UpdateChecker.I.shouldPrompt, isFalse);
     });
 
     testWidgets('守着内测版的用户，只发了稳定版时也能收到提示', (tester) async {

@@ -402,14 +402,18 @@ class UpdateChecker extends ChangeNotifier {
   }
 
   /// 忽略某个版本（按版本号归到它自己的渠道）。
+  ///
+  /// 另外**同时**记在用户当前渠道上：只发一个版本时内测版借的是稳定版那一份
+  /// （见 [devSharesStable]），只按版本号归位的话，守着内测版的用户点「稍后」
+  /// 会记进稳定版那一档，下次启动又从内测版弹一次。
   Future<void> skipVersion(String version) async {
-    final c = channelOfVersion(version);
-    _skipped[c] = version;
+    final own = channelOfVersion(version);
+    _skipped[own] = version;
+    _skipped[channel] = version;
     try {
-      await (await SharedPreferences.getInstance()).setString(
-        _skippedKey(c),
-        version,
-      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_skippedKey(own), version);
+      await prefs.setString(_skippedKey(channel), version);
     } catch (_) {}
     notifyListeners();
   }
