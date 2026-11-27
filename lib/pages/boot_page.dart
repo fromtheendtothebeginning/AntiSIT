@@ -4,9 +4,10 @@ import 'package:campus_core/campus_core.dart';
 import 'package:flutter/material.dart';
 
 import '../update_download.dart';
+import 'boot_splash.dart';
 import 'home_page.dart';
 
-/// 启动页：加载本地设置与插件清单后直接进主页，不强制登录。
+/// 启动页：播启动动画，同时异步加载本地设置、插件清单、课表与插件初始化，然后进主页。
 ///
 /// 有 token 直接用（401 时请求层自动续期 / 重登），未登录由各页面的门控引导。
 class BootPage extends StatefulWidget {
@@ -17,10 +18,22 @@ class BootPage extends StatefulWidget {
 }
 
 class _BootPageState extends State<BootPage> {
+  /// 动画上那行「正在做什么」：每一步开始前更新，让等待有反馈。
+  String _stage = '正在启动…';
+
+  /// 进主页的最早时刻：动画至少播这么久，避免一闪而过。
+  final DateTime _startedAt = DateTime.now();
+  static const Duration _minShow = Duration(milliseconds: 1100);
+
   @override
   void initState() {
     super.initState();
     _boot();
+  }
+
+  void _setStage(String text) {
+    if (!mounted || _stage == text) return;
+    setState(() => _stage = text);
   }
 
   /// 依次加载设置、插件清单、课表与插件初始化，然后跳主页。
@@ -32,6 +45,7 @@ class _BootPageState extends State<BootPage> {
     Object? bootError;
     StackTrace? bootStack;
     Future<void> step(String name, Future<void> Function() run) async {
+      _setStage(name);
       try {
         await run();
       } catch (e, s) {
@@ -41,47 +55,40 @@ class _BootPageState extends State<BootPage> {
       }
     }
 
-    await step('设置', () => AppState.I.load());
+    await step('正在读取设置…', () => AppState.I.load());
     // 插件清单：读启停状态与当前主题，此后底栏、工具宫格、设置项都按启用集合组装
-    await step('插件清单', () => PluginRegistry.I.load());
+    await step('正在加载插件…', () => PluginRegistry.I.load());
     // 课表要在插件初始化前读出来：流体云 / 上课提醒 / 桌面卡片都靠它在启动时排期
-    await step('课表', () => TimetableStore.instance.load());
-    await step('插件初始化', () => PluginRegistry.I.initAll());
+    await step('正在读取课表…', () => TimetableStore.instance.load());
+    await step('正在初始化功能…', () => PluginRegistry.I.initAll());
     // 上一次更新下载的安装包装完就没用了，启动时顺手清扫；不阻塞首屏
     unawaited(UpdateDownloader.I.sweepCache());
+    // 动画至少播完一轮再进主页（剩下的初始化本来就已经异步跑完了）
+    final elapsed = DateTime.now().difference(_startedAt);
+    if (elapsed < _minShow) {
+      await Future<void>.delayed(_minShow - elapsed);
+    }
     if (!mounted) return;
     if (bootError != null) {
       // 报给崩溃日志（release 下不进 UI），但不拦启动
-      FlutterError.reportError(FlutterErrorDetails(
-        exception: bootError!,
-        stack: bootStack,
-        library: 'antisit boot',
-        context: ErrorDescription('启动初始化'),
-      ));
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: bootError!,
+          stack: bootStack,
+          library: 'antisit boot',
+          context: ErrorDescription('启动初始化'),
+        ),
+      );
     }
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
   }
-
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset('assets/sit-mark.png', width: 96, height: 96),
-            const SizedBox(height: 16),
-            Text('AntiSIT', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 24),
-            const SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-          ],
-        ),
-      ),
+      body: BootSplash(stage: _stage, minShow: _minShow),
     );
   }
 }
