@@ -73,7 +73,9 @@ find_aapt() {
 AAPT_BIN=$(find_aapt)
 if [ -n "$AAPT_BIN" ]; then
   APK_CODE=$("$AAPT_BIN" dump badging "$APK" | sed -n "s/^package:.*versionCode='\([0-9]*\)'.*/\1/p")
-  WANT_CODE=$(sed -n 's/^version: *[0-9.]*+\([0-9]*\)/\1/p' pubspec.yaml)
+  # 版本号可能带预发布段（1.48.1-dev.1+208）：构建号在 + 之后，前面不能只允许数字与点，
+  # 否则内测版永远取到空串，防呆误判「构建未完成」。
+  WANT_CODE=$(sed -n 's/^version: *[^+]*+\([0-9]*\)/\1/p' pubspec.yaml)
   if [ "$APK_CODE" != "$WANT_CODE" ]; then
     echo "APK versionCode=$APK_CODE 与 pubspec 构建号 $WANT_CODE 不一致：构建未完成或已过期，拒绝发版" >&2
     exit 1
