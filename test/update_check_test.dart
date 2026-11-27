@@ -196,6 +196,26 @@ void main() {
     });
   });
 
+  group('双渠道指向同一版本', () {
+    test('只发了稳定版：内测版退回同一份（应用内两个渠道都能看到这个版本）', () {
+      final picked = selectByChannel([releaseJson('v1.48.0')]);
+      expect(picked.stable!.version, '1.48.0');
+      expect(picked.dev!.version, '1.48.0', reason: '没发 dev 包时不让内测版用户干等');
+      expect(picked.devShared, isTrue);
+    });
+
+    test('有带预发布段的版本：内测版用它，不再借稳定版', () {
+      final picked = selectByChannel([
+        releaseJson('v1.48.0'),
+        releaseJson('v1.48.0-dev.2'),
+      ]);
+      expect(picked.stable!.version, '1.48.0');
+      expect(picked.dev!.version, '1.48.0-dev.2');
+      expect(picked.devShared, isFalse);
+    });
+
+  });
+
   group('检查更新二级页', () {
     /// 「我的」页足够高，设置卡里的条目都建得出来。
     Future<void> pumpProfile(WidgetTester tester) async {
@@ -249,6 +269,21 @@ void main() {
 
       expect(find.text('已是最新'), findsOneWidget);
       expect(find.textContaining('发现新版本'), findsNothing);
+    });
+
+    testWidgets('守着内测版的用户，只发了稳定版时也能收到提示', (tester) async {
+      SharedPreferences.setMockInitialValues({'update_channel': 'dev'});
+      UpdateChecker.I.debugFetch = () async => [releaseJson('v1.13.6')];
+      await pumpProfile(tester);
+      await openCenter(tester);
+      await tester.tap(find.text('稍后')); // 关掉引导弹窗，看二级页上的状态
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('有新版本 v1.13.6（与稳定版相同）'),
+        findsOneWidget,
+        reason: '内测版这一行不是「暂无版本信息」，两个渠道指向同一个包',
+      );
     });
 
     testWidgets('检查失败：给出原因（GitHub 访问不了 / 限流都常见）', (tester) async {
@@ -351,6 +386,13 @@ void main() {
       expect(latestReleaseApis.first.path, contains(giteeUpdateRepo));
       expect(latestReleaseApis[1].host, 'api.github.com');
       expect(latestReleaseApis.last.host, 'anticraft.top');
+    });
+
+    test('Gitee 列表必须带 direction=desc：默认升序只会拿到最老的那批', () {
+      // 实测 per_page=50 不带 direction 时返回 v1.19.0…v1.41.7，最新几个版本压根不在里面
+      expect(releaseListApis.first.host, 'gitee.com');
+      expect(releaseListApis.first.queryParameters['direction'], 'desc');
+      expect(releaseListApis[1].host, 'api.github.com');
     });
 
     test('多源都成功时取版本最高的，镜像滞后不会藏住新版', () async {

@@ -23,8 +23,10 @@ final List<Uri> latestReleaseApis = [
 /// 渠道检查要的是 Release **列表**：稳定版与内测版各挑一份最高的出来。
 /// 镜像只会放单份 latest.json，列表端点失败不影响前两个源。
 final List<Uri> releaseListApis = [
+  // Gitee 的列表默认**按创建时间升序**（实测 per_page=50 拿到的是 v1.19.0…v1.41.7
+  // 这批最老的），不加 direction=desc 就永远看不到最新几个版本。GitHub 默认已是倒序。
   Uri.parse(
-    'https://gitee.com/api/v5/repos/$giteeUpdateRepo/releases?per_page=50',
+    'https://gitee.com/api/v5/repos/$giteeUpdateRepo/releases?per_page=50&direction=desc',
   ),
   Uri.parse('https://api.github.com/repos/$updateRepo/releases?per_page=50'),
   Uri.parse('https://anticraft.top/apk/releases.json'),
@@ -223,7 +225,10 @@ String releaseSummary(String body) {
 }
 
 /// 一批 Release → 两个渠道各自最高的那份（同版本先出现的源优先）。
-({UpdateInfo? stable, UpdateInfo? dev}) selectByChannel(
+///
+/// [devShared] 表示内测版没有独立发版、退回到了稳定版的那一份——只发一个版本时
+/// 两个渠道指向同一个包，界面据此少说一句「有新版本 N 次」。
+({UpdateInfo? stable, UpdateInfo? dev, bool devShared}) selectByChannel(
   Iterable<Map<String, dynamic>> releases,
 ) {
   UpdateInfo? stable;
@@ -243,7 +248,10 @@ String releaseSummary(String body) {
         }
     }
   }
-  return (stable: stable, dev: dev);
+  // 内测版没有独立发版（只发了稳定版）时，指向同一份：否则守着内测版的用户会
+  // 看到「暂无版本信息」，明明刚发了新版却收不到提示。一旦有带预发布段的版本，
+  // 仍然以它为准（dev 比 stable 新）。
+  return (stable: stable, dev: dev ?? stable, devShared: dev == null);
 }
 
 /// 更新检查：启动时静默查一次（见 HomePage），也能随时在「我的 → 检查更新」手动查。
@@ -271,6 +279,9 @@ class UpdateChecker extends ChangeNotifier {
   /// 各渠道的最新版本（不再各处重复请求）。
   UpdateInfo? stableLatest;
   UpdateInfo? devLatest;
+
+  /// 内测版这一份是不是「借」稳定版来的（本次只发了一个版本）。
+  bool devSharesStable = false;
 
   /// 比本机新的版本，按渠道分开记：已是最新 / 检查失败时为 null。
   UpdateInfo? stableAvailable;
@@ -348,6 +359,7 @@ class UpdateChecker extends ChangeNotifier {
       final picked = selectByChannel(releases);
       stableLatest = picked.stable;
       devLatest = picked.dev;
+      devSharesStable = picked.devShared && picked.stable != null;
       stableAvailable = _newer(picked.stable);
       devAvailable = _newer(picked.dev);
       lastCheck = DateTime.now();
@@ -409,6 +421,7 @@ class UpdateChecker extends ChangeNotifier {
     promptEnabled = true;
     stableLatest = null;
     devLatest = null;
+    devSharesStable = false;
     stableAvailable = null;
     devAvailable = null;
     error = null;

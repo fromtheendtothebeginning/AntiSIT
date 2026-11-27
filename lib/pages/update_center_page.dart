@@ -212,12 +212,18 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
     final latest = uc.latestFor(c);
     final update = uc.availableFor(c);
     final waiting = uc.checking && latest == null;
+    // 内测版借用了稳定版那一份时，两点一线：别把同一个版本说成「两条渠道各有新版」。
+    final shared = c == UpdateChannel.dev && uc.devSharesStable;
     final status = update != null
-        ? '有新版本 v${update.version}'
+        ? (shared
+              ? '有新版本 v${update.version}（与稳定版相同）'
+              : '有新版本 v${update.version}')
         : (latest != null
-              ? (c == UpdateChannel.dev && uc.stableLatest != null
-                    ? '最新 v${latest.version}'
-                    : '已是最新')
+              ? (shared
+                    ? '与稳定版同一版本'
+                    : (c == UpdateChannel.dev && uc.stableLatest != null
+                          ? '最新 v${latest.version}'
+                          : '已是最新'))
               : (waiting ? '检查中…' : (uc.error == null ? '暂无版本信息' : '检查失败')));
     return Column(
       children: [
