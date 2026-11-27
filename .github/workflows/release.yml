@@ -118,12 +118,22 @@ jobs:
         # runner 的网络偶尔抽风：依赖下载超时 / 连接被重置，flutter 只会给一句
         # "Gradle threw an error while downloading artifacts from the network"。
         # 这种抖动不该毁掉一次发布，重试几次（Gradle 会复用已下好的部分，越试越快）。
+        #
+        # 日志：v1.48.0 这次在 ~195s 处失败（前面装 SDK、拉 Gradle 都成功），
+        # 重试三次全挂在同一步，**不是网络抖动**。构建输出默认被 flutter 收进
+        # 一行概括里，看不到真正的 Gradle 报错，所以这里把完整日志落盘并在失败时
+        # 打出来——下次一眼就能看到是哪条 task 挂了。
         run: |
+          set -o pipefail
+          LOG=build/gradle-ci.log
+          mkdir -p build
           for attempt in 1 2 3; do
             echo "--- 第 $attempt 次构建 ---"
-            if flutter build apk --release; then
+            if flutter build apk --release 2>&1 | tee "$LOG"; then
               exit 0
             fi
+            echo "=== 本次失败的 Gradle 错误摘要 ==="
+            grep -nE "(FAILURE|What went wrong|error:|e: |Could not|Couldn't|Unresolved|Execution failed|> Task .*FAILED)" "$LOG" | tail -40 || tail -60 "$LOG"
             sleep 20
           done
           echo "连续 3 次构建失败，请看上面的 Gradle 日志定位原因" >&2
