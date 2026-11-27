@@ -79,10 +79,12 @@ Widget profileUpdateTile({required String? version, required VoidCallback onChec
           title: const Text('检查更新'),
           subtitle: Text(
             info != null
-                ? '发现新版本 v${info.version}'
+                ? '发现新版本 v${info.version}（${channelLabel(uc.channel)}）'
                 : (uc.error != null
                     ? '检查失败：${uc.error}'
-                    : (version == null ? '看看 GitHub 上有没有新版本' : '当前 $version')),
+                    : (version == null
+                        ? '${channelLabel(uc.channel)} · 看看有没有新版本'
+                        : '$version · ${channelLabel(uc.channel)}')),
             style: TextStyle(
                 fontSize: 12, color: info != null ? SemColors.accent : null),
           ),

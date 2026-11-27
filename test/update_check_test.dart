@@ -173,7 +173,7 @@ void main() {
     });
   });
 
-  group('手动检查', () {
+  group('检查更新二级页', () {
     /// 「我的」页足够高，设置卡里的条目都建得出来。
     Future<void> pumpProfile(WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 3200);
@@ -183,18 +183,22 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('平时显示当前版本', (tester) async {
+    /// 从「我的」页点进二级页并等它检查完。
+    Future<void> openCenter(WidgetTester tester) async {
+      await tester.tap(find.text('检查更新'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('平时显示当前版本与渠道', (tester) async {
       await pumpProfile(tester);
       expect(find.text('检查更新'), findsOneWidget);
-      expect(find.text('当前 v1.13.5 (92)'), findsOneWidget);
+      expect(find.text('v1.13.5 (92) · 稳定版'), findsOneWidget);
     });
 
     testWidgets('查到新版本：弹引导，能「去下载」和「稍后」', (tester) async {
       UpdateChecker.I.debugFetch = () async => releaseJson('v1.13.6');
       await pumpProfile(tester);
-
-      await tester.tap(find.text('检查更新'));
-      await tester.pumpAndSettle();
+      await openCenter(tester);
 
       expect(find.text('发现新版本 1.13.6'), findsOneWidget);
       expect(find.text('当前 v1.13.5 · 最新 v1.13.6'), findsOneWidget);
@@ -205,31 +209,70 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('发现新版本 1.13.6'), findsNothing, reason: '弹窗关掉了');
       expect(UpdateChecker.I.skipped, '1.13.6');
-      expect((await SharedPreferences.getInstance()).getString('update_skipped_version'),
+      expect((await SharedPreferences.getInstance()).getString('update_skipped_stable'),
           '1.13.6', reason: '下次启动不再弹这个版本');
-      expect(find.text('发现新版本 v1.13.6'), findsOneWidget, reason: '条目上仍标着有新版本');
+      expect(find.text('有新版本 v1.13.6'), findsOneWidget, reason: '二级页上仍标着有新版本');
     });
 
-    testWidgets('已是最新：不弹窗，给一句提示', (tester) async {
+    testWidgets('已是最新：不弹窗，二级页显示「已是最新」', (tester) async {
       UpdateChecker.I.debugFetch = () async => releaseJson('v1.13.5');
       await pumpProfile(tester);
+      await openCenter(tester);
 
-      await tester.tap(find.text('检查更新'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('已是最新版本'), findsOneWidget);
+      expect(find.text('已是最新'), findsOneWidget);
       expect(find.textContaining('发现新版本'), findsNothing);
     });
 
     testWidgets('检查失败：给出原因（GitHub 访问不了 / 限流都常见）', (tester) async {
       UpdateChecker.I.debugFetch = () async => throw Exception('boom');
       await pumpProfile(tester);
-
-      await tester.tap(find.text('检查更新'));
-      await tester.pumpAndSettle();
+      await openCenter(tester);
 
       expect(find.textContaining('检查更新失败：网络不可用'), findsOneWidget);
-      expect(find.textContaining('检查失败：'), findsOneWidget, reason: '条目上也留着原因');
+      expect(find.textContaining('检查更新失败：'), findsWidgets, reason: '二级页上也留着原因');
+    });
+
+    testWidgets('稳定版与内测版分开显示：能切换渠道，切到内测版提示它的新版本', (tester) async {
+      UpdateChecker.I.debugFetch = () async => [
+            releaseJson('v1.13.6'),
+            releaseJson('v1.14.0-dev.1'),
+          ];
+      await pumpProfile(tester);
+      await openCenter(tester);
+      await tester.tap(find.text('稍后')); // 关掉稳定版的引导弹窗
+      await tester.pumpAndSettle();
+
+      expect(find.text('稳定版'), findsOneWidget);
+      expect(find.text('内测版'), findsOneWidget);
+      expect(find.text('有新版本 v1.13.6'), findsOneWidget);
+      expect(find.text('暂无版本信息'), findsNothing, reason: '内测版这一行也拿到了版本');
+      expect(find.text('有新版本 v1.14.0-dev.1'), findsOneWidget,
+          reason: '内测版比稳定版高，但要用户自己切过去');
+
+      // 内测版那行有新版时按钮是「更新」，点整行（标题）就是切渠道
+      await tester.tap(find.text('内测版'));
+      await tester.pumpAndSettle();
+      expect(UpdateChecker.I.channel, UpdateChannel.dev);
+      expect((await SharedPreferences.getInstance()).getString('update_channel'), 'dev');
+      // 切过去之后内测版成了当前渠道：它也有新版本，可以直接更新
+      expect(find.text('有新版本 v1.14.0-dev.1'), findsOneWidget);
+      expect(find.text('发现新版本 1.14.0-dev.1'), findsOneWidget,
+          reason: '切到内测版后自动提示那条渠道的新版本');
+    });
+
+    testWidgets('关掉弹窗提醒：不再自动弹，设置也落盘', (tester) async {
+      UpdateChecker.I.debugFetch = () async => releaseJson('v1.13.6');
+      await pumpProfile(tester);
+      await openCenter(tester);
+      await tester.tap(find.text('稍后')); // 关掉引导弹窗，保证开关点得到
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('新版本弹窗提醒'));
+      await tester.pumpAndSettle();
+
+      expect(UpdateChecker.I.promptEnabled, isFalse);
+      expect(UpdateChecker.I.shouldPrompt, isFalse);
+      expect((await SharedPreferences.getInstance()).getBool('update_prompt_enabled'),
+          isFalse);
     });
   });
 
@@ -291,7 +334,8 @@ void main() {
     await UpdateChecker.I.skip();
 
     // 下次启动：清掉内存里的结论，重新 load + check —— 应该不再弹
-    UpdateChecker.I.available = null;
+    UpdateChecker.I.stableAvailable = null;
+    UpdateChecker.I.devAvailable = null;
     await UpdateChecker.I.load();
     await UpdateChecker.I.check();
     expect(UpdateChecker.I.shouldPrompt, isFalse);

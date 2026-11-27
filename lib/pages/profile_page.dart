@@ -5,10 +5,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:campus_core/campus_core.dart';
 import '../update_check.dart';
-import '../widgets/update_dialog.dart';
 import 'profile_dialogs.dart';
 import 'profile_sections.dart';
 import 'profile_settings_section.dart';
+import 'update_center_page.dart';
 
 /// 「我的」页：账号与学籍、服务状态、插件管理入口与各项设置。
 class ProfilePage extends StatefulWidget {
@@ -60,23 +60,10 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  /// 手动检查更新：有新版就弹引导，否则给一句结果（已是最新 / 失败原因）。
-  Future<void> _checkUpdate() async {
-    await UpdateChecker.I.load();
-    await UpdateChecker.I.check();
-    if (!mounted) return;
-    final uc = UpdateChecker.I;
-    final info = uc.available;
-    if (info != null) {
-      await showUpdateDialog(context, info);
-      return;
-    }
-    if (uc.error != null) {
-      showErr(context, '检查更新失败：${uc.error}', title: '检查更新失败');
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('已是最新版本'), behavior: SnackBarBehavior.floating));
+  /// 手动检查更新：进二级页（页里自己查一次，并分别列出稳定版与内测版）。
+  void _checkUpdate() {
+    Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const UpdateCenterPage()));
   }
 
   void _refreshAll() {

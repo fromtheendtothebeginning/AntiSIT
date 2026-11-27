@@ -1,10 +1,12 @@
 name: Release APK
 
-# 发版 = 打 tag：tag 名必须与 pubspec.yaml 的 version 一致（如 v1.0.4 ↔ 1.0.4+n），
+# 发版 = 打 tag，两种 tag 对应两个更新渠道：
+#   稳定版：tag 名与 pubspec.yaml 的 version 一致（如 v1.0.4 ↔ 1.0.4+n），发正式 Release；
+#   内测版：tag 形如 dev-1.48.0-dev.2，发成 prerelease（App 的内测版渠道只认这种带预发布段的版本）。
 # 推上去即自动构建 release APK 并发布 GitHub Release（APK + sha256 校验文件都挂上去）。
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'dev-*']
 
 permissions:
   contents: write # gh release create 需要写权限
@@ -38,13 +40,24 @@ jobs:
           "$SDKM" --install "platforms;android-36" "build-tools;36.1.0"
 
       - name: 校验 tag 与 pubspec 版本号一致
+        # 稳定版 tag = v<version>；内测版 tag = dev-<version>（version 自带 -dev.N 预发布段）。
+        # 两者都要求 tag 去掉前缀后与 pubspec.yaml 的 version 完全对上，避免发错版本。
         run: |
-          VERSION=$(sed -n 's/^version: *\([0-9][0-9.]*\)+.*/\1/p' pubspec.yaml)
-          if [ "v$VERSION" != "${GITHUB_REF_NAME}" ]; then
-            echo "tag ${GITHUB_REF_NAME} 与 pubspec.yaml 的 version $VERSION 不一致，请先升版本号再打 tag"
+          VERSION=$(sed -n 's/^version: *\([0-9][0-9A-Za-z.+-]*\)$/\1/p' pubspec.yaml | head -1)
+          # 去掉构建号：1.48.0-dev.2+206 → 1.48.0-dev.2
+          VERSION=${VERSION%%+*}
+          REF=${GITHUB_REF_NAME}
+          if [ "$REF" = "v$VERSION" ]; then
+            CHANNEL=stable
+          elif [ "$REF" = "dev-$VERSION" ]; then
+            CHANNEL=dev
+          else
+            echo "tag $REF 与 pubspec.yaml 的 version $VERSION 不一致"
+            echo "稳定版打 v$VERSION，内测版打 dev-$VERSION"
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CHANNEL=$CHANNEL" >> "$GITHUB_ENV"
 
       - name: 预装 Gradle 发行包（多源下载，绕开发行包 CDN 故障）
         # services.gradle.org 的发行包会 302 到 github 的发行包 CDN，该 CDN 2026-11-08
@@ -143,6 +156,10 @@ jobs:
           {
             echo "## AntiSIT ${VERSION}"
             echo
+            if [ "${CHANNEL}" = "dev" ]; then
+              echo "**内测版**：会收到正在开发中的改动，可能不稳定；App 的「内测版」渠道只跟这种带预发布段的版本。"
+              echo
+            fi
             echo "APK 直装（Android 7.0+）：下载 \`${APK_NAME}\` 安装，首次需允许「未知来源」。"
             echo
             echo "- 同一把发布密钥签名的版本可直接覆盖安装；覆盖安装会保留数据（登录态、课表）"
@@ -171,7 +188,10 @@ jobs:
             "AntiSIT-${VERSION}.apk" "AntiSIT-${VERSION}.apk.sha256" --clobber
           # 显式置为正式发布：tag 若被删过再重建，GitHub 会把 release 降级成草稿，
           # 匿名用户既看不到也下不了（页面直接报「没有 release」）。
+          # 内测版标成 prerelease：GitHub 的 /releases/latest 会跳过它，稳定版渠道不受影响。
+          PRERELEASE=false
+          if [ "${CHANNEL}" = "dev" ]; then PRERELEASE=true; fi
           gh release edit "$GITHUB_REF_NAME" --title "AntiSIT ${VERSION}" \
-            --notes-file release-notes.md --draft=false --prerelease=false
+            --notes-file release-notes.md --draft=false --prerelease=$PRERELEASE
           echo "--- 发布结果 ---"
           gh release view "$GITHUB_REF_NAME"

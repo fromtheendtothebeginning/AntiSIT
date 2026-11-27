@@ -18,8 +18,14 @@ TOKEN="${GITEE_TOKEN:-}"
 # 不想把令牌贴进聊天/命令行时，写到 ~/.gitee_token（一行，仅令牌）
 [ -n "$TOKEN" ] || TOKEN=$(cat "$HOME/.gitee_token" 2>/dev/null || true)
 API="https://gitee.com/api/v5"
-VERSION=$(sed -n 's/^version: *\([0-9][0-9.]*\)+.*/\1/p' pubspec.yaml)
-TAG="v$VERSION"
+# 版本号可能带预发布段（1.48.0-dev.2+206）：内测版 tag 用 dev-<version>，
+# 稳定版 tag 用 v<version>，与 GitHub 的 release.yml 保持同一套约定。
+VERSION=$(sed -n 's/^version: *\([0-9][0-9A-Za-z.+-]*\)$/\1/p' pubspec.yaml | head -1)
+VERSION=${VERSION%%+*}
+case "$VERSION" in
+  *-*) CHANNEL=dev; TAG="dev-$VERSION" ;;
+  *)   CHANNEL=stable; TAG="v$VERSION" ;;
+esac
 APK="build/app/outputs/flutter-apk/app-release.apk"
 # 临时文件放在工作区的 build/ 下：Git Bash 的 /tmp 路径和 Windows 版 curl/python
 # 不互通（body@/tmp/... 会读不到），用相对路径最稳；EXIT 时清掉。
@@ -99,6 +105,10 @@ if [ -z "$REL_ID" ]; then
   {
     echo "## AntiSIT $VERSION"
     echo
+    if [ "$CHANNEL" = "dev" ]; then
+      echo "**内测版**：会收到正在开发中的改动，可能不稳定；App 的「内测版」渠道只跟带预发布段的版本。"
+      echo
+    fi
     echo "APK 直装（Android 7.0+）：下载 \`$OUT_NAME\` 安装，首次需允许「未知来源」。"
     echo
     echo "### 本次更新"
@@ -115,6 +125,7 @@ if [ -z "$REL_ID" ]; then
     --data-urlencode "tag_name=$TAG" \
     --data-urlencode "target_commitish=main" \
     --data-urlencode "name=AntiSIT $VERSION" \
+    --data-urlencode "prerelease=$([ "$CHANNEL" = dev ] && echo true || echo false)" \
     --data-urlencode "body@$NOTES_FILE" \
     -o "$REL_JSON"
   REL_ID=$(rel_id)

@@ -1,146 +1,108 @@
 # AntiSIT
 
-校园服务 App —— 课程表 / 校园码 / 成绩 / 第二课堂 / 电费，一站式校园助手。
+校园服务 App：课程表 / 校园码 / 成绩 / 第二课堂 / 电费，一站式校园助手。Flutter 编写的 Android / Windows 客户端。
 
-**官网**：<https://anticraft.top/antiSIT/>（源码在 [site/](site/)，React + Vite 纯静态，
-改内容动 `site/src/lib/data.js`，部署见 [site/README.md](site/README.md)）。
+**官网**：<https://anticraft.top/antiSIT/>（源码在 [site/](site/)，React + Vite 纯静态，改内容动 [site/src/lib/data.js](site/src/lib/data.js)，部署见 [site/README.md](site/README.md)）。
 
-Flutter 编写的 Android / Windows 客户端。同一套接口支持两种接入方式（「我的 → 连接设置」切换）：
+[![GitHub tag](https://img.shields.io/github/v/tag/fromtheendtothebeginning/AntiSIT?label=GitHub&logo=github&color=2f81f7)](https://github.com/fromtheendtothebeginning/AntiSIT/tags)
+[![Gitee tag](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgitee.com%2Fapi%2Fv5%2Frepos%2Fender123%2FAntiSIT%2Freleases%2Flatest&query=%24.tag_name&label=Gitee&logo=gitee&color=c71d23)](https://gitee.com/ender123/AntiSIT/tags)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
+## 下载
+
+- **Android 7.0+**：[GitHub Releases](https://github.com/fromtheendtothebeginning/AntiSIT/releases) 或 [Gitee Releases](https://gitee.com/ender123/AntiSIT/releases) 下载 `AntiSIT-x.y.z.apk` 直接安装（首次需允许「未知来源」），同名 `.sha256` 可校验完整性。
+- **应用内更新**：「我的 → 检查更新」可直接下载（先校验 `.sha256`，再核对包名与签名才交给系统安装器）；更新源 Gitee 优先，GitHub 与 anticraft.top 镜像兜底；装完自动删包，不会一直占空间。
+- **Windows**：CI 不发 Windows 包，需自行构建（见下方「构建」）。
+
+同一套接口支持两种接入方式（「我的 → 连接设置」切换）：
 
 | 接入方式 | 需要填写 | 校园数据怎么来 |
 |---|---|---|
 | **服务器模式** | 服务器地址（IP / 域名，可带端口）+ 该服务器的账号密码 | 由服务器代连校园内网（VPN 隧道 + AI 识码），App 不接触校园密码 |
-| **直连模式** | 学校系统地址 + 校园凭据（学号 / 统一身份认证密码 / 校付宝支付密码 / 寝室） | App 用凭据直接访问学校系统，**不走服务器**，需设备在校园网 / 校内 VPN 内 |
+| **直连模式** | 学校系统地址 + 校园凭据（学号 / 统一身份认证密码 / 校付宝支付密码 / 寝室） | App 直接用凭据访问学校系统，不走服务器，需设备在校园网 / 校内 VPN 内 |
 
-服务器模式填任意地址即用（同一套开放接口，任意自建服务器皆可）；直连模式适合校内直连或自建服务器不可用时使用，验证码需手动输入。
+服务器模式填任意地址即用（任意自建服务器皆可）；直连模式适合校内直连或自建服务器不可用时使用，验证码需手动输入。
 
-## 下载安装
+## 功能
 
-[Releases](../../releases) 页提供签好名的 release APK（Android 7.0+）：下载 `AntiSIT-x.y.z.apk` 直接安装，首次需允许「未知来源」；表格里的 `.sha256` 可用于校验下载完整性。
+- **课程表**：多学期、周视图 / 日视图、下课即置灰；教务课表与考试安排导入；手动课程与日程事件（单次 / 每周重复），支持「仅本周」拆分；调休设置。服务器模式与网站共用同一份云端数据（最后写入胜），直连模式只存本机；未登录也可用本地功能。
+- **成绩 / 学业情况 / 考试安排**：全部学期或按学期查询，平均绩点、学分绩点、各类别学分要求与课程明细。
+- **学生评教**（插件 `evaluate`，原生界面）：直接复用已登录的教务会话，读出本轮待评列表；统一分数滑条 + 快捷档，逐条保存、全部打分、全部提交（提交不可撤销，写完回查教务确认）。
+- **第二课堂**：达标分数、加分明细与活动看板，支持拼音搜索（全拼 / 首字母）与类别级联筛选。
+- **校园码 / 扫一扫**：30 秒刷新的动态付款码与余额，亮码期间常亮；扫一扫识别二维码（含相册识图、手电筒），可分流到第二课堂签到、拓展安装码与内置 WebView 打开网址。
+- **宿舍电费**：余额、充值（防重复扣款）、7 / 30 / 90 天历史折线图。
+- **抢课**（仅直连）：正方 9.0 选课轮次、余量与自动重试。
+- **拓展与插件市场**：基于 **Cordis** 的运行时，一个拓展 = `ext.json` + `main.js`；`ctx.ui` / `storage` / `net` / `ai` / `notify` 等宿主服务，敏感权限在清单声明并在安装时展示。插件市场从签名目录发现并安装拓展，也支持「添加第三方源」粘贴仓库名 + 核对公钥指纹，不必官方收录。详见 [docs/extensions.md](docs/extensions.md)。
+- **拓展工坊**：内置 Cordis 拓展，用自然语言让 Agent 写 / 改拓展；DSH Go 风格移动端 Agent 界面（流式输出、可折叠思考、计划模式 / 完全访问、多段对话、技能、一键发布到 GitHub / Gitee 并生成直装二维码）。
+- **流体云课程通知**（插件 `course_cloud`，默认关闭）：课前 15 分钟常驻倒计时，ColorOS 流体云 / OriginOS 原子通知 / 澎湃OS 焦点通知按系统通知规则接入（Android 16+ 用 `ProgressStyle`），无需厂商 SDK；OPPO 官方卡片见 [oppo_card/README.md](oppo_card/README.md)。
+- **桌面卡片与快捷方式**（插件 `home_widget`）：主屏「今日课程」与「校园卡余额」小部件 + 长按图标快捷方式，标准 AppWidget，各桌面通用。
+- **备份与恢复**（插件 `backup`）：导出课表 / 设置 / 学校档案 / 插件偏好为 JSON，不含密码、登录态、AI Key、Cookie 与拓展数据。
+- **界面**：悬浮玻璃顶栏、可预测式返回（Android 14+ 跟手返回）、工具卡片与拓展卡片长按整理（1×1 / 1×3 / 2×3 / 2×2 四档尺寸）、演示模式。
+- **插件管理**：一个插件 = 一个 Dart 包（`packages/plugin_*`），底栏页、工具卡片、设置条目、主题色板均由插件贡献；可逐项启停并查看依赖图。详见 [docs/plugins.md](docs/plugins.md)。
 
-App 里也能更新：「我的 → 检查更新」查到新版本后，引导弹窗里可以直接**应用内下载**（显示进度；**必须**对照发布页的 `.apk.sha256` 校验，缺校验文件就不自动安装；通过后再由原生确认包名/签名与当前版本一致，才交给系统安装器，缺「安装未知应用」授权会先跳设置页）；下载失败随时可重试或退回浏览器打开 Gitee 链接。更新源 Gitee 优先（国内直连快），GitHub 与 anticraft.top 镜像兜底；下载地址只接受这些发布域及其 CDN 的 https 链接。**下载的安装包不会一直留着**：装完后自动删除，App 启动时也会清扫上一次留下的那份（`我的 → 配置 → 更新安装包` 能看到占用并手动清理），不会因为反复更新把手机空间吃掉。
+## 开发
 
-**Windows 版没有现成安装包**：CI 只发 Android APK，Windows 请自行构建（`flutter build windows`，需本机 Visual Studio 含 C++ 桌面开发工作负载），或用 `flutter run -d windows` 直接跑。
-
-- 仓库**不包含签名私钥**。发布构建从 `android/key.properties`（不进仓库，模板见 [android/key.properties.example](android/key.properties.example)）或环境变量读取密钥；缺配置时 release 构建会直接失败，不会产出可安装的包
-- 本地 `flutter run` / debug 构建用的是本机 debug 密钥，与发布版签名不同，两种渠道互相覆盖前需先卸载
-- **发版**：`pubspec.yaml` 升版本号 → 提交推送 → 打同名 tag（`git tag v1.0.4 && git push origin v1.0.4`），[release.yml](.github/workflows/release.yml) 会构建、校验签名指纹、发布 Release
-- **发布到 Gitee 与自建镜像**：[tool/release_gitee.sh](tool/release_gitee.sh)（推代码 + tag + Release + APK）与 [tool/upload_mirror.sh](tool/upload_mirror.sh)（`anticraft.top/apk` 直链 + `latest.json` 兜底更新源）。Gitee 仓库的 **Release 附件合计只有 1 GB**，每版 APK 约 87 MB，十来个版本就满——所以发版脚本会先跑 [tool/gitee_prune.py](tool/gitee_prune.py) 按版本号保留最近 5 个（`GITEE_KEEP_VERSIONS` 可调），更老的 APK 删掉（源码都在 git tag 里，更新链路只分发最新版）
-
-### 发布签名
-
-1. 生成 release keystore，存放在**仓库外**的安全位置并做好备份（私钥丢失 = 老用户再也无法覆盖升级）；
-2. 本地构建：复制 `android/key.properties.example` → `android/key.properties`，填 `storeFile`（建议绝对路径）、`storePassword`、`keyAlias`、`keyPassword`；
-3. CI：在 GitHub 仓库 Secrets 配置
-   - `RELEASE_KEYSTORE_BASE64`：keystore 文件的 base64（单行）
-   - `RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`
-   - `RELEASE_CERT_SHA1`：证书 SHA-1（去冒号、小写）
-
-   `release.yml` 会用它们写入临时密钥与 `key.properties`，缺任何一个都会中止发布；
-4. **换钥后旧版本无法覆盖安装**：老用户必须先卸载再装（本机数据会丢），发版说明里要明确写出来。旧密钥已经存在于仓库历史中，无法靠删文件收回；换钥后旧密钥签的包也不能覆盖新密钥版本。
-
-## 开发：多包结构
-
-仓库是一个 pub workspace：宿主 + `packages/campus_core`（契约层：服务、组件库、插件接口）
-+ 每功能/主题一个 `packages/plugin_*`。常用命令：
+仓库是一个 pub workspace：宿主 + `packages/campus_core`（契约层：服务、组件库、插件接口）+ 每功能 / 主题一个 `packages/plugin_*`。
 
 ```bash
 flutter pub get                     # 根目录一次解析全部包
 dart run tool/gen_plugins.dart       # 改了插件依赖后重新生成 lib/plugins/manifest.g.dart
-flutter test                        # 全部测试（含插件包的行为，测试集中在宿主 test/）
+flutter test
 flutter analyze
 ```
 
-改插件集合（加包 / 删包）只要动 `pubspec.yaml` 的依赖，然后跑生成器——清单不要手改，
-细节与依赖关系表在 [docs/plugins.md](docs/plugins.md)。
+改插件集合（加包 / 删包）只动 `pubspec.yaml` 的依赖再跑生成器，清单不要手改。
 
-## 功能
-
-- **课程表**
-  - 多学期管理，周视图 / 日视图切换，滑动翻周、回到今天，**下课即置灰**（按节次下课时刻精确重绘，不是隔一分钟才变）
-  - 教务导入（逐周循环拉取全学期课表）、考试安排导入（转为日程事件）
-  - 手动课程与日程事件（支持单次日期 / 每周重复），重叠课程可点选编辑、删除（支持"仅本周"自动拆分周次）
-  - 调休设置（放假 / 按周 X 上课），渲染时生效，与网站规则互通
-  - 云端同步（服务器模式）：与网站共用同一份云端课表数据（`updatedAt` 最后写入胜），App 上的修改网站可见，反之亦然；直连模式没有云端，数据只存本机
-  - 未登录也可使用：手动编辑、调休等本地功能不依赖账号
-- **拓展与插件市场**（底栏「拓展」，默认开启、依赖 WebView 内核）：拓展运行时基于 **Cordis**（DSH 同款插件框架）——一个拓展就是一个 `ext.json` + `main.js` 的 Cordis 插件，通过 `ctx.ui` / `ctx.storage` / `ctx.ai` / `ctx.notify` 等宿主服务写界面与逻辑，`ctx.effect()` 注册可逆副作用；`ctx.ui.push()` 给拓展自己的页面栈，系统返回键先退栈、栈空才关页；`ctx.notify` 支持即时与定时本地通知（需在清单声明 `notification`）；旧的 html 压缩包会标成「旧版网页拓展（需迁移）」，网址型书签照旧可用。「添加拓展」菜单里手工填网址 / 导入压缩包 / 导入 JSON，另有一项**插件市场**（独立页）从目录仓库发现并安装别人做的拓展，改内容不用发版。目录**必须过签名校验**（公钥内置 App，私钥只在维护者本机，所以目录可以随便挂镜像、镜像改不了内容），每个拓展包还要对得上 sha256 才解压；`storage` / `network` / `ai` / `notification` 这类敏感接口要在清单里声明（校内明文 http 的教学站点用单独一条 `campus_net` / `ctx.net.campus`，服务器模式下自动走校园隧道代理），安装时翻成人话列给用户看；更新保留拓展自己的数据，卸载一并清掉；卡片可以**长按进入整理**：拖动换位，顶部一排尺寸按钮在 **1×1（小方格）/ 1×3（横条）/ 2×3（默认）/ 2×2（竖卡）** 间切换（名字按行×列读），也能拖右下角弧线细调（「排序」入口也能排），顺序与尺寸都存在本机。官方拓展统一用 `line:<name>` 镂空线性图标。目录格式、权限表与投稿流程见 [docs/extensions.md](docs/extensions.md)，插件体系见 [docs/plugins.md](docs/plugins.md)。**不需要官方收录也能发**：作者在自己仓库里用同一套工具签名打包，别人在市场页「添加第三方源」里粘贴仓库名 + 核对公钥指纹即可安装（第三方条目标注「未审核」，同一个 id 只能由一个源管）
-- **拓展工坊**（内置 Cordis 拓展）：在「拓展」页打开，用自然语言让 Agent 写 / 改 Cordis 拓展。界面按 **DSH Go** 的移动端 Agent 排版重做：顶栏「返回 / 标题 / 发布 / 更多」+ 对话 / 文件页签、markdown 消息流（代码块带语言标签与复制）、工具调用收成一行可展开的操作记录、卡片式输入区里放计划 / 完全访问开关。内部用 DSH 风格的会话事件日志、turn / step / inbox 与工具注册表：模型输出**流式显示**，思考过程折叠可展开；运行中可继续插话，**一个拓展可开多段对话**，聊天记录按对话保存并在重开后恢复，拓展与对话都能重命名；崩溃留下的半截 turn / 工具调用会自动修复；支持**计划模式**（只读分析出方案）与**完全访问**（跳过逐次确认，二者可同时开启）；Agent 可安装 / 读取 / 删除可复用**技能**；未安装的拓展可直接删除；顶栏「发布」（或「⋯ → 连接 GitHub / Gitee 发布」）可填 Token 推到公开仓库，生成第三方市场源与直装二维码，别人扫码即可安装。读文件返回版本号，写已有文件必须先读并做 sha256 校验，读写、删除、安装默认都经过原生确认。模型走「AI 设置」里的提供商，优先原生 function calling，不支持时自动退回 JSON 工具协议
-- **流体云课程通知**（插件 `course_cloud`，默认关闭，硬依赖课程表与流体云）：课程通知三选一——**不通知 / 弹窗通知 / 流体云通知**。流体云模式下课前 15 分钟亮起常驻倒计时，下课前自动收起；排期走系统闹钟并支持开机恢复，App 没打开也生效。**不需要厂商 SDK**：ColorOS 流体云 / OriginOS 原子通知 / 澎湃OS 焦点通知都按系统通知规则接入，Android 16+ 用 `ProgressStyle` + promoted ongoing 交给系统升格，更早的系统显示为常驻倒计时通知；识别不到三大系统时同样按普通常驻通知兜底。ColorOS 的官方流体云 / 桌面卡走 OPPO 泛在服务卡片（UPK），工程源码与上架步骤见 [oppo_card/README.md](oppo_card/README.md)
-- **桌面卡片与快捷方式**（插件 `home_widget`，默认开启）：主屏小组件「今日课程」（今天前 3 节 + 下一节）与「校园卡余额」（点卡片打开动态码），课表保存 / 校园码刷新后自动同步；长按桌面图标有「校园码 / 课表」快捷方式。标准 Android AppWidget + static shortcuts，ColorOS / OriginOS / 澎湃OS 等桌面通用，不需要厂商 SDK
-- **校园码**：动态付款码（30 秒自动刷新）+ 校园卡余额，亮码期间屏幕常亮（校付宝公网可达，两种模式均无需校园网）
-- **扫一扫**：「第二课堂活动」与「拓展」页右上角的镂空扫码图标进入（**扫一扫**与**摄像头**是两个独立插件：`plugin_scan` 只做扫码页与码型分流，`plugin_camera` 提供取景 / 补光灯 / 相册识码能力，二者按 `CameraCapability` 解耦；扫一扫硬依赖摄像头，入口按 `ScanCapability` 取用，插件停用就隐藏）。摄像头只识二维码、自动变焦、带手电筒，也支持**从相册挑一张图片**识别；结果可复制，扫出的网址用**内置 WebView 内核**整页打开（内核被停用时退回系统浏览器；权限被拒时页面给出设置提示）。识出**第二课堂活动的签到码**（`xg.sit.edu.cn/hdgl/hdxq/qd/…`）时走专门面板：一键提交、由学校接口判定本次算签到还是签退，判定原文直接展示——直连与服务器模式都支持（写操作只提交一次）。从「拓展」页进入时还能扫码加拓展：普通网址给绿色「添加链接」，规定格式的安装码给「下载拓展」（只认 https，下载后核对 sha256，再把包里的权限列给用户确认）
-- **成绩**：全部学期 / 按学期查询，平均绩点、学分绩点一览
-- **学业情况**：学生学业情况查询 —— 平均学分绩点、计划内外课程通过数、各类别学分要求与课程明细（成绩 / 绩点 / 建议学期；直连 / 服务器两种模式）
-- **抢课**（直连）：正方 9.0 学生选课 —— 选课轮次、课程余量、教学班展开、自动重试抢课与已选课程确认。选课是写操作，仅直连模式（校园网 / 校内 VPN）可用
-- **考试安排**：期中 / 期末时间、地点、座位
-- **学生评教**（插件 `evaluate`，默认开启、**原生界面，不再内嵌网页**）：连接方式与其它教务功能一致（直接用 App 已登录的教务会话，不单独登录、也没有自己的设置页），**也和其它工具页一样带本地缓存**：进去先显示上次的待评列表与分数，后台再刷新，保存过的分数本机留一份（换账号自动失效）；直接读出「本轮待评的教学班 × 教师」列表，点开一位老师就是一列可拖动的百分制评分——顶部一条**统一分数**滑条（一键把这门课全部指标打同分，也有 100 / 95 / 90 / 80 / 60 的快捷档）；列表页汇总卡下面有两个按钮：**全部打分**（一次给全部老师打上同一分并保存）和**全部提交**——后者交的是**已经保存好的那套分**（不再统一设分），所以只有每一条都保存过时按钮才亮，还差几条会直接写在按钮下面。保存可以反复覆盖，**提交是不可撤销的写操作**，必须逐条二次确认——而且写完会回查教务，确认状态真的变了才报成功（学校服务端对非法请求也会先回「成功」再丢弃）。连接方式与成绩 / 课表等教务功能**完全一致**：直接用 App 已登录的教务会话（直连模式是本机登录，服务器模式是服务器代连的隧道），没有单独的评教登录或代理设置
-- **第二课堂**：达标分数（细分达标着色）、加分明细与活动看板均支持**搜索 + 类别标签筛选**（大类 → 类别级联），搜索支持**拼音**（全拼 / 首字母都能搜到汉字，如 `ty` 搜「体育」）
-- **宿舍电费**：余额查询、充值（防重复扣款保护）、历史余额折线图（7 / 30 / 90 天；服务器模式读站内记录，直连模式存本机）
-- **上课提醒自检**：开启提醒后，设置里会多出一行「提醒自检与引导」摘要（例如「后台运行受限制（1 项待处理）」），点进去看「通知权限 / 精确闹钟 / 后台运行（省电策略）」三项状态、未来 30 天的排期条数，以及「提醒不来的常见原因」；哪项不对一键跳系统设置，改完回来自动重查——排期成功不等于能弹出来，小米 / 华为 / OPPO / vivo 的省电策略尤其容易掐掉后台闹钟
-- **备份与恢复**（插件 `backup`，默认开启）：「我的 → 备份与恢复」把课表 / 学期作息 / 设置 / 学校档案 / 插件偏好导出为 JSON，卸载重装或换机后导入；不包含账号密码、登录态、AI Key、直连 Cookie、拓展数据与课表背景图
-- **工具卡片整理**：长按卡片进入整理：拖动换位，顶部尺寸按钮在 **1×1（小方格）/ 1×3（横条）/ 2×3（默认）/ 2×2（竖卡）** 间切换（名字按行×列读），也能拖右下角弧线细调；顺序与尺寸都记在本机，新增工具不会打乱已排好的位置（右上角「排序」页也能排，并可重置大小）
-- **可预测式返回（Android 14+）**：系统返回手势拖动时当前页**与手指 1:1 跟手右移**（同时轻微缩小、收圆角、淡出），露出上一页，**拖到一半可以松手取消**；普通的前进 / 点返回仍是原来的淡入淡出（玻璃观感不变）
-- **悬浮玻璃顶栏**：所有页面的标题与右上角按钮浮在内容上方，内容从顶栏底下穿过去，靠近顶栏时**渐变淡出**（半透明色带，不做实时模糊，滚动不掉帧不残影），标题与按钮本身仍是实的；按钮统一成 40 圆钮。「我的 → 外观 → 悬浮玻璃顶栏」可关闭，关闭后回到普通顶栏
-- **演示模式**：内置本地假数据，无需账号即可体验全部界面
-- **插件管理**：**一个插件 = 一个 Dart 包**（`packages/plugin_*`），底栏页面、工具卡片、设置条目、主题色板全部由插件贡献。可在「我的 → 插件管理」里逐项启停，并查看依赖关系图（一列一层深度，实线 = 硬依赖 / 虚线 = 可选依赖；停用有下游的插件会先列出连带清单）；页面里的「实时效果」会把底栏与工具宫格的变化即时显示出来。导入插件 = 往 `pubspec.yaml` 加一行依赖 + `dart run tool/gen_plugins.dart`；删除 = 去掉那一行（包目录可留可删）；构建期还能用 `--dart-define=EXCLUDE_XXX=true` 剔除。详见 [docs/plugins.md](docs/plugins.md)
-
-## 调试：本地模拟校园服务（仅 debug 构建）
-
-直连模式要访问学校内网（教务 / 统一认证 / 学工），模拟器或校外环境连不上，验证码弹窗、Cookie 会话、登录失败重试这些都测不到。debug 构建因此内置了一个**行为与学校系统一致的本地模拟服务**：
-
-- 「我的 → 连接设置 → 直连模式 → 使用本地模拟服务」一键切换；服务跑在 App 进程内，只监听 `127.0.0.1`，不需要额外起进程或做端口转发
-- 覆盖四套真实协议：正方教务（登录页 csrftoken + 公钥 RSA 加密密码 + `/kaptcha` 图形验证码 + 302 会话）、金智统一认证 CAS（execution / lt / salt 表单 + AES-CBC 加密密码 + 图形验证码）、学工二课（未登录 302 跳 CAS）、校付宝（SM4 加密支付密码换 token，403 表示令牌过期）
-- **校验是真校验**：RSA / AES / SM4 都用 App 同一套算法解密回来比对凭据，走通模拟服务约等于走通了真实加密与表单链路
-- 模拟凭据：学号 `25110001` / 统一身份认证密码 `sit@123456` / 校付宝支付密码 `888888` / 寝室 `24号楼1016`；验证码图片上是可读数字，控制台也会打印 `[mock] 教务验证码 = xxxx`
-- 实现：`lib/direct/mock_campus_server.dart`（协议与假数据）+ `lib/direct/mock_captcha.dart`（纯 Dart 手写 PNG 验证码）；`test/direct/mock_campus_server_test.dart` 用真 HTTP 打这套服务，覆盖各系统登录查询全链路、并发登录单飞、验证码错误重试
-- release 构建不含任何模拟逻辑（入口都在 `kDebugMode` 分支内）
-
-## 技术栈
-
-- Flutter（Dart 3），Material 3
-- 本地持久化：`shared_preferences`（课表 store / 登录态 / 设置 / 直连模式 Cookie 与电费历史）
-- 网络：`http`，JWT 鉴权（服务器模式：401 单飞自动续期 / 重登，隧道类请求串行排队）
-- 直连模式：完整移植服务端校园对接链路到 App —— 正方教务（RSA/PKCS#1 密码 + 图形验证码）、金智统一认证 CAS（AES-CBC 密码 + 图形验证码）、校付宝（SM4 支付密码），`pointycastle` 提供 AES/RSA，SM4 为纯 Dart 实现
-- 课程表数据模型与网站 store 完全一致（字段名对齐，服务器模式可双向同步）
-
-## 构建
+### 构建
 
 ```bash
 flutter pub get
-flutter run                  # 连接设备/模拟器直接运行
+flutter run                  # 连接设备 / 模拟器直接运行
 flutter build apk --debug    # 或 --release
+flutter build windows        # 需本机 Visual Studio 含 C++ 桌面开发工作负载
 ```
 
-要求 Flutter 3.x 及以上。国内网络可配置 pub 镜像：
+要求 Flutter 3.x 及以上。国内网络可配置 pub 镜像：`export PUB_HOSTED_URL=https://mirrors.cloud.tencent.com/dart-pub`。
 
-```bash
-export PUB_HOSTED_URL=https://mirrors.cloud.tencent.com/dart-pub
-```
+### 发布签名
 
-## 隐私说明
+仓库**不含签名私钥**。本地构建从 `android/key.properties`（不进仓库，模板见 [android/key.properties.example](android/key.properties.example)）读取密钥，CI 从 Secrets 读 `RELEASE_KEYSTORE_BASE64` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD` / `RELEASE_CERT_SHA1`；缺配置时 release 构建直接失败，不会产出不可安装的包。**换钥后旧版本无法覆盖安装**，老用户须卸载重装（本机数据会丢）。
 
-- 仓库内**不含**任何真实个人信息、账号凭据、接口凭据或抓取数据
-- **服务器模式**不存储校园密码：校园凭据（学号 / 统一身份认证密码 / 支付密码 / 寝室）在该服务器网站「我的 → 校园服务」配置一次，由服务器加密保管
-- **直连模式**的校园凭据（学号 / 统一身份认证密码 / 校付宝支付密码 / 寝室 / 姓名）**明文保存在本机** `shared_preferences`，仅用于本机直接登录学校系统，不上传任何服务器；退出登录会清除密码
-- **手动退出登录**是明确的「我要下线」信号：服务器模式的 token 与保存的账号密码、直连模式的校园密码都会被清除，并把「记住密码并自动重登」一起关掉——否则下一次请求 401 时会拿旧密码自动登回去，看起来像「退出了又自己登录」。服务器地址、学号、学校档案与寝室保留，重新登录不用重填
-- App 本地仅保存：登录 token、课表数据、界面设置、直连模式 Cookie；可在「我的」页退出登录一键清除会话
-- 演示模式使用本地假数据，不会发起任何请求
+### 发版
 
-## 自建服务器
+`pubspec.yaml` 升版本号 → 提交推送 → 打同名 tag（`git tag v1.0.4 && git push origin v1.0.4`），[release.yml](.github/workflows/release.yml) 会构建、校验签名指纹并发布 Release。
 
-服务器模式的地址可以是任意部署了同一套开放接口的服务器（`IP:端口` 或域名），两种方式：
+- 发布到 Gitee 与自建镜像：[tool/release_gitee.sh](tool/release_gitee.sh)（推代码 + tag + Release + APK）与 [tool/upload_mirror.sh](tool/upload_mirror.sh)（`anticraft.top/apk` 直链 + `latest.json` 兜底更新源）。
+- Gitee Release 附件合计仅 1 GB，发版脚本会先跑 [tool/gitee_prune.py](tool/gitee_prune.py) 只保留最近 5 个版本（`GITEE_KEEP_VERSIONS` 可调），更老的 APK 删除——源码都在 git tag 里，更新链路只分发最新版。
 
-- **参照 API 文档自行实现**：仓库内 [docs/campus-api.md](docs/campus-api.md) 是开放接口的完整形式规约（路径 / 请求响应结构 / 错误语义），照此用任意语言、框架重建服务端即可接入本 App。
-- **直接部署现成服务端**：[anticraft 校园服务网站](https://github.com/fromtheendtothebeginning/anticraft) 就是这套接口的参考实现，部署好后把地址填进 App 即可。
+### 调试：本地模拟校园服务（仅 debug 构建）
 
-两个项目均为 **GPL-3.0** 开源：可自由使用、学习、修改与再分发；再分发或衍生作品必须同样以 GPL-3.0 开源并提供完整源码；软件不含任何担保。
+直连模式要访问学校内网，模拟器或校外环境连不上，「我的 → 连接设置 → 直连模式 → 使用本地模拟服务」可在 App 进程内（`127.0.0.1`）启动一套与学校系统行为一致的模拟服务，覆盖正方教务、金智统一认证 CAS、学工二课、校付宝四套协议，RSA / AES / SM4 都是真加解密。模拟凭据：学号 `25110001` / 统一认证 `sit@123456` / 支付密码 `888888` / 寝室 `24号楼1016`。release 构建不含模拟逻辑。
 
-学校相关配置（VPN 地址、教务 / 学工 / 认证 / 校付宝域名）在服务端设置，App 侧无需改动。直连模式的学校信息（四个系统域名 + 可选响应解密密钥）可在 App 内按学校域名自动推导后逐项修改，支持保存多所学校随时切换。
+## 技术栈
+
+- Flutter（Dart 3）、Material 3；本地持久化 `shared_preferences`；网络 `http` + JWT（401 单飞续期）
+- 直连模式完整移植校园对接链路：正方教务（RSA + 图形验证码）、金智 CAS（AES-CBC）、校付宝（SM4），`pointycastle` 提供 AES / RSA
+- 课表数据模型与网站 store 字段对齐，服务器模式可双向同步
+
+## 隐私
+
+- 仓库内不含任何真实个人信息、账号凭据或抓取数据
+- **服务器模式**不存校园密码：凭据在服务器网站配置一次，由服务器加密保管
+- **直连模式**的校园凭据明文保存在本机 `shared_preferences`，仅用于本机登录学校系统，不上传服务器；退出登录即清除密码并关闭自动重登
+- **演示模式**使用本地假数据，不发起任何请求
+
+## 自建服务器与协议
+
+服务器模式可指向任意部署了同一套开放接口的服务器：
+
+- 接口完整规约见 [docs/campus-api.md](docs/campus-api.md)（路径 / 请求响应结构 / 错误语义），可用任意语言、框架实现。
+- 现成参考实现：[anticraft 校园服务网站](https://github.com/fromtheendtothebeginning/anticraft)，部署后把地址填进 App 即可。
 
 ## 开源协议
 
-[GNU General Public License v3.0](LICENSE)（GPL-3.0）。
+[GNU General Public License v3.0](LICENSE)（GPL-3.0）：可自由使用、学习、修改与再分发；再分发或衍生作品须同样以 GPL-3.0 开源并提供完整源码；软件不含任何担保。
 
-抢课的教务选课协议移植参考了 [zhengfang-apk](https://github.com/znjhahaha/zhengfang-apk)（GPL-3.0），其协议解析与请求参数构造保留在 `packages/campus_core/lib/direct/course_select.dart`，文件头注明出处。
+抢课协议移植参考了 [zhengfang-apk](https://github.com/znjhahaha/zhengfang-apk)（GPL-3.0），解析与参数构造保留在 `packages/campus_core/lib/direct/course_select.dart` 并在文件头注明出处。
 
 本项目为个人学习与自用工具，与任何学校官方无关；使用本软件产生的任何后果由使用者自行承担。
