@@ -97,14 +97,18 @@ class _BootSplashState extends State<BootSplash>
                         child: Container(
                           width: 96,
                           height: 96,
+                          // 底板固定白：校徽是深蓝 + 浅蓝 + 绿的双色图形，压在深色半透面上
+                          // 会糊成一团；白色圆角方块在深浅色下都能把它衬清楚（同桌面图标）。
                           decoration: BoxDecoration(
-                            color: dark
-                                ? Colors.white.withValues(alpha: 0.08)
-                                : Colors.white.withValues(alpha: 0.72),
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(26),
-                            border: Border.all(color: SemColors.border),
+                            border: Border.all(
+                              color: dark
+                                  ? Colors.white.withValues(alpha: 0.85)
+                                  : SemColors.border,
+                            ),
                           ),
-                          padding: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.all(12),
                           child: Image.asset('assets/sit-mark.png'),
                         ),
                       ),
