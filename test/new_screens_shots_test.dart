@@ -72,6 +72,61 @@ void main() {
     );
   }
 
+  /// 拍「启动动画的某一时刻」：不给假时钟推进太多，让装配停在 [ms]。
+  Future<void> shootFrames(
+      WidgetTester tester, String name, Widget page,
+      {required int ms, required GlassPalette palette}) async {
+    tester.view.physicalSize =
+        Size(size.width * pixelRatio, size.height * pixelRatio);
+    tester.view.devicePixelRatio = pixelRatio;
+    addTearDown(tester.view.reset);
+
+    SemColors.p = palette;
+    final brightness = palette.isDark ? Brightness.dark : Brightness.light;
+    final key = GlobalKey();
+    await tester.pumpWidget(RepaintBoundary(
+      key: key,
+      child: MediaQuery(
+        data: const MediaQueryData(
+          size: size,
+          padding: EdgeInsets.zero,
+          viewPadding: EdgeInsets.zero,
+        ),
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: shotTheme(palette),
+          themeMode:
+              brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
+          locale: appLocale,
+          supportedLocales: appSupportedLocales,
+          localizationsDelegates: appLocalizationsDelegates,
+          home: page,
+        ),
+      ),
+    ));
+
+    await tester.runAsync(() async {
+      for (final asset in const [
+        'assets/sit-mark-light.png',
+        'assets/sit-mark-dark.png',
+        'assets/sit-mark-green.png',
+      ]) {
+        try {
+          await precacheImage(
+            AssetImage(asset),
+            tester.element(find.byType(MaterialApp)),
+          );
+        } catch (_) {}
+      }
+    });
+    // 一小步一小步推进，避免一次跳过装配的关键帧
+    for (var t = 0; t < ms; t += 40) {
+      await tester.pump(const Duration(milliseconds: 40));
+    }
+    await captureShot(tester, key, name, palette);
+    await tester.pumpWidget(const SizedBox());
+  }
+
   /// 拍一整页（含玻璃背景与顶栏）。
   Future<void> shoot(WidgetTester tester, String name, Widget page,
       {required GlassPalette palette, int frames = 4}) async {
@@ -107,13 +162,20 @@ void main() {
     ));
 
     // 图片解码是真实异步的（假时钟推不动它）：先 precache，截图里才有校徽
+    // 图片解码是真实异步的（假时钟推不动它）：先把校徽三层都 precache 掉
     await tester.runAsync(() async {
-      try {
-        await precacheImage(
-          const AssetImage('assets/sit-mark.png'),
-          tester.element(find.byType(MaterialApp)),
-        );
-      } catch (_) {}
+      for (final asset in const [
+        'assets/sit-mark-light.png',
+        'assets/sit-mark-dark.png',
+        'assets/sit-mark-green.png',
+      ]) {
+        try {
+          await precacheImage(
+            AssetImage(asset),
+            tester.element(find.byType(MaterialApp)),
+          );
+        } catch (_) {}
+      }
     });
 
     for (var i = 0; i < frames; i++) {
@@ -202,10 +264,25 @@ void main() {
     }, skip: !enabled);
   }
 
-  // 3) 启动动画
+  // 3) 启动动画：装配完成后的一帧（校徽三层合成 + 呼吸光环）
   shots('boot-splash', () => const Scaffold(
         body: BootSplash(stage: '正在加载课程表…'),
-      ), frames: 3);
+      ), frames: 4);
+
+  // 3b) 装配过程：同一页面在几个时刻各拍一张，拼成「分层合拢」的顺序
+  for (final (i, ms) in const [
+    (0, 330),
+    (1, 500),
+    (2, 760),
+    (3, 1150),
+  ]) {
+    testWidgets('boot-assemble-0$i', (tester) async {
+      await loadFonts();
+      await shootFrames(tester, 'boot-assemble-0$i',
+          const Scaffold(body: BootSplash(stage: '正在加载课程表…')),
+          ms: ms, palette: GlassPalette.dark);
+    }, skip: !enabled);
+  }
 
   // 4) 检查更新二级页：稳定版与内测版各自有新版本（注入假 Release，不联网）
   for (final palette in [GlassPalette.dark, GlassPalette.light]) {

@@ -23,7 +23,8 @@ class _BootPageState extends State<BootPage> {
 
   /// 进主页的最早时刻：动画至少播这么久，避免一闪而过。
   final DateTime _startedAt = DateTime.now();
-  static const Duration _minShow = Duration(milliseconds: 1100);
+  // 启动动画的分层装配是 1.4s，至少让它播完再进主页（否则最后一层绿环刚弹出就切走）
+  static const Duration _minShow = Duration(milliseconds: 1500);
 
   @override
   void initState() {

@@ -26,7 +26,11 @@ AntiXiaoYing/
       assets/                 自家图标 / 样式
   tool/
     gen_plugins.dart         清单 + 依赖表 + plugin_folders.json 生成器
-  assets/plugin_folders.json  ← 生成物：插件文件夹清单（运行期只读）
+    split_logo.py            校徽三色拆分（启动动画分层用）：sit-mark.png → 三张单层 PNG
+  assets/
+    plugin_folders.json      ← 生成物：插件文件夹清单（运行期只读）
+    sit-mark.png             校徽原图
+    sit-mark-{light,dark,green}.png  ← 拆分产物（同一画布、只留本层像素，叠回即原标）
   docs/                       开发文档
 ```
 

@@ -221,6 +221,10 @@ flutter:
 
   assets:
     - assets/sit-mark.png
+    # 校徽三色分层（启动动画里拆开画：浅蓝/深蓝/绿各自描一遍再拼回整体）
+    - assets/sit-mark-light.png
+    - assets/sit-mark-dark.png
+    - assets/sit-mark-green.png
     # 插件文件夹清单（tool/gen_plugins.dart 生成）：运行期只读，「一个插件 = 一个文件夹」
     - assets/plugin_folders.json
 
