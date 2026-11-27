@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import '../bundle_import.dart';
 import '../extension_item.dart';
 import '../extension_store.dart';
+import 'ext_dependency_plan.dart';
 import 'market_entry.dart';
 import 'market_source.dart';
 import 'market_sources.dart';
@@ -16,8 +17,8 @@ import 'market_sources.dart';
 /// 拓展自己的数据（`plugin.ext.data.<id>.*`）留着。
 class MarketInstaller {
   MarketInstaller({ExtensionStore? store, MarketSource? source})
-      : store = store ?? ExtensionStore.I,
-        source = source ?? MarketSource.I;
+    : store = store ?? ExtensionStore.I,
+      source = source ?? MarketSource.I;
 
   final ExtensionStore store;
   final MarketSource source;
@@ -63,17 +64,25 @@ class MarketInstaller {
     // 内容路径写成 demo:// 标记（真去打开会提示不存在，演示流程不依赖它）。
     if (AppState.I.demo && entry.id.startsWith('demo-')) {
       final have = installed(entry.id);
-      final item = (have ?? ExtensionItem(id: entry.id, name: entry.name, url: '', bundled: true)).copyWith(
-        url: 'demo:///main.js',
-        bundled: true,
-        runtime: ExtensionItem.runtimeCordis,
-        version: entry.version,
-        sha256: entry.sha256,
-        permissions: entry.permissions,
-        fromMarket: true,
-        sourceId: entry.sourceId,
-        minAppVersion: entry.minAppVersion,
-      );
+      final item =
+          (have ??
+                  ExtensionItem(
+                    id: entry.id,
+                    name: entry.name,
+                    url: '',
+                    bundled: true,
+                  ))
+              .copyWith(
+                url: 'demo:///main.js',
+                bundled: true,
+                runtime: ExtensionItem.runtimeCordis,
+                version: entry.version,
+                sha256: entry.sha256,
+                permissions: entry.permissions,
+                fromMarket: true,
+                sourceId: entry.sourceId,
+                minAppVersion: entry.minAppVersion,
+              );
       if (have == null) {
         await store.add(item);
       } else {
@@ -83,7 +92,9 @@ class MarketInstaller {
     }
     final app = await ExtensionItem.appVersionLoader();
     if (entry.needsNewerApp(app)) {
-      throw StateError('「${entry.name}」需要 App ≥${entry.minAppVersion}，请先升级 App');
+      throw StateError(
+        '「${entry.name}」需要 App ≥${entry.minAppVersion}，请先升级 App',
+      );
     }
     if (store.isBuiltin(entry.id)) {
       throw StateError('「${entry.name}」的 id 与内置拓展冲突（${entry.id}），装不了');
@@ -93,8 +104,10 @@ class MarketInstaller {
     if (have != null && have.sourceId != entry.sourceId) {
       final from = have.sourceId.isEmpty ? '官方目录' : have.sourceId;
       final to = entry.sourceId.isEmpty ? '官方目录' : entry.sourceId;
-      throw StateError('这条拓展（${entry.id}）已经由「$from」装着了，'
-          '不能换到「$to」上装——要先卸载它');
+      throw StateError(
+        '这条拓展（${entry.id}）已经由「$from」装着了，'
+        '不能换到「$to」上装——要先卸载它',
+      );
     }
 
     if (!entry.isBundle) {
@@ -133,7 +146,9 @@ class MarketInstaller {
       throw StateError('解压失败（${e.message}）');
     }
     if (bundle.manifest.id != entry.id) {
-      throw StateError('拓展包里的 id（${bundle.manifest.id}）与市场记录（${entry.id}）不一致，已放弃安装');
+      throw StateError(
+        '拓展包里的 id（${bundle.manifest.id}）与市场记录（${entry.id}）不一致，已放弃安装',
+      );
     }
 
     final ExtensionItem item;
@@ -172,6 +187,109 @@ class MarketInstaller {
     return item;
   }
 
+  /// 已装拓展的 id → 版本（算依赖是否满足用）。
+  Map<String, String> installedVersions() => {
+    for (final e in store.items)
+      if (!e.builtin) e.id: e.version,
+  };
+
+  /// 这个目录条目要装的东西（含依赖），按拓扑序排好。
+  ///
+  /// 应用插件会自动带上 `requires` 里声明的依赖插件（以及它们自己的依赖）；
+  /// 目录里找不到的依赖会出现在 [ExtInstallPlan.unresolved]（此时拒绝安装）。
+  ExtInstallPlan planFor(
+    MarketEntry entry, {
+    Map<String, MarketEntry>? catalog,
+  }) {
+    // 目录里的全部条目（调用方一般传「官方 + 第三方源」的合并列表）
+    final byId = <String, MarketEntry>{
+      for (final e in (catalog ?? const <String, MarketEntry>{}).values)
+        e.id: e,
+      entry.id: entry,
+    };
+    return planExtInstall(
+      target: parseExtNodes([entry]).single,
+      catalog: {
+        for (final e in byId.values) e.id: parseExtNodes([e]).single,
+      },
+      installed: installedVersions(),
+    );
+  }
+
+  /// 安装计划里的所有条目（按顺序逐个下载）：应用插件先装依赖，再装自己。
+  ///
+  /// 下载进度通过 [onStep] 报出去（树状下载界面按它上色）；单个失败不挡后面的，
+  /// 但缺了依赖的应用插件不会被装（见下面的 depends 检查）。
+  Future<ExtInstallReport> installPlan(
+    ExtInstallPlan plan, {
+    void Function(ExtTreeRow row)? onStep,
+  }) async {
+    final failed = <String>[];
+    final done = <String>[];
+    for (var i = 0; i < plan.order.length; i++) {
+      final node = plan.order[i];
+      final already =
+          installedVersions().containsKey(node.id) &&
+          !plan.conflicts.contains(node.id);
+      if (already) {
+        onStep?.call(
+          ExtTreeRow(
+            node: node,
+            depth: 0,
+            needed: false,
+            state: ExtTreeState.skipped,
+          ),
+        );
+        continue;
+      }
+      onStep?.call(
+        ExtTreeRow(
+          node: node,
+          depth: 0,
+          needed: true,
+          state: ExtTreeState.downloading,
+        ),
+      );
+      try {
+        await install(node.entry);
+        done.add(node.id);
+        onStep?.call(
+          ExtTreeRow(
+            node: node,
+            depth: 0,
+            needed: true,
+            state: ExtTreeState.done,
+          ),
+        );
+      } catch (err) {
+        failed.add('${node.name}：$err');
+        onStep?.call(
+          ExtTreeRow(
+            node: node,
+            depth: 0,
+            needed: true,
+            state: ExtTreeState.failed,
+            error: '$err',
+          ),
+        );
+      }
+    }
+    return ExtInstallReport(done: done, failures: failed);
+  }
+
   /// 卸载：清单条目、解压目录、它的数据一起清（与拓展页里的删除同一个动作）。
   Future<void> uninstall(String id) => store.remove(id);
+}
+
+/// 一次「装应用插件 + 它的依赖」的结果。
+class ExtInstallReport {
+  const ExtInstallReport({required this.done, required this.failures});
+
+  /// 装成功的 id。
+  final List<String> done;
+
+  /// 失败条目（每行一句给用户看的话）。
+  final List<String> failures;
+
+  bool get ok => failures.isEmpty;
 }

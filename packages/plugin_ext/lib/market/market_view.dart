@@ -6,6 +6,8 @@ import 'package:campus_core/campus_core.dart';
 
 import '../extension_item.dart';
 import '../ext_open.dart';
+import 'ext_dependency_plan.dart';
+import 'ext_dependency_sheet.dart';
 import 'market_entry.dart';
 import 'market_installer.dart';
 import 'market_source.dart';
@@ -140,6 +142,17 @@ class _MarketViewState extends State<MarketView> {
   Future<void> _install(MarketEntry e) async {
     final installer = MarketInstaller();
     final update = installer.hasUpdate(e);
+    // 依赖规划：应用插件要连带装好它声明的依赖插件（按拓扑顺序）
+    final plan = installer.planFor(e, catalog: {for (final x in _all) x.id: x});
+    final needsTree = plan.missing.length > 1 || plan.order.length > 1;
+    if (plan.unresolved.isNotEmpty) {
+      showErr(
+        context,
+        '「${e.name}」依赖的插件在市场里找不到：${plan.unresolved.join('、')}',
+        title: '装不了',
+      );
+      return;
+    }
     final ok = await showMarketInstallDialog(
       context,
       e,
@@ -147,8 +160,36 @@ class _MarketViewState extends State<MarketView> {
       installedVersion: installer.installed(e.id)?.version,
       thirdPartyLabel: '${_sources.byId(e.sourceId)?.label ?? e.sourceId}'
           '${e.author.isEmpty ? '' : '（${e.author}）'}',
+      dependencies: needsTree
+          ? [for (final n in plan.missing.where((n) => n.id != e.id)) n.name]
+          : const [],
     );
     if (ok != true) return;
+
+    // 有依赖时走树状下载界面：按拓扑序先装依赖、再装应用插件
+    if (needsTree && mounted) {
+      final rows = extTreeRows(plan, installed: installer.installedVersions());
+      var failures = <String>[];
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (ctx) => ExtDependencyDownloadSheet(
+          rows: rows,
+          run: (onStep) async {
+            final report = await installer.installPlan(plan, onStep: onStep);
+            failures = report.failures;
+          },
+        ),
+      );
+      if (!mounted) return;
+      if (failures.isEmpty) {
+        widget.onInstalled?.call('已安装「${e.name}」及 ${plan.missing.length - 1} 个依赖');
+      } else {
+        widget.onInstalled?.call('部分插件没装成功（${failures.length} 个）');
+      }
+      return;
+    }
 
     setState(() => _busy = true);
     try {

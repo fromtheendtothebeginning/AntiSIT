@@ -30,6 +30,9 @@ class MarketEntry {
     this.runtime = '',
     this.base = '',
     this.sourceId = '',
+    this.role = 'application',
+    this.requires = const [],
+    this.api = const [],
   });
 
   final String id;
@@ -68,6 +71,17 @@ class MarketEntry {
   /// 源 id（`''` = 官方目录）。用来判断「同一个 id 是不是换了个源在装」。
   final String sourceId;
 
+  /// `application`（应用插件：可以创建一或多个前端组件）或 `dependency`
+  /// （依赖插件：只暴露接口、不画界面）。老目录没有这个字段 = 应用插件。
+  final String role;
+
+  /// 依赖的插件 id 列表：装它之前要先装好（含它们自己的依赖）。
+  /// 元素可以是 `'id'` 字符串，也可以是 `{'id': …, 'version': '1.2.0'}`。
+  final List<Object?> requires;
+
+  /// 对外暴露的接口名：依赖插件用它给别的应用插件调用（应用插件也可暴露）。
+  final List<String> api;
+
   /// 官方目录（内置签名公钥那条）来的条目。
   bool get official => sourceId.isEmpty;
 
@@ -83,7 +97,11 @@ class MarketEntry {
       appVersion.isNotEmpty &&
       compareVersions(appVersion, minAppVersion) < 0;
 
-  static MarketEntry? tryParse(Object? raw, {String base = '', String sourceId = ''}) {
+  static MarketEntry? tryParse(
+    Object? raw, {
+    String base = '',
+    String sourceId = '',
+  }) {
     if (raw is! Map) return null;
     String str(String key) => '${raw[key] ?? ''}'.trim();
     final id = str('id');
@@ -117,12 +135,26 @@ class MarketEntry {
       runtime: str('runtime'),
       base: base,
       sourceId: sourceId,
+      role: str('role').isEmpty ? 'application' : str('role'),
+      requires: [
+        if (raw['requires'] is List)
+          for (final r in raw['requires'] as List)
+            if (r is String) r.trim()
+            else if (r is Map && '${r['id'] ?? ''}'.trim().isNotEmpty)
+              {'id': '${r['id']}'.trim(), 'version': '${r['version'] ?? ''}'.trim()},
+      ],
+      api: [
+        if (raw['api'] is List)
+          for (final a in raw['api'] as List)
+            if (a is String && a.trim().isNotEmpty) a.trim(),
+      ],
     );
   }
 
   /// 一条市场条目能不能用（bundle 必须有下载地址与哈希）。
-  bool get usable =>
-      isBundle ? (zip.isNotEmpty && sha256.isNotEmpty) : (url.startsWith('https://'));
+  bool get usable => isBundle
+      ? (zip.isNotEmpty && sha256.isNotEmpty)
+      : (url.startsWith('https://'));
 }
 
 /// 目录里的一条是否有「更新」：版本更高，或同版本但内容哈希变了（作者重发同一版）。
@@ -135,11 +167,17 @@ bool marketHasUpdate({
   final cmp = compareVersions(entry.version, installedVersion);
   if (cmp > 0) return true;
   if (cmp < 0) return false;
-  return entry.sha256.isNotEmpty && installedSha.isNotEmpty && entry.sha256 != installedSha;
+  return entry.sha256.isNotEmpty &&
+      installedSha.isNotEmpty &&
+      entry.sha256 != installedSha;
 }
 
 /// 解析整个目录：返回条目列表；坏条目跳过，坏的整份目录抛错。
-List<MarketEntry> parseCatalog(List<int> bytes, {String base = '', String sourceId = ''}) {
+List<MarketEntry> parseCatalog(
+  List<int> bytes, {
+  String base = '',
+  String sourceId = '',
+}) {
   final raw = jsonDecode(utf8.decode(bytes));
   if (raw is! Map) throw const FormatException('市场目录不是一个 JSON 对象');
   if (raw['schema'] != 1) throw FormatException('市场目录的版本不认识：${raw['schema']}');
@@ -164,7 +202,10 @@ String catalogPublicKeyOf(List<int> bytes) {
 /// **必须与市场仓库 `market_tool` 的 `keyFingerprint` 一致**（作者公布、用户核对的就是它）。
 String keyFingerprintOf(String publicKeyBase64) {
   try {
-    final hex = sha256.convert(base64Decode(publicKeyBase64)).toString().toUpperCase();
+    final hex = sha256
+        .convert(base64Decode(publicKeyBase64))
+        .toString()
+        .toUpperCase();
     if (hex.length < 12) return '(公钥无效)';
     return '${hex.substring(0, 4)}-${hex.substring(4, 8)}-${hex.substring(8, 12)}';
   } catch (_) {

@@ -185,6 +185,8 @@ dependencies:
   # 摄像头插件走（见 packages/plugin_camera）
   image_picker: ^1.2.2
   workmanager: 0.9.0+2
+  workmanager_platform_interface: 0.9.3
+  workmanager_apple: 0.9.3
 
 dev_dependencies:
   flutter_test:

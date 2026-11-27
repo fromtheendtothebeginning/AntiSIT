@@ -309,6 +309,7 @@ Future<bool?> showMarketInstallDialog(
   required bool update,
   required String? installedVersion,
   required String thirdPartyLabel,
+  List<String> dependencies = const [],
 }) {
   final perms = describeSensitivePermissions(e.permissions);
   return showDialog<bool>(
@@ -332,6 +333,15 @@ Future<bool?> showMarketInstallDialog(
             if (e.desc.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(e.desc, style: const TextStyle(fontSize: 12.5, height: 1.6)),
+            ],
+            if (dependencies.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('会一起安装的依赖插件',
+                  style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
+              const SizedBox(height: 4),
+              for (final name in dependencies)
+                Text('· $name',
+                    style: TextStyle(fontSize: 12, color: SemColors.textSecondary)),
             ],
             const SizedBox(height: 12),
             Text('它要用的接口', style: TextStyle(fontSize: 12, color: SemColors.textMuted)),
