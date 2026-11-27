@@ -20,8 +20,7 @@ class WebViewCapabilityImpl extends WebViewCapability {
   bool get available => _platformSupported;
 
   @override
-  Widget view({String? url, String? html}) =>
-      WebViewPage(url: url, html: html);
+  Widget view({String? url, String? html}) => WebViewPage(url: url, html: html);
 
   /// 可编程网页视图（[WebViewHost]）：要注入脚本、收网页消息的页面用；平台不支持时返回 null。
   @override
@@ -51,10 +50,17 @@ class WebViewCapabilityImpl extends WebViewCapability {
     String? html,
     String title = '',
     WebBridge? bridge,
+    String proxy = '',
   }) {
     return Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => WebViewPage(url: url, html: html, title: title, bridge: bridge),
+        builder: (_) => WebViewPage(
+          url: url,
+          html: html,
+          title: title,
+          bridge: bridge,
+          proxy: proxy,
+        ),
       ),
     );
   }

@@ -20,12 +20,16 @@ abstract class WebViewCapability extends PluginCapability {
   ///
   /// [bridge] 非空时注入 JS 通道；[html] 形态下点到 http(s) 外链会交给系统浏览器，
   /// 免得通道跟着跳到别人的页面上，[url] 形态则是普通浏览、不拦。
+  ///
+  /// [proxy] 非空时这一页的流量走它（http://host:port）：服务器模式下校内网页
+  /// （融合门户这类只有内网能到的站点）得经校园隧道容器出去，空 = 直连。
   Future<void> openPage(
     BuildContext context, {
     String? url,
     String? html,
     String title = '',
     WebBridge? bridge,
+    String proxy = '',
   });
 
   /// 建一个**可编程**的网页视图（见 [WebViewHost]），默认实现返回 null。
@@ -41,8 +45,7 @@ abstract class WebViewCapability extends PluginCapability {
     required void Function(WebViewHost host) onPageReady,
     Map<String, String> cookies = const {},
     String proxy = '',
-  }) =>
-      null;
+  }) => null;
 }
 
 /// 一个**可编程**的网页视图：界面长什么样、放在页面哪一块全由调用方决定。

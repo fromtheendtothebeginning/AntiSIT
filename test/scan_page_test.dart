@@ -718,7 +718,11 @@ class _FakeWebViewCapability extends WebViewCapability {
 
   @override
   Future<void> openPage(BuildContext context,
-      {String? url, String? html, String title = '', WebBridge? bridge}) async {
+      {String? url,
+      String? html,
+      String title = '',
+      WebBridge? bridge,
+      String proxy = ''}) async {
     onOpen(url);
   }
 }

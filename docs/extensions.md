@@ -582,6 +582,21 @@ const { cookieHeader } = await ctx.login.open({
 会提示「还是旧版网页格式，请等作者升级后再装」，不会再执行旧 html。
 `type: "web"` 的网址型条目不受影响，仍然只是打开一个网址。
 
+### 只有校内网能打开的网页（融合门户这类）
+
+手机上在外网是打不开 `portal.sit.edu.cn` 的（它解析到 172.24.x 的内网地址）。这种网址型
+条目在**服务器模式**下会被自动挂到账号的校园隧道代理上再加载，出口与「SIT大物实验提醒」
+同一个（`ApiClient.serverWebProxy()` → 容器里的 http 代理），直连模式则不挂代理。
+
+判定方式是两条任一命中：清单里的 `permissions` 声明了 `campus_net`，或该网址的域名解析到
+RFC1918 内网地址（10/8、172.16/12、192.168/16）。后者是为了让已经装着的旧条目也能生效
+（市场清单是装的时候固化的，作者改清单需要用户先升级条目）。
+
+隧道是按需建立的，所以打开前会先探测一次代理、探不到就顺手推一个轻量隧道请求，再按 2 秒一轮
+最多等 6 秒；一直拿不到就按直连打开，并提示「只有校内网能打开，请先到我的 → 校园服务连接校园网」
+（`lib/ext_open.dart`）。代理是进程级的，网页关掉时必须清掉——`WebViewPage.dispose` 会发
+`setProxy(null)`，否则其它 WebView 也会继续走校园隧道。
+
 投稿流程、目录格式与签名工具在独立仓库 `AntiSIT-market`；打包前用
 `dart run tool/market_tool.dart check` 自检（会拦下 `localStorage` / `document.cookie`
 与未声明 `network` 却引外链资源这类写法）。

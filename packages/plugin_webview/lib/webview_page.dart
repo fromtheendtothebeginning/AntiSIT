@@ -22,6 +22,7 @@ class WebViewPage extends StatefulWidget {
     this.html,
     this.title = '',
     this.bridge,
+    this.proxy = '',
   });
 
   /// 二选一：[url] 优先；都为空就是空白页。
@@ -31,6 +32,10 @@ class WebViewPage extends StatefulWidget {
 
   /// 非空时注入 JS 通道（见 [WebBridge]）。
   final WebBridge? bridge;
+
+  /// HTTP 代理（http://host:port）：服务器模式下打开只有校园内网能到的网页时用
+  /// （融合门户这类）。空 = 直连。代理是进程级的，离开本页必须清掉。
+  final String proxy;
 
   @override
   State<WebViewPage> createState() => _WebViewPageState();
@@ -48,6 +53,11 @@ class _WebViewPageState extends State<WebViewPage>
   static const MethodChannel _webFilesChannel = MethodChannel(
     'antisit/webview_files',
   );
+
+  /// 代理是进程级的（Android WebView ProxyController，见 `WebViewProxyBridge.kt`）：
+  /// 设过就必须在本页销毁时清掉，否则后面所有 WebView 都还在走校园隧道。
+  static const MethodChannel _proxyChannel = MethodChannel('antisit/webview');
+  bool _proxyApplied = false;
   bool _downloadListenerInstalled = false;
 
   /// 主框架当前地址（跨站导航后桥接能力要关掉，见 [bridgeAllowedOnPage]）。
@@ -62,10 +72,10 @@ class _WebViewPageState extends State<WebViewPage>
       widget.html != null && (widget.url == null || widget.url!.trim().isEmpty);
 
   bool get _canUseBridge => bridgeAllowedOnPage(
-        currentUrl: _currentUrl ?? widget.url,
-        initialUrl: widget.url ?? '',
-        fromInlineHtml: _inline,
-      );
+    currentUrl: _currentUrl ?? widget.url,
+    initialUrl: widget.url ?? '',
+    fromInlineHtml: _inline,
+  );
 
   @override
   void initState() {
@@ -105,7 +115,30 @@ class _WebViewPageState extends State<WebViewPage>
       (_) => _installDownloadListener(),
     );
     SemColors.palette.addListener(_onPaletteChanged);
-    _load();
+    unawaited(_boot());
+  }
+
+  /// 首次加载：代理必须在第一个请求之前设好——ProxyController 是进程级的，
+  /// 设晚了首个请求已经直连出去，只有内网能到的站点就直接报加载失败。
+  Future<void> _boot() async {
+    await _applyProxy();
+    if (mounted) await _load();
+  }
+
+  Future<void> _applyProxy() async {
+    if (widget.proxy.isEmpty) return;
+    try {
+      final ok = await _proxyChannel.invokeMethod<bool>('setProxy', {
+        'url': widget.proxy,
+      });
+      _proxyApplied = ok == true;
+      if (!_proxyApplied) {
+        debugPrint('[WebViewPage] 当前内核不支持网页代理，按直连处理');
+      }
+    } catch (e) {
+      // iOS / 桌面端没有这条通道：保持直连，页面自己会给出加载失败。
+      debugPrint('[WebViewPage] 设置代理失败：$e');
+    }
   }
 
   /// 主题 / 夜间模式切换：WebView 自身的底色也跟着换，页面切换时不会闪白。
@@ -125,6 +158,14 @@ class _WebViewPageState extends State<WebViewPage>
     SemColors.palette.removeListener(_onPaletteChanged);
     widget.bridge?.attachEventSink(null);
     widget.bridge?.attachBackGuard(null);
+    // 代理是进程级的：不恢复的话，离开本页后其它 WebView 也会继续走校园隧道。
+    if (_proxyApplied) {
+      unawaited(() async {
+        try {
+          await _proxyChannel.invokeMethod('setProxy', {'url': null});
+        } catch (_) {}
+      }());
+    }
     super.dispose();
   }
 
@@ -357,29 +398,29 @@ class _WebViewPageState extends State<WebViewPage>
             body: GlassFadedBody(
               barHeight: topInset,
               child: Padding(
-              padding: EdgeInsets.only(top: topInset),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (_error != null)
-                    Material(
-                      color: SemColors.dangerSoft,
-                      child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Text(
-                          _error!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: SemColors.danger,
-                            height: 1.5,
+                padding: EdgeInsets.only(top: topInset),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_error != null)
+                      Material(
+                        color: SemColors.dangerSoft,
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: SemColors.danger,
+                              height: 1.5,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  Expanded(child: WebViewWidget(controller: _controller)),
-                ],
+                    Expanded(child: WebViewWidget(controller: _controller)),
+                  ],
+                ),
               ),
-            ),
             ),
           );
         },
