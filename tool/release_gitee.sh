@@ -100,26 +100,34 @@ except Exception:
     d = None
 print(d.get("id", "") if isinstance(d, dict) else "")' "$REL_JSON"
 }
-REL_ID=$(rel_id)
-if [ -z "$REL_ID" ]; then
-  PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-  NOTES_FILE="$TMP_DIR/notes.txt"
-  {
-    echo "## AntiSIT $VERSION"
+NOTES_FILE="$TMP_DIR/notes.txt"
+{
+  echo "## AntiSIT $VERSION"
+  echo
+  if [ "$CHANNEL" = "dev" ]; then
+    echo "**内测版**：会收到正在开发中的改动，可能不稳定；App 的「内测版」渠道只跟带预发布段的版本。"
     echo
-    if [ "$CHANNEL" = "dev" ]; then
-      echo "**内测版**：会收到正在开发中的改动，可能不稳定；App 的「内测版」渠道只跟带预发布段的版本。"
-      echo
-    fi
-    echo "APK 直装（Android 7.0+）：下载 \`$OUT_NAME\` 安装，首次需允许「未知来源」。"
-    echo
-    echo "### 本次更新"
+  fi
+  echo "APK 直装（Android 7.0+）：下载 \`$OUT_NAME\` 安装，首次需允许「未知来源」。"
+  echo
+  echo "- 同一把发布密钥签名的版本可直接覆盖安装；覆盖安装会保留数据（登录态、课表）"
+  echo "- 从本机 \`flutter run\` / debug 构建换过来，或此前装的是其它签名的包，需先卸载"
+  echo "- 校验下载：\`sha256sum -c $OUT_NAME.sha256\`"
+  echo
+  echo "### 本次更新"
+  # 优先用 App 更新日志里这一版的条目（写给用户看的人话）；取不到才退回 git log。
+  if ! PYTHONIOENCODING=utf-8 bash tool/release_notes.sh "$VERSION" 2>/dev/null; then
+    PREV=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null || true)
     if [ -n "$PREV" ]; then
       git log --no-merges --pretty='- %s' "$PREV..HEAD"
     else
       git log --no-merges --pretty='- %s' -n 10
     fi
-  } > "$NOTES_FILE"
+  fi
+} > "$NOTES_FILE"
+
+REL_ID=$(rel_id)
+if [ -z "$REL_ID" ]; then
   # Gitee 建 Release 只认表单（JSON 会返回 null）；body 用文件交给 curl 编码，
   # 避免 Git Bash 的 GBK 终端把中文写成乱码。
   curl -fsS -X POST "$API/repos/$REPO/releases" \
@@ -131,6 +139,18 @@ if [ -z "$REL_ID" ]; then
     --data-urlencode "body@$NOTES_FILE" \
     -o "$REL_JSON"
   REL_ID=$(rel_id)
+else
+  # Release 已存在（重跑发版 / 补传附件）：正文也要按最新一套重写，
+  # 否则改了说明只会留在本机，线上还是上次那份。
+  # Gitee 的 PATCH 也强制要求 tag_name（只改正文也会被回 400「tag_name is missing」），
+  # 所以原样再带一次 tag 与预发布标记。
+  curl -fsS -X PATCH "$API/repos/$REPO/releases/$REL_ID" \
+    --data-urlencode "access_token=$TOKEN" \
+    --data-urlencode "tag_name=$TAG" \
+    --data-urlencode "name=AntiSIT $VERSION" \
+    --data-urlencode "prerelease=$([ "$CHANNEL" = dev ] && echo true || echo false)" \
+    --data-urlencode "body@$NOTES_FILE" \
+    -o /dev/null || echo "  警告：更新 Release 说明失败（不影响附件）" >&2
 fi
 [ -n "$REL_ID" ] || { echo "创建 Gitee Release 失败：" >&2; head -c 500 "$REL_JSON" >&2; echo >&2; exit 1; }
 
