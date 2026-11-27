@@ -6,6 +6,7 @@ import 'package:campus_core/campus_core.dart';
 import 'activities_cards.dart';
 import 'activities_detail_page.dart';
 import 'activities_state.dart';
+import 'activity_watch_settings_page.dart';
 
 /// 二课活动页：活动广场与我的报名两页，可左右滑动切换。
 class ActivitiesPage extends StatefulWidget {
@@ -284,7 +285,8 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
   Widget build(BuildContext context) {
     final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
     return ListenableBuilder(
-      listenable: AppState.I,
+      // 铃铛的开启状态跟着提醒服务走：在设置页里开关之后返回，图标要立刻变
+      listenable: Listenable.merge([AppState.I, ActivityWatchService.I]),
       builder: (context, _) {
         final topInset = glassTopInset(context);
         final pages = <Widget>[_marketView(topInset), _signedView(topInset)];
@@ -294,6 +296,21 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
             context,
             title: const Text('第二课堂活动'),
             actions: [
+              // 新活动提醒：开着就给实心铃铛，关着给描边铃铛（一眼看出当前状态）
+              IconButton(
+                tooltip: ActivityWatchService.I.enabled
+                    ? '新活动提醒（已开启）'
+                    : '新活动提醒',
+                onPressed: () => _openWatchSettings(context),
+                icon: Icon(
+                  ActivityWatchService.I.enabled
+                      ? Icons.notifications_active
+                      : Icons.notifications_none_outlined,
+                  color: ActivityWatchService.I.enabled
+                      ? SemColors.accent
+                      : null,
+                ),
+              ),
               // 扫一扫：扫一扫插件在就显示（按能力取用，不 import 它的包）
               if (scan != null)
                 IconButton(
@@ -352,6 +369,13 @@ class _ActivitiesPageState extends State<ActivitiesPage> {
           ),
         );
       },
+    );
+  }
+
+  /// 跳到「二课新活动提醒」设置页（顶栏铃铛用）。
+  void _openWatchSettings(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ActivityWatchSettingsPage()),
     );
   }
 
