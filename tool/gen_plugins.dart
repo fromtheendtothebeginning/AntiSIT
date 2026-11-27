@@ -1,7 +1,9 @@
 // 插件清单 + 依赖关系生成器：扫 pubspec 的 plugin_* 依赖产出 manifest.g.dart、扫源码写回 docs/plugins.md 的依赖表、校验依赖引用（不存在的 id / 自依赖 / 硬依赖成环）。
+import 'dart:convert';
 import 'dart:io';
 
 const _manifestPath = 'lib/plugins/manifest.g.dart';
+const _foldersPath = 'assets/plugin_folders.json';
 const _docPath = 'docs/plugins.md';
 const _coreIdsPath = 'packages/campus_core/lib/plugins/plugin.dart';
 const _coreBundlesPath = 'lib/plugins/core_bundles.dart';
@@ -50,6 +52,8 @@ void main() {
   changed |= _writeIfChanged(File(_manifestPath), _render(plugins));
   changed |= _writeIfChanged(File(_docPath), _renderDoc(File(_docPath).readAsStringSync(), metas));
 
+  // 插件文件夹清单：每个 \`packages/plugin_*\` 文件夹 + 里面的部件，供运行期文档 / 目录树使用。
+  changed |= _writeIfChanged(File(_foldersPath), _renderFolders(plugins, metas));
   stdout.writeln('${plugins.length} 个插件包${changed ? '：已更新生成物' : '：生成物无变化'}');
   _printEdges(metas);
   for (final w in _warnings(metas)) {
@@ -61,6 +65,7 @@ class _Plugin {
   const _Plugin(this.name, this.flag);
 
   final String name;
+  /// 编译期剔除开关名（EXCLUDE_<flag>）。
   final String flag;
 }
 
@@ -368,6 +373,50 @@ List<List<String>> _hardCycles(List<_PluginMeta> metas) {
     visit(root.id);
   }
   return out;
+}
+
+/// 插件文件夹清单（`assets/plugin_folders.json`）：宿主运行期读它来展示
+/// 「一个插件 = 一个文件夹」的目录结构与部件划分（`packages/<文件夹>/{lib,pages,components}`）。
+String _renderFolders(List<_Plugin> plugins, List<_PluginMeta> metas) {
+  final byPkg = <String, List<_PluginMeta>>{};
+  for (final m in metas) {
+    if (m.pkg.startsWith('（')) continue;
+    byPkg.putIfAbsent(m.pkg.replaceAll('`', '').trim(), () => []).add(m);
+  }
+  final folders = <Map<String, Object?>>[];
+  for (final p in plugins) {
+    final parts = byPkg[p.name] ?? const <_PluginMeta>[];
+    if (parts.isEmpty) continue;
+    folders.add({
+      'package': p.name,
+      'parts': [
+        for (final m in parts)
+          {
+            'id': m.id,
+            'kind': switch (m.kind) {
+              _Kind.theme => 'theme',
+              _Kind.provider => 'provider',
+              _Kind.feature => 'feature',
+            },
+          },
+      ],
+      'dependencies': [
+        for (final m in parts)
+          for (final d in m.hard)
+            if (!parts.any((x) => x.id == d)) d,
+      ],
+      'optionalDependencies': [
+        for (final m in parts)
+          for (final d in m.soft)
+            if (!parts.any((x) => x.id == d)) d,
+      ],
+    });
+  }
+  return const JsonEncoder.withIndent('  ').convert({
+    'schema': 1,
+    'generatedBy': 'tool/gen_plugins.dart',
+    'folders': folders,
+  });
 }
 
 /// 内容没变化就不重写，避免无意义的 diff。

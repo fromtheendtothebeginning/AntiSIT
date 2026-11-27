@@ -80,7 +80,7 @@ Widget Function() hostShellBuilder = () => const SizedBox.shrink();
 | `plugin_course_select` | `course_select` | `network`、`tools` | — | — | ✓ | 工具卡片 |
 | `plugin_timetable` | `timetable` | `network` | `ai`、`reminder` | `ai`、`reminder` | ✓ | 底栏页 + 设置条目 |
 | `plugin_webview` | `webview` | — | — | — | ✓ | 无界面 |
-| `plugin_ext` | `ext` | `webview` | `ai`、`scan` | `ai`、`scan`、`webview` | ✓ | 底栏页 |
+| `plugin_ext` | `ext` | `webview` | `ai`、`scan` | `ai`、`scan`、`webview` | ✓ | 底栏页 + 启动初始化 |
 | `plugin_camera` | `camera` | — | — | — | ✓ | 无界面 |
 | `plugin_scan` | `scan` | `camera` | `webview`、`activities` | `activities`、`camera`、`webview` | ✓ | 无界面 |
 | `plugin_evaluate` | `evaluate` | — | — | — | ✓ | 工具卡片 |

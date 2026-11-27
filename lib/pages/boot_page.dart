@@ -58,6 +58,9 @@ class _BootPageState extends State<BootPage> {
     await step('正在读取设置…', () => AppState.I.load());
     // 插件清单：读启停状态与当前主题，此后底栏、工具宫格、设置项都按启用集合组装
     await step('正在加载插件…', () => PluginRegistry.I.load());
+    // 插件文件夹清单（生成物）：文档 / 目录树按它展示「一个插件 = 一个文件夹」
+    await step('正在读取插件目录…', () => PluginFolderCatalog.I.load());
+
     // 课表要在插件初始化前读出来：流体云 / 上课提醒 / 桌面卡片都靠它在启动时排期
     await step('正在读取课表…', () => TimetableStore.instance.load());
     await step('正在初始化功能…', () => PluginRegistry.I.initAll());

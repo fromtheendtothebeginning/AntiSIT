@@ -1,0 +1,468 @@
+{
+  "schema": 1,
+  "generatedBy": "tool/gen_plugins.dart",
+  "folders": [
+    {
+      "package": "plugin_feedback",
+      "parts": [
+        {
+          "id": "feedback",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_electricity",
+      "parts": [
+        {
+          "id": "electricity",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network",
+        "tools"
+      ],
+      "optionalDependencies": [
+        "risk"
+      ]
+    },
+    {
+      "package": "plugin_activities",
+      "parts": [
+        {
+          "id": "activities",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network",
+        "tools"
+      ],
+      "optionalDependencies": [
+        "scan"
+      ]
+    },
+    {
+      "package": "plugin_score",
+      "parts": [
+        {
+          "id": "score",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network",
+        "tools"
+      ],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_exams",
+      "parts": [
+        {
+          "id": "exams",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network",
+        "tools"
+      ],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_grades",
+      "parts": [
+        {
+          "id": "grades",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network",
+        "tools"
+      ],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_academic",
+      "parts": [
+        {
+          "id": "academic",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network",
+        "tools"
+      ],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_course_select",
+      "parts": [
+        {
+          "id": "course_select",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network",
+        "tools"
+      ],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_timetable",
+      "parts": [
+        {
+          "id": "timetable",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network"
+      ],
+      "optionalDependencies": [
+        "ai",
+        "reminder"
+      ]
+    },
+    {
+      "package": "plugin_webview",
+      "parts": [
+        {
+          "id": "webview",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ext",
+      "parts": [
+        {
+          "id": "ext",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "webview"
+      ],
+      "optionalDependencies": [
+        "ai",
+        "scan"
+      ]
+    },
+    {
+      "package": "plugin_camera",
+      "parts": [
+        {
+          "id": "camera",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_scan",
+      "parts": [
+        {
+          "id": "scan",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "camera"
+      ],
+      "optionalDependencies": [
+        "webview",
+        "activities"
+      ]
+    },
+    {
+      "package": "plugin_evaluate",
+      "parts": [
+        {
+          "id": "evaluate",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ecard",
+      "parts": [
+        {
+          "id": "ecard",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "network"
+      ],
+      "optionalDependencies": [
+        "risk",
+        "home_widget"
+      ]
+    },
+    {
+      "package": "plugin_tools",
+      "parts": [
+        {
+          "id": "tools",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_backup",
+      "parts": [
+        {
+          "id": "backup",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai",
+      "parts": [
+        {
+          "id": "ai",
+          "kind": "feature"
+        },
+        {
+          "id": "custom",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [
+        "network"
+      ],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_appearance",
+      "parts": [
+        {
+          "id": "appearance",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_risk",
+      "parts": [
+        {
+          "id": "risk",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_deepseek",
+      "parts": [
+        {
+          "id": "deepseek",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_opencode_go",
+      "parts": [
+        {
+          "id": "opencode-go",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_kimi",
+      "parts": [
+        {
+          "id": "kimi",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_glm",
+      "parts": [
+        {
+          "id": "glm",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_qwen",
+      "parts": [
+        {
+          "id": "qwen",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_gpt",
+      "parts": [
+        {
+          "id": "gpt",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_gemini",
+      "parts": [
+        {
+          "id": "gemini",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_mimo",
+      "parts": [
+        {
+          "id": "mimo",
+          "kind": "provider"
+        },
+        {
+          "id": "mimotokenplan",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_ai_minimax",
+      "parts": [
+        {
+          "id": "minimax",
+          "kind": "provider"
+        },
+        {
+          "id": "minimaxtokenplan",
+          "kind": "provider"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_reminder",
+      "parts": [
+        {
+          "id": "reminder",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "timetable"
+      ],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_fluid_cloud",
+      "parts": [
+        {
+          "id": "fluid_cloud",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_course_cloud",
+      "parts": [
+        {
+          "id": "course_cloud",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [
+        "timetable",
+        "fluid_cloud"
+      ],
+      "optionalDependencies": [
+        "reminder"
+      ]
+    },
+    {
+      "package": "plugin_home_widget",
+      "parts": [
+        {
+          "id": "home_widget",
+          "kind": "feature"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_theme_glass",
+      "parts": [
+        {
+          "id": "theme.glass",
+          "kind": "theme"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_theme_ink",
+      "parts": [
+        {
+          "id": "theme.ink",
+          "kind": "theme"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    },
+    {
+      "package": "plugin_theme_bamboo",
+      "parts": [
+        {
+          "id": "theme.bamboo",
+          "kind": "theme"
+        }
+      ],
+      "dependencies": [],
+      "optionalDependencies": []
+    }
+  ]
+}

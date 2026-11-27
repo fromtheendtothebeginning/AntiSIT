@@ -49,6 +49,7 @@ export 'plugins/course_cloud_capability.dart';
 export 'plugins/fluid_cloud_capability.dart';
 export 'plugins/home_widget_capability.dart';
 export 'plugins/plugin.dart';
+export 'plugins/plugin_folder.dart';
 export 'plugins/json_theme.dart';
 export 'plugins/registry.dart';
 export 'plugins/reminder_capability.dart';

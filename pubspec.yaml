@@ -219,6 +219,8 @@ flutter:
 
   assets:
     - assets/sit-mark.png
+    # 插件文件夹清单（tool/gen_plugins.dart 生成）：运行期只读，「一个插件 = 一个文件夹」
+    - assets/plugin_folders.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:
