@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -97,7 +96,3 @@ void main() {
     });
   });
 }
-
-/// 测试里直接读根目录的生成物（rootBundle 在 flutter_test 里也能读到 assets）。
-Future<String> _readGenerated() =>
-    File('assets/plugin_folders.json').readAsString();

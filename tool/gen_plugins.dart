@@ -65,7 +65,7 @@ class _Plugin {
   const _Plugin(this.name, this.flag);
 
   final String name;
-  /// 编译期剔除开关名（EXCLUDE_<flag>）。
+  /// 编译期剔除开关名（EXCLUDE_[flag]）。
   final String flag;
 }
 
@@ -375,8 +375,8 @@ List<List<String>> _hardCycles(List<_PluginMeta> metas) {
   return out;
 }
 
-/// 插件文件夹清单（`assets/plugin_folders.json`）：宿主运行期读它来展示
-/// 「一个插件 = 一个文件夹」的目录结构与部件划分（`packages/<文件夹>/{lib,pages,components}`）。
+/// 插件文件夹清单（assets/plugin_folders.json）：宿主运行期读它来展示
+/// 「一个插件 = 一个文件夹」的目录结构与部件划分（packages/[文件夹]/{lib,pages,components}）。
 String _renderFolders(List<_Plugin> plugins, List<_PluginMeta> metas) {
   final byPkg = <String, List<_PluginMeta>>{};
   for (final m in metas) {
