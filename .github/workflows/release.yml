@@ -138,6 +138,25 @@ jobs:
           done
           echo "连续 3 次构建失败，请看上面的 Gradle 日志定位原因" >&2
           exit 1
+      - name: 失败时把构建日志推到 ci-logs 分支
+        # 开发者本机常常连不上 github.com，读不到 Actions 日志（API 也要鉴权）。
+        # 失败时把日志提交到独立分支，之后用 contents API 匿名就能取：
+        #   https://api.github.com/repos/<repo>/contents/gradle-ci.log?ref=ci-logs
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          RADDR="https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}"
+          mkdir -p /tmp/ci-log && cd /tmp/ci-log
+          cp "$GITHUB_WORKSPACE/build/gradle-ci.log" . 2>/dev/null || echo "没有抓到构建日志" > gradle-ci.log
+          # 只留尾部 4000 行，分支体积别随发版次数膨胀
+          tail -4000 gradle-ci.log > tmp.log && mv tmp.log gradle-ci.log
+          git init -q && git checkout -q -b ci-logs
+          git add -A
+          git -c user.name=ci -c user.email=ci@antisit.local commit -qm "构建失败日志（tag $GITHUB_REF_NAME）"
+          git push -f "$RADDR" ci-logs
+          echo "日志分支已更新：ci-logs"
 
       - name: 校验签名指纹
         env:
