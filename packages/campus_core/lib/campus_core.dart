@@ -11,6 +11,7 @@
 /// 需要「往上跳」的地方（如登录成功回主壳）由宿主注入回调，见 [hostShellBuilder]。
 library;
 
+export 'activity_watch.dart';
 export 'api_client.dart';
 export 'api_error.dart';
 export 'app_launch.dart';

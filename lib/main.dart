@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:campus_core/campus_core.dart';
+import 'background_tasks.dart';
 import 'page_transitions.dart';
 import 'pages/boot_page.dart';
 import 'pages/home_page.dart';
@@ -46,21 +47,25 @@ void main() {
   hostPluginManagerBuilder = () => const PluginManagerPage();
   // 直连模式的学校系统验证码输入弹窗（服务器模式用不到）
   installDirectCaptchaPrompt();
+  // 后台定时任务（二课新活动提醒）：注册在 Android WorkManager 上，每小时醒一次。
+  // 不 await：注册要走平台通道，别挡着首帧。
+  unawaited(startBackgroundTasks());
   runApp(const CampusApp());
 }
 
 /// 由当前主题插件的色板构建全站 ThemeData。
 ThemeData buildAppTheme(GlassPalette c) {
-  final scheme = ColorScheme.fromSeed(
-    seedColor: c.accent,
-    brightness: c.isDark ? Brightness.dark : Brightness.light,
-  ).copyWith(
-    primary: c.accent,
-    secondary: c.gold,
-    error: c.danger,
-    surface: c.isDark ? const Color(0xFF16233A) : Colors.white,
-    onSurface: c.textPrimary,
-  );
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: c.accent,
+        brightness: c.isDark ? Brightness.dark : Brightness.light,
+      ).copyWith(
+        primary: c.accent,
+        secondary: c.gold,
+        error: c.danger,
+        surface: c.isDark ? const Color(0xFF16233A) : Colors.white,
+        onSurface: c.textPrimary,
+      );
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
@@ -80,7 +85,8 @@ ThemeData buildAppTheme(GlassPalette c) {
         color: c.textPrimary,
       ),
       systemOverlayStyle: SystemUiOverlayStyle(
-          statusBarIconBrightness: c.isDark ? Brightness.light : Brightness.dark),
+        statusBarIconBrightness: c.isDark ? Brightness.light : Brightness.dark,
+      ),
     ),
     iconTheme: IconThemeData(color: c.textPrimary),
     cardTheme: CardThemeData(
@@ -103,14 +109,23 @@ ThemeData buildAppTheme(GlassPalette c) {
       backgroundColor: c.menuBg,
       barrierColor: c.overlay,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      titleTextStyle: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: c.textPrimary),
-      contentTextStyle: TextStyle(fontSize: 14, height: 1.6, color: c.textSecondary),
+      titleTextStyle: TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w600,
+        color: c.textPrimary,
+      ),
+      contentTextStyle: TextStyle(
+        fontSize: 14,
+        height: 1.6,
+        color: c.textSecondary,
+      ),
     ),
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: c.menuBg,
       modalBarrierColor: c.overlay,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
     ),
     popupMenuTheme: PopupMenuThemeData(
       color: c.menuBg,
@@ -124,13 +139,15 @@ ThemeData buildAppTheme(GlassPalette c) {
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: c.accent),
     // 玻璃页全透明，M3 缩放过渡的旧页慢淡出会与新页半透明叠加产生跳变
-    pageTransitionsTheme: const PageTransitionsTheme(builders: {
-      TargetPlatform.android: PredictiveOrFadeThroughBuilder(),
-      TargetPlatform.iOS: SlidePageTransitionsBuilder(),
-      TargetPlatform.windows: SlidePageTransitionsBuilder(),
-      TargetPlatform.macOS: SlidePageTransitionsBuilder(),
-      TargetPlatform.linux: SlidePageTransitionsBuilder(),
-    }),
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: PredictiveOrFadeThroughBuilder(),
+        TargetPlatform.iOS: SlidePageTransitionsBuilder(),
+        TargetPlatform.windows: SlidePageTransitionsBuilder(),
+        TargetPlatform.macOS: SlidePageTransitionsBuilder(),
+        TargetPlatform.linux: SlidePageTransitionsBuilder(),
+      },
+    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: c.accent,
@@ -146,7 +163,9 @@ ThemeData buildAppTheme(GlassPalette c) {
         side: BorderSide(color: c.borderStrong),
       ),
     ),
-    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: c.accent)),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: c.accent),
+    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: c.inputFill,
@@ -200,9 +219,11 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
       listenable: Listenable.merge([AppState.I, PluginRegistry.I]),
       builder: (context, _) {
         final mode = AppState.I.themeMode;
-        final systemDark = WidgetsBinding
-            .instance.platformDispatcher.platformBrightness == Brightness.dark;
-        final dark = mode == ThemeMode.dark || (mode == ThemeMode.system && systemDark);
+        final systemDark =
+            WidgetsBinding.instance.platformDispatcher.platformBrightness ==
+            Brightness.dark;
+        final dark =
+            mode == ThemeMode.dark || (mode == ThemeMode.system && systemDark);
         final theme = PluginRegistry.I.theme;
         final brightness = dark ? Brightness.dark : Brightness.light;
         // 拖动「外观」滑块时，整站配色在浅色板与深色板之间插值（松手落到所选那档）
@@ -210,14 +231,21 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
         final palette = preview == null
             ? theme.palette(brightness)
             : GlassPalette.lerp(
-                theme.palette(Brightness.light), theme.palette(Brightness.dark), preview);
+                theme.palette(Brightness.light),
+                theme.palette(Brightness.dark),
+                preview,
+              );
         SemColors.p = palette; // 全站 SemColors 引用随主题取值
         return MaterialApp(
           title: 'AntiSIT',
           navigatorKey: navKey,
           // 预览中：Material 那套（对话框 / 开关 / 水波纹）也跟着用混合色板
-          theme: buildAppTheme(preview == null ? theme.palette(Brightness.light) : palette),
-          darkTheme: buildAppTheme(preview == null ? theme.palette(Brightness.dark) : palette),
+          theme: buildAppTheme(
+            preview == null ? theme.palette(Brightness.light) : palette,
+          ),
+          darkTheme: buildAppTheme(
+            preview == null ? theme.palette(Brightness.dark) : palette,
+          ),
           themeMode: preview == null ? mode : ThemeMode.light,
           locale: appLocale,
           supportedLocales: appSupportedLocales,
@@ -227,8 +255,13 @@ class _CampusAppState extends State<CampusApp> with WidgetsBindingObserver {
           navigatorObservers: [TopRouteKindObserver()],
           // 全局场景底：Scaffold 全透明，光斑（由主题插件给）透出玻璃「折射」感
           builder: (context, child) => GlassBackground(
-              wells: theme.wells(preview == null ? brightness : (preview >= 0.5 ? Brightness.dark : Brightness.light)),
-              child: child!),
+            wells: theme.wells(
+              preview == null
+                  ? brightness
+                  : (preview >= 0.5 ? Brightness.dark : Brightness.light),
+            ),
+            child: child!,
+          ),
           home: const BootPage(),
         );
       },

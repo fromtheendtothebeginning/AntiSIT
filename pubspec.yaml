@@ -184,6 +184,7 @@ dependencies:
   # 相册取图仍被课表设置页用（ImagePicker），保留；扫码用的 mobile_scanner 已随
   # 摄像头插件走（见 packages/plugin_camera）
   image_picker: ^1.2.2
+  workmanager: 0.9.0+2
 
 dev_dependencies:
   flutter_test:
