@@ -19,6 +19,15 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.4',
+    date: '2026-11-27',
+    notes: [
+      '修：拓展页「添加拓展」卡被最后一行卡片压住（宫格长高动画期间卡片画到框外，盖掉了虚线框上半截）',
+      '修：融合门户这类校内网页在服务器模式下打不开——现在打开前自动挂到校园隧道代理上，直连模式不挂',
+      '修：检查更新偶尔还从 GitHub 下载——并发取版本列表时按源顺序合并，不再看谁先返回',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.3',
     date: '2026-11-27',
     notes: [
