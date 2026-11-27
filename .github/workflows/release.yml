@@ -35,9 +35,12 @@ jobs:
       - name: 补齐 Android SDK 组件
         # GitHub 的 ubuntu 镜像自带 Android SDK（ANDROID_SDK_ROOT 已设，platform 36 与
         # build-tools 36.x 预装），这里只保证版本齐全，不额外装 SDK 管理器。
+        #
+        # android-35 也要装：workmanager_android 0.9.2 的 build.gradle 把 compileSdk
+        # 写死成 35，只给 36 时 Gradle 会去找 35（找不到是构建失败，v1.48.0 首发就挂在这）。
         run: |
           SDKM=$(command -v sdkmanager || echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager")
-          "$SDKM" --install "platforms;android-36" "build-tools;36.1.0"
+          "$SDKM" --install "platforms;android-36" "platforms;android-35" "build-tools;36.1.0"
 
       - name: 校验 tag 与 pubspec 版本号一致
         # 稳定版 tag = v<version>；内测版 tag = dev-<version>（version 自带 -dev.N 预发布段）。
