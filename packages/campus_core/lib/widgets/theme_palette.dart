@@ -58,7 +58,8 @@ class GlassPalette {
   final Color danger;
   final Color dangerSoft;
 
-  static const light = GlassPalette(    isDark: false,
+  static const light = GlassPalette(
+    isDark: false,
     bg: Color(0xFFE3E9F2),
     card: Color(0x8CFFFFFF), // 白 55%
     cardElevated: Color(0x66FFFFFF), // 白 40%
@@ -267,6 +268,10 @@ class GlassScene {
 }
 
 /// 只画场景底的一半（底色 + 光斑），给 [GlassBackground] 和「转场垫底」共用。
+///
+/// 一帧一张图：底色 + 光斑全部用 [CustomPaint] 画，而不是叠若干 DecoratedBox。
+/// 转场垫底会同时存在好几份（每层路由一份），光斑又是每帧都要重画的大面积径向
+/// 渐变——合成起来的图层越多，转场越容易掉帧（issue #20）。
 class GlassScenePaint extends StatelessWidget {
   const GlassScenePaint({super.key, this.wells});
 
@@ -276,25 +281,48 @@ class GlassScenePaint extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = SemColors.isDark;
     final spots = wells ?? (dark ? kGlassWellsDark : kGlassWellsLight);
-    return Stack(
-      children: [
-        Positioned.fill(child: ColoredBox(color: SemColors.bg)),
-        for (final w in spots)
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: w.center,
-                  radius: w.radius,
-                  colors: [w.color, w.color.withValues(alpha: 0)],
-                  stops: const [0, 0.62],
-                ),
-              ),
-            ),
-          ),
-      ],
+    return CustomPaint(
+      painter: _ScenePainter(bg: SemColors.bg, spots: spots),
+      // 放进 Stack / Positioned.fill 时由外层决定尺寸。
+      size: Size.infinite,
     );
   }
+}
+
+/// 场景底绘制：先铺底色，再按 GlassWell 的圆心 / 半径画径向渐变。
+class _ScenePainter extends CustomPainter {
+  const _ScenePainter({required this.bg, required this.spots});
+
+  final Color bg;
+  final List<GlassWell> spots;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    canvas.drawRect(Offset.zero & size, Paint()..color = bg);
+    for (final w in spots) {
+      // 圆心是 [-1, 1] 归一化坐标，半径是相对短边的倍数（与 RadialGradient 同口径）。
+      final center = Offset(
+        (w.center.x + 1) / 2 * size.width,
+        (w.center.y + 1) / 2 * size.height,
+      );
+      final radius = w.radius * size.shortestSide;
+      if (radius <= 0) continue;
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [w.color, w.color.withValues(alpha: 0)],
+            stops: const [0, 0.62],
+          ).createShader(Rect.fromCircle(center: center, radius: radius)),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ScenePainter old) =>
+      old.bg != bg || !identical(old.spots, spots);
 }
 
 /// 全局场景底：底色 + 若干柔和光源光斑；不传 [wells] 就用液态玻璃的默认光井。
@@ -312,7 +340,9 @@ class GlassBackground extends StatelessWidget {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
-        systemNavigationBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+        systemNavigationBarIconBrightness: dark
+            ? Brightness.light
+            : Brightness.dark,
       ),
       child: Stack(
         children: [

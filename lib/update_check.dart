@@ -23,7 +23,9 @@ final List<Uri> latestReleaseApis = [
 /// 渠道检查要的是 Release **列表**：稳定版与内测版各挑一份最高的出来。
 /// 镜像只会放单份 latest.json，列表端点失败不影响前两个源。
 final List<Uri> releaseListApis = [
-  Uri.parse('https://gitee.com/api/v5/repos/$giteeUpdateRepo/releases?per_page=50'),
+  Uri.parse(
+    'https://gitee.com/api/v5/repos/$giteeUpdateRepo/releases?per_page=50',
+  ),
   Uri.parse('https://api.github.com/repos/$updateRepo/releases?per_page=50'),
   Uri.parse('https://anticraft.top/apk/releases.json'),
 ];
@@ -56,16 +58,18 @@ bool isAllowedUpdateUrl(Uri uri) {
 enum UpdateChannel { stable, dev }
 
 /// 持久化键（渠道值），改名字等于丢用户选择。
-String channelKey(UpdateChannel c) => c == UpdateChannel.stable ? 'stable' : 'dev';
+String channelKey(UpdateChannel c) =>
+    c == UpdateChannel.stable ? 'stable' : 'dev';
 
 /// 界面上的叫法：「内测版」对用户比「开发版」更好懂，代码里仍叫 dev。
-String channelLabel(UpdateChannel c) => c == UpdateChannel.stable ? '稳定版' : '内测版';
+String channelLabel(UpdateChannel c) =>
+    c == UpdateChannel.stable ? '稳定版' : '内测版';
 
 /// 版本号（或 tag）属于哪个渠道：带 `-dev.N` / `-rc2` 这类预发布段的是内测版。
 UpdateChannel channelOfVersion(String version) =>
     normalizeVersion(version).split('+').first.contains('-')
-        ? UpdateChannel.dev
-        : UpdateChannel.stable;
+    ? UpdateChannel.dev
+    : UpdateChannel.stable;
 
 /// 一个比本机新的版本，以及引导更新要用的东西。
 class UpdateInfo {
@@ -100,7 +104,10 @@ class UpdateInfo {
   bool get canSelfInstall {
     final a = apkUrl == null ? null : Uri.tryParse(apkUrl!);
     final s = sha256Url == null ? null : Uri.tryParse(sha256Url!);
-    return a != null && s != null && isAllowedUpdateUrl(a) && isAllowedUpdateUrl(s);
+    return a != null &&
+        s != null &&
+        isAllowedUpdateUrl(a) &&
+        isAllowedUpdateUrl(s);
   }
 }
 
@@ -226,11 +233,14 @@ String releaseSummary(String body) {
     if (info == null) continue;
     switch (info.channel) {
       case UpdateChannel.stable:
-        if (stable == null || compareVersions(info.version, stable.version) > 0) {
+        if (stable == null ||
+            compareVersions(info.version, stable.version) > 0) {
           stable = info;
         }
       case UpdateChannel.dev:
-        if (dev == null || compareVersions(info.version, dev.version) > 0) dev = info;
+        if (dev == null || compareVersions(info.version, dev.version) > 0) {
+          dev = info;
+        }
     }
   }
   return (stable: stable, dev: dev);
@@ -294,7 +304,8 @@ class UpdateChecker extends ChangeNotifier {
   String? get skipped => _skipped[channel];
 
   /// 有可用更新、弹窗提醒开着、且用户还没忽略过它——启动时该不该弹引导。
-  bool get shouldPrompt => promptEnabled && available != null && available!.version != skipped;
+  bool get shouldPrompt =>
+      promptEnabled && available != null && available!.version != skipped;
 
   /// 测试注入点：不为 null 时用它取 Release JSON（单份或列表都行），不联网。
   @visibleForTesting
@@ -353,7 +364,10 @@ class UpdateChecker extends ChangeNotifier {
     if (channel == c) return;
     channel = c;
     try {
-      await (await SharedPreferences.getInstance()).setString(_kChannel, channelKey(c));
+      await (await SharedPreferences.getInstance()).setString(
+        _kChannel,
+        channelKey(c),
+      );
     } catch (_) {}
     notifyListeners();
   }
@@ -380,7 +394,10 @@ class UpdateChecker extends ChangeNotifier {
     final c = channelOfVersion(version);
     _skipped[c] = version;
     try {
-      await (await SharedPreferences.getInstance()).setString(_skippedKey(c), version);
+      await (await SharedPreferences.getInstance()).setString(
+        _skippedKey(c),
+        version,
+      );
     } catch (_) {}
     notifyListeners();
   }
@@ -435,7 +452,9 @@ class UpdateChecker extends ChangeNotifier {
       try {
         return [await fetchLatestFrom(latestReleaseApis, _fetchOne)];
       } catch (_) {
-        throw errors.isEmpty ? const FormatException('更新源都没有返回版本信息') : errors.last;
+        throw errors.isEmpty
+            ? const FormatException('更新源都没有返回版本信息')
+            : errors.last;
       }
     }
     return [for (final l in lists) ...l];
@@ -443,22 +462,38 @@ class UpdateChecker extends ChangeNotifier {
 
   Future<List<Map<String, dynamic>>> _fetchList(Uri api) async {
     final res = await http
-        .get(api,
-            headers: const {'Accept': 'application/vnd.github+json', 'User-Agent': 'AntiSIT'})
+        .get(
+          api,
+          headers: const {
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'AntiSIT',
+          },
+        )
         .timeout(_timeout);
-    if (res.statusCode != 200) throw http.ClientException('HTTP ${res.statusCode}');
+    if (res.statusCode != 200) {
+      throw http.ClientException('HTTP ${res.statusCode}');
+    }
     final j = jsonDecode(utf8.decode(res.bodyBytes));
     return _asReleaseList(j);
   }
 
   Future<Map<String, dynamic>> _fetchOne(Uri api) async {
     final res = await http
-        .get(api,
-            headers: const {'Accept': 'application/vnd.github+json', 'User-Agent': 'AntiSIT'})
+        .get(
+          api,
+          headers: const {
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'AntiSIT',
+          },
+        )
         .timeout(_timeout);
-    if (res.statusCode != 200) throw http.ClientException('HTTP ${res.statusCode}');
+    if (res.statusCode != 200) {
+      throw http.ClientException('HTTP ${res.statusCode}');
+    }
     final j = jsonDecode(utf8.decode(res.bodyBytes));
-    if (j is! Map<String, dynamic>) throw const FormatException('接口返回的不是 JSON 对象');
+    if (j is! Map<String, dynamic>) {
+      throw const FormatException('接口返回的不是 JSON 对象');
+    }
     return j;
   }
 
@@ -477,7 +512,10 @@ List<Map<String, dynamic>> _asReleaseList(Object? raw) {
   if (raw is List) {
     return [
       for (final e in raw)
-        if (e is Map<String, dynamic>) e else if (e is Map) Map<String, dynamic>.from(e),
+        if (e is Map<String, dynamic>)
+          e
+        else if (e is Map)
+          Map<String, dynamic>.from(e),
     ];
   }
   if (raw is Map<String, dynamic>) return [raw];

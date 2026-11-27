@@ -128,9 +128,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 展开：药丸贴在顶栏（80）下沿
+      // 展开：药丸贴在顶栏（80）下沿（切换器的玻璃面用 ClipRRect 裁圆，不再有 BackdropFilter）
       expect(
-        tester.getRect(find.byType(BackdropFilter)).top,
+        tester.getRect(find.byType(ClipRRect).first).top,
         greaterThanOrEqualTo(80 - 0.5),
         reason: '展开时贴在顶栏下沿',
       );
@@ -256,17 +256,22 @@ void main() {
       ),
     );
 
-    testWidgets('开关打开：操作条是毛玻璃胶囊（有 BackdropFilter）', (tester) async {
+    testWidgets('开关打开：操作条是玻璃胶囊（不做实时模糊）', (tester) async {
       await tester.pumpWidget(host(viewPaddingBottom: 0));
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      // issue #20：实时模糊（BackdropFilter）每帧都要离屏重采样，转场掉帧；
+      // 玻璃面改成渐变遮罩，同样是胶囊 + 描边，只是不再有那个图层。
+      expect(find.byType(BackdropFilter), findsNothing);
       expect(find.text('保存 / 提交评教'), findsOneWidget);
     });
 
     testWidgets('开关关闭：退回普通底条，不再画玻璃', (tester) async {
       await AppState.I.setGlassTopBar(false);
       await tester.pumpWidget(host(viewPaddingBottom: 0));
-      expect(find.byType(BackdropFilter), findsNothing,
-          reason: '关掉悬浮玻璃后底条不该再有毛玻璃');
+      expect(
+        find.byType(BackdropFilter),
+        findsNothing,
+        reason: '关掉悬浮玻璃后底条不该再有毛玻璃',
+      );
       expect(find.text('保存 / 提交评教'), findsOneWidget);
     });
 

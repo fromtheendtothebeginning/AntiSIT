@@ -12,24 +12,23 @@ void main() {
     String tag, {
     String? body,
     bool withApk = true,
-  }) =>
+  }) => {
+    'tag_name': tag,
+    'html_url': 'https://github.com/$updateRepo/releases/tag/$tag',
+    'body': body ?? '## AntiSIT\n\n安装说明模板\n\n### 本次更新\n- 修了某个 bug\n- 加了更新检查\n',
+    'assets': [
+      if (withApk)
+        {
+          'name': 'AntiSIT-${tag.replaceFirst('v', '')}.apk',
+          'browser_download_url':
+              'https://github.com/$updateRepo/releases/download/$tag/x.apk',
+        },
       {
-        'tag_name': tag,
-        'html_url': 'https://github.com/$updateRepo/releases/tag/$tag',
-        'body': body ?? '## AntiSIT\n\n安装说明模板\n\n### 本次更新\n- 修了某个 bug\n- 加了更新检查\n',
-        'assets': [
-          if (withApk)
-            {
-              'name': 'AntiSIT-${tag.replaceFirst('v', '')}.apk',
-              'browser_download_url':
-                  'https://github.com/$updateRepo/releases/download/$tag/x.apk',
-            },
-          {
-            'name': 'AntiSIT-${tag.replaceFirst('v', '')}.apk.sha256',
-            'browser_download_url': 'https://gitee.com/ender123/AntiSIT/x.sha256',
-          },
-        ],
-      };
+        'name': 'AntiSIT-${tag.replaceFirst('v', '')}.apk.sha256',
+        'browser_download_url': 'https://gitee.com/ender123/AntiSIT/x.sha256',
+      },
+    ],
+  };
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -73,9 +72,16 @@ void main() {
     test('取版本号 / 变更清单 / APK 直链 / 页面地址', () {
       final info = parseRelease(releaseJson('v1.13.6'))!;
       expect(info.version, '1.13.6');
-      expect(info.apkUrl, endsWith('/v1.13.6/x.apk'), reason: '挑 .apk 资产，不是 .sha256');
-      expect(info.sha256Url, 'https://gitee.com/ender123/AntiSIT/x.sha256',
-          reason: '应用内下载完要对哈希');
+      expect(
+        info.apkUrl,
+        endsWith('/v1.13.6/x.apk'),
+        reason: '挑 .apk 资产，不是 .sha256',
+      );
+      expect(
+        info.sha256Url,
+        'https://gitee.com/ender123/AntiSIT/x.sha256',
+        reason: '应用内下载完要对哈希',
+      );
       expect(info.canSelfInstall, isTrue);
       expect(info.pageUrl, endsWith('/releases/tag/v1.13.6'));
       expect(info.notes, '· 修了某个 bug\n· 加了更新检查');
@@ -88,11 +94,13 @@ void main() {
         'assets': [
           {
             'name': 'AntiSIT-1.26.0.apk',
-            'browser_download_url': 'https://gitee.com/ender123/AntiSIT/releases/download/v1.26.0/a.apk',
+            'browser_download_url':
+                'https://gitee.com/ender123/AntiSIT/releases/download/v1.26.0/a.apk',
           },
           {
             'name': 'AntiSIT-1.26.0.apk.sha256',
-            'browser_download_url': 'https://gitee.com/ender123/AntiSIT/releases/download/v1.26.0/a.apk.sha256',
+            'browser_download_url':
+                'https://gitee.com/ender123/AntiSIT/releases/download/v1.26.0/a.apk.sha256',
           },
         ],
       })!;
@@ -123,7 +131,8 @@ void main() {
           },
           {
             'name': 'b.apk',
-            'browser_download_url': 'https://objects.githubusercontent.com/x/b.apk',
+            'browser_download_url':
+                'https://objects.githubusercontent.com/x/b.apk',
           },
           {
             'name': 'b.apk.sha256',
@@ -131,8 +140,11 @@ void main() {
           },
         ],
       })!;
-      expect(info.apkUrl, 'https://objects.githubusercontent.com/x/b.apk',
-          reason: '明文 / 非白名单地址被丢弃，CDN 主机放行');
+      expect(
+        info.apkUrl,
+        'https://objects.githubusercontent.com/x/b.apk',
+        reason: '明文 / 非白名单地址被丢弃，CDN 主机放行',
+      );
       expect(info.sha256Url, 'https://anticraft.top/apk/b.apk.sha256');
       expect(info.canSelfInstall, isTrue);
     });
@@ -154,11 +166,20 @@ void main() {
 
     test('更新地址白名单：https + 发布域', () {
       expect(isAllowedUpdateUrl(Uri.parse('https://gitee.com/a.apk')), isTrue);
-      expect(isAllowedUpdateUrl(Uri.parse('https://api.github.com/a.apk')), isTrue);
-      expect(isAllowedUpdateUrl(Uri.parse('https://anticraft.top/apk/a.apk')), isTrue);
+      expect(
+        isAllowedUpdateUrl(Uri.parse('https://api.github.com/a.apk')),
+        isTrue,
+      );
+      expect(
+        isAllowedUpdateUrl(Uri.parse('https://anticraft.top/apk/a.apk')),
+        isTrue,
+      );
       expect(isAllowedUpdateUrl(Uri.parse('http://gitee.com/a.apk')), isFalse);
       expect(isAllowedUpdateUrl(Uri.parse('https://evil.com/a.apk')), isFalse);
-      expect(isAllowedUpdateUrl(Uri.parse('https://gitee.com.evil.com/a.apk')), isFalse);
+      expect(
+        isAllowedUpdateUrl(Uri.parse('https://gitee.com.evil.com/a.apk')),
+        isFalse,
+      );
     });
 
     test('没有 tag_name（出错的返回体）返回 null', () {
@@ -166,8 +187,10 @@ void main() {
     });
 
     test('变更清单：去掉 markdown 记号与空行', () {
-      expect(releaseSummary('### 本次更新\n\n- 甲\n\n* 乙\n#### 标题\n'),
-          '· 甲\n· 乙\n标题');
+      expect(
+        releaseSummary('### 本次更新\n\n- 甲\n\n* 乙\n#### 标题\n'),
+        '· 甲\n· 乙\n标题',
+      );
       expect(releaseSummary('只有一段说明'), '只有一段说明');
       expect(releaseSummary(''), isEmpty);
     });
@@ -209,8 +232,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('发现新版本 1.13.6'), findsNothing, reason: '弹窗关掉了');
       expect(UpdateChecker.I.skipped, '1.13.6');
-      expect((await SharedPreferences.getInstance()).getString('update_skipped_stable'),
-          '1.13.6', reason: '下次启动不再弹这个版本');
+      expect(
+        (await SharedPreferences.getInstance()).getString(
+          'update_skipped_stable',
+        ),
+        '1.13.6',
+        reason: '下次启动不再弹这个版本',
+      );
       expect(find.text('有新版本 v1.13.6'), findsOneWidget, reason: '二级页上仍标着有新版本');
     });
 
@@ -234,9 +262,9 @@ void main() {
 
     testWidgets('稳定版与内测版分开显示：能切换渠道，切到内测版提示它的新版本', (tester) async {
       UpdateChecker.I.debugFetch = () async => [
-            releaseJson('v1.13.6'),
-            releaseJson('v1.14.0-dev.1'),
-          ];
+        releaseJson('v1.13.6'),
+        releaseJson('v1.14.0-dev.1'),
+      ];
       await pumpProfile(tester);
       await openCenter(tester);
       await tester.tap(find.text('稍后')); // 关掉稳定版的引导弹窗
@@ -246,18 +274,27 @@ void main() {
       expect(find.text('内测版'), findsOneWidget);
       expect(find.text('有新版本 v1.13.6'), findsOneWidget);
       expect(find.text('暂无版本信息'), findsNothing, reason: '内测版这一行也拿到了版本');
-      expect(find.text('有新版本 v1.14.0-dev.1'), findsOneWidget,
-          reason: '内测版比稳定版高，但要用户自己切过去');
+      expect(
+        find.text('有新版本 v1.14.0-dev.1'),
+        findsOneWidget,
+        reason: '内测版比稳定版高，但要用户自己切过去',
+      );
 
       // 内测版那行有新版时按钮是「更新」，点整行（标题）就是切渠道
       await tester.tap(find.text('内测版'));
       await tester.pumpAndSettle();
       expect(UpdateChecker.I.channel, UpdateChannel.dev);
-      expect((await SharedPreferences.getInstance()).getString('update_channel'), 'dev');
+      expect(
+        (await SharedPreferences.getInstance()).getString('update_channel'),
+        'dev',
+      );
       // 切过去之后内测版成了当前渠道：它也有新版本，可以直接更新
       expect(find.text('有新版本 v1.14.0-dev.1'), findsOneWidget);
-      expect(find.text('发现新版本 1.14.0-dev.1'), findsOneWidget,
-          reason: '切到内测版后自动提示那条渠道的新版本');
+      expect(
+        find.text('发现新版本 1.14.0-dev.1'),
+        findsOneWidget,
+        reason: '切到内测版后自动提示那条渠道的新版本',
+      );
     });
 
     testWidgets('关掉弹窗提醒：不再自动弹，设置也落盘', (tester) async {
@@ -271,32 +308,41 @@ void main() {
 
       expect(UpdateChecker.I.promptEnabled, isFalse);
       expect(UpdateChecker.I.shouldPrompt, isFalse);
-      expect((await SharedPreferences.getInstance()).getBool('update_prompt_enabled'),
-          isFalse);
+      expect(
+        (await SharedPreferences.getInstance()).getBool(
+          'update_prompt_enabled',
+        ),
+        isFalse,
+      );
     });
   });
 
   group('多源尝试（GitHub 失败退回镜像）', () {
     test('第一个源挂了用第二个，拿到结果', () async {
       final tried = <Uri>[];
-      final j = await fetchLatestFrom([Uri.parse('https://a/1'), Uri.parse('https://b/2')],
-          (api) async {
-        tried.add(api);
-        if (api.host == 'a') throw Exception('timeout');
-        return {'tag_name': 'v9.9.9'};
-      });
+      final j = await fetchLatestFrom(
+        [Uri.parse('https://a/1'), Uri.parse('https://b/2')],
+        (api) async {
+          tried.add(api);
+          if (api.host == 'a') throw Exception('timeout');
+          return {'tag_name': 'v9.9.9'};
+        },
+      );
       expect(j['tag_name'], 'v9.9.9');
       expect(tried.length, 2);
     });
 
     test('全部失败抛最后一个错误', () async {
       await expectLater(
-        fetchLatestFrom(
-            [Uri.parse('https://a/1'), Uri.parse('https://b/2')], (api) async {
+        fetchLatestFrom([Uri.parse('https://a/1'), Uri.parse('https://b/2')], (
+          api,
+        ) async {
           if (api.host == 'a') throw Exception('first');
           throw Exception('second');
         }),
-        throwsA(isA<Exception>().having((e) => '$e', 'msg', contains('second'))),
+        throwsA(
+          isA<Exception>().having((e) => '$e', 'msg', contains('second')),
+        ),
       );
     });
 
@@ -309,18 +355,26 @@ void main() {
 
     test('多源都成功时取版本最高的，镜像滞后不会藏住新版', () async {
       final j = await fetchLatestFrom(
-          [Uri.parse('https://gitee.com/a'), Uri.parse('https://api.github.com/b')], (api) async {
-        return api.host == 'gitee.com' ? releaseJson('v1.18.0') : releaseJson('v1.19.0');
-      });
+        [
+          Uri.parse('https://gitee.com/a'),
+          Uri.parse('https://api.github.com/b'),
+        ],
+        (api) async {
+          return api.host == 'gitee.com'
+              ? releaseJson('v1.18.0')
+              : releaseJson('v1.19.0');
+        },
+      );
       expect(parseRelease(j)!.version, '1.19.0');
     });
 
     test('同版本优先靠前的源（Gitee 下载地址）', () async {
       final a = {'tag_name': 'v1.19.0', 'marker': 'gitee'};
       final b = {'tag_name': 'v1.19.0', 'marker': 'github'};
-      final j = await fetchLatestFrom(
-          [Uri.parse('https://gitee.com/a'), Uri.parse('https://api.github.com/b')],
-          (api) async => api.host == 'gitee.com' ? a : b);
+      final j = await fetchLatestFrom([
+        Uri.parse('https://gitee.com/a'),
+        Uri.parse('https://api.github.com/b'),
+      ], (api) async => api.host == 'gitee.com' ? a : b);
       expect(j['marker'], 'gitee');
     });
   });
@@ -339,6 +393,10 @@ void main() {
     await UpdateChecker.I.load();
     await UpdateChecker.I.check();
     expect(UpdateChecker.I.shouldPrompt, isFalse);
-    expect(UpdateChecker.I.available!.version, '1.13.6', reason: '结论还在，「我的」页照旧能看到');
+    expect(
+      UpdateChecker.I.available!.version,
+      '1.13.6',
+      reason: '结论还在，「我的」页照旧能看到',
+    );
   });
 }

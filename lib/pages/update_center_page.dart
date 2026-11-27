@@ -30,7 +30,9 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
   Future<void> _promptIfAny() async {
     if (!mounted) return;
     final info = UpdateChecker.I.available;
-    if (info != null && UpdateChecker.I.shouldPrompt) await showUpdateDialog(context, info);
+    if (info != null && UpdateChecker.I.shouldPrompt) {
+      await showUpdateDialog(context, info);
+    }
   }
 
   /// 进页面自动查一次：用户点「检查更新」进来就是为了看有没有新版。
@@ -50,9 +52,12 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
     if (uc.available != null) {
       await _promptIfAny();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
           content: Text('已是${channelLabel(uc.channel)}的最新版本'),
-          behavior: SnackBarBehavior.floating));
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -82,15 +87,19 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
                 const Padding(
                   padding: EdgeInsets.only(right: 16),
                   child: Center(
-                      child: SizedBox(
-                          width: 16, height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
                 )
               else
                 IconButton(
-                    onPressed: _manualCheck,
-                    icon: const Icon(Icons.refresh_rounded),
-                    tooltip: '立即检查'),
+                  onPressed: _manualCheck,
+                  icon: const Icon(Icons.refresh_rounded),
+                  tooltip: '立即检查',
+                ),
             ],
           ),
           body: GlassFadedBody(
@@ -145,13 +154,17 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
               error != null
                   ? '检查更新失败：$error'
                   : (uc.lastCheck == null
-                      ? '正在检查…'
-                      : '$version · ${channelLabel(uc.channel)}'),
+                        ? '正在检查…'
+                        : '$version · ${channelLabel(uc.channel)}'),
               style: TextStyle(
-                  fontSize: 12, color: error != null ? SemColors.danger : null),
+                fontSize: 12,
+                color: error != null ? SemColors.danger : null,
+              ),
             ),
-            trailing: Text(version,
-                style: TextStyle(fontSize: 13, color: SemColors.textMuted)),
+            trailing: Text(
+              version,
+              style: TextStyle(fontSize: 13, color: SemColors.textMuted),
+            ),
           ),
           if (uc.lastCheck != null)
             Padding(
@@ -175,15 +188,23 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
       child: Column(
         children: [
           for (final c in UpdateChannel.values)
-            _channelRow(context, uc, c,
-                divider: c != UpdateChannel.values.last),
+            _channelRow(
+              context,
+              uc,
+              c,
+              divider: c != UpdateChannel.values.last,
+            ),
         ],
       ),
     );
   }
 
-  Widget _channelRow(BuildContext context, UpdateChecker uc, UpdateChannel c,
-      {bool divider = false}) {
+  Widget _channelRow(
+    BuildContext context,
+    UpdateChecker uc,
+    UpdateChannel c, {
+    bool divider = false,
+  }) {
     final selected = uc.channel == c;
     final latest = uc.latestFor(c);
     final update = uc.availableFor(c);
@@ -191,10 +212,10 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
     final status = update != null
         ? '有新版本 v${update.version}'
         : (latest != null
-            ? (c == UpdateChannel.dev && uc.stableLatest != null
-                ? '最新 v${latest.version}'
-                : '已是最新')
-            : (waiting ? '检查中…' : (uc.error == null ? '暂无版本信息' : '检查失败')));
+              ? (c == UpdateChannel.dev && uc.stableLatest != null
+                    ? '最新 v${latest.version}'
+                    : '已是最新')
+              : (waiting ? '检查中…' : (uc.error == null ? '暂无版本信息' : '检查失败')));
     return Column(
       children: [
         ListTile(
@@ -204,39 +225,54 @@ class _UpdateCenterPageState extends State<UpdateCenterPage> {
                 : Icons.science_outlined,
             color: selected ? SemColors.accent : null,
           ),
-          title: Row(children: [
-            Text(channelLabel(c)),
-            if (c == UpdateChannel.dev) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: SemColors.accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text('BETA',
+          title: Row(
+            children: [
+              Text(channelLabel(c)),
+              if (c == UpdateChannel.dev) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: SemColors.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'BETA',
                     style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w700,
-                        color: SemColors.accent)),
-              ),
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: SemColors.accent,
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ]),
+          ),
           subtitle: Text(
             status,
             style: TextStyle(
-                fontSize: 12,
-                color: update != null ? SemColors.accent : null),
+              fontSize: 12,
+              color: update != null ? SemColors.accent : null,
+            ),
           ),
           trailing: update != null
               ? TextButton(
                   onPressed: () => _updateTo(update),
-                  child: const Text('更新'))
+                  child: const Text('更新'),
+                )
               : (selected
-                  ? Icon(Icons.check_circle, size: 18, color: SemColors.accent)
-                  : TextButton(
-                      onPressed: () => _switchTo(c),
-                      child: const Text('切换'))),
+                    ? Icon(
+                        Icons.check_circle,
+                        size: 18,
+                        color: SemColors.accent,
+                      )
+                    : TextButton(
+                        onPressed: () => _switchTo(c),
+                        child: const Text('切换'),
+                      )),
           // 点整行也能切渠道：切过去之后自动提示那条渠道的新版本
           onTap: selected ? null : () => _switchTo(c),
         ),

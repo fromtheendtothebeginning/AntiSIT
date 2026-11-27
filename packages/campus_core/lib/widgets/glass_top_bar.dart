@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
@@ -55,7 +53,8 @@ PreferredSizeWidget glassAppBar(
       bottom: bottom,
     );
   }
-  final autoLeading = automaticallyImplyLeading &&
+  final autoLeading =
+      automaticallyImplyLeading &&
           leading == null &&
           (ModalRoute.of(context)?.canPop ?? false)
       ? const BackButton()
@@ -86,9 +85,7 @@ PreferredSizeWidget glassAppBar(
     preferredSize: appBar.preferredSize,
     child: Stack(
       children: [
-        const Positioned.fill(
-          child: IgnorePointer(child: GlassBarScrim()),
-        ),
+        const Positioned.fill(child: IgnorePointer(child: GlassBarScrim())),
         Positioned.fill(child: appBar),
       ],
     ),
@@ -101,43 +98,40 @@ Widget glassTopBarAction(Widget child, {double edge = 3}) =>
 
 /// 悬浮圆钮：40 直径的玻璃圆片（更实一档的玻璃面 + 细描边）。
 Widget _orb(Widget child, {required double edge}) => Padding(
-      padding: EdgeInsets.only(left: edge, right: edge),
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: SemColors.thumb,
-          shape: BoxShape.circle,
-          border: Border.all(color: SemColors.borderStrong),
-        ),
-        child: Center(
-          child: IconButtonTheme(
-            data: IconButtonThemeData(style: _orbStyle()),
-            child: child,
-          ),
-        ),
+  padding: EdgeInsets.only(left: edge, right: edge),
+  child: Container(
+    width: 40,
+    height: 40,
+    decoration: BoxDecoration(
+      color: SemColors.thumb,
+      shape: BoxShape.circle,
+      border: Border.all(color: SemColors.borderStrong),
+    ),
+    child: Center(
+      child: IconButtonTheme(
+        data: IconButtonThemeData(style: _orbStyle()),
+        child: child,
       ),
-    );
+    ),
+  ),
+);
 
 /// 圆钮里的图标按钮样式：只留点击 / 图标色，背景交给外面那层玻璃。
 ButtonStyle _orbStyle() => ButtonStyle(
-      fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
-      minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
-      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      elevation: const WidgetStatePropertyAll(0),
-      foregroundColor: WidgetStatePropertyAll(SemColors.textPrimary),
-      backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
-      shape: const WidgetStatePropertyAll(CircleBorder()),
-    );
+  fixedSize: const WidgetStatePropertyAll(Size(40, 40)),
+  minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
+  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  elevation: const WidgetStatePropertyAll(0),
+  foregroundColor: WidgetStatePropertyAll(SemColors.textPrimary),
+  backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+  shape: const WidgetStatePropertyAll(CircleBorder()),
+);
 
 /// 顶栏背景：厂商式渐变遮罩（不做实时模糊），颜色取自 [SemColors.bg]。
 /// 组件是 const 实例，必须订阅 [SemColors.palette] 才能在换主题 / 切深浅色时重画。
 class GlassBarScrim extends StatelessWidget {
-  const GlassBarScrim({
-    super.key,
-    this.fadeFraction = kGlassBarFadeFraction,
-  });
+  const GlassBarScrim({super.key, this.fadeFraction = kGlassBarFadeFraction});
 
   final double fadeFraction;
 
@@ -178,7 +172,12 @@ class GlassBarScrim extends StatelessWidget {
   }
 }
 
-/// 内容顶部渐隐：给页面 body 套一层 alpha 渐变，让内容在顶栏区域逐渐溶解。
+/// 内容顶部渐隐：在内容上叠一条与场景同色的渐变，让内容在顶栏区域逐渐溶解。
+///
+/// 以前用 ShaderMask(dstIn) 做真透明渐隐，但它给整块 body 加了一次 saveLayer：
+/// 内容滚动 / 页面转场时每帧都要重新合成整层，是 issue #20 里转场掉帧的主要来源之一。
+/// 现在改成「同色遮罩叠在内容上」：观感几乎一致（遮罩用的就是顶栏那条色带的底色），
+/// 但只是一次普通渐变绘制，不进离屏图层。
 class GlassFadedBody extends StatelessWidget {
   const GlassFadedBody({
     super.key,
@@ -193,29 +192,40 @@ class GlassFadedBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!glassTopBarEnabled || barHeight <= 0) return child;
-    return LayoutBuilder(
-      builder: (context, cons) {
-        final h = cons.maxHeight;
-        if (!h.isFinite || h <= 0) return child;
-        // 渐隐从上沿一路连续过渡到顶栏底边下方，避免在状态栏下面出现硬边。
-        final end = ((barHeight * 1.15) / h).clamp(0.0, 1.0);
-        final mid = ((barHeight * 0.45) / h).clamp(0.0, end);
-        return ShaderMask(
-          blendMode: BlendMode.dstIn,
-          shaderCallback: (rect) => LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: const [
-              Color(0x00000000),
-              Color(0x22000000),
-              Color(0xFFFFFFFF),
-              Color(0xFFFFFFFF),
-            ],
-            stops: [0, mid, end, 1],
-          ).createShader(rect),
-          child: child,
-        );
-      },
+    // 遮罩颜色随色板变化：包一层订阅，切深浅色 / 换主题时重画（页面别的部分也会重建，
+    // 但这里不依赖它们顺带把自己带上——以前 const 组件不更新就是所有页面共犯）。
+    return ValueListenableBuilder<GlassPalette>(
+      valueListenable: SemColors.palette,
+      builder: (context, palette, _) => Stack(
+        children: [
+          child,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: SizedBox(
+                // 渐隐从上沿一路连续过渡到顶栏底边下方，避免在状态栏下面出现硬边。
+                height: barHeight * 1.15,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        palette.bg,
+                        palette.bg.withValues(alpha: 0.86),
+                        palette.bg.withValues(alpha: 0),
+                      ],
+                      stops: const [0, 0.42, 1],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -225,10 +235,7 @@ bool get glassBottomBarEnabled => AppState.I.glassTopBar;
 
 /// 滚动内容底部要让出的高度（按钮 + 胶囊外边距 + 系统手势条），开关关闭时返回 0。
 /// 和 [glassTopInset] 一样必须在页面 build 的 context（Scaffold 之上）取。
-double glassBottomInset(
-  BuildContext context, {
-  double barHeight = 44,
-}) {
+double glassBottomInset(BuildContext context, {double barHeight = 44}) {
   if (!glassBottomBarEnabled) return 0;
   final mq = MediaQuery.maybeOf(context);
   final safeBottom = mq?.viewPadding.bottom ?? 0;
@@ -268,32 +275,28 @@ Widget glassBottomBar(
             ),
           ],
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(kGlassBarRadius),
-          child: BackdropFilter(
-            // 毛玻璃底：把从操作条下面穿过去的页面内容糊掉，玻璃面再压在上面。
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(kGlassBarRadius),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color.alphaBlend(
-                      Colors.white.withValues(alpha: 0.10),
-                      SemColors.card,
-                    ),
-                    SemColors.card,
-                  ],
-                  stops: const [0, 0.5],
+        // 不做实时模糊（BackdropFilter 每帧都要把下面整块内容重新离屏采样，
+        // 返回 / 前进动画期间与页面一起动就是掉帧主因，issue #20）：用与顶栏同一套
+        // 渐变遮罩把下面的内容压暗，观感一致，代价只是一次普通渐变绘制。
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(kGlassBarRadius),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color.alphaBlend(
+                  Colors.white.withValues(alpha: 0.10),
+                  SemColors.card,
                 ),
-                border: Border.all(color: SemColors.border),
-              ),
-              child: child,
+                SemColors.card,
+              ],
+              stops: const [0, 0.5],
             ),
+            border: Border.all(color: SemColors.border),
           ),
+          child: child,
         ),
       ),
     ),

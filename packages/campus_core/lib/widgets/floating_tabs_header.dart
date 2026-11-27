@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import 'theme_palette.dart';
@@ -128,29 +126,26 @@ class _FloatingTabsHeaderState extends State<FloatingTabsHeader> {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(_radius),
-                      child: BackdropFilter(
-                        // 和首页底栏同一套毛玻璃：把从切换器底下滚过去的内容糊掉。
-                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                        // 再压一层半透明玻璃面 + 描边（同 GlassNavBar 的玻璃面）。
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(_radius),
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Color.alphaBlend(
-                                    Colors.white.withValues(alpha: 0.10),
-                                    SemColors.card),
+                      // 和首页底栏同一套玻璃面（不做实时模糊，见 issue #20）。
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(_radius),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Color.alphaBlend(
+                                Colors.white.withValues(alpha: 0.10),
                                 SemColors.card,
-                              ],
-                              stops: const [0, 0.5],
-                            ),
-                            border: Border.all(color: SemColors.border),
+                              ),
+                              SemColors.card,
+                            ],
+                            stops: const [0, 0.5],
                           ),
-                          child: widget.header,
+                          border: Border.all(color: SemColors.border),
                         ),
+                        child: widget.header,
                       ),
                     ),
                   ),
