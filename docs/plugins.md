@@ -1,8 +1,35 @@
 # 插件化架构（功能 / 主题 / AI 提供商）
 
-**一个插件 = 一个 Dart 包**。功能页面、主题色板、AI 提供商描述都在各自的包里，插件清单与
-插件之间的依赖关系都由脚本扫描 `pubspec.yaml` 与各插件源码生成——导入插件就是加一行依赖，
-删除插件就是去掉那一行。
+**一个插件 = 一个文件夹**（`packages/plugin_*/`，文件夹名就是 Dart 包名）。功能页面、主题色板、
+AI 提供商描述都在各自文件夹的 `lib/` 里；插件清单、依赖关系与「文件夹 → 部件」清单
+（`assets/plugin_folders.json`）都由 `dart run tool/gen_plugins.dart` 扫描源码生成——
+导入插件 = 根 `pubspec.yaml` 加两行 + 跑生成器，删除插件 = 去掉那两行 + 跑生成器。
+
+## 文件夹里可以放多个部件
+
+一个文件夹可以贡献**多个插件 id**，每个 id 是一个「部件」（part）：
+
+| 部件 kind | 例子 | 说明 |
+|---|---|---|
+| `feature` | `activities`、`timetable` | 底栏页 / 工具卡片 / 设置条目，可停用 |
+| `theme` | `theme.glass`、`theme.ink` | 主题色板（+ 场景光斑），只选不关 |
+| `provider` | `deepseek`、`minimax` / `minimaxtokenplan` | AI 提供商，可停用 |
+
+所以 `plugin_ai_minimax` 这一个文件夹同时提供 `minimax` 与 `minimaxtokenplan` 两个提供商部件。
+部件之间的实现**互不 import**：跨插件一律按 `PluginIds.*` 经能力注册表取接口（见下文）。
+
+生成器写出的 `assets/plugin_folders.json` 就是这份「文件夹 → 部件」清单，宿主的
+`PluginFolderCatalog` 启动时读它（只读，不参与构建）：
+
+```json
+{ "schema": 1,
+  "folders": [
+    { "package": "plugin_activities",
+      "parts": [{ "id": "activities", "kind": "feature" }],
+      "dependencies": ["network", "tools"],
+      "optionalDependencies": ["scan"] }
+  ] }
+```
 
 ```
 AntiXiaoYing/                     宿主（App）：壳、设置页、插件管理、清单组装
