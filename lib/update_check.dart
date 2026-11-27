@@ -113,9 +113,14 @@ class UpdateInfo {
   }
 }
 
-/// 'v1.13.5' / ' 1.13.5 ' → '1.13.5'
+/// 'v1.13.5' / ' 1.13.5 ' → '1.13.5'；内测版的 tag 还带 `dev-` 前缀
+/// （`dev-1.48.1-dev.1`，与 release.yml / release_gitee.sh 的约定一致）→ '1.48.1-dev.1'。
+///
+/// 不剥这个前缀会出大问题：`dev-1.48.1-dev.1` 按 `.` 切出来是 `["dev-1", 48, 1]`，
+/// 首个数字段变成 0，比 `1.47.4` 还"小"，内测版用户永远等不到提示。
 String normalizeVersion(String raw) {
   var s = raw.trim();
+  if (s.startsWith('dev-')) s = s.substring(4);
   if (s.startsWith('v') || s.startsWith('V')) s = s.substring(1);
   return s;
 }

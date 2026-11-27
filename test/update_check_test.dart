@@ -59,6 +59,10 @@ void main() {
       ('1.14.0-rc2', '1.14.0-rc2.1', -1),
       ('1.14.0-alpha', '1.14.0-beta', -1),
       ('1.14.0-rc1', '1.14.0-rc1.1', -1),
+      // tag 前缀：稳定版 v，内测版 dev-（两种都要剥掉才比得了）
+      ('dev-1.48.1-dev.1', '1.47.4', 1),
+      ('dev-1.48.1-dev.1', '1.48.1', -1),
+      ('dev-1.48.1-dev.2', 'dev-1.48.1-dev.1', 1),
     ];
 
     for (final (a, b, want) in cases) {
@@ -406,6 +410,13 @@ void main() {
       expect(latestReleaseApis.first.path, contains(giteeUpdateRepo));
       expect(latestReleaseApis[1].host, 'api.github.com');
       expect(latestReleaseApis.last.host, 'anticraft.top');
+    });
+
+    test('内测版 tag（dev-1.48.1-dev.1）解析成 1.48.1-dev.1，不会因为前缀比错', () {
+      expect(normalizeVersion('dev-1.48.1-dev.1'), '1.48.1-dev.1');
+      final info = parseRelease(releaseJson('dev-1.48.1-dev.1'))!;
+      expect(info.version, '1.48.1-dev.1');
+      expect(info.channel, UpdateChannel.dev, reason: '带预发布段 → 内测版');
     });
 
     test('Gitee 列表必须带 direction=desc：默认升序只会拿到最老的那批', () {
