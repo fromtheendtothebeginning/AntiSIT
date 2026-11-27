@@ -458,17 +458,22 @@ class UpdateChecker extends ChangeNotifier {
       return _asReleaseList(raw);
     }
     final errors = <Object>[];
-    final lists = <List<Map<String, dynamic>>>[];
+    // 按源的下标收集：谁先返回不能影响合并顺序。
+    // 早先是「并发 + 谁先回谁先 add」，同版本取先出现的那份（见 fetchLatestFrom /
+    // selectByChannel），于是网络慢一拍的 Gitee 永远排在 GitHub 后面 —— 用户看到
+    // 更新弹窗指向 GitHub、下载走 GitHub，而 Gitee 明明也有同一个包。
+    final results = <int, List<Map<String, dynamic>>>{};
     await Future.wait([
-      for (final api in releaseListApis)
+      for (final (index, api) in releaseListApis.indexed)
         () async {
           try {
-            lists.add(await _fetchList(api));
+            results[index] = await _fetchList(api);
           } catch (e) {
             errors.add(e);
           }
         }(),
     ]);
+    final lists = [for (final i in results.keys.toList()..sort()) results[i]!];
     if (lists.isEmpty) {
       // 列表端点全挂：退回旧的 latest 单份接口，至少稳定版还能查。
       try {
