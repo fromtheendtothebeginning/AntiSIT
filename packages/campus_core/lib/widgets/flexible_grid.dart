@@ -136,13 +136,14 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
 
   /// 当前几何换算：档位 ↔ 像素尺寸。
   GridCardMetrics get _metrics => GridCardMetrics(
-        colWidth: _colWidth,
-        unitHeight: widget.unitHeight,
-        gap: widget.spacing,
-      );
+    colWidth: _colWidth,
+    unitHeight: widget.unitHeight,
+    gap: widget.spacing,
+  );
 
   /// 当前排版器：网格装箱 + 占位格换算。
-  GridLayout get _layout => GridLayout(metrics: _metrics, padding: widget.padding);
+  GridLayout get _layout =>
+      GridLayout(metrics: _metrics, padding: widget.padding);
 
   @override
   void initState() {
@@ -302,7 +303,8 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
   void _updateDrag(Offset global) {
     final drag = _drag;
     if (drag == null) return;
-    final movedAway = (global - drag.startPointer).distance >= _moveAwayThreshold;
+    final movedAway =
+        (global - drag.startPointer).distance >= _moveAwayThreshold;
     if (movedAway == drag.movedAway && drag.pointer == global) return;
     if (movedAway && !drag.movedAway) HapticFeedback.selectionClick();
     setState(() {
@@ -494,7 +496,10 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
             widget.spacing,
             widget.padding,
           );
-          height = math.max(height, reservedRect.bottom + widget.padding.bottom);
+          height = math.max(
+            height,
+            reservedRect.bottom + widget.padding.bottom,
+          );
         }
         final reservedRect = reserved?.rectIn(
           colWidth,
@@ -502,6 +507,12 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           widget.spacing,
           widget.padding,
         );
+
+        // 页面被盖住时（市场页 / 详情页在上面，路由把 Ticker 禁掉）长高动画根本不会走：
+        // AnimatedSize 会一直停在旧高度。等用户退回来才播动画，那段时间新卡片又被裁在
+        // 宫格外面——表现成「装完看不见，得进整理态才冒出来」。所以不可见时直接给最终
+        // 高度，不做长高动画。
+        final canAnimate = TickerMode.of(context);
 
         // 卡片层：普通卡片 + 缩放中的本体 + 被拖动的悬浮卡。
         final layers = buildGridCardLayers(
@@ -540,36 +551,65 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
           onLongPressMoveUpdate: _onLongPressMove,
           onLongPressEnd: _onLongPressEnd,
           onLongPressCancel: _onLongPressCancel,
-          child: AnimatedSize(
-            duration: _sizeAnim,
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            // 高度是**动画**长的（换档 / 新增卡片都会变）：这段时间里新排进来的卡片
-            // 已经落在最终格位、卡框却还没长到那儿，不裁就会画到宫格外面，盖住紧跟
-            // 着的下一块内容（拓展页的「添加拓展」卡就这么被压住过）。
-            // 拖动 / 缩放时保留 overflow：那两种手势本来就要求卡片跟着手指离开格位。
-            clipBehavior:
-                (drag == null && resize == null) ? Clip.hardEdge : Clip.none,
-            child: SizedBox(
-              key: _stackKey,
-              width: double.infinity,
-              height: height,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // 占位 / 目标框永远压在最下层：主角是跟着手指走的卡片本体。
-                  if (showSlot)
-                    Positioned.fromRect(
-                      key: const ValueKey<String>('fgrid-slot'),
-                      rect: reservedRect,
-                      child: IgnorePointer(
-                        child: GridSlotPlaceholder(dashed: resize != null),
+          // 量卡片坐标用的是这一层（与内层 Stack 同一原点，宽度撑满）：它是常驻的，
+          // 换不换 AnimatedSize 都不会让 GlobalKey 在两个父节点之间搬家。
+          child: SizedBox(
+            key: _stackKey,
+            width: double.infinity,
+            child: canAnimate
+                ? AnimatedSize(
+                    duration: _sizeAnim,
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    // 高度是**动画**长的（换档 / 新增卡片都会变）：这段时间里新排进来的卡片
+                    // 已经落在最终格位、卡框却还没长到那儿，不裁就会画到宫格外面，盖住紧跟
+                    // 着的下一块内容（拓展页的「添加拓展」卡就这么被压住过）。
+                    // 拖动 / 缩放时保留 overflow：那两种手势本来就要求卡片跟着手指离开格位。
+                    clipBehavior: (drag == null && resize == null)
+                        ? Clip.hardEdge
+                        : Clip.none,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: height,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // 占位 / 目标框永远压在最下层：主角是跟着手指走的卡片本体。
+                          if (showSlot)
+                            Positioned.fromRect(
+                              key: const ValueKey<String>('fgrid-slot'),
+                              rect: reservedRect,
+                              child: IgnorePointer(
+                                child: GridSlotPlaceholder(
+                                  dashed: resize != null,
+                                ),
+                              ),
+                            ),
+                          ...layers.cards,
+                        ],
                       ),
                     ),
-                  ...layers.cards,
-                ],
-              ),
-            ),
+                  )
+                : SizedBox(
+                    width: double.infinity,
+                    height: height,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        if (showSlot)
+                          Positioned.fromRect(
+                            key: const ValueKey<String>('fgrid-slot'),
+                            rect: reservedRect,
+                            child: IgnorePointer(
+                              child: GridSlotPlaceholder(
+                                dashed: resize != null,
+                              ),
+                            ),
+                          ),
+                        ...layers.cards,
+                      ],
+                    ),
+                  ),
           ),
         );
       },
