@@ -53,14 +53,14 @@ class _EvaluatePageState extends State<EvaluatePage> {
   }
 
   EvaluateApi _buildApi() => EvaluateApi(
-        session: _session,
-        // 直连模式为空（设备自己在校园网里）；服务器模式走服务器给的校园隧道
-        proxyUrl: AppState.I.direct ? '' : _serverProxyUrl,
-        onLog: (line) {
-          if (!mounted) return;
-          setState(() => _log = line);
-        },
-      );
+    session: _session,
+    // 直连模式为空（设备自己在校园网里）；服务器模式走服务器给的校园隧道
+    proxyUrl: AppState.I.direct ? '' : _serverProxyUrl,
+    onLog: (line) {
+      if (!mounted) return;
+      setState(() => _log = line);
+    },
+  );
 
   /// 先读本机缓存立即展示，再按「工具页自动刷新」设置决定是否联网拉新。
   Future<void> _restore() async {
@@ -97,7 +97,14 @@ class _EvaluatePageState extends State<EvaluatePage> {
             jghId: 'DEMO_JGH_',
             sfcjlrjs: '1',
             tjzt: i == 0 ? '0' : '-1',
-            course: ['高等数学(下)', '数据结构', '大学物理(二)', '线性代数', '大学英语(三)', '体育(四)'][i],
+            course: [
+              '高等数学(下)',
+              '数据结构',
+              '大学物理(二)',
+              '线性代数',
+              '大学英语(三)',
+              '体育(四)',
+            ][i],
             teacher: ['王建国', '陈强', '孙丽', '吴敏', '李芳', '张伟'][i],
             className: '计科2501',
             college: '计算机学院',
@@ -114,15 +121,16 @@ class _EvaluatePageState extends State<EvaluatePage> {
       });
       return;
     }
-    // 服务器模式：先要到校园隧道代理，否则设备根本到不了教务
+    // 服务器模式：先要到校园隧道代理，否则设备根本到不了教务。
+    // 隧道可能还在建（服务器回 202 的那段时间），所以这里带重试，而不是一次拿不到就报错。
     if (!AppState.I.direct) {
       setState(() => _log = '正在连接校园隧道…');
-      _serverProxyUrl = await _resolveProxy();
+      final proxy = await _ensureProxy();
       if (!mounted) return;
-      if (_serverProxyUrl.isEmpty) {
+      if (proxy.isEmpty) {
         setState(
           () => _fail(
-            '服务器模式要经校园隧道访问教务：先到「我的 → 校园服务」连接校园网，'
+            '连不上校园隧道：请先到「我的 → 校园服务」连接校园网，'
             '或切到直连模式再进来',
           ),
         );
@@ -133,14 +141,43 @@ class _EvaluatePageState extends State<EvaluatePage> {
     await _loadTargets();
   }
 
-  Future<String> _resolveProxy() async {
+  /// 拿到（必要时等出来）服务器模式的校园隧道代理地址。
+  ///
+  /// 服务器侧隧道建立是**按需**的：只有隧道类请求收到 202 才会开始建，建好之前
+  /// `/status` 里没有 `http_port`，代理地址就是空串。以前这里只探一次，隧道还没
+  /// 建好就报「先连接校园网」，看起来像评教在服务器模式下坏了。现在探不到就先发
+  /// 一个轻量隧道请求把建隧道流程推起来，然后按 3 秒一轮等最多 90 秒。
+  Future<String> _ensureProxy({bool force = false}) async {
     if (AppState.I.direct) return '';
-    try {
-      return await ApiClient.I.serverWebProxy();
-    } catch (e) {
-      debugPrint('[学生评教] 取校园隧道代理失败：$e');
-      return '';
+    // 没填服务器地址：等再久也不会有隧道，直接返回空（由调用方给出配置引导）。
+    if (AppState.I.serverUrl.isEmpty) return '';
+    if (!force && _serverProxyUrl.isNotEmpty) return _serverProxyUrl;
+    final deadline = DateTime.now().add(const Duration(seconds: 90));
+    var attempt = 0;
+    var warmupStarted = false;
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      attempt++;
+      try {
+        final proxy = await ApiClient.I.serverWebProxy();
+        if (proxy.isNotEmpty) {
+          _serverProxyUrl = proxy;
+          return proxy;
+        }
+      } catch (e) {
+        debugPrint('[学生评教] 取校园隧道代理失败（第 $attempt 次）：$e');
+      }
+      // 第一次探测失败：顺手发一个轻量隧道请求，让服务器开始建隧道
+      if (!warmupStarted) {
+        warmupStarted = true;
+        unawaited(
+          ApiClient.I.score().catchError((Object _) => <String, dynamic>{}),
+        );
+      }
+      if (!mounted) return '';
+      setState(() => _log = '正在连接校园隧道…（第 $attempt 次探测）');
+      await Future<void>.delayed(const Duration(seconds: 3));
     }
+    return _serverProxyUrl;
   }
 
   /// 取 App 已登录的教务会话（与成绩 / 课表同一条路），灌进 [EvaluateSession]。
@@ -169,6 +206,17 @@ class _EvaluatePageState extends State<EvaluatePage> {
       _error = null;
     });
     try {
+      // 服务器模式：每轮都确认隧道代理还在（服务器重连后端口可能变）。
+      if (!AppState.I.direct) {
+        final proxy = await _ensureProxy();
+        if (proxy.isEmpty) {
+          throw const EvaluateError('连不上校园隧道：先到「我的 → 校园服务」连接校园网后再试');
+        }
+        if (proxy != _serverProxyUrl) {
+          _serverProxyUrl = proxy;
+          _api = _buildApi();
+        }
+      }
       await _adoptSharedSession();
       if (!_session.hasCookies) {
         throw const EvaluateError('教务还没登录：先到「我的 → 连接设置」登录一次教务，再回来评教');
@@ -178,6 +226,14 @@ class _EvaluatePageState extends State<EvaluatePage> {
         await _adoptSharedSession();
         if (!await _api.checkSession()) {
           throw const EvaluateError('教务会话已失效：到「我的 → 连接设置」重新登录后再进来');
+        }
+      }
+      // 服务器模式：隧道代理可能中途重连（端口变了 / 会话掉了），写操作前重建一次 API
+      if (!AppState.I.direct) {
+        final proxy = await _ensureProxy();
+        if (proxy.isNotEmpty && proxy != _serverProxyUrl) {
+          _serverProxyUrl = proxy;
+          _api = _buildApi();
         }
       }
       await _api.acknowledgeNotice();
@@ -358,75 +414,74 @@ class _EvaluatePageState extends State<EvaluatePage> {
   }
 
   Widget _loadingView() => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(strokeWidth: 2.4),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              '正在读取评教列表…',
-              style: TextStyle(fontSize: 12.5, color: SemColors.textMuted),
-            ),
-            if (_log.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                _log,
-                style: TextStyle(fontSize: 11, color: SemColors.textMuted),
-              ),
-            ],
-          ],
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(
+          width: 26,
+          height: 26,
+          child: CircularProgressIndicator(strokeWidth: 2.4),
         ),
-      );
+        const SizedBox(height: 14),
+        Text(
+          '正在读取评教列表…',
+          style: TextStyle(fontSize: 12.5, color: SemColors.textMuted),
+        ),
+        if (_log.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            _log,
+            style: TextStyle(fontSize: 11, color: SemColors.textMuted),
+          ),
+        ],
+      ],
+    ),
+  );
 
   Widget _errorView(String message) => Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.cloud_off_outlined,
-                  size: 44, color: SemColors.textMuted),
-              const SizedBox(height: 14),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.7,
-                  color: SemColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 18),
-              FilledButton(onPressed: _loadTargets, child: const Text('重试')),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: _openConnectionSettings,
-                child: const Text('去连接设置'),
-              ),
-            ],
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_off_outlined, size: 44, color: SemColors.textMuted),
+          const SizedBox(height: 14),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.7,
+              color: SemColors.textSecondary,
+            ),
           ),
-        ),
-      );
+          const SizedBox(height: 18),
+          FilledButton(onPressed: _loadTargets, child: const Text('重试')),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: _openConnectionSettings,
+            child: const Text('去连接设置'),
+          ),
+        ],
+      ),
+    ),
+  );
 
   // 刷新条放进列表内容里：跟内容一起滚，不再钉在顶部
   Widget _listView(double topInset) => EvaluateListView(
-        targets: _targets,
-        summary: _summary,
-        topPadding: topInset,
-        header: ToolRefreshBar(
-          refreshing: _refreshing,
-          fromCache: _fromCache,
-          failed: _refreshFailed,
-          onRefresh: _loadTargets,
-        ),
-        connectionLabel: AppState.I.direct ? '直连' : '校园隧道',
-        onTapTarget: _openTarget,
-        onRefresh: _loadTargets,
-        onFillAll: _fillAllTargets,
-        onSubmitAll: _submitAll,
-      );
+    targets: _targets,
+    summary: _summary,
+    topPadding: topInset,
+    header: ToolRefreshBar(
+      refreshing: _refreshing,
+      fromCache: _fromCache,
+      failed: _refreshFailed,
+      onRefresh: _loadTargets,
+    ),
+    connectionLabel: AppState.I.direct ? '直连' : '校园隧道',
+    onTapTarget: _openTarget,
+    onRefresh: _loadTargets,
+    onFillAll: _fillAllTargets,
+    onSubmitAll: _submitAll,
+  );
 }
