@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
+import 'gpa_calculator_page.dart';
+
 /// 成绩查询页：先读本机缓存立即展示，再按设置后台刷新。
 class GradesPage extends StatefulWidget {
   const GradesPage({super.key});
@@ -12,21 +14,21 @@ class GradesPage extends StatefulWidget {
 
 /// 学期码 → 名称（接口返回 1/2 序号，旧版网站学期码 3/12/16 也兼容）。
 String _xqName(String? s) => switch (s) {
-      '1' || '3' => '第一学期',
-      '2' || '12' => '第二学期',
-      '16' => '短学期',
-      _ => (s ?? '').trim(),
-    };
+  '1' || '3' => '第一学期',
+  '2' || '12' => '第二学期',
+  '16' => '短学期',
+  _ => (s ?? '').trim(),
+};
 
 /// 成绩卡标签：课程类别 / 考核方式 / 学年学期；空字段不生成标签，否则会显示字面量 "null"。
 List<String> gradeTags(Map<String, dynamic> g) => [
-      _tag(g['kclbmc']),
-      _tag(g['khfsmc']),
-      [
-        _tag(g['xnmmc']),
-        _xqName(g['xqmmc']?.toString()),
-      ].where((s) => s.isNotEmpty).join(' '),
-    ].where((s) => s.isNotEmpty).toList();
+  _tag(g['kclbmc']),
+  _tag(g['khfsmc']),
+  [
+    _tag(g['xnmmc']),
+    _xqName(g['xqmmc']?.toString()),
+  ].where((s) => s.isNotEmpty).join(' '),
+].where((s) => s.isNotEmpty).toList();
 
 String _tag(Object? v) => '${v ?? ''}'.trim();
 
@@ -71,8 +73,8 @@ class _GradesPageState extends State<GradesPage> {
 
   void _applyData(Map<String, dynamic> data) {
     _all = ((data['grades'] as List?) ?? const []).cast<Map<String, dynamic>>();
-    final terms =
-        ((data['terms'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final terms = ((data['terms'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>();
     if (terms.isNotEmpty) _terms = terms;
     _gpa = asNum(data['gpa']) ?? 0;
     _err = null;
@@ -169,6 +171,13 @@ class _GradesPageState extends State<GradesPage> {
     await _load();
   }
 
+  /// 打开绩点计算器：把当前成绩列表带过去（同一次筛选的课才可比）。
+  void _openGpaCalculator() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => GpaCalculatorPage(grades: _all)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = _all;
@@ -190,160 +199,171 @@ class _GradesPageState extends State<GradesPage> {
         final topInset = glassTopInset(context);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
-          appBar: glassAppBar(context, title: const Text('成绩查询')),
+          appBar: glassAppBar(
+            context,
+            title: const Text('成绩查询'),
+            actions: [
+              // 绩点计算器：按当前列表挑课 / 按类别与学期批量选，算加权绩点
+              IconButton(
+                tooltip: '绩点计算器',
+                onPressed: _all.isEmpty ? null : _openGpaCalculator,
+                icon: const Icon(Icons.calculate_outlined),
+              ),
+            ],
+          ),
           body: GlassFadedBody(
             barHeight: topInset,
             child: PageStateView(
-            loading: _loading && _all.isEmpty,
-            error: _err,
-            empty: !_loading && _err == null && _all.isEmpty,
-            emptyText: '暂无成绩记录',
-            onRetry: _load,
-            child: RefreshIndicator(
-              // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
-              edgeOffset: topInset,
-              onRefresh: _load,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
-                children: [
-                  ToolRefreshBar(
-                    refreshing: _loading,
-                    fromCache: _fromCache,
-                    failed: _refreshFailed,
-                    onRefresh: _load,
-                  ),
-                  AppCard(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        BigStat(
-                          label: '平均绩点',
-                          value: _gpa.toStringAsFixed(1),
-                          color: SemColors.accent,
-                        ),
-                        const Spacer(),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            GestureDetector(
-                              onTap: _pickTerm,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: SemColors.cardElevated,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: _xnm.isEmpty
-                                        ? SemColors.border
-                                        : SemColors.accent,
+              loading: _loading && _all.isEmpty,
+              error: _err,
+              empty: !_loading && _err == null && _all.isEmpty,
+              emptyText: '暂无成绩记录',
+              onRetry: _load,
+              child: RefreshIndicator(
+                // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
+                edgeOffset: topInset,
+                onRefresh: _load,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
+                  children: [
+                    ToolRefreshBar(
+                      refreshing: _loading,
+                      fromCache: _fromCache,
+                      failed: _refreshFailed,
+                      onRefresh: _load,
+                    ),
+                    AppCard(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          BigStat(
+                            label: '平均绩点',
+                            value: _gpa.toStringAsFixed(1),
+                            color: SemColors.accent,
+                          ),
+                          const Spacer(),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              GestureDetector(
+                                onTap: _pickTerm,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: SemColors.cardElevated,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: _xnm.isEmpty
+                                          ? SemColors.border
+                                          : SemColors.accent,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        filterLabel,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: _xnm.isEmpty
+                                              ? SemColors.textMuted
+                                              : SemColors.accent,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        Icons.expand_more,
+                                        size: 14,
+                                        color: SemColors.textMuted,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                child: Row(
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '共 ${_all.length} 门 · 满分绩点 5.0',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: SemColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    for (final g in list)
+                      Card(
+                        elevation: 0,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(color: SemColors.border),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      filterLabel,
+                                      '${g['kcmc']}',
                                       style: TextStyle(
-                                        fontSize: 12,
-                                        color: _xnm.isEmpty
-                                            ? SemColors.textMuted
-                                            : SemColors.accent,
+                                        fontWeight: FontWeight.w600,
+                                        color: SemColors.textPrimary,
                                       ),
                                     ),
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      Icons.expand_more,
-                                      size: 14,
-                                      color: SemColors.textMuted,
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        for (final tag in gradeTags(g))
+                                          _chip(tag),
+                                      ],
                                     ),
                                   ],
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '共 ${_all.length} 门 · 满分绩点 5.0',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: SemColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  for (final g in list)
-                    Card(
-                      elevation: 0,
-                      margin: const EdgeInsets.only(bottom: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(color: SemColors.border),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              const SizedBox(width: 10),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    '${g['kcmc']}',
+                                    '${g['cj']}',
                                     style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: SemColors.textPrimary,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: SemColors.accent,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Wrap(
-                                    spacing: 6,
-                                    runSpacing: 4,
-                                    children: [
-                                      for (final tag in gradeTags(g))
-                                        _chip(tag),
-                                    ],
+                                  Text(
+                                    '学分 ${g['xf']} · 绩点 ${g['jd']}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: SemColors.textMuted,
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '${g['cj']}',
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: SemColors.accent,
-                                  ),
-                                ),
-                                Text(
-                                  '学分 ${g['xf']} · 绩点 ${g['jd']}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: SemColors.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
           ),
         );
       },
@@ -352,14 +372,14 @@ class _GradesPageState extends State<GradesPage> {
 
   /// 标签胶囊。
   Widget _chip(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: SemColors.neutralSoft,
-          borderRadius: BorderRadius.circular(5),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(fontSize: 10, color: SemColors.textMuted),
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: SemColors.neutralSoft,
+      borderRadius: BorderRadius.circular(5),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(fontSize: 10, color: SemColors.textMuted),
+    ),
+  );
 }

@@ -13,3 +13,7 @@ dependencies:
     sdk: flutter
   campus_core:
     path: ../campus_core
+  # 扫一扫：工具页顶栏的二维码入口用「扫一扫能力」，不 import 它的包，
+  # 装了扫一扫插件才有入口（没装就是普通工具页）。
+  plugin_scan:
+    path: ../plugin_scan

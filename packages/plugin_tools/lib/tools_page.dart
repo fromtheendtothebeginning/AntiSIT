@@ -67,6 +67,8 @@ class _ToolsPageState extends State<ToolsPage> {
         // 先算顶栏留白：extendBodyBehindAppBar 之后 body 里的 MediaQuery 已扣掉状态栏，
         // 放进 body 再算会少一个状态栏的高度。
         final topInset = glassTopInset(context);
+        // 扫一扫插件在就显示顶栏入口（按能力取用，不 import 它的包）
+        final scan = PluginRegistry.I.capability<ScanCapability>(PluginIds.scan);
         return Scaffold(
           extendBodyBehindAppBar: glassTopBarEnabled,
           appBar: glassAppBar(
@@ -89,6 +91,14 @@ class _ToolsPageState extends State<ToolsPage> {
                   ),
                 )
               else ...[
+                // 扫一扫：与二课活动页同一个入口能力（扫到二课码直接进签到 / 活动详情），
+                // 扫一扫插件停用时不显示这个按钮。
+                if (scan != null)
+                  IconButton(
+                    onPressed: () => scan.open(context),
+                    icon: const Icon(Icons.qr_code_scanner_outlined),
+                    tooltip: '扫一扫',
+                  ),
                 if (tools.length > 1 || PluginRegistry.I.hasCustomToolSizes)
                   IconButton(
                     onPressed: _openSorter,

@@ -183,9 +183,17 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: Scaffold(body: MarketView())));
     await tester.pumpAndSettle();
 
-    for (final name in ['2048', '扫雷', '学习通截止提醒', 'SIT大物实验提醒']) {
+    // 目录里既有 bundle 也有 web 型条目：两种都要能画出来，
+    // web 型的按钮文案与 bundle 不同（打开网址而不是安装包）。
+    for (final name in [
+      '2048',
+      '扫雷',
+      '学习通截止提醒',
+      'SIT大物实验提醒',
+      'SIT校园地图',
+      'SIT融合门户',
+    ]) {
       expect(find.text(name), findsOneWidget, reason: '真实目录里的「$name」画出来了');
     }
-    expect(find.text('安装'), findsNWidgets(4), reason: '四条都还没装');
   }, skip: skip != null);
 }

@@ -17,6 +17,11 @@ class ToolsPlugin extends FeaturePlugin {
   @override
   String get description => '已启用工具的宫格入口；一个工具都没有时自动从底栏隐藏';
 
+  /// 扫一扫是软依赖：工具页右上角的扫码入口有就用、没有就不显示。
+  /// （条码分流由扫一扫插件自己做：二课签到码 / 活动码 / 拓展安装码…）
+  @override
+  List<String> get optionalDependencies => const [PluginIds.scan];
+
   @override
   List<PluginNavItem> navItems(registry, tab) {
     if (registry.toolCards.isEmpty) return const [];

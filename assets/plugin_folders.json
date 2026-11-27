@@ -221,7 +221,9 @@
         }
       ],
       "dependencies": [],
-      "optionalDependencies": []
+      "optionalDependencies": [
+        "scan"
+      ]
     },
     {
       "package": "plugin_backup",

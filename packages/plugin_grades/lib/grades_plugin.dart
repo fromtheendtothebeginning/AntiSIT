@@ -20,14 +20,14 @@ class GradesPlugin extends FeaturePlugin {
 
   @override
   List<PluginTool> tools(PluginRegistry registry) => [
-        PluginTool(
-          icon: Icons.fact_check_outlined,
-          color: Colors.blue,
-          title: '成绩单',
-          subtitle: () => '各学期成绩、学分与 GPA',
-          open: () => const GradesPage(),
-        ),
-      ];
+    PluginTool(
+      icon: Icons.fact_check_outlined,
+      color: Colors.blue,
+      title: '成绩单',
+      subtitle: () => '各学期成绩、学分与 GPA',
+      open: () => const GradesPage(),
+    ),
+  ];
 }
 
 /// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_GRADES=true 时整包被摇掉。
