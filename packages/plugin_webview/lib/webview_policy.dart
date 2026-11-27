@@ -33,6 +33,28 @@ NavAction decideMainFrameNavigation(
   };
 }
 
+/// 一次返回请求该由谁处理。三层优先级：网页自己的页面栈（拓展的 ctx.ui.push）→
+/// WebView 的浏览历史（融合门户这类站点内部点进去还是有前一页）→ 关掉整页。
+enum BackAction {
+  /// 交给网页的 `window.__antiSITBack()`（拓展叠的子页面）。
+  webStack,
+
+  /// 网页没有自己的栈，但 WebView 还有上一页：回退一层，别把整页关掉。
+  webHistory,
+
+  /// 都没得退：关掉这个页面。
+  closeRoute,
+}
+
+BackAction decideBackAction({
+  required bool hasWebStackPage,
+  required bool canGoBackHistory,
+}) {
+  if (hasWebStackPage) return BackAction.webStack;
+  if (canGoBackHistory) return BackAction.webHistory;
+  return BackAction.closeRoute;
+}
+
 /// 当前页面是否还能使用桥接能力：内联 html 允许；网址形态只允许与初始页同源。
 /// JS 通道不随导航消失，不同源时必须在这里拒绝，否则外部页面能直接调 `antiSITBridge`。
 bool bridgeAllowedOnPage({
@@ -60,7 +82,10 @@ String injectBridgeShim(String html, String shim) {
   final script = '<script>$shim</script>';
   final head = RegExp(r'<head[^>]*>', caseSensitive: false).firstMatch(html);
   if (head != null) return html.replaceRange(head.end, head.end, script);
-  final doctype = RegExp(r'<!doctype[^>]*>', caseSensitive: false).firstMatch(html);
+  final doctype = RegExp(
+    r'<!doctype[^>]*>',
+    caseSensitive: false,
+  ).firstMatch(html);
   if (doctype != null) return html.replaceRange(doctype.end, doctype.end, script);
   return '$script$html';
 }

@@ -67,6 +67,11 @@ class _WebViewPageState extends State<WebViewPage>
   /// 为 true 时系统返回先让网页回退栈内页面，栈空才关整页。
   bool _hasStackPage = false;
 
+  /// WebView 里还有没有上一页（网址型站点点进去第二页）。有的话返回是「回退一层」，
+  /// 不是关掉整页——否则用户在融合门户里点进一个服务，返回直接退出了。
+  /// 必须记成状态：PopScope 的 canPop 只能同步读，拿不到 `canGoBack()` 的异步结果。
+  bool _canGoBackHistory = false;
+
   /// 这份内容是「内联 html」（压缩包拓展）还是「网址」——导航判定按它分岔。
   bool get _inline =>
       widget.html != null && (widget.url == null || widget.url!.trim().isEmpty);
@@ -88,10 +93,14 @@ class _WebViewPageState extends State<WebViewPage>
           onProgress: (p) =>
               mounted ? setState(() => _progress = p / 100) : null,
           onPageStarted: (url) => _currentUrl = url,
-          onUrlChange: (change) => _currentUrl = change.url,
+          onUrlChange: (change) {
+            _currentUrl = change.url;
+            _refreshHistory();
+          },
           onPageFinished: (_) {
             _injectBridge();
             _installDownloadListener();
+            _refreshHistory();
           },
           onNavigationRequest: _onNavigationRequest,
           onWebResourceError: (e) {
@@ -169,26 +178,68 @@ class _WebViewPageState extends State<WebViewPage>
     super.dispose();
   }
 
+  /// 刷新「WebView 还有没有上一页」：每次导航结束都重查一遍，PopScope 靠它决定
+  /// 要不要拦下返回键（拦下才有机会回退，而不是把整页关掉）。
+  void _refreshHistory() {
+    if (!mounted) return;
+    unawaited(() async {
+      var history = false;
+      try {
+        history = await _controller.canGoBack();
+      } catch (_) {
+        history = false;
+      }
+      if (!mounted || _canGoBackHistory == history) return;
+      setState(() => _canGoBackHistory = history);
+    }());
+  }
+
   /// 网页告诉我们它的页面栈空了没有：还有页面时拦下系统返回，先让它回退一层。
   void _onBackGuard(bool canGoBack) {
     if (!mounted || _hasStackPage == canGoBack) return;
     setState(() => _hasStackPage = canGoBack);
   }
 
-  /// 系统返回 / 左上角返回箭头：先问网页能不能自己回退，不能才关掉整页。
-  Future<void> _backFromStack() async {
-    var handled = false;
+  /// 系统返回 / 左上角返回箭头 / 侧滑返回都走这里：先退网页自己的页面栈，再退
+  /// WebView 的浏览历史，都没得退才关掉整页（融合门户这种站点内部点进去过，
+  /// 直接关掉等于把用户刚看的东西全丢了）。
+  Future<void> _handleBack() async {
+    var history = false;
+    try {
+      history = await _controller.canGoBack();
+    } catch (_) {
+      history = false;
+    }
+    switch (decideBackAction(
+      hasWebStackPage: _hasStackPage,
+      canGoBackHistory: history,
+    )) {
+      case BackAction.webStack:
+        if (await _popWebStack()) return;
+        if (!mounted) return;
+        // 网页说栈空了（或没实现 __antiSITBack）：按「没有网页栈」再判一次。
+        setState(() => _hasStackPage = false);
+        if (history) {
+          await _controller.goBack();
+          return;
+        }
+        if (mounted) Navigator.of(context).pop();
+      case BackAction.webHistory:
+        await _controller.goBack();
+      case BackAction.closeRoute:
+        if (mounted) Navigator.of(context).pop();
+    }
+  }
+
+  /// 让网页退回它的栈内页面；它说退不掉就返回 false。
+  Future<bool> _popWebStack() async {
     try {
       final value = await _controller.runJavaScriptReturningResult(
         'window.__antiSITBack ? window.__antiSITBack() : false',
       );
-      handled = value == true || value == 'true';
+      return value == true || value == 'true';
     } catch (_) {
-      handled = false;
-    }
-    if (!handled && mounted) {
-      setState(() => _hasStackPage = false);
-      Navigator.of(context).pop();
+      return false;
     }
   }
 
@@ -364,11 +415,12 @@ class _WebViewPageState extends State<WebViewPage>
   @override
   Widget build(BuildContext context) {
     return PopScope<Object?>(
-      // 栈里有页面时先拦下返回，交给网页自己的页面栈回退。
-      canPop: !_hasStackPage,
+      // 还有得退（网页栈或浏览历史）就先拦下返回，交给 _handleBack 逐层退；
+      // 都退完了才放行（canPop: true 时系统直接关页面）。
+      canPop: !(_hasStackPage || _canGoBackHistory),
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        _backFromStack();
+        _handleBack();
       },
       child: ListenableBuilder(
         listenable: AppState.I,
