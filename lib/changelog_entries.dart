@@ -19,6 +19,15 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.5',
+    date: '2026-11-27',
+    notes: [
+      '修：拓展页的市场装完一条后卡片不出现，要长按进整理态才看得见',
+      '修：网页页的返回——站点点进去过一页时，返回 / 侧滑先回退一层，不再直接退出整个网页',
+      '修：网页页的左上角返回箭头同样按「网页页面栈 → 浏览历史 → 关闭」三层退',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.4',
     date: '2026-11-27',
     notes: [
