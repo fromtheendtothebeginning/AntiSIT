@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 从运行中的 Flutter App（或插件包）目录里，把 `packages/plugin_*` 汇总成「插件文件夹」。
@@ -164,30 +164,59 @@ class PluginFolderCatalog {
 
   bool get loaded => folders.isNotEmpty;
 
-  /// 读清单：缓存优先；读不到再看 bundled assets（`plugin_folders.json`）。
-  Future<void> load({String? bundledAsset}) async {
+  /// 生成物在 assets 里的路径（tool/gen_plugins.dart 写出，随包发布）。
+  static const String assetKey = 'assets/plugin_folders.json';
+
+  /// 读清单：缓存优先；读不到 / 缓存坏了再读随包发布的那份生成物。
+  Future<void> load({String bundledAsset = assetKey}) async {
     final sp = await SharedPreferences.getInstance();
     final cached = sp.getString(_kFolders);
     if (cached != null && cached.isNotEmpty) {
       try {
         folders = parsePluginFolders(jsonDecode(cached));
-        return;
+        if (folders.isNotEmpty) return;
       } catch (_) {}
     }
-    if (bundledAsset != null) {
-      try {
-        final text = await File(bundledAsset).readAsString();
-        folders = parsePluginFolders(jsonDecode(text));
-        await sp.setString(
-          _kFolders,
-          jsonEncode([for (final f in folders) f.toJson()]),
-        );
-        return;
-      } catch (e) {
-        error = '$e';
+    try {
+      final text = await rootBundle.loadString(bundledAsset);
+      folders = parsePluginFolders((jsonDecode(text) as Map)['folders']);
+      error = null;
+      await sp.setString(
+        _kFolders,
+        jsonEncode([for (final f in folders) f.toJson()]),
+      );
+    } catch (e) {
+      error = '$e';
+      folders = <PluginFolderSpec>[];
+    }
+  }
+
+  /// 按依赖拓扑排好的文件夹顺序（被依赖的文件夹在前）：下载 / 展示都用它。
+  List<PluginFolderSpec> topoOrder() => topoOrderFrom(folders);
+
+  /// 纯函数版：对给定清单做拓扑排序（测试与生成器也能直接用）。
+  static List<PluginFolderSpec> topoOrderFrom(List<PluginFolderSpec> list) {
+    final byPart = <String, PluginFolderSpec>{};
+    for (final f in list) {
+      for (final id in f.ids) {
+        byPart[id] = f;
       }
     }
-    folders = <PluginFolderSpec>[];
+    final out = <PluginFolderSpec>[];
+    final seen = <String>{};
+    void visit(PluginFolderSpec f, List<String> path) {
+      if (seen.contains(f.package) || path.contains(f.package)) return;
+      for (final dep in f.dependencies) {
+        final next = byPart[dep];
+        if (next != null) visit(next, [...path, f.package]);
+      }
+      if (seen.add(f.package)) out.add(f);
+    }
+
+    for (final f in list) {
+      visit(f, const []);
+    }
+    return out;
   }
 
   /// 写一份清单（生成器 / 导入时用）。
