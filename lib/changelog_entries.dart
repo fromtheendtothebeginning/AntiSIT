@@ -19,7 +19,7 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
-    version: '1.48.1-dev.1',
+    version: '1.48.1-dev.2',
     date: '2026-11-27',
     notes: [
       '修：服务器模式的「我的报名」原来看到的是全校活动池（含一堆没报名的），现在和直连模式一样只列本人报名记录',
