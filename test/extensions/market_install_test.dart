@@ -5,8 +5,6 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:plugin_ext/api_registry.dart';
-import 'package:plugin_ext/market/market_entry.dart';
-import 'package:plugin_ext/market/market_installer.dart';
 
 import 'harness.dart';
 
