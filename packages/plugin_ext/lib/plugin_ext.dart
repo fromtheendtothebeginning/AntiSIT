@@ -23,6 +23,7 @@ export 'ext_secrets.dart';
 export 'extension_item.dart';
 export 'extension_store.dart';
 export 'extensions_page.dart';
+export 'extensions_page_card.dart';
 export 'market/market_entry.dart';
 export 'market/market_installer.dart';
 export 'market/market_source.dart';

@@ -544,7 +544,12 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
             duration: _sizeAnim,
             curve: Curves.easeOutCubic,
             alignment: Alignment.topCenter,
-            clipBehavior: Clip.none,
+            // 高度是**动画**长的（换档 / 新增卡片都会变）：这段时间里新排进来的卡片
+            // 已经落在最终格位、卡框却还没长到那儿，不裁就会画到宫格外面，盖住紧跟
+            // 着的下一块内容（拓展页的「添加拓展」卡就这么被压住过）。
+            // 拖动 / 缩放时保留 overflow：那两种手势本来就要求卡片跟着手指离开格位。
+            clipBehavior:
+                (drag == null && resize == null) ? Clip.hardEdge : Clip.none,
             child: SizedBox(
               key: _stackKey,
               width: double.infinity,
