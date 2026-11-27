@@ -156,38 +156,41 @@ class _SlidePageTransition extends StatelessWidget {
           dim = 0;
         }
 
-        // 转场期间给页面垫一张场景底（静止时透明）。判断必须看**动画状态**而不是数值：
-        // 返回第一帧 value 还是 1，按数值判断会漏垫一帧，透出下层页形成闪烁。
-        final busy = animation.status == AnimationStatus.forward ||
-            animation.status == AnimationStatus.reverse ||
-            (topRouteIsPage.value &&
-                (secondaryAnimation.status == AnimationStatus.forward ||
-                    secondaryAnimation.status == AnimationStatus.reverse));
+        // 只有**自己**在进出时才垫场景底（判断看动画状态而不是数值：返回第一帧
+        // value 还是 1，按数值判断会漏垫一帧，透出下层页形成闪烁）。
+        //
+        // 被上层盖住的旧页不垫：盖住它的那页自己有一张不透明的场景底，旧页再画一张
+        // 全屏光斑完全是重复劳动——转场时每层路由各来一遍，正是 issue #20 掉帧的来源。
+        final animating = animation.status == AnimationStatus.forward ||
+            animation.status == AnimationStatus.reverse;
+        // 静止（没位移、没压暗）就直接返回页面：不再多套一层 Transform / Stack。
+        if (!animating && shift == 0 && dim == 0) return child!;
 
         return Transform.translate(
           offset: Offset(shift, 0),
           child: Stack(
             fit: StackFit.passthrough,
             children: [
-              // 场景底（常驻组件树，只改显隐与透明度，不触发布局）
+              // 场景底（常驻组件树，只改显隐，不触发布局）
               Positioned.fill(
                 child: IgnorePointer(
                   child: Opacity(
-                    opacity: busy ? 1 : 0,
+                    opacity: animating ? 1 : 0,
                     child: GlassScenePaint(wells: GlassScene.wells),
                   ),
                 ),
               ),
               child!,
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF000000).withValues(alpha: dim),
+              if (dim > 0)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF000000).withValues(alpha: dim),
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         );
