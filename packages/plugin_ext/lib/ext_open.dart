@@ -65,8 +65,7 @@ Future<void> openExtension(
   if (!context.mounted) return;
   // 校内网页（融合门户这类只有内网能到的站点）：服务器模式下走校园隧道，
   // 与大物实验提醒同一个出口；直连模式 / 演示直接加载（那时手机本来就在校内网里）。
-  final intranet = await wantsCampusPage(e);
-  final proxy = await campusProxyForExtension(e);
+  final plan = await campusOpenPlan(e);
   if (!context.mounted) return;
   await kernel.openPage(
     context,
@@ -74,9 +73,10 @@ Future<void> openExtension(
     html: html,
     title: e.name,
     bridge: ExtBridge(extId: e.id, context: context, item: e),
-    proxy: proxy,
+    proxy: plan.proxy,
   );
-  if (proxy.isEmpty && intranet && !AppState.I.direct) {
+  // 直连模式不挂代理也不提示：那时手机本来就在校内网（或用户自己负责网络）。
+  if (plan.intranet && plan.proxy.isEmpty && !AppState.I.direct) {
     say('「${e.name}」只有校内网能打开：请先到「我的 → 校园服务」连接校园网，或切到直连模式');
   }
 }
@@ -143,19 +143,23 @@ void resetCampusProxyProbe() {
       InternetAddress.lookup(host).timeout(const Duration(seconds: 3));
 }
 
-/// 取校园隧道网页代理（`http://host:port`）。服务器侧的隧道是**按需**建的：
-/// 只有隧道请求收到 202 才开始建，建好之前 `/status` 里没有 `http_port`。
-/// 所以探不到就先发一个轻量隧道请求把流程推起来，再按 2 秒一轮等最多 6 秒
-/// （用户可能刚点开、隧道还在建；等太久的话页面迟迟不出现，比直连失败更难受）。
-/// 一直拿不到就按直连打开，由调用方补一句提示。
-Future<String> campusProxyForExtension(ExtensionItem e) async {
-  // 没填服务器地址 / 直连模式：等再久也不会有隧道，直接直连。
-  if (AppState.I.direct || AppState.I.serverUrl.isEmpty) return '';
-  if (!await wantsCampusPage(e)) return '';
+/// 打开前的结论：是不是校内网页（要提示「先连校园网」）、以及该挂的隧道代理。
+typedef CampusOpenPlan = ({bool intranet, String proxy});
+
+/// 这一次打开要不要挂校园隧道代理。服务器侧的隧道是**按需**建的：只有隧道请求收到
+/// 202 才开始建，建好之前 `/status` 里没有 `http_port`。所以探不到就先发一个轻量
+/// 隧道请求把流程推起来，再按 2 秒一轮等几轮（用户可能刚点开、隧道还在建；等更久
+/// 的话页面迟迟不出现，比直连失败更难受）。一直拿不到就按直连打开，由调用方提示。
+Future<CampusOpenPlan> campusOpenPlan(ExtensionItem e) async {
+  final intranet = await wantsCampusPage(e);
+  // 没填服务器地址 / 直连模式：等再久也不会有隧道，直接直连（此时手机本来就在校内网）。
+  if (!intranet || AppState.I.direct || AppState.I.serverUrl.isEmpty) {
+    return (intranet: intranet, proxy: '');
+  }
   var warmupStarted = false;
   for (var attempt = 0; attempt < 3; attempt++) {
     final proxy = await campusProxyProbe();
-    if (proxy.isNotEmpty) return proxy;
+    if (proxy.isNotEmpty) return (intranet: true, proxy: proxy);
     if (!warmupStarted) {
       warmupStarted = true;
       // 顺手推一下建隧道：隧道类接口收到 202 才会开始连校园网。
@@ -166,7 +170,7 @@ Future<String> campusProxyForExtension(ExtensionItem e) async {
     }
     await Future<void>.delayed(campusProxyRetryDelay);
   }
-  return '';
+  return (intranet: true, proxy: '');
 }
 
 /// 删除 / 卸载一条拓展前跟用户确认：说清会连带清掉什么。
