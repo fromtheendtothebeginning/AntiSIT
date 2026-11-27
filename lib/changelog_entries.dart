@@ -19,6 +19,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.3',
+    date: '2026-11-27',
+    notes: [
+      '工具页顶栏加了扫一扫：与二课活动页同一个扫码入口，扫到活动码 / 签到码直接进对应流程',
+      '成绩查询加了绩点计算器：勾选部分课程算加权绩点，可全选、除通识课全选，也能按类别 tag 与学期批量勾选',
+      '修：服务器模式的成绩只取了第一页 15 门（全部学期缺课、绩点算少），现在逐页取全',
+      '插件市场新增「SIT校园地图」（SITMC 像素地图）与「SIT融合门户」（需校内网 / 校园 VPN）',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.2',
     date: '2026-11-27',
     notes: [
