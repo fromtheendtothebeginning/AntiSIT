@@ -19,6 +19,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.9',
+    date: '2026-11-28',
+    notes: [
+      '拓展工坊界面按 DSH Go 重做：扁平消息流、两列快捷卡片、顶栏更清爽',
+      '拓展工坊输入框打 / 会弹出工具与技能候选，上下键选、回车直接补进输入框',
+      '课表日程支持每两周、每月重复；「重复」与「单次」并排，可设循环的开始与结束日期',
+      '课表可以按时间段、重复类型、日期范围筛日程（多条件同时生效），顶栏会显示筛选生效中',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.8',
     date: '2026-11-28',
     notes: [
