@@ -136,134 +136,153 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
           body: GlassFadedBody(
             barHeight: topInset,
             child: ListView(
-            padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
-            children: [
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '主题',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
+              padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 24),
+              children: [
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '主题',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    const ThemePickerList(showDescriptions: false),
-                    const SizedBox(height: 4),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () => _importTheme(context),
-                        icon: const Icon(Icons.file_open_outlined, size: 18),
-                        label: const Text('导入主题'),
+                      const SizedBox(height: 8),
+                      const ThemePickerList(showDescriptions: false),
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => _importTheme(context),
+                          icon: const Icon(Icons.file_open_outlined, size: 18),
+                          label: const Text('导入主题'),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '夜间模式',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    GlassTabs(
-                      labels: const ['跟随系统', '浅色', '深色'],
-                      index: _appearanceIndex,
-                      position: _appearancePos,
-                      onChanged: (i) => st.setThemeMode(switch (i) {
-                        1 => ThemeMode.light,
-                        2 => ThemeMode.dark,
-                        _ => ThemeMode.system,
-                      }),
-                    ),
-                    const SizedBox(height: 6),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              AppCard(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: SwitchListTile(
-                  secondary: const Icon(Icons.swipe_outlined),
-                  title: const Text('界面实时跟着滑块切换'),
-                  value: st.followSlider,
-                  onChanged: (v) => st.setFollowSlider(v),
-                ),
-              ),
-              const SizedBox(height: 10),
-              AppCard(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: SwitchListTile(
-                  secondary: const Icon(Icons.keyboard_backspace_rounded),
-                  title: const Text('预测式返回动画'),
-                  value: st.predictiveBack,
-                  onChanged: (v) => st.setPredictiveBack(v),
-                ),
-              ),
-              if (st.predictiveBack) ...[
                 const SizedBox(height: 10),
                 AppCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.animation_rounded, size: 20),
-                          const SizedBox(width: 10),
-                          const Text('预测式返回样式',
-                              style: TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        '「位移」与默认返回动画一致：整页往右让出、下层页就位；'
-                        '「淡化」是旧样式：当前页整页淡出并轻微缩小、露出下层页',
-                        style: TextStyle(fontSize: 12),
+                      Text(
+                        '夜间模式',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       GlassTabs(
-                        labels: const ['位移 + 压暗', '淡化 + 透明'],
-                        index:
-                            st.predictiveBackStyle == PredictiveBackStyle.fade
-                                ? 1
-                                : 0,
-                        onChanged: (i) => st.setPredictiveBackStyle(
-                            i == 1
-                                ? PredictiveBackStyle.fade
-                                : PredictiveBackStyle.slide),
+                        labels: const ['跟随系统', '浅色', '深色'],
+                        index: _appearanceIndex,
+                        position: _appearancePos,
+                        onChanged: (i) => st.setThemeMode(switch (i) {
+                          1 => ThemeMode.light,
+                          2 => ThemeMode.dark,
+                          _ => ThemeMode.system,
+                        }),
                       ),
                       const SizedBox(height: 6),
                     ],
                   ),
                 ),
-              ],
-              const SizedBox(height: 10),
-              AppCard(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: SwitchListTile(
-                  secondary: const Icon(Icons.blur_on_rounded),
-                  title: const Text('悬浮玻璃顶栏'),
-                  subtitle: const Text(
-                    '内容从顶栏底下穿过，靠近顶栏时渐变淡出（不做实时模糊，滚动最稳）；关闭则用普通顶栏',
-                    style: TextStyle(fontSize: 12),
+                const SizedBox(height: 10),
+                AppCard(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: SwitchListTile(
+                    secondary: const Icon(Icons.swipe_outlined),
+                    title: const Text('界面实时跟着滑块切换'),
+                    value: st.followSlider,
+                    onChanged: (v) => st.setFollowSlider(v),
                   ),
-                  value: st.glassTopBar,
-                  onChanged: (v) => st.setGlassTopBar(v),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(height: 10),
+                AppCard(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: SwitchListTile(
+                    secondary: const Icon(Icons.keyboard_backspace_rounded),
+                    title: const Text('预测式返回动画'),
+                    value: st.predictiveBack,
+                    onChanged: (v) => st.setPredictiveBack(v),
+                  ),
+                ),
+                if (st.predictiveBack) ...[
+                  const SizedBox(height: 10),
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.animation_rounded, size: 20),
+                            const SizedBox(width: 10),
+                            const Text(
+                              '预测式返回样式',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '「位移」与默认返回动画一致：整页往右让出、下层页就位；'
+                          '「淡化」是旧样式：当前页整页淡出并轻微缩小、露出下层页',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(height: 12),
+                        GlassTabs(
+                          labels: const ['位移 + 压暗', '淡化 + 透明'],
+                          index:
+                              st.predictiveBackStyle == PredictiveBackStyle.fade
+                              ? 1
+                              : 0,
+                          onChanged: (i) => st.setPredictiveBackStyle(
+                            i == 1
+                                ? PredictiveBackStyle.fade
+                                : PredictiveBackStyle.slide,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                AppCard(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: SwitchListTile(
+                    secondary: const Icon(Icons.movie_filter_outlined),
+                    title: const Text('启动动画'),
+                    subtitle: const Text(
+                      '打开 App 时播校徽装配。关掉直接进主页，冷启动快一点',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: st.bootAnimation,
+                    onChanged: (v) => st.setBootAnimation(v),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                AppCard(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: SwitchListTile(
+                    secondary: const Icon(Icons.blur_on_rounded),
+                    title: const Text('悬浮玻璃顶栏'),
+                    subtitle: const Text(
+                      '内容从顶栏底下穿过，靠近顶栏时渐变淡出（不做实时模糊，滚动最稳）；关闭则用普通顶栏',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    value: st.glassTopBar,
+                    onChanged: (v) => st.setGlassTopBar(v),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },

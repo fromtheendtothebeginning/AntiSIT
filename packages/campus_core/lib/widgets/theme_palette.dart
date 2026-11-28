@@ -10,6 +10,7 @@ class GlassPalette {
     required this.card,
     required this.cardElevated,
     required this.navPill,
+    required this.navSolid,
     required this.menuBg,
     required this.border,
     required this.borderStrong,
@@ -36,7 +37,8 @@ class GlassPalette {
   final Color bg; // 页面底色。
   final Color card; // 玻璃卡面。
   final Color cardElevated; // 次级玻璃面（嵌套控件底）。
-  final Color navPill; // 底部悬浮导航条底（比 cardElevated 更实，压在内容上也读得清）。
+  final Color navPill; // 周切换 / 日切换那类小胶囊条的底色。
+  final Color navSolid; // 底部主导航栏底色：比 navPill 再实一档，压在课表格子上也不糊。
   final Color menuBg; // 弹窗 / 菜单近实底。
   final Color border; // 玻璃描边。
   final Color borderStrong; // 输入框 / 独立控件描边。
@@ -63,7 +65,8 @@ class GlassPalette {
     bg: Color(0xFFE3E9F2),
     card: Color(0x8CFFFFFF), // 白 55%
     cardElevated: Color(0x66FFFFFF), // 白 40%
-    navPill: Color(0xC7FFFFFF), // 白 78%（底部悬浮导航条：要更实，压在课表上也读得清）
+    navPill: Color(0xC7FFFFFF), // 白 78%（周切换胶囊条）
+    navSolid: Color(0xF0FFFFFF), // 白 94%（底部主导航栏：压在课格子上文字也清晰）
     menuBg: Color(0xF7FFFFFF), // 白 97%
     border: Color(0xB3FFFFFF), // 白 70%
     borderStrong: Color(0xF2FFFFFF), // 白 95%
@@ -91,7 +94,8 @@ class GlassPalette {
     bg: Color(0xFF0B1322),
     card: Color(0x14FFFFFF), // 白 8%
     cardElevated: Color(0x0FFFFFFF), // 白 6%
-    navPill: Color(0x47FFFFFF), // 白 28%（底部悬浮导航条：深色下压在课表格子上，「第 x 周」要看得清）
+    navPill: Color(0x47FFFFFF), // 白 28%（周切换胶囊条）
+    navSolid: Color(0x85FFFFFF), // 白 52%（底部主导航栏：深色下也压得住课格子）
     menuBg: Color(0xF5111A2B), // #111A2B 96%
     border: Color(0x26FFFFFF), // 白 15%
     borderStrong: Color(0x52FFFFFF), // 白 32%
@@ -126,6 +130,7 @@ class GlassPalette {
       card: mix(a.card, b.card),
       cardElevated: mix(a.cardElevated, b.cardElevated),
       navPill: mix(a.navPill, b.navPill),
+      navSolid: mix(a.navSolid, b.navSolid),
       menuBg: mix(a.menuBg, b.menuBg),
       border: mix(a.border, b.border),
       borderStrong: mix(a.borderStrong, b.borderStrong),
@@ -168,6 +173,7 @@ class GlassPalette {
       card: surface,
       cardElevated: isDark ? soft(Colors.white, 0.06) : soft(ink, 0.03),
       navPill: surface,
+      navSolid: surface,
       menuBg: surface,
       border: isDark ? soft(Colors.white, 0.12) : soft(ink, 0.12),
       borderStrong: isDark ? soft(Colors.white, 0.26) : soft(ink, 0.26),
@@ -251,6 +257,7 @@ class SemColors {
   static Color get card => p.card;
   static Color get cardElevated => p.cardElevated;
   static Color get navPill => p.navPill;
+  static Color get navSolid => p.navSolid;
   static Color get menuBg => p.menuBg;
   static Color get borderStrong => p.borderStrong;
   static Color get inputFill => p.inputFill;

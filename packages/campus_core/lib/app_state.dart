@@ -66,6 +66,12 @@ class AppState extends ChangeNotifier {
   /// 顶栏是否用「悬浮玻璃」样式：开 = 顶栏浮在内容上，靠近它的内容被模糊。
   bool glassTopBar = true;
 
+  /// 启动动画开关：关 = 直接进主页，不播开机那几秒的校徽装配。
+  ///
+  /// 名字写全（boot / startup）而不是 `animation`：以后再加别的动画开关时
+  /// 不必改名，键名也不会跟已有存档撞。
+  bool bootAnimation = true;
+
   /// 工具页进入时是否自动刷新；关掉后只展示本机缓存，靠右上角按钮更新。
   bool autoRefreshTools = true;
 
@@ -109,6 +115,7 @@ class AppState extends ChangeNotifier {
       orElse: () => PredictiveBackStyle.slide,
     );
     glassTopBar = sp.getBool('glass_top_bar') ?? true;
+    bootAnimation = sp.getBool('boot_animation') ?? true;
     autoRefreshTools = sp.getBool('tool_auto_refresh') ?? true;
     ecardRefreshSeconds = (sp.getInt('ecard_refresh_seconds') ?? 10).clamp(
       5,
@@ -181,6 +188,7 @@ class AppState extends ChangeNotifier {
     await sp.setBool('predictive_back', predictiveBack);
     await sp.setString('predictive_back_style', predictiveBackStyle.name);
     await sp.setBool('glass_top_bar', glassTopBar);
+    await sp.setBool('boot_animation', bootAnimation);
     await sp.setBool('tool_auto_refresh', autoRefreshTools);
     await sp.setInt('ecard_refresh_seconds', ecardRefreshSeconds);
     await sp.setString('app_mode', direct ? 'direct' : 'server');
@@ -341,6 +349,14 @@ class AppState extends ChangeNotifier {
   Future<void> setGlassTopBar(bool v) async {
     if (glassTopBar == v) return;
     glassTopBar = v;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// 启动动画开关。
+  Future<void> setBootAnimation(bool v) async {
+    if (bootAnimation == v) return;
+    bootAnimation = v;
     await _persist();
     notifyListeners();
   }

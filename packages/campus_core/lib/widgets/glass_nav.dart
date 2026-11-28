@@ -144,9 +144,9 @@ class _GlassNavBarState extends State<GlassNavBar>
         colors: [
           Color.alphaBlend(
             Colors.white.withValues(alpha: 0.16),
-            SemColors.navPill,
+            SemColors.navSolid,
           ),
-          SemColors.navPill,
+          SemColors.navSolid,
         ],
         stops: const [0, 0.5],
       ),

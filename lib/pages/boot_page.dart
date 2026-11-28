@@ -7,6 +7,17 @@ import '../update_download.dart';
 import 'boot_splash.dart';
 import 'home_page.dart';
 
+/// 启动动画的分层装配约 1.3s：至少让它播完再进主页（否则最后一层绿环刚弹出就切走）。
+const Duration bootMinShow = Duration(milliseconds: 1100);
+
+/// 关掉启动动画时不久等：初始化本来就跑完大半，等下去只是对着纯色底发呆。
+const Duration bootMinShowWhenOff = Duration(milliseconds: 120);
+
+/// 启动页至少停留多久：开动画就等装配播完，关了只留一帧过渡。
+@visibleForTesting
+Duration bootMinShowFor(bool animationOn) =>
+    animationOn ? bootMinShow : bootMinShowWhenOff;
+
 /// 启动页：播启动动画，同时异步加载本地设置、插件清单、课表与插件初始化，然后进主页。
 ///
 /// 有 token 直接用（401 时请求层自动续期 / 重登），未登录由各页面的门控引导。
@@ -23,8 +34,7 @@ class _BootPageState extends State<BootPage> {
 
   /// 进主页的最早时刻：动画至少播这么久，避免一闪而过。
   final DateTime _startedAt = DateTime.now();
-  // 启动动画的分层装配是 1.4s，至少让它播完再进主页（否则最后一层绿环刚弹出就切走）
-  static const Duration _minShow = Duration(milliseconds: 1500);
+  static const Duration _minShow = bootMinShow;
 
   @override
   void initState() {
@@ -67,10 +77,12 @@ class _BootPageState extends State<BootPage> {
     await step('正在初始化功能…', () => PluginRegistry.I.initAll());
     // 上一次更新下载的安装包装完就没用了，启动时顺手清扫；不阻塞首屏
     unawaited(UpdateDownloader.I.sweepCache());
-    // 动画至少播完一轮再进主页（剩下的初始化本来就已经异步跑完了）
+    // 动画至少播完一轮再进主页（剩下的初始化本来就已经异步跑完了）；
+    // 用户关掉了启动动画就只留一帧过渡，别让人对着空白等。
+    final minShow = bootMinShowFor(AppState.I.bootAnimation);
     final elapsed = DateTime.now().difference(_startedAt);
-    if (elapsed < _minShow) {
-      await Future<void>.delayed(_minShow - elapsed);
+    if (elapsed < minShow) {
+      await Future<void>.delayed(minShow - elapsed);
     }
     if (!mounted) return;
     if (bootError != null) {
@@ -91,6 +103,18 @@ class _BootPageState extends State<BootPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 关掉启动动画：只留一层纯色底（同一块背景色，不闪白），马上进主页。
+    if (!AppState.I.bootAnimation) {
+      return ColoredBox(
+        color: SemColors.bg,
+        child: Center(
+          child: Text(
+            _stage,
+            style: TextStyle(fontSize: 12, color: SemColors.textMuted),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       body: BootSplash(stage: _stage, minShow: _minShow),
     );
