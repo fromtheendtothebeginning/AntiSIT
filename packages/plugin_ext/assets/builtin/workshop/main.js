@@ -27,14 +27,23 @@ let onSessionChange = () => {};
 const WELCOME = `
   <div class="welcome">
     <div class="welcome-mark">◈</div>
-    <div class="welcome-title">和 Agent 一起写一个 Cordis 拓展</div>
-    <div class="welcome-note">描述你想要的小工具。Agent 会先看拓展、读文件、再改；写文件和安装前默认会弹确认。运行中也可以继续插话，下一步会看到。想先讨论方案就开「计划」，信任当前任务就开「完全访问」。</div>
-    <div class="welcome-says">
-      <button data-say="做一个记录喝水次数的小工具，数据要留在本机">做一个喝水记录小工具</button>
-      <button data-say="做一个用 AI 总结文本文件的工具：可以选择文件、显示摘要，还能把摘要保存成 txt">做一个 AI 文件总结工具</button>
-      <button data-say="做一个倒计时，可以设定目标日期">做一个倒计时</button>
-      <button data-say="先读一下当前 main.js，告诉我它是做什么的">读一下当前 main.js</button>
+    <div class="welcome-title">今天做点什么</div>
+    <div class="welcome-note">说清楚要的小工具，Agent 会先看拓展、读文件、再改；写文件和安装前默认会弹确认。运行中也能继续插话。输入 <code>/</code> 可以直接调用工具或技能。</div>
+    <div class="welcome-grid">
+      <button class="welcome-card" data-say="做一个记录喝水次数的小工具，数据要留在本机">
+        <strong>喝水记录</strong><span>本机存数据，点一下就加一次</span>
+      </button>
+      <button class="welcome-card" data-say="做一个用 AI 总结文本文件的工具：可以选择文件、显示摘要，还能把摘要保存成 txt">
+        <strong>AI 总结文件</strong><span>选文件、看摘要、存成 txt</span>
+      </button>
+      <button class="welcome-card" data-say="做一个倒计时，可以设定目标日期">
+        <strong>倒计时</strong><span>设定目标日期，显示还剩几天</span>
+      </button>
+      <button class="welcome-card" data-say="先读一下当前 main.js，告诉我它是做什么的">
+        <strong>读懂当前拓展</strong><span>先读 main.js，讲清它在干什么</span>
+      </button>
     </div>
+    <div class="welcome-slash">输入 <code>/</code> 调用工具与技能</div>
   </div>`;
 
 // ==================== 会话日志 ====================
@@ -1442,6 +1451,9 @@ async function refreshSkills() {
     S.skills = [];
     console.warn('[workshop] 技能库读取失败', e);
   }
+  // 「/」面板里的技能候选跟着刷新（技能可能刚被导入 / 删除）。
+  // syncSlash 定义在 apply() 作用域里，模块作用域拿不到，通过 S 上的钩子回调。
+  if (S && S.slashOpen && S.syncSlash) S.syncSlash();
 }
 
 async function readManifest() {
@@ -1739,6 +1751,11 @@ export default {
       skills: [],
       status: '',
       tab: 'chat',
+      // 「/」命令面板：open = 弹出中，items = 当前候选，index = 高亮项
+      slashOpen: false,
+      slashItems: [],
+      slashIndex: 0,
+      slashQuery: '',
       alive: true,
     };
 
@@ -1746,11 +1763,11 @@ export default {
       <div class="ws">
         <header class="ws-head">
           <div class="ws-bar">
-            <button id="btnSwitch" class="ws-icon" title="切换拓展 / 对话">←</button>
-            <button id="btnTitle" class="ws-heading">
+            <button id="btnSwitch" class="ws-icon" title="切换拓展 / 对话">☰</button>
+            <div class="ws-heading">
               <span class="ws-title" id="convTitle">新对话</span>
               <span class="ws-sub" id="draftMeta"></span>
-            </button>
+            </div>
             <button id="btnPublish" class="ws-publish" title="连接 GitHub / Gitee 发布">发布</button>
             <button id="btnMore" class="ws-icon" title="更多">⋯</button>
           </div>
@@ -1768,8 +1785,9 @@ export default {
           <div class="file-list" id="files"></div>
         </section>
         <footer class="ws-composer">
+          <div class="composer-slash hidden" id="slashPanel"></div>
           <div class="composer-box">
-            <textarea id="input" rows="1" placeholder="描述要做什么，或直接说改哪个文件…"></textarea>
+            <textarea id="input" rows="1" placeholder="描述要做什么，或直接说改哪个文件…（输入 / 调用工具与技能）"></textarea>
             <div class="composer-row">
               <button id="btnPlan" class="pill" title="只读分析并给出执行计划">计划</button>
               <button id="btnFull" class="pill danger" title="写入 / 安装不再逐次确认">完全访问</button>
@@ -1782,6 +1800,7 @@ export default {
             </div>
           </div>
           <div class="ws-meta"><span id="metaLine"></span><span id="status" class="hidden"></span></div>
+          <div class="composer-hint"><span>/ 调用工具与技能 · ↑ 发送 · 🎤 说话</span></div>
         </footer>
         <div class="ws-menu hidden" id="moreMenu">
           <button data-act="skills">技能</button>
@@ -2668,6 +2687,9 @@ function renderModels() {
       if (!text || !S.session) return;
       input.value = '';
       input.style.height = '';
+      S.slashOpen = false;
+      S.slashItems = [];
+      renderSlash();
       const message = { text: text };
       const target = S.running ? 'next-step' : 'next-turn';
       S.pending.push(message);
@@ -2675,6 +2697,95 @@ function renderModels() {
       notify();
       if (!S.running) runAgent();
     }
+
+
+    // ---------- 「/」命令面板：调用工具与技能 ----------
+
+    /** 候选项：工具（带说明）+ 技能（带说明），按 query 前缀 / 包含过滤。 */
+    function slashCandidates(query) {
+      const q = String(query || '').toLowerCase();
+      const tools = availableTools().map((tool) => ({
+        kind: 'tool',
+        name: tool.name,
+        hint: tool.description || '',
+        insert: tool.name + (tool.parameters && tool.parameters.properties
+          && Object.keys(tool.parameters.properties).length ? ' ' : ''),
+      }));
+      const skills = ((S && S.skills) || []).map((skill) => ({
+        kind: 'skill',
+        name: skill.name,
+        hint: skill.description || '（无说明）',
+        insert: '用 read_skill 读「' + skill.name + '」并按它的说明做：',
+      }));
+      const all = tools.concat(skills);
+      if (!q) return all.slice(0, 12);
+      return all
+        .filter((item) => item.name.toLowerCase().indexOf(q) >= 0
+          || item.hint.toLowerCase().indexOf(q) >= 0)
+        .slice(0, 12);
+    }
+
+    function renderSlash() {
+      const panel = $('#slashPanel');
+      if (!S.slashOpen || !S.slashItems.length) {
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        return;
+      }
+      panel.classList.remove('hidden');
+      panel.innerHTML = '';
+      S.slashItems.forEach((item, i) => {
+        const row = document.createElement('button');
+        row.className = 'slash-item' + (i === S.slashIndex ? ' active' : '');
+        row.innerHTML = '<span class="slash-kind ' + item.kind + '">'
+          + (item.kind === 'tool' ? '工具' : '技能') + '</span>'
+          + '<span class="slash-main"><strong>' + esc(item.name) + '</strong>'
+          + '<em>' + esc(item.hint) + '</em></span>';
+        // 用 mousedown 而不是 click：click 会在 textarea 失焦之后才触发
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          applySlash(S.slashIndex = i);
+        });
+        panel.appendChild(row);
+      });
+    }
+
+    /** 选中一条：工具补成「工具名 + 空格」，技能补成一句「读这条技能再照做」。 */
+    function applySlash(index) {
+      const item = S.slashItems[index];
+      if (!item) return;
+      input.value = item.kind === 'tool'
+        ? item.name + ' '
+        : item.insert;
+      S.slashOpen = false;
+      S.slashItems = [];
+      renderSlash();
+      input.focus();
+      const end = input.value.length;
+      input.setSelectionRange(end, end);
+      input.dispatchEvent(new Event('input'));
+    }
+
+    /** 输入变化：以 / 开头（且还没打空格）就当在敲命令，刷新候选。 */
+    function syncSlash() {
+      const value = input.value;
+      const atStart = value.startsWith('/') && !value.slice(1).includes(' ');
+      if (!atStart) {
+        if (S.slashOpen) {
+          S.slashOpen = false;
+          S.slashItems = [];
+          renderSlash();
+        }
+        return;
+      }
+      const query = value.slice(1);
+      S.slashQuery = query;
+      S.slashItems = slashCandidates(query);
+      S.slashIndex = 0;
+      S.slashOpen = S.slashItems.length > 0;
+      renderSlash();
+    }
+    S.syncSlash = syncSlash;
 
     // ==================== 事件 ====================
 
@@ -2691,6 +2802,29 @@ function renderModels() {
       notify();
     });
     input.addEventListener('keydown', (e) => {
+      // 命令面板打开时，上下键在候选里移动、回车选中；Esc 收起
+      if (S.slashOpen) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const delta = e.key === 'ArrowDown' ? 1 : -1;
+          const n = S.slashItems.length;
+          S.slashIndex = ((S.slashIndex + delta) % n + n) % n;
+          renderSlash();
+          return;
+        }
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          applySlash(S.slashIndex);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          S.slashOpen = false;
+          S.slashItems = [];
+          renderSlash();
+          return;
+        }
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         send();
@@ -2700,6 +2834,7 @@ function renderModels() {
     input.addEventListener('input', () => {
       input.style.height = 'auto';
       input.style.height = Math.min(input.scrollHeight, 132) + 'px';
+      syncSlash();
     });
 
     // ---- 重命名：页面内的输入弹层（WebView 里没法用原生输入框）----
@@ -2807,7 +2942,8 @@ function renderModels() {
       backdrop.classList.remove('hidden');
     };
     $('#btnSwitch').addEventListener('click', openSwitch);
-    $('#btnTitle').addEventListener('click', openSwitch);
+    // 标题区现在只是文本（不再是按钮）：点它也能开切换面板
+    $('.ws-heading').addEventListener('click', openSwitch);
 
     root.querySelectorAll('.ws-tab').forEach((b) => {
       b.addEventListener('click', () => setTab(b.getAttribute('data-tab')));

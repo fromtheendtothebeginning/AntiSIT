@@ -409,6 +409,63 @@ button {
 
 .tool-item pre.result { color: var(--fg); }
 
+
+/* ---------- 「/」命令面板 ---------- */
+
+.composer-slash {
+  max-height: 232px;
+  overflow-y: auto;
+  margin: 0 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card-solid);
+  box-shadow: 0 -6px 22px color-mix(in srgb, #000 10%, transparent);
+}
+
+.slash-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+}
+.slash-item:last-child { border-bottom: 0; }
+.slash-item.active { background: var(--soft); }
+
+.slash-kind {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.slash-kind.tool { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+
+.slash-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.slash-main strong { font-size: 13px; font-weight: 600; }
+.slash-main em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+/* 输入区下面那行小字：只用来说明「/」和发送，别抢视觉 */
+.composer-hint {
+  padding: 3px 6px 0;
+  font-size: 10.5px;
+  color: var(--muted);
+  text-align: right;
+}
 /* ---------- 输入区 ---------- */
 
 .ws-composer {
@@ -990,25 +1047,46 @@ button {
   color: var(--muted);
 }
 
-.welcome-says {
-  display: flex;
-  flex-direction: column;
+/* 两列卡片：一眼扫完四个入口，比一列长条更省竖向空间（手机上尤其） */
+.welcome-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   max-width: 26em;
   margin: 0 auto;
 }
 
-.welcome-says button {
+.welcome-card {
   min-height: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--card-solid);
-  padding: 10px 12px;
-  font-size: 12.5px;
+  padding: 10px 11px;
   color: var(--fg);
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.welcome-says button:active { background: var(--field); }
+.welcome-card strong { font-size: 12.5px; font-weight: 600; }
+.welcome-card span { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.welcome-card:active { background: var(--field); }
+
+/* 底部一行提示：告诉用户有「/」这条路 */
+.welcome-slash {
+  margin-top: 14px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.welcome-note code, .welcome-slash code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.95em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--field);
+  color: var(--fg);
+}
 
 .hidden { display: none !important; }
