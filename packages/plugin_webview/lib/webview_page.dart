@@ -67,10 +67,11 @@ class _WebViewPageState extends State<WebViewPage>
   /// 为 true 时系统返回先让网页回退栈内页面，栈空才关整页。
   bool _hasStackPage = false;
 
-  /// WebView 里还有没有上一页（网址型站点点进去第二页）。有的话返回是「回退一层」，
-  /// 不是关掉整页——否则用户在融合门户里点进一个服务，返回直接退出了。
-  /// 必须记成状态：PopScope 的 canPop 只能同步读，拿不到 `canGoBack()` 的异步结果。
+  /// WebView 的浏览历史还有没有上一页 / 下一页：只驱动工具栏的前后按钮，
+  /// **不参与返回键判定**（登录站点的历史永远非空，按它拦返回键就退不出去）。
+  /// 必须记成状态：按钮的可用性要在 build 里同步读，拿不到 `canGoBack()` 的异步结果。
   bool _canGoBackHistory = false;
+  bool _canGoForwardHistory = false;
 
   /// 这份内容是「内联 html」（压缩包拓展）还是「网址」——导航判定按它分岔。
   bool get _inline =>
@@ -183,14 +184,21 @@ class _WebViewPageState extends State<WebViewPage>
   void _refreshHistory() {
     if (!mounted) return;
     unawaited(() async {
-      var history = false;
+      var back = false;
+      var forward = false;
       try {
-        history = await _controller.canGoBack();
+        back = await _controller.canGoBack();
+        forward = await _controller.canGoForward();
       } catch (_) {
-        history = false;
+        back = false;
+        forward = false;
       }
-      if (!mounted || _canGoBackHistory == history) return;
-      setState(() => _canGoBackHistory = history);
+      if (!mounted) return;
+      if (_canGoBackHistory == back && _canGoForwardHistory == forward) return;
+      setState(() {
+        _canGoBackHistory = back;
+        _canGoForwardHistory = forward;
+      });
     }());
   }
 
@@ -200,35 +208,38 @@ class _WebViewPageState extends State<WebViewPage>
     setState(() => _hasStackPage = canGoBack);
   }
 
-  /// 系统返回 / 左上角返回箭头 / 侧滑返回都走这里：先退网页自己的页面栈，再退
-  /// WebView 的浏览历史，都没得退才关掉整页（融合门户这种站点内部点进去过，
-  /// 直接关掉等于把用户刚看的东西全丢了）。
+  /// 系统返回键 / 侧滑：先退网页自己的页面栈（拓展叠的子页面），栈空就**关整页**。
+  ///
+  /// 刻意不看 WebView 的浏览历史：融合门户这类要登录的站点，登录页一被退回去就
+  /// 凭据重新登录、自己再压一页进历史——历史里永远有「上一页」，按它拦下来返回键
+  /// 就再也退不出去了。站内前后翻页交给工具栏的「后退 / 前进」按钮。
   Future<void> _handleBack() async {
-    var history = false;
-    try {
-      history = await _controller.canGoBack();
-    } catch (_) {
-      history = false;
-    }
-    switch (decideBackAction(
-      hasWebStackPage: _hasStackPage,
-      canGoBackHistory: history,
-    )) {
+    switch (decideBackAction(hasWebStackPage: _hasStackPage)) {
       case BackAction.webStack:
         if (await _popWebStack()) return;
         if (!mounted) return;
-        // 网页说栈空了（或没实现 __antiSITBack）：按「没有网页栈」再判一次。
         setState(() => _hasStackPage = false);
-        if (history) {
-          await _controller.goBack();
-          return;
-        }
         if (mounted) Navigator.of(context).pop();
       case BackAction.webHistory:
+        // 返回键不会走到这一支（decideBackAction 只给 webStack / closeRoute）。
         await _controller.goBack();
       case BackAction.closeRoute:
         if (mounted) Navigator.of(context).pop();
     }
+  }
+
+  /// 工具栏「后退」：有浏览历史就退一层；没有就当无事发生（不关页面）。
+  Future<void> _goBackHistory() async {
+    if (!_canGoBackHistory) return;
+    await _controller.goBack();
+    _refreshHistory();
+  }
+
+  /// 工具栏「前进」：同理，没有就什么都不做。
+  Future<void> _goForwardHistory() async {
+    if (!_canGoForwardHistory) return;
+    await _controller.goForward();
+    _refreshHistory();
   }
 
   /// 让网页退回它的栈内页面；它说退不掉就返回 false。
@@ -412,12 +423,33 @@ class _WebViewPageState extends State<WebViewPage>
     }
   }
 
+  /// 顶栏里的前后翻页按钮（悬浮玻璃圆钮，与其它页顶栏一致）。
+  Widget _navButton(
+    IconData icon,
+    String tooltip,
+    bool enabled,
+    Future<void> Function() onPressed,
+  ) => glassTopBarAction(
+    IconButton(
+      tooltip: tooltip,
+      // 不可用时也保留按钮位置（只变灰）：顶栏宽度别跟着历史变化跳来跳去。
+      onPressed: enabled ? () => onPressed() : null,
+      icon: Icon(
+        icon,
+        size: 20,
+        color: enabled ? SemColors.textSecondary : SemColors.textMuted,
+      ),
+      padding: EdgeInsets.zero,
+    ),
+    edge: 4,
+  );
+
   @override
   Widget build(BuildContext context) {
     return PopScope<Object?>(
-      // 还有得退（网页栈或浏览历史）就先拦下返回，交给 _handleBack 逐层退；
-      // 都退完了才放行（canPop: true 时系统直接关页面）。
-      canPop: !(_hasStackPage || _canGoBackHistory),
+      // 网页自己的页面栈还在就先拦下返回（拓展叠的子页面要一层层退）；
+      // 栈空就放行——系统直接关整页，不看浏览历史（见 _handleBack 的原因）。
+      canPop: !_hasStackPage,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         _handleBack();
@@ -435,6 +467,22 @@ class _WebViewPageState extends State<WebViewPage>
                 widget.title.isEmpty ? '网页' : widget.title,
                 overflow: TextOverflow.ellipsis,
               ),
+              actions: [
+                // 站内前后翻页：与返回键分开。带浏览历史的状态按钮，禁用了就是灰的，
+                // 「按了没反应」和「退不出去」在观感上是两件不同的事。
+                _navButton(
+                  Icons.arrow_back_rounded,
+                  '后退',
+                  _canGoBackHistory,
+                  _goBackHistory,
+                ),
+                _navButton(
+                  Icons.arrow_forward_rounded,
+                  '前进',
+                  _canGoForwardHistory,
+                  _goForwardHistory,
+                ),
+              ],
               // 加载进度条是顶栏的 bottom。
               bottom: _progress > 0 && _progress < 1
                   ? PreferredSize(

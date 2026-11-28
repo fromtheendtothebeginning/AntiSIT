@@ -33,27 +33,30 @@ NavAction decideMainFrameNavigation(
   };
 }
 
-/// 一次返回请求该由谁处理。三层优先级：网页自己的页面栈（拓展的 ctx.ui.push）→
-/// WebView 的浏览历史（融合门户这类站点内部点进去还是有前一页）→ 关掉整页。
+/// 返回**系统返回键 / 侧滑**时要做什么。
+///
+/// 这里刻意**不看浏览历史**：融合门户的登录页一退回就自动重新登录并压栈，历史里
+/// 永远有「上一页」，按 canGoBack 拦下来的话返回键就永远退不出去（用户反馈的
+/// 「登录状态下无法退出」）。所以返回键只认网页自己的页面栈（拓展 ctx.ui.push），
+/// 栈空就关整页；站内前后翻页交给工具栏的「后退 / 前进」按钮。
 enum BackAction {
   /// 交给网页的 `window.__antiSITBack()`（拓展叠的子页面）。
   webStack,
 
-  /// 网页没有自己的栈，但 WebView 还有上一页：回退一层，别把整页关掉。
+  /// 回退 WebView 的浏览历史（只有工具栏的「后退」会这么判）。
   webHistory,
 
-  /// 都没得退：关掉这个页面。
+  /// 关掉这个页面。
   closeRoute,
 }
 
-BackAction decideBackAction({
-  required bool hasWebStackPage,
-  required bool canGoBackHistory,
-}) {
-  if (hasWebStackPage) return BackAction.webStack;
-  if (canGoBackHistory) return BackAction.webHistory;
-  return BackAction.closeRoute;
+BackAction decideBackAction({required bool hasWebStackPage}) {
+  return hasWebStackPage ? BackAction.webStack : BackAction.closeRoute;
 }
+
+/// 页内工具栏「后退」按钮：有浏览历史就退一层。
+BackAction decideHistoryBack({required bool canGoBackHistory}) =>
+    canGoBackHistory ? BackAction.webHistory : BackAction.closeRoute;
 
 /// 当前页面是否还能使用桥接能力：内联 html 允许；网址形态只允许与初始页同源。
 /// JS 通道不随导航消失，不同源时必须在这里拒绝，否则外部页面能直接调 `antiSITBridge`。
