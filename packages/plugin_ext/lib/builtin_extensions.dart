@@ -13,7 +13,8 @@ const List<ExtensionItem> kBuiltinExtensions = [
     bundled: true,
     builtin: true,
     runtime: ExtensionItem.runtimeCordis,
-    version: '1.0.0',
-    permissions: ['storage', 'ai'],
+    version: '1.1.0',
+    // files：从「技能」面板导入 SKILL.md / 粘贴文本要用文件选择器
+    permissions: ['storage', 'ai', 'files'],
   ),
 ];

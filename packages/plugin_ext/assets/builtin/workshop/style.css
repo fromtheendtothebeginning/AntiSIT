@@ -602,6 +602,27 @@ button {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
+/* 长文本输入（粘贴导入技能）：和单行输入同款，只是多行、可纵向拖高 */
+.prompt-card textarea {
+  width: 100%;
+  min-height: 160px;
+  max-height: 46vh;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 9px 10px;
+  outline: none;
+}
+
+.prompt-card textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
 .prompt-actions {
   display: flex;
   align-items: center;
@@ -619,6 +640,14 @@ button {
   padding: 7px 14px;
 }
 
+
+/* 技能面板顶部的导入按钮 */
+.skill-tools {
+  display: flex;
+  gap: 8px;
+  padding: 0 2px 8px;
+}
+.skill-tools .pill { flex: 0 0 auto; }
 /* ---------- 底部面板（切换 / 技能） ---------- */
 
 .ws-sheet {

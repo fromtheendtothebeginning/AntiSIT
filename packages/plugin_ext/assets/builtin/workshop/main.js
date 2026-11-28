@@ -1644,6 +1644,16 @@ export default {
             </div>
           </div>
         </div>
+        <div class="ws-prompt hidden" id="pastePanel">
+          <div class="prompt-card">
+            <div class="prompt-title" id="pasteTitle">粘贴内容</div>
+            <textarea id="pasteInput" rows="8" placeholder="粘贴 SKILL.md 的内容…"></textarea>
+            <div class="prompt-actions">
+              <button id="pasteCancel" class="ws-link">取消</button>
+              <button id="pasteOk" class="prompt-ok">导入</button>
+            </div>
+          </div>
+        </div>
         <div class="ws-backdrop hidden" id="backdrop"></div>
         <div class="ws-sheet hidden" id="switchSheet">
           <div class="sheet-handle"></div>
@@ -1663,6 +1673,10 @@ export default {
         <div class="ws-sheet hidden" id="skillsDrawer">
           <div class="sheet-handle"></div>
           <div class="sheet-head"><strong>Agent 技能</strong><button id="btnCloseSkills" class="ws-link">关闭</button></div>
+          <div class="skill-tools">
+            <button id="btnImportSkillFile" class="pill">导入 SKILL.md</button>
+            <button id="btnImportSkillText" class="pill">粘贴导入</button>
+          </div>
           <div id="skills"></div>
         </div>
         <div class="ws-viewer hidden" id="viewer">
@@ -2118,6 +2132,83 @@ function renderModels() {
       }
     }
 
+
+    // ---------- 技能导入（SKILL.md / 粘贴） ----------
+
+    /** 从一段 SKILL.md 里抠出名字与说明：YAML 头的 name / description 优先。 */
+    function parseSkillMarkdown(raw, fallbackName) {
+      let text = String(raw || '').replace(/\r\n/g, '\n');
+      let name = '';
+      let description = '';
+      const front = text.match(/^---\n([\s\S]*?)\n---\n?/);
+      if (front) {
+        const head = front[1];
+        const nm = head.match(/^name:\s*(.+)$/m);
+        if (nm) name = nm[1].trim().replace(/^["']|["']$/g, '');
+        const dm = head.match(/^description:\s*(.+)$/m);
+        if (dm) description = dm[1].trim().replace(/^["']|["']$/g, '');
+        text = text.slice(front[0].length);
+      }
+      if (!name) {
+        const h1 = text.match(/^#\s+(.+)$/m);
+        if (h1) name = h1[1].trim();
+      }
+      if (!name) name = fallbackName || '未命名技能';
+      if (!description) {
+        // 头里没有说明：取正文第一段非空、非标题的行
+        const lines = text.split('\n').map((l) => l.trim());
+        for (const line of lines) {
+          if (!line || line.startsWith('#')) continue;
+          description = line.slice(0, 120);
+          break;
+        }
+      }
+      return { name: name.slice(0, 40), description: description.slice(0, 160), content: text.trim() };
+    }
+
+    /** 装一条技能（走宿主 workshop.skills.install，带确认框）。 */
+    async function installSkillText(title, content) {
+      if (!String(content || '').trim()) {
+        ctx.ui.toast('内容为空，没装');
+        return;
+      }
+      S.status = '等待确认安装技能…';
+      notify();
+      try {
+        const result = await ctx.workshop.installSkill(title.name, title.description, content);
+        if (result && result.denied) return;
+        if (!result || result.ok !== true) throw new Error('技能安装失败');
+        await refreshSkills();
+        renderSkills();
+        ctx.ui.toast('已安装技能「' + (result.name || title.name) + '」');
+      } catch (e) {
+        ctx.ui.toast('安装失败：' + ((e && e.message) || e));
+      } finally {
+        S.status = '';
+        notify();
+      }
+    }
+
+    async function importSkillFromFile() {
+      try {
+        const picked = await ctx.files.pick({ accept: ['.md', '.markdown', '.txt'], encoding: 'text' });
+        const file = (picked && picked.files && picked.files[0]) || null;
+        if (!file) return;
+        const raw = typeof file.text === 'string' ? file.text : '';
+        const parsed = parseSkillMarkdown(raw, String(file.name || '').replace(/\.(md|markdown|txt)$/i, ''));
+        await installSkillText(parsed, parsed.content);
+      } catch (e) {
+        ctx.ui.toast('读取文件失败：' + ((e && e.message) || e));
+      }
+    }
+
+    async function importSkillFromText() {
+      // WebView 里没有 window.prompt（会被直接吞掉）：用页面自己的多行输入弹层
+      const raw = await askLongText('粘贴 SKILL.md 的内容', '第一段可以是 --- name / description --- 头');
+      if (raw == null) return;
+      const parsed = parseSkillMarkdown(raw, '粘贴的技能');
+      await installSkillText(parsed, parsed.content);
+    }
     async function openSkill(skill) {
       try {
         const result = await ctx.workshop.readSkill(skill.id);
@@ -2243,6 +2334,31 @@ function renderModels() {
     });
     $('#prompt').addEventListener('click', (e) => {
       if (e.target === $('#prompt')) closePrompt(null);
+    });
+
+    // ---- 长文本输入（粘贴导入技能用；单行输入框装不下整份 SKILL.md）----
+    let pasteResolve = null;
+    function askLongText(title, hint) {
+      $('#pasteTitle').textContent = title;
+      const field = $('#pasteInput');
+      field.value = '';
+      field.placeholder = hint || '粘贴内容…';
+      $('#pastePanel').classList.remove('hidden');
+      setTimeout(() => field.focus(), 0);
+      return new Promise((resolve) => {
+        pasteResolve = resolve;
+      });
+    }
+    function closePaste(value) {
+      $('#pastePanel').classList.add('hidden');
+      const resolve = pasteResolve;
+      pasteResolve = null;
+      if (resolve) resolve(value);
+    }
+    $('#pasteCancel').addEventListener('click', () => closePaste(null));
+    $('#pasteOk').addEventListener('click', () => closePaste($('#pasteInput').value));
+    $('#pastePanel').addEventListener('click', (e) => {
+      if (e.target === $('#pastePanel')) closePaste(null);
     });
 
     async function renameCurrentDraft() {
@@ -2444,6 +2560,8 @@ function renderModels() {
       }
     });
     $('#btnCloseSkills').addEventListener('click', closeOverlays);
+    $('#btnImportSkillFile').addEventListener('click', importSkillFromFile);
+    $('#btnImportSkillText').addEventListener('click', importSkillFromText);
     $('#btnCloseViewer').addEventListener('click', closeOverlays);
     backdrop.addEventListener('click', closeOverlays);
 
