@@ -131,7 +131,9 @@ class _GlassNavBarState extends State<GlassNavBar>
     );
   }
 
-  /// 玻璃面：压在外层模糊之上，透光度沿用玻璃卡面（card）。
+  /// 玻璃面：底栏比卡片更实一档（navPill 是同一套色板里为「压在内容上也读得清」
+  /// 准备的那一档：浅色 78% 白、深色 28% 白），顶部再叠一点白做出玻璃的高光带。
+  /// 底栏下面常常是课表格子、卡片边缘，透光度跟 card 走的话文字会糊。
   Widget _face(int n) => Container(
     padding: const EdgeInsets.all(4),
     decoration: BoxDecoration(
@@ -141,10 +143,10 @@ class _GlassNavBarState extends State<GlassNavBar>
         end: Alignment.bottomCenter,
         colors: [
           Color.alphaBlend(
-            Colors.white.withValues(alpha: 0.10),
-            SemColors.card,
+            Colors.white.withValues(alpha: 0.16),
+            SemColors.navPill,
           ),
-          SemColors.card,
+          SemColors.navPill,
         ],
         stops: const [0, 0.5],
       ),
