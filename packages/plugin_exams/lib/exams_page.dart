@@ -32,8 +32,8 @@ class _ExamsPageState extends State<ExamsPage> {
   Future<void> _restore() async {
     final (xnm, xqm) = AppState.inferSemester(DateTime.now());
     final cached = await ToolPageCache.read(_cacheKey(xnm, xqm));
-    final exams =
-        ((cached?['exams'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    final exams = ((cached?['exams'] as List?) ?? const [])
+        .cast<Map<String, dynamic>>();
     if (!mounted) return;
     if (exams.isNotEmpty) {
       setState(() {
@@ -87,115 +87,134 @@ class _ExamsPageState extends State<ExamsPage> {
           body: GlassFadedBody(
             barHeight: topInset,
             child: PageStateView(
-            loading: _loading && _exams.isEmpty,
-            error: _err,
-            empty: !_loading && _err == null && _exams.isEmpty,
-            emptyText: '本学期暂无考试安排',
-            onRetry: _load,
-            child: RefreshIndicator(
-              // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
-              edgeOffset: topInset,
-              onRefresh: _load,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
-                children: [
-                  ToolRefreshBar(
-                    refreshing: _loading,
-                    fromCache: _fromCache,
-                    failed: _refreshFailed,
-                    onRefresh: _load,
-                  ),
-                  for (final e in _exams)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: AppCard(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '${e['name']}',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
+              loading: _loading && _exams.isEmpty,
+              error: _err,
+              empty: !_loading && _err == null && _exams.isEmpty,
+              emptyText: '本学期暂无考试安排',
+              onRetry: _load,
+              child: RefreshIndicator(
+                // 下拉刷新圈从悬浮顶栏底边开始，不贴着屏幕最上沿。
+                edgeOffset: topInset,
+                onRefresh: _load,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(12, 8 + topInset, 12, 20),
+                  children: [
+                    ToolRefreshBar(
+                      refreshing: _loading,
+                      fromCache: _fromCache,
+                      failed: _refreshFailed,
+                      onRefresh: _load,
+                    ),
+                    for (final e in _exams)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: AppCard(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '${e['name']}',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: scheme.primary.withValues(
-                                      alpha: 0.1,
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
                                     ),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    '${e['ksmc']}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: scheme.primary,
+                                    decoration: BoxDecoration(
+                                      color: scheme.primary.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${e['ksmc']}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: scheme.primary,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.event_rounded,
-                                  size: 15,
-                                  color: scheme.outline,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${e['date']}  ${e['start']} ~ ${e['end']}',
-                                ),
-                                const SizedBox(width: 12),
-                                Icon(
-                                  Icons.meeting_room_outlined,
-                                  size: 15,
-                                  color: scheme.outline,
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    '${e['place']}',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Text(
-                                  '座位 ${e['seat']}',
-                                  style: TextStyle(
-                                    color: scheme.outline,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              '考核方式：${e['ksfs']}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.outline,
+                                ],
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.event_rounded,
+                                    size: 15,
+                                    color: scheme.outline,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // 大字体 / 宽字体的机型上这行会超宽：让它自己折行，
+                                  // 别硬挤成 RenderFlex 溢出（溢出在 release 里表现为直接裁掉）。
+                                  Flexible(
+                                    child: Text(
+                                      '${e['date']}  ${e['start']} ~ ${e['end']}',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              // 考场单独占一行：和日期挤同一行时「一教A201」会被截成
+                              // 「一教A…」——恰恰是学生最需要看清的那截（哪个教室）。
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Icon(
+                                      Icons.meeting_room_outlined,
+                                      size: 15,
+                                      color: scheme.outline,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      '${e['place']}',
+                                      softWrap: true,
+                                    ),
+                                  ),
+                                  if ('${e['seat'] ?? ''}'
+                                      .trim()
+                                      .isNotEmpty) ...[
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      '座位 ${e['seat']}',
+                                      style: TextStyle(
+                                        color: scheme.outline,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '考核方式：${e['ksfs']}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: scheme.outline,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
           ),
         );
       },
