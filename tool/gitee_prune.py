@@ -168,6 +168,7 @@ def main() -> int:
         print(f"  保留 {label}")
 
     doomed: list[tuple[str, int, dict]] = []
+    doomed_releases: list[tuple[str, int]] = []
     kept_bytes = 0
     total_bytes = 0
     for version, rel in [*dev, *stable]:
@@ -183,18 +184,25 @@ def main() -> int:
             continue
         for asset in assets:
             doomed.append((str(rel.get("tag_name", "")), int(rel["id"]), asset))
+        # 内测版的 Release 本体也一起删：只删附件的话列表里还挂着一串 dev-x 空壳。
+        if is_dev_tag(str(rel.get("tag_name", ""))):
+            doomed_releases.append((str(rel.get("tag_name", "")), int(rel["id"])))
 
     print(f"当前附件合计 {human(total_bytes)}，其中保留部分 {human(kept_bytes)}")
 
-    if not doomed:
-        print("没有需要清理的老版本附件")
+    if not doomed and not doomed_releases:
+        print("没有需要清理的老版本")
         return 0
 
     freed = sum(int(asset.get("size") or 0) for _, _, asset in doomed)
     print(f"待清理 {len(doomed)} 个附件，可释放 {human(freed)}")
+    if doomed_releases:
+        print(f"另外 {len(doomed_releases)} 个老内测版 Release 条目本身也要删")
     if args.dry_run:
         for tag, _, asset in doomed:
-            print(f"  [dry-run] {tag} {asset.get('name')}")
+            print(f"  [dry-run] 附件 {tag} {asset.get('name')}")
+        for tag, _ in doomed_releases:
+            print(f"  [dry-run] Release {tag}")
         return 0
 
     failed = 0
@@ -211,10 +219,27 @@ def main() -> int:
             failed += 1
             print(f"  删除失败 {tag} {asset.get('name')}（{exc}）", file=sys.stderr)
 
+    # 老内测版一并处理
+# 老内测版的 Release 本体也删掉（源码还在 git tag 里，随时能重建）
+    extra = 0
+    for tag, release_id in doomed_releases:
+        query = urllib.parse.urlencode({"access_token": token})
+        try:
+            request(f"{API}/repos/{args.repo}/releases/{release_id}?{query}", method="DELETE")
+            print(f"  已删内测版 Release {tag}")
+            extra += 1
+        except urllib.error.HTTPError as exc:
+            failed += 1
+            print(f"  Release {tag} 删除失败（HTTP {exc.code}）", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"  Release {tag} 删除失败（{exc}）", file=sys.stderr)
+
     if failed:
-        print(f"{failed} 个附件没删掉", file=sys.stderr)
+        print(f"{failed} 项没删掉", file=sys.stderr)
         return 1
-    print(f"已清理 {len(doomed)} 个附件，释放约 {human(freed)}")
+    tail = f"，另有 {extra} 个老内测版 Release" if extra else ""
+    print(f"已清理 {len(doomed)} 个附件{tail}，释放约 {human(freed)}")
     return 0
 
 
