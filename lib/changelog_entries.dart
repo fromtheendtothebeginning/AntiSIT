@@ -19,6 +19,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.7',
+    date: '2026-11-28',
+    notes: [
+      '修：考试安排的考场只显示「一教A…」，看不到具体教室——考场现在单独一行完整显示',
+      '新增「外观 → 启动动画」开关：关掉直接进主页，冷启动少等一秒多',
+      '底部导航栏再实一档，压在课表格子、卡片上也读得清',
+      '取消调卡片大小时的振动反馈（拖动换位那一下仍然保留）',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.6',
     date: '2026-11-28',
     notes: [
