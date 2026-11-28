@@ -29,6 +29,7 @@ let onSessionChange = () => {};
 const ICONS = {
   mic: '<svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+  chev: '<svg viewBox="0 0 12 12" class="chev"><path d="M3 4.5L6 7.5L9 4.5"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg>',
   menu: '<svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>',
@@ -2041,10 +2042,11 @@ export default {
       // 模型按钮：显示「模型名 · 档位」，换模型与调档位都在同一个面板里选
       const modelBtn = $('#btnModel');
       const effortShort = S.effort ? (EFFORT_LABELS[S.effort] || '') : '';
-      modelBtn.textContent = S.model
+      const modelLabel = S.model
         ? shortModel(S.model) + (effortShort ? ' · ' + effortShort : '')
         : '模型';
-      modelBtn.classList.toggle('active', true);
+      modelBtn.innerHTML = esc(modelLabel) + ICONS.chev;
+      modelBtn.classList.remove('active');
       modelBtn.disabled = S.running;
 
       // 麦克风常驻（不再因为「没检测到识别服务」就消失）：按了才知道有没有，
