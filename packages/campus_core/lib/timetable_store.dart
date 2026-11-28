@@ -157,9 +157,17 @@ class TimetableStore {
 
   /// 从本机读课表（首次运行时顺带迁移旧版周缓存），完成后重排提醒。
   ///
+  /// **一个进程只读一次**：启动页已经读过，课表页首次构建时的那次调用直接返回，
+  /// 不会把同一份 JSON 再解析一遍。确实要重读本机的场景（备份恢复）先调
+  /// [resetForImport]，它会把 [loaded] 置回 false。
+  ///
   /// 本机数据坏了（写盘中断 / 旧版本格式变更）不能让启动卡死：主键解析失败就退回
   /// 上一次的快照，快照也没有才当空课表——**绝不把空课表当成真实数据写回**。
   Future<void> load() async {
+    if (loaded) {
+      debugPrint('[课表] 本机数据已读过，跳过重复载入');
+      return;
+    }
     final sp = await SharedPreferences.getInstance();
     _loadSlotTimes(sp);
     final raw = sp.getString(_spKey);

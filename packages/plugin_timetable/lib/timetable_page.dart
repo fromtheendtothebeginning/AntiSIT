@@ -193,20 +193,18 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   /// 初始化：载入本地 store、同步云端、定位到今天的周/日。
+  ///
+  /// **本地数据就绪就立刻下壳**：云端合并与本周拉取都放到后台跑，有结果再通知重建。
+  /// 以前这里要 await 完 syncCloud()（服务器模式是一次真网络往返，最坏 60s 超时）
+  /// 才把 _booting 置 false，于是启动动画放完了课表页还在转圈——启动页读到的本机
+  /// 课表其实早已就位，那段「课表刷新」等的是这两步网络。
   Future<void> _init({bool keepSemester = false}) async {
     if (mounted) setState(() => _booting = true);
+    // 启动页已经读过本机课表（见 TimetableStore.load 的一次性守卫），这里不再重复解析
     await TimetableStore.instance.load();
-    final adopted = await TimetableStore.instance.syncCloud();
     final manualGrade = AppState.I.direct ? AppState.I.creds.grade.trim() : '';
     if (manualGrade.isNotEmpty && TimetableStore.instance.nj != manualGrade) {
       TimetableStore.instance.nj = manualGrade;
-    }
-    if (adopted && !keepSemester) {
-      // 云端数据覆盖本地后学期可能变化：重置到推断学期。
-      // 显式切换学期（keepSemester）时不重置，否则切换会被弹回当前学期。
-      final (a, b) = AppState.inferSemester(DateTime.now());
-      xnm = a;
-      xqm = b;
     }
     _fixWeekCount();
     // 记下「课表现在显示的是哪个学期」：从「我的 → 课程表设置」进来时靠它定位学期。
@@ -216,8 +214,36 @@ class _TimetablePageState extends State<TimetablePage> {
     // 就是 issue #13 那个分裂。
     _shownDay = DateTime.now().weekday - 1;
     if (mounted) setState(() => _booting = false);
-    if (AppState.I.loggedIn) await _ensureWeek(_todayWeek ?? 1);
+    // 先把本周这一页跳过去：教务数据稍后补进来时 _ensureWeek 会 onChanged → setState，
+    // 网格自己重画，跳页没必要排在网络后面。
     _jumpTo(_todayWeek ?? 1, animate: false);
+    unawaited(_refreshInBackground(keepSemester: keepSemester));
+  }
+
+  /// 首屏可见之后的后台刷新：先合并云端，再按需拉本周教务数据。
+  ///
+  /// 不在 [_init] 里 await 是有意的：这两步都可能慢（云端往返最坏 60s，教务拉周还要
+  /// 先建校园网隧道），但结果都能靠 setState 增量呈现；中途抛错也不能把页面永远
+  /// 卡在转圈态，所以这里只记日志。
+  Future<void> _refreshInBackground({bool keepSemester = false}) async {
+    try {
+      final adopted = await TimetableStore.instance.syncCloud();
+      if (mounted && adopted && !keepSemester) {
+        // 云端数据覆盖本地后学期可能变化：重置到推断学期。
+        // 显式切换学期（keepSemester）时不重置，否则切换会被弹回当前学期。
+        final (a, b) = AppState.inferSemester(DateTime.now());
+        setState(() {
+          xnm = a;
+          xqm = b;
+        });
+        _fixWeekCount();
+        _jumpTo(_todayWeek ?? 1, animate: false);
+      }
+    } catch (e) {
+      debugPrint('[课表] 云端同步失败：$e');
+    }
+    if (!mounted || !AppState.I.loggedIn) return;
+    await _ensureWeek(_todayWeek ?? 1);
   }
 
   void _fixWeekCount() => fixSemesterWeekCount(tt);

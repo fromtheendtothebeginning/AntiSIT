@@ -7,6 +7,8 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     TimetableStore.instance.semesters = {};
+    // 每个用例都当「刚冷启动」：load() 一个进程只读一次（见 timetable_store_load_once_test）
+    TimetableStore.instance.loaded = false;
     // 自定义作息是静态状态：每个用例从默认表开始，免得互相串
     TimetableStore.slotStarts = TimetableStore.defaultSlotStarts;
     TimetableStore.slotEnds = TimetableStore.defaultSlotEnds;
