@@ -29,6 +29,10 @@ class MiniMaxProvider extends AiProviderPlugin {
   @override
   Map<String, dynamic> thinkingOff(String model) =>
       MiniMaxThinking.off(model);
+
+  @override
+  Map<String, dynamic> reasoningEffort(String model, String effort) =>
+      MiniMaxThinking.effort(model, effort);
 }
 
 /// M Plan（原 Token Plan）订阅：与按量付费同域名，靠 `sk-cp-` 前缀 Key 区分，两边不可互换。
@@ -60,6 +64,10 @@ class MiniMaxTokenPlanProvider extends AiProviderPlugin {
   @override
   Map<String, dynamic> thinkingOff(String model) =>
       MiniMaxThinking.off(model);
+
+  @override
+  Map<String, dynamic> reasoningEffort(String model, String effort) =>
+      MiniMaxThinking.effort(model, effort);
 }
 
 /// 两家共用的关思考写法：M3 用 `thinking: {type: disabled}`（M2.x 忽略）；
@@ -70,6 +78,14 @@ abstract final class MiniMaxThinking {
       : const {
           'thinking': {'type': 'disabled'}
         };
+
+  /// 档位：M3.1 认 reasoning_effort（low / medium / high）；M3 只有 thinking.type 两态，
+  /// 选了档位就当开启思考（具体深浅交给模型），'none' 才关。
+  static Map<String, dynamic> effort(String model, String effort) {
+    if (effort == 'none') return off(model);
+    if (model.startsWith('MiniMax-M3.1')) return {'reasoning_effort': effort};
+    return const {'thinking': {'type': 'enabled'}};
+  }
 }
 
 /// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_MINIMAX=true 时整包被摇掉。

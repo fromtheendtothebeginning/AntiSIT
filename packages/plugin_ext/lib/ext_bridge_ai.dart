@@ -42,8 +42,11 @@ class ExtAiChannel {
   Future<Object?> chatTools(Object? args) async {
     final parsed = _parseAiRequest(args, methodName: 'ai.chatTools');
     final ai = _requireAi();
-    final reply = await ai.chatWithTools(parsed.messages,
-        tools: parsed.tools, maxTokens: parsed.maxTokens);
+    final reply = await ai.chatWithTools(
+      parsed.messages,
+      tools: parsed.tools,
+      maxTokens: parsed.maxTokens,
+    );
     return _aiReplyJson(reply);
   }
 
@@ -52,7 +55,9 @@ class ExtAiChannel {
   Future<Object?> chatToolsStream(Object? args) async {
     final a = args is Map ? args : const {};
     final streamId = '${a['streamId'] ?? ''}'.trim();
-    if (streamId.isEmpty) throw ArgumentError('ai.chatToolsStream 要带 {streamId}');
+    if (streamId.isEmpty) {
+      throw ArgumentError('ai.chatToolsStream 要带 {streamId}');
+    }
     final parsed = _parseAiRequest(args, methodName: 'ai.chatToolsStream');
     final ai = _requireAi();
     // 模型是 token 级增量，每个 chunk 都 runJavaScript 会把 WebView 打满：
@@ -68,13 +73,19 @@ class ExtAiChannel {
         return;
       }
       if (reasoning.isNotEmpty) {
-        sink.emit('ai.stream',
-            {'streamId': streamId, 'kind': 'reasoning', 'delta': reasoning.toString()});
+        sink.emit('ai.stream', {
+          'streamId': streamId,
+          'kind': 'reasoning',
+          'delta': reasoning.toString(),
+        });
         reasoning.clear();
       }
       if (text.isNotEmpty) {
-        sink.emit('ai.stream',
-            {'streamId': streamId, 'kind': 'text', 'delta': text.toString()});
+        sink.emit('ai.stream', {
+          'streamId': streamId,
+          'kind': 'text',
+          'delta': text.toString(),
+        });
         text.clear();
       }
     }
@@ -87,17 +98,20 @@ class ExtAiChannel {
     }
 
     try {
-      final reply = await ai.chatWithToolsStream(parsed.messages,
-          tools: parsed.tools,
-          maxTokens: parsed.maxTokens,
-          onText: (delta) {
-            text.write(delta);
-            schedule();
-          },
-          onReasoning: (delta) {
-            reasoning.write(delta);
-            schedule();
-          });
+      final reply = await ai.chatWithToolsStream(
+        parsed.messages,
+        tools: parsed.tools,
+        maxTokens: parsed.maxTokens,
+        reasoningEffort: parsed.reasoningEffort,
+        onText: (delta) {
+          text.write(delta);
+          schedule();
+        },
+        onReasoning: (delta) {
+          reasoning.write(delta);
+          schedule();
+        },
+      );
       return _aiReplyJson(reply);
     } finally {
       timer?.cancel();
@@ -105,8 +119,13 @@ class ExtAiChannel {
     }
   }
 
-  static ({List<AiChatMessage> messages, List<AiToolSpec> tools, int maxTokens})
-      _parseAiRequest(Object? args, {required String methodName}) {
+  static ({
+    List<AiChatMessage> messages,
+    List<AiToolSpec> tools,
+    int maxTokens,
+    String reasoningEffort,
+  })
+  _parseAiRequest(Object? args, {required String methodName}) {
     if (args is! Map) throw ArgumentError('$methodName 要带 {messages}');
     final rawMessages = args['messages'];
     if (rawMessages is! List || rawMessages.isEmpty) {
@@ -122,25 +141,33 @@ class ExtAiChannel {
       if (rawCalls is List) {
         for (final c in rawCalls) {
           if (c is! Map) continue;
-          final name = '${c['name'] ?? (c['function'] is Map ? (c['function'] as Map)['name'] : '') ?? ''}'
-              .trim();
+          final name =
+              '${c['name'] ?? (c['function'] is Map ? (c['function'] as Map)['name'] : '') ?? ''}'
+                  .trim();
           if (name.isEmpty) continue;
-          final rawArgs = c['arguments'] ??
-              (c['function'] is Map ? (c['function'] as Map)['arguments'] : null) ??
+          final rawArgs =
+              c['arguments'] ??
+              (c['function'] is Map
+                  ? (c['function'] as Map)['arguments']
+                  : null) ??
               '{}';
-          calls.add(AiToolCall(
-            id: '${c['id'] ?? ''}'.trim(),
-            name: name,
-            argumentsJson: rawArgs is String ? rawArgs : jsonEncode(rawArgs),
-          ));
+          calls.add(
+            AiToolCall(
+              id: '${c['id'] ?? ''}'.trim(),
+              name: name,
+              argumentsJson: rawArgs is String ? rawArgs : jsonEncode(rawArgs),
+            ),
+          );
         }
       }
-      messages.add(AiChatMessage(
-        role: role,
-        content: '${raw['content'] ?? ''}',
-        toolCalls: calls,
-        toolCallId: '${raw['toolCallId'] ?? raw['tool_call_id'] ?? ''}',
-      ));
+      messages.add(
+        AiChatMessage(
+          role: role,
+          content: '${raw['content'] ?? ''}',
+          toolCalls: calls,
+          toolCallId: '${raw['toolCallId'] ?? raw['tool_call_id'] ?? ''}',
+        ),
+      );
     }
     if (messages.isEmpty) throw ArgumentError('messages 里没有有效消息');
     final tools = <AiToolSpec>[];
@@ -151,18 +178,63 @@ class ExtAiChannel {
         final fn = raw['function'] is Map ? raw['function'] as Map : raw;
         final name = '${fn['name'] ?? ''}'.trim();
         if (name.isEmpty) continue;
-        tools.add(AiToolSpec(
-          name: name,
-          description: '${fn['description'] ?? ''}',
-          parameters: fn['parameters'] is Map
-              ? Map<String, dynamic>.from(fn['parameters'] as Map)
-              : const {'type': 'object', 'properties': {}},
-        ));
+        tools.add(
+          AiToolSpec(
+            name: name,
+            description: '${fn['description'] ?? ''}',
+            parameters: fn['parameters'] is Map
+                ? Map<String, dynamic>.from(fn['parameters'] as Map)
+                : const {'type': 'object', 'properties': {}},
+          ),
+        );
       }
     }
     final rawMax = args['maxTokens'];
-    final maxTokens = rawMax is num ? rawMax.toInt().clamp(256, 4096).toInt() : 4096;
-    return (messages: messages, tools: tools, maxTokens: maxTokens);
+    final maxTokens = rawMax is num
+        ? rawMax.toInt().clamp(256, 4096).toInt()
+        : 4096;
+    // 思考深度：只认固定几档，别让网页随便塞字符串进请求体。
+    final effort = '${args['reasoningEffort'] ?? ''}'.trim().toLowerCase();
+    final reasoningEffort =
+        const {'', 'none', 'low', 'medium', 'high'}.contains(effort)
+        ? effort
+        : '';
+    return (
+      messages: messages,
+      tools: tools,
+      maxTokens: maxTokens,
+      reasoningEffort: reasoningEffort,
+    );
+  }
+
+
+  /// 当前可选的模型：内置清单 ∪ 上次从 `GET /models` 拉到的那份（去重排序）。
+  Future<Object?> models(Object? args) async {
+    final ai = _requireAi();
+    return {
+      'current': ai.currentModel,
+      'models': ai.selectableModels,
+    };
+  }
+
+  /// 当前提供商与模型（工坊顶栏显示「哪家 · 哪个」）。
+  Future<Object?> current(Object? args) async {
+    final ai = _requireAi();
+    return {
+      'provider': ai.providerLabel,
+      'providerId': ai.providerId,
+      'model': ai.currentModel,
+    };
+  }
+
+  /// 切模型：只改 App 侧 AI 配置里的 model，下一次请求就生效。
+  Future<Object?> setModel(Object? args) async {
+    if (args is! Map) throw ArgumentError('ai.setModel 要带 {model}');
+    final model = '${args['model'] ?? ''}'.trim();
+    if (model.isEmpty) throw ArgumentError('model 不能为空');
+    final ai = _requireAi();
+    await ai.setModel(model);
+    return {'model': ai.currentModel};
   }
 
   static AiCapability _requireAi() {
@@ -174,13 +246,13 @@ class ExtAiChannel {
   }
 
   static Map<String, Object?> _aiReplyJson(AiChatReply reply) => {
-        'text': reply.text,
-        'reasoning': reply.reasoning,
-        'usedTools': reply.usedTools,
-        'finishReason': reply.finishReason,
-        'toolCalls': [
-          for (final c in reply.toolCalls)
-            {'id': c.id, 'name': c.name, 'arguments': c.argumentsJson},
-        ],
-      };
+    'text': reply.text,
+    'reasoning': reply.reasoning,
+    'usedTools': reply.usedTools,
+    'finishReason': reply.finishReason,
+    'toolCalls': [
+      for (final c in reply.toolCalls)
+        {'id': c.id, 'name': c.name, 'arguments': c.argumentsJson},
+    ],
+  };
 }

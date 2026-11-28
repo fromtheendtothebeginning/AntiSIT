@@ -7,3 +7,4 @@ export 'ai_plugin.dart';
 export 'ai_settings_page.dart';
 export 'ai_tasks.dart';
 export 'ai_vision.dart';
+export 'ai_vision_request.dart' show buildMessagesPayload, reasoningEffortPayload;

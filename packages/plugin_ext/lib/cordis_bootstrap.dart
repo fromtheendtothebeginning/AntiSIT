@@ -253,6 +253,12 @@ String buildCordisBootstrap({
         }
         chatTools(payload) { return call('ai.chatTools', payload); }
         chatToolsStream(payload) { return call('ai.chatToolsStream', payload); }
+        /** 当前可选的模型（提供商内置 + 上次拉到的那份）。 */
+        models() { return call('ai.models', {}); }
+        /** 当前用的是哪家、哪个模型。 */
+        current() { return call('ai.current', {}); }
+        /** 切模型（只影响 App 侧配置，工坊自己的会话不受影响）。 */
+        setModel(model) { return call('ai.setModel', { model: String(model) }); }
       }
       class Notify extends Service {
         constructor(c) { super(c, 'notify'); }

@@ -30,6 +30,11 @@ class GlmProvider extends AiProviderPlugin {
   /// 不关思考：思考字段格式不确定，硬加可能 400，交给模型默认。
   @override
   Map<String, dynamic> thinkingOff(String model) => const {};
+
+  /// 智谱的档位字段是 `thinking.type`（enabled/disabled），没有分档；
+  /// 要「低 / 高」只能靠提示词，这里不硬加字段（发错了整条请求 400）。
+  @override
+  Map<String, dynamic> reasoningEffort(String model, String effort) => const {};
 }
 
 /// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_GLM=true 时整包被摇掉。

@@ -31,6 +31,11 @@ class QwenProvider extends AiProviderPlugin {
   /// 兼容模式关思考用 `enable_thinking: false`。
   @override
   Map<String, dynamic> thinkingOff(String model) => const {'enable_thinking': false};
+
+  /// 通义千问只有「开 / 关」两态，没有分档：选了档位就保持开启，不额外发字段。
+  @override
+  Map<String, dynamic> reasoningEffort(String model, String effort) =>
+      effort == 'none' ? const {'enable_thinking': false} : const {};
 }
 
 /// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_QWEN=true 时整包被摇掉。

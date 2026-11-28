@@ -71,14 +71,28 @@ Map<String, dynamic> buildTextPayload(
   };
 }
 
+/// 思考深度要往请求体里加的字段：同样转发给提供商插件（各家写法不同）。
+/// [effort] 为空 = 不传（用提供商默认），非空才加。
+Map<String, dynamic> reasoningEffortPayload(
+  String providerId,
+  String model,
+  String effort,
+) {
+  if (effort.trim().isEmpty) return const {};
+  final r = PluginRegistry.I;
+  if (!r.isProviderEnabled(providerId)) return const {};
+  return r.providerById(providerId)!.reasoningEffort(model, effort.trim());
+}
+
 /// 多轮对话请求体；tools 非空时按 OpenAI function calling 发。
 Map<String, dynamic> buildMessagesPayload(
   AiConfig c,
   List<AiChatMessage> messages,
   List<AiToolSpec> tools,
   int maxTokens,
-  bool thinkingOff,
-) {
+  bool thinkingOff, {
+  String reasoningEffort = '',
+}) {
   final body = <String, dynamic>{
     'model': c.model.trim(),
     'max_tokens': maxTokens,
@@ -118,6 +132,8 @@ Map<String, dynamic> buildMessagesPayload(
       'tool_choice': 'auto',
     },
     if (thinkingOff) ...thinkingOffPayload(c.providerId, c.model.trim()),
+    if (reasoningEffort.isNotEmpty)
+      ...reasoningEffortPayload(c.providerId, c.model.trim(), reasoningEffort),
   };
   return body;
 }

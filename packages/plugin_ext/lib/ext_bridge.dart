@@ -211,6 +211,16 @@ class ExtBridge extends WebBridge {
         return _ai.chatTools(args);
       case 'ai.chatToolsStream':
         return _ai.chatToolsStream(args);
+      case 'ai.models':
+        return _ai.models(args);
+      case 'ai.current':
+        return _ai.current(args);
+      case 'ai.setModel':
+        // 换模型是改用户全局配置的副作用操作：只允许内置「拓展工坊」调。
+        if (!_isWorkshop) {
+          throw ArgumentError('ai.setModel 只允许内置「拓展工坊」调用');
+        }
+        return _ai.setModel(args);
       default:
         throw ArgumentError('未知接口：$method');
     }

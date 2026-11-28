@@ -106,6 +106,15 @@ abstract class AiCapability implements PluginCapability {
   String get providerLabel;
   String get providerId;
 
+  /// 当前用的模型 id（空 = 还没选）。
+  String get currentModel;
+
+  /// 可选模型：提供商内置清单 ∪ 上次从 `GET /models` 拉到的那份。
+  List<String> get selectableModels;
+
+  /// 换模型：只改本机 AI 配置里的 model，下一次请求生效。
+  Future<void> setModel(String model);
+
   /// 验证码识别：识别成功返回文字，失败返回 null（调用方回退手动输入）。
   Future<String?> solveCaptcha(Uint8List image);
 
@@ -129,10 +138,14 @@ abstract class AiCapability implements PluginCapability {
   });
 
   /// 流式版 [chatWithTools]：边收边回调增量，结束时仍返回完整回复。
+  ///
+  /// [reasoningEffort] 是思考深度：空串 = 用提供商默认，`none` / `low` / `medium` /
+  /// `high` 按档位传（写法随提供商插件，见 `AiProviderPlugin.reasoningEffort`）。
   Future<AiChatReply> chatWithToolsStream(
     List<AiChatMessage> messages, {
     List<AiToolSpec> tools = const [],
     int? maxTokens,
+    String reasoningEffort = '',
     void Function(String delta)? onText,
     void Function(String delta)? onReasoning,
   });

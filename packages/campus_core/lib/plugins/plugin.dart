@@ -140,6 +140,12 @@ abstract class AiProviderPlugin {
   /// 关闭思考要加进请求体的字段：各家协议不同，未识别的一律返回空（乱加字段会 400）。
   Map<String, dynamic> thinkingOff(String model) => const {};
 
+  /// 指定思考深度要加进请求体的字段（[effort] 为 'low' / 'medium' / 'high' / 'none'）。
+  /// 默认原样交给 OpenAI 兼容的 `reasoning_effort`——多数端点认这个字段；
+  /// 认不出的（智谱 / MiniMax 这类要别名字段或根本没有档位的）在这里覆写成空 Map。
+  Map<String, dynamic> reasoningEffort(String model, String effort) =>
+      {'reasoning_effort': effort};
+
   /// false = 界面上不给停用（核心提供商）。
   bool get removable => true;
 

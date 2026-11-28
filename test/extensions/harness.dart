@@ -199,6 +199,12 @@ class FakeAiCapability implements AiCapability {
   String get providerLabel => '测试提供商';
   @override
   String get providerId => 'fake';
+  @override
+  String currentModel = 'fake-model';
+  @override
+  List<String> selectableModels = const ['fake-model'];
+  @override
+  Future<void> setModel(String model) async => currentModel = model;
 
   @override
   Future<String?> solveCaptcha(Uint8List image) async => null;
@@ -238,6 +244,7 @@ class FakeAiCapability implements AiCapability {
     List<AiChatMessage> messages, {
     List<AiToolSpec> tools = const [],
     int? maxTokens,
+    String reasoningEffort = '',
     void Function(String delta)? onText,
     void Function(String delta)? onReasoning,
   }) async {

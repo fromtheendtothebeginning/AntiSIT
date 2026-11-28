@@ -33,6 +33,15 @@ class KimiProvider extends AiProviderPlugin {
       : const {
           'thinking': {'type': 'disabled'}
         };
+
+  /// k3 认 reasoning_effort 分档；K2.x 只有 thinking.type 两态。
+  @override
+  Map<String, dynamic> reasoningEffort(String model, String effort) {
+    if (model.startsWith('kimi-k3')) return {'reasoning_effort': effort};
+    return effort == 'none'
+        ? const {'thinking': {'type': 'disabled'}}
+        : const {'thinking': {'type': 'enabled'}};
+  }
 }
 
 /// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_KIMI=true 时整包被摇掉。

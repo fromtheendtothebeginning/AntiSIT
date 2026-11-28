@@ -23,6 +23,15 @@ class AiCapabilityImpl implements AiCapability {
   String get providerId => AiVision.I.config.providerId;
 
   @override
+  String get currentModel => AiVision.I.config.model.trim();
+
+  @override
+  List<String> get selectableModels => AiVision.I.selectableModels();
+
+  @override
+  Future<void> setModel(String model) => AiVision.I.setModel(model);
+
+  @override
   Future<String?> solveCaptcha(Uint8List image) => tasks.solveCaptcha(image);
 
   @override
@@ -52,12 +61,14 @@ class AiCapabilityImpl implements AiCapability {
     List<AiChatMessage> messages, {
     List<AiToolSpec> tools = const [],
     int? maxTokens,
+    String reasoningEffort = '',
     void Function(String delta)? onText,
     void Function(String delta)? onReasoning,
   }) =>
       AiVision.I.chatWithToolsStream(messages,
           tools: tools,
           maxTokens: maxTokens ?? 2048,
+          reasoningEffort: reasoningEffort,
           onText: onText,
           onReasoning: onReasoning);
 }

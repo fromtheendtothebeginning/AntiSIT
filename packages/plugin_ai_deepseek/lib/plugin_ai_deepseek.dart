@@ -30,6 +30,20 @@ class DeepSeekProvider extends AiProviderPlugin {
   Map<String, dynamic> thinkingOff(String model) => const {
         'thinking': {'type': 'disabled'}
       };
+
+  /// DeepSeek 的思考档位走 `thinking.budget_tokens`（官方 index 的写法），
+  /// 不是 OpenAI 的 reasoning_effort：乱发后者会被当成未知字段。
+  @override
+  Map<String, dynamic> reasoningEffort(String model, String effort) => {
+        'thinking': {
+          'type': 'enabled',
+          'budget_tokens': switch (effort) {
+            'low' => 2048,
+            'high' => 16384,
+            _ => 8192,
+          },
+        },
+      };
 }
 
 /// 插件包入口：tool/gen_plugins.dart 按包名登记；--dart-define=EXCLUDE_AI_DEEPSEEK=true 时整包被摇掉。

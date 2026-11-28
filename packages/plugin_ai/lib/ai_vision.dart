@@ -97,6 +97,14 @@ class AiVision {
     }
   }
 
+  /// 换模型（拓展工坊顶栏的切换器用）：只改 model 字段并落盘，下一次请求生效。
+  /// 提供商与 Key 不动——换模型不等于换家。
+  Future<void> setModel(String model) async {
+    await load();
+    final next = _config.copy()..model = model.trim();
+    await save(next);
+  }
+
   /// 识图是否可用（已开启、参数齐全，且「AI 设置」插件没被停用）。
   bool get available => _config.ready && PluginRegistry.I.isEnabled(_aiPluginId);
 
@@ -294,6 +302,7 @@ class AiVision {
     List<AiToolSpec> tools = const [],
     int maxTokens = 2048,
     Duration timeout = const Duration(seconds: 90),
+    String reasoningEffort = '',
   }) async {
     await load();
     if (!_config.ready) {
@@ -330,6 +339,7 @@ class AiVision {
     List<AiToolSpec> tools = const [],
     int maxTokens = 2048,
     Duration timeout = const Duration(seconds: 90),
+    String reasoningEffort = '',
     void Function(String delta)? onText,
     void Function(String delta)? onReasoning,
   }) async {
@@ -341,7 +351,8 @@ class AiVision {
       return await _requestMessagesStream(messages,
           tools: tools,
           maxTokens: maxTokens,
-          thinkingOff: false,
+          thinkingOff: reasoningEffort == 'none',
+          reasoningEffort: reasoningEffort,
           timeout: timeout,
           usedTools: tools.isNotEmpty,
           onText: onText,
@@ -368,21 +379,22 @@ class AiVision {
     required List<AiToolSpec> tools,
     required int maxTokens,
     required bool thinkingOff,
+    String reasoningEffort = '',
     required Duration timeout,
     required bool usedTools,
     void Function(String delta)? onText,
     void Function(String delta)? onReasoning,
   }) async {
-    final body =
-        buildMessagesPayload(_config, messages, tools, maxTokens, thinkingOff);
+    final body = buildMessagesPayload(_config, messages, tools, maxTokens,
+        thinkingOff, reasoningEffort: reasoningEffort);
     body['stream'] = true;
     try {
       return await _sendStream(body, timeout,
           usedTools: usedTools, onText: onText, onReasoning: onReasoning);
     } on ApiError catch (e) {
       if (tools.isEmpty || !_looksLikeToolsUnsupported(e.message)) rethrow;
-      final fallback =
-          buildMessagesPayload(_config, messages, const [], maxTokens, thinkingOff);
+      final fallback = buildMessagesPayload(_config, messages, const [],
+          maxTokens, thinkingOff, reasoningEffort: reasoningEffort);
       fallback['stream'] = true;
       return _sendStream(fallback, timeout,
           usedTools: false, onText: onText, onReasoning: onReasoning);
