@@ -381,7 +381,6 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
         originCol: placement.col,
       );
     });
-    HapticFeedback.selectionClick();
   }
 
   /// 跟手缩放：位移直接加到起手像素尺寸上，算出最近档位背景；卡框本体钉在起手格位。
@@ -408,7 +407,7 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
         reserve == resize.reserve) {
       return;
     }
-    if (snapped != resize.snapped) HapticFeedback.selectionClick();
+    // 换档途中不再震一下：调卡片大小是连续的细动作，逐档抖一下反而打断手感。
     setState(() {
       resize.currentPx = nextPx;
       resize.snapped = snapped;
@@ -425,10 +424,7 @@ class _FlexibleCardGridState extends State<FlexibleCardGrid>
       _resize = null;
       if (changed) _pending.sizes[resize.itemId] = target;
     });
-    if (changed) {
-      widget.onSizeChanged(resize.itemId, target);
-      HapticFeedback.lightImpact();
-    }
+    if (changed) widget.onSizeChanged(resize.itemId, target);
   }
 
   /// 手势被系统取消（来电 / 通知下拉 / 竞技场被抢）：**回滚**，不提交尺寸。

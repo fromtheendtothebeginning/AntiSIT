@@ -33,15 +33,32 @@ API = "https://gitee.com/api/v5"
 # 它们由 Gitee 自动生成、体积也小，不该被误删。
 PRUNABLE_SUFFIXES = (".apk", ".apk.sha256")
 
-_VERSION_RE = re.compile(r"^v?(\d+(?:\.\d+)*)")
+# 通道：内测版（dev-* tag）只留最新一个——它每轮改完就发，留着旧的没人下、还占配额；
+# 稳定版（v* tag）留多个，用户回退时要能找到上一版。
+DEV_PREFIX = "dev-"
+
+# 版本号 + 可选的 -dev.<构建号>：内测版每轮只改构建号（dev-1.48.1-dev.6），
+# 不把这一段算进版本就会把 dev.6 与 dev.3 判成同一版，排序变成随机。
+_VERSION_RE = re.compile(r"^v?(\d+(?:\.\d+)*)(?:-dev\.(\d+))?")
+
+
+def is_dev_tag(tag: str) -> bool:
+    return (tag or "").strip().startswith(DEV_PREFIX)
 
 
 def parse_version(tag: str) -> tuple[int, ...] | None:
-    """'v1.41.7' -> (1, 41, 7)；认不出来返回 None（这种版本一律不动）。"""
-    match = _VERSION_RE.match((tag or "").strip())
+    """'v1.41.7' -> (1,41,7)；'dev-1.48.1-dev.6' -> (1,48,1,6)；认不出来返回 None。"""
+    text = (tag or "").strip()
+    if text.startswith(DEV_PREFIX):
+        text = text[len(DEV_PREFIX):]
+    match = _VERSION_RE.match(text)
     if not match:
         return None
-    return tuple(int(part) for part in match.group(1).split("."))
+    base = [int(part) for part in match.group(1).split(".")]
+    # 内测版的 -dev.N 是同一基版本里的递增序号：拼成第 4 位，dev.6 > dev.3 > dev.1。
+    if match.group(2) is not None:
+        base.append(int(match.group(2)))
+    return tuple(base)
 
 
 def request(url: str, method: str = "GET") -> object:
@@ -113,26 +130,47 @@ def main() -> int:
         print("没有读到任何 Release")
         return 0
 
-    # 按版本号从新到旧；认不出 tag 的（手滑建的）排在最后且永不删
-    versioned: list[tuple[tuple[int, ...], dict]] = []
+    # 按版本号从新到旧；认不出 tag 的（手滑建的）排在最后且永不删。
+    # 两条通道分开算保留集合：内测版（dev-*）只留最新 1 个，稳定版（v*）留 --keep 个。
+    stable: list[tuple[tuple[int, ...], dict]] = []
+    dev: list[tuple[tuple[int, ...], dict]] = []
     unversioned: list[dict] = []
     for rel in releases:
-        version = parse_version(str(rel.get("tag_name", "")))
+        tag = str(rel.get("tag_name", ""))
+        version = parse_version(tag)
         if version is None:
             unversioned.append(rel)
+        elif is_dev_tag(tag):
+            dev.append((version, rel))
         else:
-            versioned.append((version, rel))
-    versioned.sort(key=lambda item: item[0], reverse=True)
+            stable.append((version, rel))
+    # 稳定版 tag 是 v 前缀、内测版是 dev- 前缀：不能用「版本号里有没有第 4 位」区分，
+    # 内测 base 也可能只有三段（dev-1.48.1 → 去掉前缀再解析成 (1,48,1)）。
+    stable = [(v, r) for v, r in stable if not is_dev_tag(str(r.get("tag_name", "")))]
+    stable.sort(key=lambda item: item[0], reverse=True)
+    dev.sort(key=lambda item: item[0], reverse=True)
 
-    keep_versions = {version for version, _ in versioned[: max(args.keep, 1)]}
-    print(f"{args.repo}：{len(releases)} 个 Release，保留最近 {max(args.keep, 1)} 个版本")
-    for version, rel in versioned[: max(args.keep, 1)]:
-        print(f"  保留 v{'.'.join(map(str, version))}")
+    keep_ids: set[int] = set()
+    keep_labels: list[str] = []
+    for version, rel in dev[:1]:
+        keep_ids.add(int(rel["id"]))
+        keep_labels.append(f"dev-{'.'.join(map(str, version))}（内测只留最新）")
+    keep_stable = max(args.keep, 1)
+    for version, rel in stable[:keep_stable]:
+        keep_ids.add(int(rel["id"]))
+        keep_labels.append(f"v{'.'.join(map(str, version))}")
+
+    print(
+        f"{args.repo}：{len(releases)} 个 Release（稳定版 {len(stable)} / 内测版 {len(dev)}），"
+        f"保留内测最新 1 个 + 稳定最近 {keep_stable} 个"
+    )
+    for label in keep_labels:
+        print(f"  保留 {label}")
 
     doomed: list[tuple[str, int, dict]] = []
     kept_bytes = 0
     total_bytes = 0
-    for version, rel in versioned:
+    for version, rel in [*dev, *stable]:
         assets = [
             asset
             for asset in list_assets(args.repo, int(rel["id"]), token)
@@ -140,7 +178,7 @@ def main() -> int:
         ]
         size = sum(int(asset.get("size") or 0) for asset in assets)
         total_bytes += size
-        if version in keep_versions:
+        if int(rel["id"]) in keep_ids:
             kept_bytes += size
             continue
         for asset in assets:
