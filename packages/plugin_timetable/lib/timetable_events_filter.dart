@@ -132,13 +132,12 @@ Future<EventFilter?> showEventFilterSheet(
       builder: (ctx, setS) {
         Future<void> pickTime({required bool start}) async {
           final cur = hm(start ? draft.startFrom : draft.startTo);
-          final t = await showTimePicker(
-            context: ctx,
+          final t = await showGlassTimePicker(ctx,
             initialTime: TimeOfDay(
               hour: cur < 0 ? (start ? 8 : 22) : cur ~/ 60,
               minute: cur < 0 ? 0 : cur % 60,
             ),
-            helpText: start ? '开始时间不早于' : '结束时间不晚于',
+            title: start ? '开始时间不早于' : '结束时间不晚于',
           );
           if (t == null) return;
           final hhmm =
@@ -153,12 +152,11 @@ Future<EventFilter?> showEventFilterSheet(
         Future<void> pickDate({required bool from}) async {
           final now = DateTime.now();
           final cur = DateTime.tryParse(from ? draft.dateFrom : draft.dateTo);
-          final picked = await showDatePicker(
-            context: ctx,
+          final picked = await showGlassDatePicker(ctx,
             initialDate: cur ?? now,
             firstDate: DateTime(now.year - 2),
             lastDate: DateTime(now.year + 2),
-            helpText: from ? '只看这一天之后会发生的' : '只看这一天之前会发生的',
+            title: from ? '只看这一天之后会发生的' : '只看这一天之前会发生的',
           );
           if (picked == null) return;
           final iso = TimetableStore.iso(picked);

@@ -78,6 +78,7 @@ export 'widgets/flexible_grid_drag.dart';
 export 'widgets/flexible_grid_motion.dart';
 export 'widgets/flexible_grid_painters.dart';
 export 'widgets/flexible_grid_size.dart';
+export 'widgets/glass_date_time_pickers.dart';
 export 'widgets/glass_inputs.dart';
 export 'widgets/glass_tabs.dart';
 export 'widgets/flexible_grid_card.dart';

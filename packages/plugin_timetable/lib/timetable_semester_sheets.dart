@@ -49,8 +49,7 @@ Future<void> showSemesterSettingsSheet(
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () async {
                   final init = DateTime.tryParse(startDate) ?? DateTime.now();
-                  final picked = await showDatePicker(
-                    context: ctx,
+                  final picked = await showGlassDatePicker(ctx,
                     initialDate: init,
                     firstDate: DateTime(init.year - 1),
                     lastDate: DateTime(init.year + 1),
@@ -313,8 +312,7 @@ Future<void> showAdjustSettingsSheet(
                     OutlinedButton(
                       onPressed: () async {
                         final now = DateTime.now();
-                        final picked = await showDatePicker(
-                          context: ctx,
+                        final picked = await showGlassDatePicker(ctx,
                           initialDate: date ?? now,
                           firstDate: DateTime(now.year - 1),
                           lastDate: DateTime(now.year + 1),
@@ -328,8 +326,7 @@ Future<void> showAdjustSettingsSheet(
                     OutlinedButton(
                       onPressed: () async {
                         final now = DateTime.now();
-                        final picked = await showDatePicker(
-                          context: ctx,
+                        final picked = await showGlassDatePicker(ctx,
                           initialDate: endDate ?? date ?? now,
                           firstDate: DateTime(now.year - 1),
                           lastDate: DateTime(now.year + 1),

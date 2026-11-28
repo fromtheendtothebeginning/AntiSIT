@@ -37,10 +37,9 @@ Future<void> showSlotTimesSheet(
     int index, {
     required bool start,
   }) async {
-    final picked = await showTimePicker(
-      context: context,
+    final picked = await showGlassTimePicker(context,
       initialTime: parse(start ? starts[index] : ends[index]),
-      helpText: '第 ${index + 1} 节${start ? '上课' : '下课'}时间',
+      title: '第 ${index + 1} 节${start ? '上课' : '下课'}时间',
     );
     if (picked == null) return;
     setS(() {

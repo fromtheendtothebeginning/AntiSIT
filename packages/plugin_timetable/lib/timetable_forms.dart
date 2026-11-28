@@ -264,313 +264,346 @@ Future<bool> showEventForm(
   // 校验提示画在弹层里：SnackBar 挂在页面 Scaffold 上，会被底部弹层盖住。
   String? error;
 
+  String hhmm(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:'
+      '${t.minute.toString().padLeft(2, '0')}';
+
   final saved = await showModalBottomSheet<bool>(
     context: context,
-    showDragHandle: true,
+    backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (ctx) => Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        0,
-        20,
-        20 + MediaQuery.of(ctx).viewInsets.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
       child: StatefulBuilder(
-        builder: (ctx, setS) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                existing == null ? '添加日程' : '编辑日程',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+        builder: (ctx, setS) => Container(
+          decoration: BoxDecoration(
+            color: SemColors.menuBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.fromLTRB(0, 4, 0, 12),
+                decoration: BoxDecoration(
+                  color: SemColors.border,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            ),
-            TextField(
-              controller: nameC,
-              decoration: const InputDecoration(
-                labelText: '名称 *',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: placeC,
-              decoration: const InputDecoration(labelText: '地点', isDense: true),
-            ),
-            const SizedBox(height: 8),
-            GlassTabs(
-              labels: const ['单次', '重复'],
-              index: repeating ? 1 : 0,
-              onChanged: (i) => setS(() {
-                repeating = i == 1;
-                if (repeating && repeat == TtEvent.repeatNone) {
-                  repeat = TtEvent.repeatWeekly;
-                }
-              }),
-            ),
-            if (repeating) ...[
-              const SizedBox(height: 8),
-              GlassTabs(
-                labels: const ['每周', '每两周', '每月'],
-                index: _repeatTabIndex(repeat),
-                height: 30,
-                fontSize: 12,
-                onChanged: (i) => setS(() {
-                  repeat = const [
-                    TtEvent.repeatWeekly,
-                    TtEvent.repeatBiweekly,
-                    TtEvent.repeatMonthly,
-                  ][i];
-                  // 切到每月时把锚点日记到 repeatStart 上（每月几号由它定）
-                  if (repeat == TtEvent.repeatMonthly && repeatStart != null) {
-                    day = repeatStart!.weekday - 1;
-                  }
-                }),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (repeating)
-                  Expanded(
-                    child: repeat == TtEvent.repeatMonthly
-                        ? OutlinedButton(
-                            onPressed: () => _pickRepeatStart(
-                              ctx,
-                              tt,
-                              current: repeatStart,
-                              onPicked: (d) => setS(() {
-                                repeatStart = d;
-                                day = d.weekday - 1;
-                              }),
-                            ),
-                            child: Text(
-                              repeatStart == null
-                                  ? '每月几号 *'
-                                  : '每月 ${repeatStart!.day} 号',
-                            ),
-                          )
-                        : DropdownButtonFormField<int>(
-                            initialValue: day,
-                            decoration: const InputDecoration(
-                              labelText: '星期',
-                              isDense: true,
-                            ),
-                            items: [
-                              for (var i = 0; i < 7; i++)
-                                DropdownMenuItem(
-                                  value: i,
-                                  child: Text('周${'一二三四五六日'[i]}'),
-                                ),
-                            ],
-                            onChanged: (v) => setS(() => day = v!),
-                          ),
-                  )
-                else
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final now = DateTime.now();
-                        final picked = await showDatePicker(
-                          context: ctx,
-                          initialDate: date ?? now,
-                          firstDate: DateTime(now.year - 1),
-                          lastDate: DateTime(now.year + 1),
-                        );
-                        if (picked != null) {
-                          setS(() {
-                            date = picked;
-                            day = picked.weekday - 1;
-                          });
-                        }
-                      },
-                      child: Text(
-                        date == null ? '选择日期 *' : TimetableStore.iso(date!),
-                      ),
-                    ),
-                  ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      final t = await showTimePicker(
-                        context: ctx,
-                        initialTime: start,
-                      );
-                      if (t != null) setS(() => start = t);
-                    },
-                    child: Text('开始 ${start.format(ctx)}'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () async {
-                      final t = await showTimePicker(
-                        context: ctx,
-                        initialTime: end,
-                      );
-                      if (t != null) setS(() => end = t);
-                    },
-                    child: Text('结束 ${end.format(ctx)}'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (repeating) ...[
-              // 循环起止：开始默认学期起点，结束留空 = 不限（排到学期末）
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => _pickRepeatStart(
-                        ctx,
-                        tt,
-                        current: repeatStart,
-                        onPicked: (d) => setS(() {
-                          // 「从哪天开始循环」和「每周几」是两件事：改开始日期
-                          // 不该顺手改掉用户选的星期（原来这里会覆盖）。
-                          repeatStart = d;
-                        }),
-                      ),
-                      child: Text(
-                        repeatStart == null
-                            ? '开始 不限'
-                            : '开始 ${TimetableStore.iso(repeatStart!)}',
+                    child: Text(
+                      existing == null ? '添加日程' : '编辑日程',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () async {
-                              final now = DateTime.now();
-                              final picked = await showDatePicker(
-                                context: ctx,
-                                initialDate: repeatEnd ?? repeatStart ?? now,
-                                firstDate: DateTime(now.year - 1),
-                                lastDate: DateTime(now.year + 2),
-                              );
-                              if (picked != null) {
-                                setS(() => repeatEnd = picked);
-                              }
-                            },
-                            child: Text(
-                              repeatEnd == null
-                                  ? '结束 不限'
-                                  : '结束 ${TimetableStore.iso(repeatEnd!)}',
-                            ),
-                          ),
-                        ),
-                        if (repeatEnd != null)
-                          IconButton(
-                            tooltip: '清空结束日期（不限）',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => setS(() => repeatEnd = null),
-                            icon: const Icon(Icons.close, size: 16),
-                          ),
-                      ],
-                    ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('取消'),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-            ],
-            TextField(
-              controller: noteC,
-              decoration: const InputDecoration(labelText: '备注', isDense: true),
-            ),
-            if (error != null) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: SemColors.dangerSoft,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  error!,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: SemColors.danger,
-                    height: 1.5,
+              const SizedBox(height: 4),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GlassField(
+                        label: '名称',
+                        controller: nameC,
+                        hintText: '例如：组会 / 实验课',
+                      ),
+                      const SizedBox(height: 10),
+                      GlassField(
+                        label: '地点',
+                        controller: placeC,
+                        hintText: '可留空，例如：一教 A201',
+                      ),
+                      const SizedBox(height: 12),
+                      GlassTabs(
+                        labels: const ['单次', '重复'],
+                        index: repeating ? 1 : 0,
+                        onChanged: (i) => setS(() {
+                          repeating = i == 1;
+                          if (repeating && repeat == TtEvent.repeatNone) {
+                            repeat = TtEvent.repeatWeekly;
+                          }
+                        }),
+                      ),
+                      if (repeating) ...[
+                        const SizedBox(height: 10),
+                        GlassTabs(
+                          labels: const ['每周', '每两周', '每月'],
+                          index: _repeatTabIndex(repeat),
+                          height: 30,
+                          fontSize: 12,
+                          onChanged: (i) => setS(() {
+                            repeat = const [
+                              TtEvent.repeatWeekly,
+                              TtEvent.repeatBiweekly,
+                              TtEvent.repeatMonthly,
+                            ][i];
+                            if (repeat == TtEvent.repeatMonthly &&
+                                repeatStart != null) {
+                              day = repeatStart!.weekday - 1;
+                            }
+                          }),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      if (!repeating) ...[
+                        GlassPicker(
+                          label: '日期',
+                          value: date == null ? '' : TimetableStore.iso(date!),
+                          hint: '选哪一天',
+                          onTap: () async {
+                            final now = DateTime.now();
+                            final picked = await showGlassDatePicker(
+                              ctx,
+                              initialDate: date ?? now,
+                              firstDate: DateTime(now.year - 1),
+                              lastDate: DateTime(now.year + 2),
+                              title: '日程日期',
+                            );
+                            if (picked != null) {
+                              setS(() {
+                                date = picked;
+                                day = picked.weekday - 1;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                      ] else if (repeat != TtEvent.repeatMonthly) ...[
+                        GlassPicker(
+                          label: '星期',
+                          value: '周${'一二三四五六日'[day]}',
+                          onTap: () async {
+                            final picked = await showGlassChoiceSheet(
+                              ctx,
+                              title: '每周几',
+                              selected: day,
+                              options: [
+                                for (var i = 0; i < 7; i++) '周${'一二三四五六日'[i]}',
+                              ],
+                            );
+                            if (picked != null) setS(() => day = picked);
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      if (repeating) ...[
+                        GlassPicker(
+                          label: repeat == TtEvent.repeatMonthly
+                              ? '每月几号'
+                              : '开始',
+                          value: repeatStart == null
+                              ? ''
+                              : (repeat == TtEvent.repeatMonthly
+                                    ? '每月 ${repeatStart!.day} 号'
+                                    : TimetableStore.iso(repeatStart!)),
+                          hint: '不限',
+                          onTap: () async {
+                            final picked = await _pickRepeatStartValue(
+                              ctx,
+                              tt,
+                              repeatStart,
+                            );
+                            if (picked != null) {
+                              setS(() {
+                                repeatStart = picked;
+                                if (repeat == TtEvent.repeatMonthly) {
+                                  day = picked.weekday - 1;
+                                }
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        GlassPicker(
+                          label: '结束',
+                          value: repeatEnd == null
+                              ? ''
+                              : TimetableStore.iso(repeatEnd!),
+                          hint: '不限（排到学期末）',
+                          helperText: repeatEnd == null ? null : '还想改就再点一次',
+                          onTap: () async {
+                            final now = DateTime.now();
+                            final picked = await showGlassDatePicker(
+                              ctx,
+                              initialDate: repeatEnd ?? repeatStart ?? now,
+                              firstDate: DateTime(now.year - 1),
+                              lastDate: DateTime(now.year + 2),
+                              title: '循环到这一天为止',
+                            );
+                            if (picked != null) setS(() => repeatEnd = picked);
+                          },
+                        ),
+                        if (repeatEnd != null)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () => setS(() => repeatEnd = null),
+                              child: const Text('清空结束日期'),
+                            ),
+                          ),
+                        const SizedBox(height: 4),
+                      ],
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GlassPicker(
+                              label: '开始时间',
+                              value: hhmm(start),
+                              onTap: () async {
+                                final t = await showGlassTimePicker(
+                                  ctx,
+                                  initialTime: start,
+                                  title: '开始时间',
+                                );
+                                if (t != null) setS(() => start = t);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: GlassPicker(
+                              label: '结束时间',
+                              value: hhmm(end),
+                              onTap: () async {
+                                final t = await showGlassTimePicker(
+                                  ctx,
+                                  initialTime: end,
+                                  title: '结束时间',
+                                );
+                                if (t != null) setS(() => end = t);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      GlassField(
+                        label: '备注',
+                        controller: noteC,
+                        hintText: '可留空',
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: SemColors.dangerSoft,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            error!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: SemColors.danger,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      glassPrimaryButton(
+                        label: '保存',
+                        onPressed: () {
+                          final name = nameC.text.trim();
+                          if (name.isEmpty || (!repeating && date == null)) {
+                            setS(
+                              () => error = name.isEmpty
+                                  ? '请填写日程名称'
+                                  : '单次日程需要选择日期',
+                            );
+                            return;
+                          }
+                          if (repeating &&
+                              repeat == TtEvent.repeatMonthly &&
+                              repeatStart == null) {
+                            setS(() => error = '每月重复需要选一个开始日期（决定每月几号）');
+                            return;
+                          }
+                          if (repeating &&
+                              repeatStart != null &&
+                              repeatEnd != null &&
+                              repeatEnd!.isBefore(repeatStart!)) {
+                            setS(() => error = '循环结束日期不能早于开始日期');
+                            return;
+                          }
+                          final ev = TtEvent(
+                            id: existing?.id ?? TimetableStore.genId(),
+                            name: name,
+                            place: placeC.text.trim(),
+                            // 重复日程 date 留空（与老数据同一套语义），单次写当天日期。
+                            date: repeating ? '' : TimetableStore.iso(date!),
+                            day: repeating ? day : (date!.weekday - 1),
+                            start: hhmm(start),
+                            end: hhmm(end),
+                            note: noteC.text.trim(),
+                            repeat: repeating ? repeat : TtEvent.repeatNone,
+                            repeatStart: !repeating || repeatStart == null
+                                ? ''
+                                : TimetableStore.iso(repeatStart!),
+                            repeatEnd: !repeating || repeatEnd == null
+                                ? ''
+                                : TimetableStore.iso(repeatEnd!),
+                            kind: existing?.kind ?? '',
+                            seat: existing?.seat ?? '',
+                          );
+                          if (existing != null) {
+                            final i = tt.events.indexWhere(
+                              (x) => x.id == existing.id,
+                            );
+                            if (i >= 0) tt.events[i] = ev;
+                          } else {
+                            tt.events.add(ev);
+                          }
+                          TimetableStore.instance.save();
+                          Navigator.pop(ctx, true);
+                        },
+                      ),
+                      const SizedBox(height: 4),
+                    ],
                   ),
                 ),
               ),
             ],
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                onPressed: () {
-                  final name = nameC.text.trim();
-                  if (name.isEmpty || (!repeating && date == null)) {
-                    setS(() => error = name.isEmpty ? '请填写日程名称' : '单次日程需要选择日期');
-                    return;
-                  }
-                  if (repeating &&
-                      repeat == TtEvent.repeatMonthly &&
-                      repeatStart == null) {
-                    setS(() => error = '每月重复需要选一个开始日期（决定每月几号）');
-                    return;
-                  }
-                  if (repeating &&
-                      repeatStart != null &&
-                      repeatEnd != null &&
-                      repeatEnd!.isBefore(repeatStart!)) {
-                    setS(() => error = '循环结束日期不能早于开始日期');
-                    return;
-                  }
-                  String hhmm(TimeOfDay t) =>
-                      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-                  final ev = TtEvent(
-                    id: existing?.id ?? TimetableStore.genId(),
-                    name: name,
-                    place: placeC.text.trim(),
-                    // 重复日程 date 留空（与老数据同一套语义），单次写当天日期。
-                    date: repeating ? '' : TimetableStore.iso(date!),
-                    day: repeating ? day : (date!.weekday - 1),
-                    start: hhmm(start),
-                    end: hhmm(end),
-                    note: noteC.text.trim(),
-                    repeat: repeating ? repeat : TtEvent.repeatNone,
-                    repeatStart: !repeating || repeatStart == null
-                        ? ''
-                        : TimetableStore.iso(repeatStart!),
-                    repeatEnd: !repeating || repeatEnd == null
-                        ? ''
-                        : TimetableStore.iso(repeatEnd!),
-                    kind: existing?.kind ?? '',
-                    seat: existing?.seat ?? '',
-                  );
-                  if (existing != null) {
-                    final i = tt.events.indexWhere((x) => x.id == existing.id);
-                    if (i >= 0) tt.events[i] = ev;
-                  } else {
-                    tt.events.add(ev);
-                  }
-                  TimetableStore.instance.save();
-                  Navigator.pop(ctx, true);
-                },
-                child: const Text('保存'),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     ),
   );
   return saved == true;
+}
+
+/// 选「循环开始」日期（每月几号由它定）：返回选中的日期，取消返回 null。
+Future<DateTime?> _pickRepeatStartValue(
+  BuildContext ctx,
+  SemesterTt tt,
+  DateTime? current,
+) async {
+  final now = DateTime.now();
+  final base = current ?? DateTime.tryParse(tt.startDate) ?? now;
+  return showGlassDatePicker(
+    ctx,
+    initialDate: base,
+    firstDate: DateTime(now.year - 2),
+    lastDate: DateTime(now.year + 2),
+    title: '循环从这一天开始',
+  );
 }
 
 /// 重复类型 → 「每周 / 每两周 / 每月」那一排的段位。
@@ -580,24 +613,6 @@ int _repeatTabIndex(String repeat) => switch (repeat) {
   _ => 0,
 };
 
-/// 选「循环开始」日期：默认学期起点，也可清空；每月重复靠它定「几号」。
-Future<void> _pickRepeatStart(
-  BuildContext ctx,
-  SemesterTt tt, {
-  required DateTime? current,
-  required ValueChanged<DateTime> onPicked,
-}) async {
-  final now = DateTime.now();
-  final base = current ?? DateTime.tryParse(tt.startDate) ?? now;
-  final picked = await showDatePicker(
-    context: ctx,
-    initialDate: base,
-    firstDate: DateTime(now.year - 2),
-    lastDate: DateTime(now.year + 2),
-    helpText: '循环从这一天开始',
-  );
-  if (picked != null) onPicked(picked);
-}
 
 /// 'HH:mm' → [TimeOfDay]；格式不对返回 null。
 TimeOfDay? _toTOD(String? s) {

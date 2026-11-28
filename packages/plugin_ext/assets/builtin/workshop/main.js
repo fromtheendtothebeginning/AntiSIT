@@ -24,11 +24,41 @@ let ctx = null;
 let notify = () => {};
 let onSessionChange = () => {};
 
+
+// 描边图标（内联 SVG，跟 DSH 一样不依赖图标字体）。
+const ICONS = {
+  mic: '<svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>',
+  stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
+  send: '<svg viewBox="0 0 24 24"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg>',
+  menu: '<svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>',
+  more: '<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></svg>',
+};
+
+// 「/」面板里给工具看的**中文**名字与一句说明：工具本身的 description 是写
+// 给模型看的英文，直接摆到面板上就是「界面里还混着英文」。
+const TOOL_UI_LABELS = {
+  set_goal: ['设定目标', '这条对话要达成什么'],
+  update_plan: ['更新计划', '列出步骤与进度'],
+  mcp_list_tools: ['MCP 工具列表', '看接入的服务器有哪些工具'],
+  mcp_call: ['调用 MCP 工具', '用一台服务器上的某个工具'],
+  list_files: ['看文件', '列出这个拓展的文件'],
+  read_file: ['读文件', '读一个文本文件的内容'],
+  write_file: ['写文件', '新建或整体覆盖一个文件'],
+  edit_file: ['改文件', '按原文替换一小段'],
+  delete_file: ['删文件', '删掉一个文件'],
+  validate_extension: ['自检', '检查清单、入口与常见写法问题'],
+  preview_extension: ['预览', '用当前草稿打开预览'],
+  install_extension: ['安装', '把草稿装进拓展列表'],
+  list_skills: ['技能列表', '看已安装的技能'],
+  read_skill: ['读技能', '读一条技能的完整说明'],
+  install_skill: ['存技能', '把一段方法论存进技能库'],
+  delete_skill: ['删技能', '删掉一条技能'],
+};
 const WELCOME = `
   <div class="welcome">
-    <div class="welcome-mark">◈</div>
+    <div class="welcome-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 4v10l-7 4-7-4V7z"/></svg></div>
     <div class="welcome-title">今天做点什么</div>
-    <div class="welcome-note">说清楚要的小工具，Agent 会先看拓展、读文件、再改；写文件和安装前默认会弹确认。运行中也能继续插话。输入 <code>/</code> 可以直接调用工具或技能。</div>
+    <div class="welcome-note">说清楚要的小工具，它会先看拓展、读文件、再改；写文件和安装前默认会弹确认。运行中也能继续插话。输入 <code>/</code> 可以直接调用工具或技能。</div>
     <div class="welcome-grid">
       <button class="welcome-card" data-say="做一个记录喝水次数的小工具，数据要留在本机">
         <strong>喝水记录</strong><span>本机存数据，点一下就加一次</span>
@@ -1763,13 +1793,13 @@ export default {
       <div class="ws">
         <header class="ws-head">
           <div class="ws-bar">
-            <button id="btnSwitch" class="ws-icon" title="切换拓展 / 对话">☰</button>
+            <button id="btnSwitch" class="ws-icon" aria-label="切换拓展或对话"></button>
             <div class="ws-heading">
               <span class="ws-title" id="convTitle">新对话</span>
               <span class="ws-sub" id="draftMeta"></span>
             </div>
-            <button id="btnPublish" class="ws-publish" title="连接 GitHub / Gitee 发布">发布</button>
-            <button id="btnMore" class="ws-icon" title="更多">⋯</button>
+            <button id="btnPublish" class="ws-publish" aria-label="发布这个拓展">发布</button>
+            <button id="btnMore" class="ws-icon" aria-label="更多"></button>
           </div>
           <nav class="ws-tabs">
             <button class="ws-tab active" data-tab="chat">对话</button>
@@ -1786,28 +1816,27 @@ export default {
         </section>
         <footer class="ws-composer">
           <div class="composer-slash hidden" id="slashPanel"></div>
-          <div class="composer-box">
-            <textarea id="input" rows="1" placeholder="描述要做什么，或直接说改哪个文件…（输入 / 调用工具与技能）"></textarea>
-            <div class="composer-row">
-              <button id="btnPlan" class="pill" title="只读分析并给出执行计划">计划</button>
-              <button id="btnFull" class="pill danger" title="写入 / 安装不再逐次确认">完全访问</button>
-              <button id="btnModel" class="pill" title="切换模型">模型</button>
-              <button id="btnEffort" class="pill" title="思考深度">思考</button>
+          <div class="composer">
+            <textarea id="input" rows="1" placeholder="说说要做什么，或者打 / 挑工具、挑技能"></textarea>
+            <div class="composer-bar">
+              <button id="btnPlan" class="chip" aria-label="计划模式">计划</button>
+              <button id="btnFull" class="chip danger" aria-label="完全访问">完全访问</button>
+              <button id="btnModel" class="chip" aria-label="切换模型">模型</button>
+              <button id="btnEffort" class="chip" aria-label="思考深度">思考</button>
               <span class="composer-grow"></span>
-              <button id="btnMic" class="round hidden" title="语音输入">🎤</button>
-              <button id="btnStop" class="round hidden" title="停止">■</button>
-              <button id="btnSend" class="round primary" title="发送">↑</button>
+              <button id="btnMic" class="icon-btn hidden" aria-label="语音输入"></button>
+              <button id="btnStop" class="icon-btn hidden" aria-label="停止"></button>
+              <button id="btnSend" class="icon-btn send" aria-label="发送"></button>
             </div>
           </div>
           <div class="ws-meta"><span id="metaLine"></span><span id="status" class="hidden"></span></div>
-          <div class="composer-hint"><span>/ 调用工具与技能 · ↑ 发送 · 🎤 说话</span></div>
         </footer>
         <div class="ws-menu hidden" id="moreMenu">
           <button data-act="skills">技能</button>
-          <button data-act="mcp">MCP 服务器</button>
+          <button data-act="mcp">外部工具服务器</button>
           <button data-act="preview">预览拓展</button>
           <button data-act="install">安装拓展</button>
-          <button data-act="publish">连接 GitHub / Gitee 发布…</button>
+          <button data-act="publish">发布这个拓展</button>
           <button data-act="newConv">新建对话</button>
           <button data-act="newDraft">新建拓展</button>
           <button data-act="renameConv">重命名当前对话</button>
@@ -1853,13 +1882,13 @@ export default {
         </div>
         <div class="ws-sheet hidden" id="mcpDrawer">
           <div class="sheet-handle"></div>
-          <div class="sheet-head"><strong>MCP 服务器</strong><button id="btnCloseMcp" class="ws-link">关闭</button></div>
+          <div class="sheet-head"><strong>外部工具服务器</strong><button id="btnCloseMcp" class="ws-link">关闭</button></div>
           <div class="mcp-add">
-            <input id="mcpUrl" placeholder="https://example.com/mcp" autocomplete="off">
+            <input id="mcpUrl" placeholder="服务器地址，例如 https://example.com/mcp" autocomplete="off">
             <div class="mcp-add-row">
-              <input id="mcpAuth" placeholder="可选：Authorization 头的值" autocomplete="off">
-              <button id="btnAddMcp" class="pill">添加</button>
-              <button id="btnPasteMcp" class="pill" title="从剪贴板粘贴 mcpServers 配置">粘贴配置</button>
+              <input id="mcpAuth" placeholder="认证头，可留空" autocomplete="off">
+              <button id="btnAddMcp" class="chip">添加</button>
+              <button id="btnPasteMcp" class="chip" aria-label="从剪贴板粘贴配置">粘贴</button>
             </div>
           </div>
           <div id="mcpList"></div>
@@ -1868,10 +1897,10 @@ export default {
         </div>
         <div class="ws-sheet hidden" id="skillsDrawer">
           <div class="sheet-handle"></div>
-          <div class="sheet-head"><strong>Agent 技能</strong><button id="btnCloseSkills" class="ws-link">关闭</button></div>
+          <div class="sheet-head"><strong>技能</strong><button id="btnCloseSkills" class="ws-link">关闭</button></div>
           <div class="skill-tools">
-            <button id="btnImportSkillFile" class="pill">导入 SKILL.md</button>
-            <button id="btnImportSkillText" class="pill">粘贴导入</button>
+            <button id="btnImportSkillFile" class="chip">导入技能文件</button>
+            <button id="btnImportSkillText" class="chip">粘贴技能</button>
           </div>
           <div id="skills"></div>
         </div>
@@ -1894,6 +1923,14 @@ export default {
     const viewer = $('#viewer');
     const moreMenu = $('#moreMenu');
     let renderScheduled = false;
+
+    // 内联 SVG 图标：不依赖 emoji 也不依赖图标字体（emoji 在不同 ROM 上大小不一、
+    // 还可能被当成表情，这在 DSH 那套界面里是不出现的）。
+    $('#btnSwitch').innerHTML = ICONS.menu;
+    $('#btnMore').innerHTML = ICONS.more;
+    $('#btnMic').innerHTML = ICONS.mic;
+    $('#btnStop').innerHTML = ICONS.stop;
+    $('#btnSend').innerHTML = ICONS.send;
 
     // AI 流式增量：只认当前这一轮的 streamId（重试会换 id）
     if (window.antiSIT && typeof window.antiSIT.on === 'function') {
@@ -2005,21 +2042,24 @@ export default {
       modelBtn.disabled = S.running;
       effortBtn.disabled = S.running;
 
+      // 麦克风常驻（不再因为「没检测到识别服务」就消失）：按了才知道有没有，
+      // 没有就给一句提示，而不是让按钮凭空不见、用户找不到。
       const micBtn = $('#btnMic');
-      micBtn.classList.toggle('hidden', !S.micReady);
       micBtn.classList.toggle('recording', !!S.listening);
+      micBtn.setAttribute('aria-label', S.listening ? '停止录音' : '语音输入');
       micBtn.title = S.listening ? '停止录音' : '语音输入';
-      $('#btnSend').classList.toggle('hidden', S.running);
-      // 录音时把发送藏起来：同一位置只留一个主动作，免得点错
+      // 录音时把发送收起来、换成停止：同一位置只留一个主动作，免得点错
+      $('#btnSend').classList.toggle('hidden', S.running || !!S.listening);
       $('#btnSend').disabled = !S.session;
+      $('#btnStop').classList.toggle('hidden', !(S.running || S.listening));
       const publishBtn = $('#btnPublish');
       if (publishBtn) publishBtn.disabled = S.running || !draft;
       $('#btnStop').classList.toggle('hidden', !S.running);
       input.placeholder = S.running
-        ? '可以继续输入，Agent 下一步会看到…'
+        ? '可以继续输入，下一步会看到'
         : S.planMode
-          ? '计划模式：只读分析，先给方案…'
-          : '描述要做什么，或直接说改哪个文件…';
+          ? '计划模式：只读分析，先给方案'
+          : '说说要做什么，或者打 / 挑工具、挑技能';
 
       const queued = S.inbox.nextTurn.length + S.inbox.nextStep.length;
       const metaLine = $('#metaLine');
@@ -2134,7 +2174,7 @@ function renderModels() {
         b.className = 'pick' + (S.draft && d.id === S.draft.id ? ' active' : '');
         b.innerHTML = '<span class="pick-main"><strong>' + esc(d.name) + '</strong>'
           + '<em>v' + esc(d.version) + (d.installed ? ' · 已安装' : '') + '</em></span>'
-          + '<span class="pick-check">' + (S.draft && d.id === S.draft.id ? '✓' : '') + '</span>';
+          + '<span class="pick-check">' + (S.draft && d.id === S.draft.id ? '<svg viewBox="0 0 24 24"><path d="M4 12l6 6L20 6"/></svg>' : '') + '</span>';
         b.disabled = S.running;
         b.addEventListener('click', async () => {
           closeOverlays();
@@ -2155,7 +2195,7 @@ function renderModels() {
         b.className = 'pick' + (c.id === S.conversationId ? ' active' : '');
         b.innerHTML = '<span class="pick-main"><strong>' + esc(c.title || '新对话') + '</strong>'
           + '<em>' + (c.updatedAt ? new Date(c.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '') + '</em></span>'
-          + '<span class="pick-check">' + (c.id === S.conversationId ? '✓' : '') + '</span>';
+          + '<span class="pick-check">' + (c.id === S.conversationId ? '<svg viewBox="0 0 24 24"><path d="M4 12l6 6L20 6"/></svg>' : '') + '</span>';
         b.disabled = S.running;
         b.addEventListener('click', async () => {
           closeOverlays();
@@ -2257,7 +2297,7 @@ function renderModels() {
         + '<span>' + esc(running
           ? '正在执行 ' + items.length + ' 个操作…'
           : bad ? '有操作失败' : '已执行 ' + items.length + ' 个操作') + '</span>'
-        + '<span class="tool-chev">›</span>';
+        + '<span class="tool-chev"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></span>';
       run.appendChild(summary);
       const body = document.createElement('div');
       body.className = 'tool-list';
@@ -2704,13 +2744,17 @@ function renderModels() {
     /** 候选项：工具（带说明）+ 技能（带说明），按 query 前缀 / 包含过滤。 */
     function slashCandidates(query) {
       const q = String(query || '').toLowerCase();
-      const tools = availableTools().map((tool) => ({
-        kind: 'tool',
-        name: tool.name,
-        hint: tool.description || '',
-        insert: tool.name + (tool.parameters && tool.parameters.properties
-          && Object.keys(tool.parameters.properties).length ? ' ' : ''),
-      }));
+      const tools = availableTools().map((tool) => {
+        const label = TOOL_UI_LABELS[tool.name] || [tool.name, ''];
+        return {
+          kind: 'tool',
+          // 面板上显示中文名，插入时用真正的工具名（模型只认后者）
+          name: label[0],
+          hint: label[1],
+          insert: tool.name,
+          toolName: tool.name,
+        };
+      });
       const skills = ((S && S.skills) || []).map((skill) => ({
         kind: 'skill',
         name: skill.name,
@@ -2740,7 +2784,10 @@ function renderModels() {
         row.innerHTML = '<span class="slash-kind ' + item.kind + '">'
           + (item.kind === 'tool' ? '工具' : '技能') + '</span>'
           + '<span class="slash-main"><strong>' + esc(item.name) + '</strong>'
-          + '<em>' + esc(item.hint) + '</em></span>';
+          + (item.kind === 'tool'
+            ? '<em>' + esc(item.toolName) + ' · ' + esc(item.hint) + '</em>'
+            : '<em>' + esc(item.hint) + '</em>')
+          + '</span>';
         // 用 mousedown 而不是 click：click 会在 textarea 失焦之后才触发
         row.addEventListener('mousedown', (e) => {
           e.preventDefault();
@@ -2754,8 +2801,9 @@ function renderModels() {
     function applySlash(index) {
       const item = S.slashItems[index];
       if (!item) return;
+      // 工具补成真正的工具名（模型只认它），面板上显示的是中文名
       input.value = item.kind === 'tool'
-        ? item.name + ' '
+        ? item.insert + ' '
         : item.insert;
       S.slashOpen = false;
       S.slashItems = [];
@@ -2791,6 +2839,13 @@ function renderModels() {
 
     $('#btnSend').addEventListener('click', send);
     $('#btnStop').addEventListener('click', () => {
+      // 录音中按停止 = 结束这一轮识别；Agent 运行中按停止 = 中断本轮
+      if (S.listening) {
+        S.listening = false;
+        scheduleRender();
+        ctx.voice.stop().catch(() => {});
+        return;
+      }
       if (!S.running) return;
       S.abort.abort();
       S.inbox.clear();

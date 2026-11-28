@@ -348,7 +348,8 @@ button {
 }
 
 .tool-run > summary::-webkit-details-marker { display: none; }
-.tool-chev { margin-left: auto; font-size: 13px; transition: transform 0.15s ease; }
+.tool-chev { margin-left: auto; display: inline-flex; transition: transform 0.15s ease; }
+.tool-chev svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; }
 .tool-run[open] .tool-chev { transform: rotate(90deg); }
 
 .tool-dot {
@@ -459,33 +460,27 @@ button {
   word-break: break-word;
 }
 
-/* 输入区下面那行小字：只用来说明「/」和发送，别抢视觉 */
-.composer-hint {
-  padding: 3px 6px 0;
-  font-size: 10.5px;
-  color: var(--muted);
-  text-align: right;
-}
 /* ---------- 输入区 ---------- */
 
 .ws-composer {
   flex: 0 0 auto;
-  padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
+  padding: 6px 12px calc(10px + env(safe-area-inset-bottom));
 }
 
-.composer-box {
+/* 输入区：外面一圈玻璃、里面一行按钮。整块高度压在 3 行以内，
+   键盘弹起时 WebView 自己会缩，底部按钮始终够得着。 */
+.composer {
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 16px;
   background: var(--card-solid);
-  padding: 6px 8px 5px;
-  box-shadow: 0 1px 3px color-mix(in srgb, #000 5%, transparent);
+  padding: 6px 8px 6px;
 }
 
-.composer-box:focus-within {
+.composer:focus-within {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
 }
 
-.composer-box textarea {
+.composer textarea {
   display: block;
   width: 100%;
   min-height: 26px;
@@ -501,7 +496,7 @@ button {
   padding: 6px 6px 2px;
 }
 
-.composer-row {
+.composer-bar {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -510,55 +505,53 @@ button {
 
 .composer-grow { flex: 1 1 auto; }
 
-.pill {
-  height: 28px;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
+.chip {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
   color: var(--muted);
   font-size: 11.5px;
 }
 
-.pill.active {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  background: var(--soft);
+.chip.active {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   font-weight: 600;
 }
 
-.pill.danger.active {
+.chip.danger.active {
   color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
   background: var(--danger-soft);
 }
 
-.round {
+/* 只有图标的按钮：图标走内联 SVG，不依赖字体，跟 DSH 一样是描边图标 */
+.icon-btn {
   flex: 0 0 auto;
   width: 32px;
   height: 32px;
-  min-width: 32px;
-  min-height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: var(--field);
-  color: var(--fg);
-  font-size: 15px;
-  line-height: 1;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.round.primary { background: var(--accent); color: #fff; }
-/* 语音输入：录音中变成实心，按钮呼吸一下当「正在听」的提示 */
-.round.recording {
-  background: var(--accent);
-  color: #fff;
-  animation: micPulse 1.2s ease-in-out infinite;
-}
+.icon-btn:active { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.icon-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 发送键：唯一的高饱和按钮，一眼能找到 */
+.icon-btn.send { background: var(--accent); color: #fff; border-radius: 10px; }
+.icon-btn.send:disabled { opacity: 0.4; }
+.icon-btn.send svg { stroke: #fff; }
+
+/* 录音中：图标换成实心麦克风并轻微呼吸，提示「正在听」 */
+.icon-btn.recording { color: var(--accent); animation: micPulse 1.2s ease-in-out infinite; }
 
 @keyframes micPulse {
   0%, 100% { opacity: 1; }
@@ -710,6 +703,31 @@ button {
 }
 
 
+
+/* MCP 面板：地址 / 认证两行输入 + 两个小按钮，挤在一条里会换行，所以分两行 */
+.mcp-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 2px 8px;
+}
+.mcp-add-row { display: flex; gap: 6px; align-items: center; }
+.mcp-add input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 0 10px;
+  outline: none;
+}
+.mcp-add input:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+
+.file-list { padding: 4px 0 12px; }
 /* 技能面板顶部的导入按钮 */
 .skill-tools {
   display: flex;
@@ -867,10 +885,12 @@ button {
 
 .pick-check {
   width: 14px;
-  text-align: center;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--accent);
 }
+.pick-check svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- 文件页签 ---------- */
 
@@ -1031,7 +1051,8 @@ button {
   text-align: center;
 }
 
-.welcome-mark { font-size: 30px; color: var(--accent); }
+.welcome-mark { color: var(--accent); }
+.welcome-mark svg { width: 34px; height: 34px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linejoin: round; }
 
 .welcome-title {
   margin: 10px 0 6px;

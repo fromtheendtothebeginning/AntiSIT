@@ -336,8 +336,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('每两周'), findsOneWidget);
       expect(find.text('每月'), findsOneWidget);
-      expect(find.text('开始 不限'), findsOneWidget, reason: '循环开始默认不限');
-      expect(find.text('结束 不限'), findsOneWidget, reason: '循环结束默认不限');
+      // 起止日期现在是玻璃选择器：「开始」显示学期起点，「结束」空着就是不限
+      expect(find.text('开始'), findsOneWidget, reason: '循环开始是个日期选择器');
+      expect(find.text('结束'), findsOneWidget, reason: '循环结束是个日期选择器');
+      expect(find.text('不限（排到学期末）'), findsOneWidget, reason: '结束默认不限');
 
       await tester.tap(find.text('每两周'));
       await tester.pumpAndSettle();
