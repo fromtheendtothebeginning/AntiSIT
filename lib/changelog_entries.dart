@@ -19,6 +19,14 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.11',
+    date: '2026-11-28',
+    notes: [
+      '启动动画放完就进主页：课表不再等服务器返回才显示，先用本机课表，云端与教务数据随后自动补上',
+      '课表页不再重复读一遍本机数据，冷启动少一次解析',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.10',
     date: '2026-11-28',
     notes: [
