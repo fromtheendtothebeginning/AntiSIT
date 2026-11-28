@@ -75,7 +75,11 @@ class ExtBridge extends WebBridge {
   void attachEventSink(WebBridgeEventSink? sink) {
     _events = sink;
     SemColors.palette.removeListener(_onPaletteChanged);
-    if (sink == null) return;
+    if (sink == null) {
+      // 页面关掉：把 MCP 的 HTTP 连接也关掉，别让 socket 挂在那儿
+      _workshop.closeClients();
+      return;
+    }
     // 页面启动时自己会取一次 theme；这里只记下基准，避免立刻重复推一遍
     _lastThemeJson = jsonEncode(extensionThemeJson());
     SemColors.palette.addListener(_onPaletteChanged);
@@ -112,6 +116,8 @@ class ExtBridge extends WebBridge {
       }
       // 预览要用本桥接再开一个页面，留在桥内（避免反向依赖）。
       if (method == 'workshop.preview') return _workshopPreview(args);
+      // MCP 的凭据（请求头）只在这台设备上，不经过拓展页
+      if (method.startsWith('mcp.')) return _workshop.call(method, args);
       return _workshop.call(method, args);
     }
     switch (method) {

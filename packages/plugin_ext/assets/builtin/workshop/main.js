@@ -671,6 +671,55 @@ const TOOL_DEFS = [
       return '计划已更新：' + done + ' / ' + steps.length + ' 步完成';
     },
   },  {
+    name: 'mcp_list_tools',
+    readOnly: true,
+    description: 'List tools exposed by the MCP servers the user connected.',
+    prompt: 'call it before using any mcp_call; it returns serverId + tool names.',
+    parameters: { type: 'object', properties: {} },
+    async run() {
+      const result = await ctx.workshop.mcpTools();
+      const servers = (result && result.servers) || [];
+      if (!servers.length) return '（用户还没配置 MCP 服务器）';
+      return servers
+        .map((s) => {
+          if (s.error) return s.serverId + '  ' + (s.server || '') + '  连接失败：' + s.error;
+          return s.serverId + '  ' + (s.server || '') + '\n'
+            + (s.tools || []).map((t) => '  - ' + t.name + ': ' + (t.description || '')).join('\n');
+        })
+        .join('\n');
+    },
+  },
+  {
+    name: 'mcp_call',
+    readOnly: false,
+    description: 'Call a tool on one of the MCP servers the user connected.',
+    prompt: 'arguments must match the tool inputSchema from mcp_list_tools; the call is confirmed by the app unless full access is on.',
+    parameters: {
+      type: 'object',
+      properties: {
+        serverId: { type: 'string', description: 'Server id from mcp_list_tools' },
+        tool: { type: 'string', description: 'Tool name' },
+        arguments: { type: 'object', description: 'Arguments for the tool' },
+      },
+      required: ['serverId', 'tool'],
+    },
+    async run(args) {
+      const serverId = argString(args, 'serverId');
+      const tool = argString(args, 'tool');
+      const toolArgs = (args && args.arguments) || {};
+      // 确认框由宿主弹（和写文件一样走原生，网页没法伪造「已同意」）
+      S.status = '等待确认调用 MCP 工具 ' + tool + '…';
+      notify();
+      try {
+        const result = await ctx.workshop.mcpCall(serverId, tool, toolArgs);
+        if (result && result.denied) throw new Error(result.reason || '用户拒绝调用 MCP 工具');
+        return (result && result.content) || '（没有返回内容）';
+      } finally {
+        S.status = '';
+        notify();
+      }
+    },
+  },  {
     name: 'list_files',
     readOnly: true,
     description: 'List every file in the current draft and its size.',
@@ -1736,6 +1785,7 @@ export default {
         </footer>
         <div class="ws-menu hidden" id="moreMenu">
           <button data-act="skills">技能</button>
+          <button data-act="mcp">MCP 服务器</button>
           <button data-act="preview">预览拓展</button>
           <button data-act="install">安装拓展</button>
           <button data-act="publish">连接 GitHub / Gitee 发布…</button>
@@ -1782,6 +1832,21 @@ export default {
           <div class="sheet-label">可用模型</div>
           <div id="modelList"></div>
         </div>
+        <div class="ws-sheet hidden" id="mcpDrawer">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head"><strong>MCP 服务器</strong><button id="btnCloseMcp" class="ws-link">关闭</button></div>
+          <div class="mcp-add">
+            <input id="mcpUrl" placeholder="https://example.com/mcp" autocomplete="off">
+            <div class="mcp-add-row">
+              <input id="mcpAuth" placeholder="可选：Authorization 头的值" autocomplete="off">
+              <button id="btnAddMcp" class="pill">添加</button>
+              <button id="btnPasteMcp" class="pill" title="从剪贴板粘贴 mcpServers 配置">粘贴配置</button>
+            </div>
+          </div>
+          <div id="mcpList"></div>
+          <div class="sheet-label">工具</div>
+          <div id="mcpTools"></div>
+        </div>
         <div class="ws-sheet hidden" id="skillsDrawer">
           <div class="sheet-handle"></div>
           <div class="sheet-head"><strong>Agent 技能</strong><button id="btnCloseSkills" class="ws-link">关闭</button></div>
@@ -1804,6 +1869,7 @@ export default {
     const filesPanel = $('#filesPanel');
     const switchSheet = $('#switchSheet');
     const modelSheet = $('#modelSheet');
+    const mcpDrawer = $('#mcpDrawer');
     const skillsDrawer = $('#skillsDrawer');
     const backdrop = $('#backdrop');
     const viewer = $('#viewer');
@@ -2342,6 +2408,132 @@ function renderModels() {
     }
 
 
+
+    // ---------- MCP 服务器（用户自己填的远程 JSON-RPC 端点） ----------
+
+    let mcpServers = [];
+
+    function renderMcp() {
+      const box = $('#mcpList');
+      box.innerHTML = '';
+      if (!mcpServers.length) {
+        box.innerHTML = '<div class="empty">还没有 MCP 服务器。填一个 http(s) 地址点「添加」。</div>';
+        return;
+      }
+      for (const server of mcpServers) {
+        const row = document.createElement('div');
+        row.className = 'skill';
+        const main = document.createElement('div');
+        main.className = 'skill-main';
+        main.innerHTML = '<strong>' + esc(server.name || server.id) + '</strong>'
+          + '<span>' + esc(server.url) + '</span>';
+        const del = document.createElement('button');
+        del.className = 'icon-btn danger';
+        del.textContent = '删';
+        del.title = '删除这台服务器';
+        del.addEventListener('click', async () => {
+          try {
+            const r = await ctx.workshop.removeMcp(server.id);
+            mcpServers = (r && r.servers) || [];
+            renderMcp();
+            await refreshMcpTools();
+          } catch (e) {
+            ctx.ui.toast('删除失败：' + ((e && e.message) || e));
+          }
+        });
+        row.appendChild(main);
+        row.appendChild(del);
+        box.appendChild(row);
+      }
+    }
+
+    /** 列工具：一台一台连（失败的那台单独标红，不拖垮别的）。 */
+    async function refreshMcpTools() {
+      const box = $('#mcpTools');
+      box.innerHTML = '<div class="empty">正在连接…</div>';
+      let result;
+      try {
+        result = await ctx.workshop.mcpTools();
+      } catch (e) {
+        box.innerHTML = '<div class="empty">连接失败：' + esc((e && e.message) || String(e)) + '</div>';
+        return;
+      }
+      const servers = (result && result.servers) || [];
+      if (!servers.length) {
+        box.innerHTML = '<div class="empty">没有启用的服务器</div>';
+        return;
+      }
+      box.innerHTML = '';
+      for (const s of servers) {
+        const head = document.createElement('div');
+        head.className = 'sheet-label';
+        head.textContent = (s.server || s.serverId) + (s.error ? ' · 连接失败' : '');
+        box.appendChild(head);
+        if (s.error) {
+          const err = document.createElement('div');
+          err.className = 'empty';
+          err.textContent = s.error;
+          box.appendChild(err);
+          continue;
+        }
+        for (const tool of (s.tools || [])) {
+          const row = document.createElement('div');
+          row.className = 'skill';
+          const main = document.createElement('div');
+          main.className = 'skill-main';
+          main.innerHTML = '<strong>' + esc(tool.name) + '</strong>'
+            + '<span>' + esc(tool.description || '（无说明）') + '</span>';
+          row.appendChild(main);
+          box.appendChild(row);
+        }
+      }
+    }
+
+
+    /** 解析 mcpServers 配置：只收 http(s) 的，stdio / command 那类跳过。 */
+    function parseMcpConfig(raw) {
+      const text = String(raw || '').trim();
+      if (!text) return [];
+      let json = null;
+      try {
+        json = JSON.parse(text);
+          } catch (_) {
+        // 从聊天软件里复制过来的常常带说明文字：截取最外层的一对大括号再试
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+          try {
+            json = JSON.parse(text.slice(start, end + 1));
+          } catch (_) {}
+        }
+      }
+      if (!json) return [];
+      const servers = json.mcpServers || json.mcp_servers || json.servers || json;
+      if (!servers || typeof servers !== 'object') return [];
+      const out = [];
+      for (const [name, value] of Object.entries(servers)) {
+        if (!value || typeof value !== 'object') continue;
+        const url = value.url || value.serverUrl || value.endpoint || '';
+        if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) continue;
+        const headers = {};
+        if (value.headers && typeof value.headers === 'object') {
+          for (const [k, v] of Object.entries(value.headers)) {
+            if (typeof v === 'string') headers[k] = v;
+          }
+        }
+        out.push({ name: String(name), url: url, headers: headers });
+      }
+      return out;
+    }
+    async function refreshMcpServers() {
+      try {
+        const r = await ctx.workshop.listMcp();
+        mcpServers = (r && r.servers) || [];
+      } catch (e) {
+        mcpServers = [];
+      }
+      renderMcp();
+    }
     // ---------- 技能导入（SKILL.md / 粘贴） ----------
 
     /** 从一段 SKILL.md 里抠出名字与说明：YAML 头的 name / description 优先。 */
@@ -2446,6 +2638,7 @@ function renderModels() {
     function closeOverlays() {
       switchSheet.classList.add('hidden');
       modelSheet.classList.add('hidden');
+      mcpDrawer.classList.add('hidden');
       skillsDrawer.classList.add('hidden');
       moreMenu.classList.add('hidden');
       backdrop.classList.add('hidden');
@@ -2655,7 +2848,15 @@ function renderModels() {
       moreMenu.classList.add('hidden');
       const draft = S.draft;
       try {
-        if (act === 'skills') {
+        if (act === 'mcp') {
+          await refreshMcpServers();
+          mcpDrawer.classList.remove('hidden');
+          skillsDrawer.classList.add('hidden');
+          switchSheet.classList.add('hidden');
+          backdrop.classList.remove('hidden');
+          renderMcp();
+          refreshMcpTools();
+        } else if (act === 'skills') {
           await refreshSkills();
           skillsDrawer.classList.remove('hidden');
           switchSheet.classList.add('hidden');
@@ -2768,6 +2969,57 @@ function renderModels() {
       } catch (e) {
         ctx.ui.toast('切换完全访问失败：' + (e && e.message ? e.message : e));
       }
+    });
+    $('#btnCloseMcp').addEventListener('click', closeOverlays);
+    $('#btnAddMcp').addEventListener('click', async () => {
+      const url = $('#mcpUrl').value.trim();
+      if (!url) return;
+      const auth = $('#mcpAuth').value.trim();
+      const headers = {};
+      if (auth) headers.Authorization = auth;
+      try {
+        const r = await ctx.workshop.addMcp({ url: url, headers: headers });
+        mcpServers = (r && r.servers) || [];
+        $('#mcpUrl').value = '';
+        $('#mcpAuth').value = '';
+        renderMcp();
+        ctx.ui.toast('已添加，正在列工具…');
+        await refreshMcpTools();
+      } catch (e) {
+        ctx.ui.toast('添加失败：' + ((e && e.message) || e));
+      }
+    });
+    // 粘贴常见 MCP 配置：{"mcpServers":{"name":{"url":..., "headers":...}}}
+    $('#btnPasteMcp').addEventListener('click', async () => {
+      let raw = '';
+      try {
+        raw = (await ctx.clipboard.read()) || '';
+      } catch (e) {
+        ctx.ui.toast('读剪贴板失败：' + ((e && e.message) || e));
+        return;
+      }
+      const parsed = parseMcpConfig(raw);
+      if (!parsed.length) {
+        ctx.ui.toast('剪贴板里没有能识别的 MCP 配置');
+        return;
+      }
+      let added = 0;
+      for (const entry of parsed) {
+        try {
+          const r = await ctx.workshop.addMcp({
+            url: entry.url,
+            name: entry.name,
+            headers: entry.headers,
+          });
+          mcpServers = (r && r.servers) || mcpServers;
+          added += 1;
+        } catch (e) {
+          ctx.ui.toast('「' + entry.name + '」添加失败：' + ((e && e.message) || e));
+        }
+      }
+      renderMcp();
+      ctx.ui.toast('已添加 ' + added + ' 台服务器');
+      if (added) await refreshMcpTools();
     });
     $('#btnCloseSkills').addEventListener('click', closeOverlays);
     $('#btnImportSkillFile').addEventListener('click', importSkillFromFile);

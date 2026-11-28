@@ -15,7 +15,8 @@ const List<ExtensionItem> kBuiltinExtensions = [
     runtime: ExtensionItem.runtimeCordis,
     version: '1.2.0',
     // files：从「技能」面板导入 SKILL.md / 粘贴文本要用文件选择器；
-    // voice：输入框旁边的麦克风（系统识别的结果只回填输入框）
-    permissions: ['storage', 'ai', 'files', 'voice'],
+    // voice：输入框旁边的麦克风（系统识别的结果只回填输入框）；
+    // clipboard：MCP 面板的「粘贴配置」要读一次剪贴板（读取时会再弹一次确认）
+    permissions: ['storage', 'ai', 'files', 'voice', 'clipboard'],
   ),
 ];

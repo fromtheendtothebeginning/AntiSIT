@@ -397,6 +397,14 @@ String buildCordisBootstrap({
         setFullAccess(enabled) {
           return call('workshop.setFullAccess', { enabled: enabled });
         }
+        // MCP 服务器：入口只由用户填 / 删 / 连，拓展页拿到的只有工具与结果
+        listMcp() { return call('mcp.list'); }
+        addMcp(options) { return call('mcp.add', options || {}); }
+        removeMcp(id) { return call('mcp.remove', { id: id }); }
+        mcpTools() { return call('mcp.tools'); }
+        mcpCall(serverId, tool, args) {
+          return call('mcp.call', { serverId: serverId, tool: tool, arguments: args || {} });
+        }
       }
       await ctx.plugin(Ui);
       await ctx.plugin(Storage);

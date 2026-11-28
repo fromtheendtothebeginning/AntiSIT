@@ -1,4 +1,4 @@
-﻿/// ext 插件包：宿主与测试只通过这个 barrel 认识它。
+/// ext 插件包：宿主与测试只通过这个 barrel 认识它。
 library;
 
 export 'builtin_extensions.dart';
@@ -25,6 +25,8 @@ export 'extension_store.dart';
 export 'extensions_page.dart';
 export 'extensions_page_card.dart';
 export 'market/market_entry.dart';
+export 'mcp/mcp_client.dart';
+export 'mcp/mcp_store.dart';
 export 'market/market_installer.dart';
 export 'market/market_source.dart';
 export 'market/market_sources.dart';
