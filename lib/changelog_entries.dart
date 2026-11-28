@@ -19,6 +19,17 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.8',
+    date: '2026-11-28',
+    notes: [
+      '拓展工坊：顶栏可以切模型与思考档位（浅 / 中 / 深），换完立刻生效',
+      '拓展工坊：Agent 会先立「目标」、贴「计划」，聊天里一眼看到进行到哪一步',
+      '拓展工坊：输入框加了麦克风，说话直接转成文字（系统识别，录音不保存）',
+      '拓展工坊：技能面板能导入自己的 SKILL.md（选文件或粘贴）',
+      '拓展工坊：可以接入 MCP 服务器，Agent 能用上面列出的工具（调用前会确认）',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.7',
     date: '2026-11-28',
     notes: [
