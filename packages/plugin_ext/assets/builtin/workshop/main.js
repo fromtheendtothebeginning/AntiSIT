@@ -1788,6 +1788,8 @@ export default {
       slashItems: [],
       slashIndex: 0,
       slashQuery: '',
+      // 「+」打开的菜单：输入框还是空的时候保持展开
+      slashFromMenu: false,
       alive: true,
     };
 
@@ -2736,6 +2738,7 @@ function renderModels() {
       input.value = '';
       input.style.height = '';
       S.slashOpen = false;
+      S.slashFromMenu = false;
       S.slashItems = [];
       renderSlash();
       const message = { text: text };
@@ -2814,6 +2817,7 @@ function renderModels() {
         ? item.insert + ' '
         : item.insert;
       S.slashOpen = false;
+      S.slashFromMenu = false;
       S.slashItems = [];
       renderSlash();
       input.focus();
@@ -2825,6 +2829,15 @@ function renderModels() {
     /** 输入变化：以 / 开头（且还没打空格）就当在敲命令，刷新候选。 */
     function syncSlash() {
       const value = input.value;
+      // 「+」打开的菜单：输入框还是空的时候保持展开（用户会直接往下点一项）
+      if (!value && S.slashFromMenu) {
+        S.slashItems = slashCandidates('');
+        S.slashIndex = 0;
+        S.slashOpen = S.slashItems.length > 0;
+        renderSlash();
+        return;
+      }
+      S.slashFromMenu = false;
       const atStart = value.startsWith('/') && !value.slice(1).includes(' ');
       if (!atStart) {
         if (S.slashOpen) {
@@ -2876,6 +2889,11 @@ function renderModels() {
           return;
         }
         if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          applySlash(S.slashIndex);
+          return;
+        }
+        if (e.key === 'Tab') {
           e.preventDefault();
           applySlash(S.slashIndex);
           return;
@@ -3135,11 +3153,12 @@ function renderModels() {
     });
     // 「+」：把指令面板当成菜单打开（点完直接把焦点放回输入框，接着打名字）
     $('#btnCmd').addEventListener('click', () => {
-      input.focus();
+      S.slashFromMenu = true;
       S.slashItems = slashCandidates('');
       S.slashIndex = 0;
       S.slashOpen = true;
       renderSlash();
+      input.focus();
     });
     $('#btnMic').addEventListener('click', toggleMic);
     $('#btnPlan').addEventListener('click', async () => {

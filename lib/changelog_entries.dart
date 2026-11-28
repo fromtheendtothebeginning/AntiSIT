@@ -19,6 +19,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.12',
+    date: '2026-11-28',
+    notes: [
+      '拓展工坊输入区照 DSH 收干净：左边「+ / 计划 / 完全访问」，右边「模型 / 麦克风 / 发送」',
+      '计划、完全访问、模型改成扁平文字键（只有开启态染色），思考档位收进模型面板',
+      '「+」直接打开工具与技能面板，不再只靠手打斜杠',
+      '麦克风不会再因为没检测到识别服务就消失；课表日程表单改用 App 自己的玻璃选择器',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.11',
     date: '2026-11-28',
     notes: [
