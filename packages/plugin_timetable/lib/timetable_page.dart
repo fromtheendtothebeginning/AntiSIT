@@ -9,6 +9,7 @@ import 'package:campus_core/campus_core.dart';
 import 'timetable_background.dart';
 import 'timetable_cards.dart';
 import 'timetable_detail_sheets.dart';
+import 'timetable_events_filter.dart';
 import 'timetable_forms.dart';
 import 'timetable_grid.dart';
 import 'timetable_ics_page.dart';
@@ -50,15 +51,14 @@ class TimetablePage extends StatefulWidget {
     required int week,
     required int dayIndex,
     DateTime? now,
-  }) =>
-      TimetableStore.upcomingOn(
-        courses,
-        startDate: startDate,
-        week: week,
-        dayIndex: dayIndex,
-        endTimes: TimetableStore.slotEnds,
-        now: now,
-      );
+  }) => TimetableStore.upcomingOn(
+    courses,
+    startDate: startDate,
+    week: week,
+    dayIndex: dayIndex,
+    endTimes: TimetableStore.slotEnds,
+    now: now,
+  );
 
   @override
   State<TimetablePage> createState() => _TimetablePageState();
@@ -74,8 +74,12 @@ class _TimetablePageState extends State<TimetablePage> {
   ///
   /// ⚠️ `onAttach` 是在**布局阶段**回调的（ScrollPosition 正在 attach）：那里不能
   /// `setState`、也不该当时就 `jumpToPage`，一律排到帧末。
-  late final PageController _pc = PageController(onAttach: (_) => _schedulePendingWeek());
-  late final PageController _dayPc = PageController(onAttach: (_) => _schedulePendingDay());
+  late final PageController _pc = PageController(
+    onAttach: (_) => _schedulePendingWeek(),
+  );
+  late final PageController _dayPc = PageController(
+    onAttach: (_) => _schedulePendingDay(),
+  );
   int _shownWeek = 1;
   int _shownDay = 0; // 0=周一
   DateTime? _lastNavTap; // 上次点击周次标题的时间：500ms 内点两次回今天
@@ -84,6 +88,9 @@ class _TimetablePageState extends State<TimetablePage> {
   final Set<int> _loadingWeeks = {};
   List<Map<String, dynamic>>? _terms; // 成绩接口返回的学期列表（登录后）
   Timer? _tick;
+
+  /// 日程筛选条件：页面级状态，网格 / 今天卡 / 日视图 / 近期日程都用它过滤。
+  EventFilter _eventFilter = const EventFilter();
 
   /// 待跳的周视图页码（null = 没有待办）：等 PageView 挂上后由 [_applyPendingWeek] 消费。
   int? _pendingWeekPage;
@@ -113,9 +120,18 @@ class _TimetablePageState extends State<TimetablePage> {
 
   /// 手动课程排在教务课程之后 → 渲染时在上层（同位置重叠时用户自己的课优先可见）。
   List<TtCourse> get _allCourses => [
-        ...TimetableStore.deriveImported(tt),
-        ...tt.courses,
-      ];
+    ...TimetableStore.deriveImported(tt),
+    ...tt.courses,
+  ];
+
+  /// 过一遍当前筛选条件的日程：网格、今天卡、日视图、近期日程共用这一份。
+  List<TtEvent> get _shownEvents => filterEvents(tt, filter: _eventFilter);
+
+  /// 传给网格 / 今天卡 / 日视图的页面级过滤器（筛掉的不画）。
+  bool _matchesFilter(TtEvent e) => _eventFilter.matches(e, tt);
+
+  /// 筛选生效中：日程被筛掉一部分 / 全部时给顶栏一个可见提示。
+  bool get _filterActive => _eventFilter.isActive;
 
   @override
   void initState() {
@@ -258,18 +274,18 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   Future<void> _ensureWeek(int zs, {bool force = false}) => ensureSemesterWeek(
-        context,
-        xnm: xnm,
-        xqm: xqm,
-        tt: tt,
-        week: zs,
-        maxWeeks: _maxZs,
-        loadingWeeks: _loadingWeeks,
-        onChanged: () {
-          if (mounted) setState(() {});
-        },
-        force: force,
-      );
+    context,
+    xnm: xnm,
+    xqm: xqm,
+    tt: tt,
+    week: zs,
+    maxWeeks: _maxZs,
+    loadingWeeks: _loadingWeeks,
+    onChanged: () {
+      if (mounted) setState(() {});
+    },
+    force: force,
+  );
 
   Future<void> _importAll() async {
     final lastWeek = await importSemesterCourses(
@@ -289,14 +305,14 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   Future<void> _importExams() => importExamEvents(
-        context,
-        xnm: xnm,
-        xqm: xqm,
-        tt: tt,
-        onChanged: () {
-          if (mounted) setState(() {});
-        },
-      );
+    context,
+    xnm: xnm,
+    xqm: xqm,
+    tt: tt,
+    onChanged: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   /// 切换学期：选完重载课表（新建学期则再进学期设置）。
   Future<void> _pickSemester() async {
@@ -339,11 +355,11 @@ class _TimetablePageState extends State<TimetablePage> {
 
   /// 学期设置弹窗（弹窗实现在 timetable_semester_sheets.dart，课表页与设置页共用）。
   Future<void> _semSettings() => showSemesterSettingsSheet(
-        context,
-        xnm,
-        xqm,
-        onSaved: () => setState(() {}),
-      );
+    context,
+    xnm,
+    xqm,
+    onSaved: () => setState(() {}),
+  );
 
   /// 「课程表设置」二级页（学期 / 调休 / 上课提醒 / 淡化显示），回来时刷一次。
   Future<void> _openSettings() async {
@@ -354,6 +370,21 @@ class _TimetablePageState extends State<TimetablePage> {
     );
     if (mounted) setState(() {});
   }
+
+  /// 日程筛选面板：条件写进页面级状态，网格 / 今天卡 / 日视图立即跟着变。
+  Future<void> _openEventFilter() async {
+    final picked = await showEventFilterSheet(
+      context,
+      tt: tt,
+      initial: _eventFilter,
+    );
+    if (!mounted || picked == null) return;
+    setState(() => _eventFilter = picked);
+  }
+
+  /// 清掉筛选条件：顶栏筛选钮与提示条都走它。
+  void _clearEventFilter() =>
+      setState(() => _eventFilter = const EventFilter());
 
   /// 「导出 / 导入日历」：把课表导成 .ics，或把日历文件导进来当日程。
   Future<void> _openCalendarIo() async {
@@ -405,11 +436,11 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   void _showEventDetail(TtEvent e) => showEventDetailSheet(
-        context,
-        event: e,
-        onEdit: () => _eventForm(existing: e),
-        onDelete: () => _deleteEvent(e),
-      );
+    context,
+    event: e,
+    onEdit: () => _eventForm(existing: e),
+    onDelete: () => _deleteEvent(e),
+  );
 
   void _deleteEvent(TtEvent e) {
     setState(() => tt.events.removeWhere((x) => x.id == e.id));
@@ -466,6 +497,8 @@ class _TimetablePageState extends State<TimetablePage> {
             onToggleReminder: _toggleReminder,
             loggedIn: AppState.I.loggedIn,
             onMenuSelected: _onMenu,
+            filteredHits: _filterActive ? _shownEvents.length : null,
+            onClearFilter: _clearEventFilter,
           ),
           body: buildTimetableBody(
             context: context,
@@ -476,6 +509,7 @@ class _TimetablePageState extends State<TimetablePage> {
             examStrip: _examStrip,
             pagerBuilder: (width) => _dayView ? _dayPager(width) : _weekPager(),
             navBar: _dayView ? _dayNav : _weekNav,
+            filterBanner: _filterActive ? _filterBanner : null,
           ),
         );
       },
@@ -545,6 +579,8 @@ class _TimetablePageState extends State<TimetablePage> {
         _importExams();
       case 'ical':
         _openCalendarIo();
+      case 'filter':
+        _openEventFilter();
       case 'settings':
         _openSettings();
       case 'switch':
@@ -556,43 +592,44 @@ class _TimetablePageState extends State<TimetablePage> {
 
   /// 周视图分页：只有课表格子（顶部两块在分页之外），高度固定（11 节网格）。
   Widget _weekPager() => buildWeekPager(
-        controller: _pc,
-        weekCount: _weekCount,
-        onPageChanged: (i) {
-          setState(() => _shownWeek = i + 1);
-          _ensureWeek(i + 1);
-        },
-        gridBuilder: (week) => buildWeekGrid(
-          tt: tt,
-          week: week,
-          todayWeek: _todayWeek,
-          allCourses: _allCourses,
-          loggedIn: AppState.I.loggedIn,
-          directMode: AppState.I.direct,
-          loading: _loadingWeeks.contains(week),
-          onCourseTap: _showCourseDetail,
-          onEventTap: _showEventDetail,
-        ),
-      );
+    controller: _pc,
+    weekCount: _weekCount,
+    onPageChanged: (i) {
+      setState(() => _shownWeek = i + 1);
+      _ensureWeek(i + 1);
+    },
+    gridBuilder: (week) => buildWeekGrid(
+      tt: tt,
+      week: week,
+      todayWeek: _todayWeek,
+      allCourses: _allCourses,
+      loggedIn: AppState.I.loggedIn,
+      directMode: AppState.I.direct,
+      loading: _loadingWeeks.contains(week),
+      onCourseTap: _showCourseDetail,
+      onEventTap: _showEventDetail,
+      eventFilter: _eventFilter.isActive ? _matchesFilter : null,
+    ),
+  );
 
   /// 日视图分页：只有当天内容（顶部两块在分页之外）。
   /// 每天课数不同、页高只好取当周 7 天的最大值：矮的页下方留白，高的页不会被裁掉。
   Widget _dayPager(double width) => buildDayPager(
-        controller: _dayPc,
-        width: width,
-        height: _dayPagerH == 0 ? 320 : _dayPagerH,
-        weekCount: _weekCount,
-        probeWeek: _shownWeek,
-        probeKeys: _dayProbeKeys,
-        onPageChanged: (idx) {
-          setState(() {
-            _shownWeek = idx ~/ 7 + 1;
-            _shownDay = idx % 7;
-          });
-          _ensureWeek(_shownWeek);
-        },
-        bodyBuilder: _dayBody,
-      );
+    controller: _dayPc,
+    width: width,
+    height: _dayPagerH == 0 ? 320 : _dayPagerH,
+    weekCount: _weekCount,
+    probeWeek: _shownWeek,
+    probeKeys: _dayProbeKeys,
+    onPageChanged: (idx) {
+      setState(() {
+        _shownWeek = idx ~/ 7 + 1;
+        _shownDay = idx % 7;
+      });
+      _ensureWeek(_shownWeek);
+    },
+    bodyBuilder: _dayBody,
+  );
 
   /// 量出当周各天内容的最大高度 → 作为日视图分页高度（只在变化时重建，不会来回抖）。
   void _measureDayPager() {
@@ -608,54 +645,66 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   Widget _dayBody(int week, int day) => buildDayBody(
-        tt: tt,
-        allCourses: _allCourses,
-        week: week,
-        day: day,
-        todayWeek: _todayWeek,
-        onCourseTap: _showCourseDetail,
-        onEventTap: _showEventDetail,
-      );
+    tt: tt,
+    allCourses: _allCourses,
+    week: week,
+    day: day,
+    todayWeek: _todayWeek,
+    onCourseTap: _showCourseDetail,
+    onEventTap: _showEventDetail,
+    eventFilter: _eventFilter.isActive ? _matchesFilter : null,
+  );
 
   Widget _todayCard() => buildTodayCard(
-        tt: tt,
-        todayWeek: _todayWeek,
-        allCourses: _allCourses,
-        onOpenSemesterSettings: _semSettings,
-      );
+    tt: tt,
+    todayWeek: _todayWeek,
+    allCourses: _allCourses,
+    onOpenSemesterSettings: _semSettings,
+    shownEvents: _shownEvents,
+    onEventTap: _showEventDetail,
+  );
 
-  Widget _examStrip() => buildExamStrip(tt: tt);
+  Widget _examStrip() => buildExamStrip(tt: tt, shownEvents: _shownEvents);
+
+  /// 筛选生效提示条：点一下把条件清掉，课表立即恢复全量。
+  Widget _filterBanner() => buildEventFilterBanner(
+    filter: _eventFilter,
+    hit: _shownEvents.length,
+    total: tt.events.length,
+    onClear: () => setState(() => _eventFilter = const EventFilter()),
+  );
 
   Widget _weekNav() => buildWeekNav(
-        shownWeek: _shownWeek,
-        weekCount: _weekCount,
-        onPrev: _shownWeek > 1 ? () => _jumpTo(_shownWeek - 1) : null,
-        onNext: _shownWeek < _weekCount ? () => _jumpTo(_shownWeek + 1) : null,
-        onTitleTap: () {
-          if (_navTitleTappedTwice()) {
-            final tw = _todayWeek;
-            _jumpTo(tw ?? 1);
-          }
-        },
-      );
+    shownWeek: _shownWeek,
+    weekCount: _weekCount,
+    onPrev: _shownWeek > 1 ? () => _jumpTo(_shownWeek - 1) : null,
+    onNext: _shownWeek < _weekCount ? () => _jumpTo(_shownWeek + 1) : null,
+    onTitleTap: () {
+      if (_navTitleTappedTwice()) {
+        final tw = _todayWeek;
+        _jumpTo(tw ?? 1);
+      }
+    },
+  );
 
   Widget _dayNav() => buildDayNav(
-        shownWeek: _shownWeek,
-        shownDay: _shownDay,
-        weekCount: _weekCount,
-        onGoDay: _goDay,
-        onTitleTap: () {
-          if (_navTitleTappedTwice()) {
-            final tw = _todayWeek;
-            _goDay(tw ?? 1, DateTime.now().weekday - 1);
-          }
-        },
-      );
+    shownWeek: _shownWeek,
+    shownDay: _shownDay,
+    weekCount: _weekCount,
+    onGoDay: _goDay,
+    onTitleTap: () {
+      if (_navTitleTappedTwice()) {
+        final tw = _todayWeek;
+        _goDay(tw ?? 1, DateTime.now().weekday - 1);
+      }
+    },
+  );
 
   /// 周次标题 500ms 内被点第二次 → 回到今天。
   bool _navTitleTappedTwice() {
     final now = DateTime.now();
-    final twice = _lastNavTap != null &&
+    final twice =
+        _lastNavTap != null &&
         now.difference(_lastNavTap!) < const Duration(milliseconds: 500);
     _lastNavTap = twice ? null : now;
     return twice;

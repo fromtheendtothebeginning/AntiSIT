@@ -59,6 +59,21 @@ int? columnEffectiveDay(SemesterTt tt, int week, int dayIndex) {
   return a.type == 'off' ? null : a.day;
 }
 
+/// 某列（某周某天）这一天，这条日程是否发生。
+///
+/// 判据与课表页老行为一致：每周 / 每两周重复的日程跟着这一列「实际上的是星期几」
+/// 走（调休 follow 按被借的星期出现，off 那天不出现）；每月重复锚在日期上，不看调休。
+/// 学期起点没设时判不出日期，只有重复日程还能按星期几显示。
+bool eventOccursInColumn(SemesterTt tt, TtEvent e, int week, int dayIndex) {
+  if (tt.startDate.isEmpty) return e.isRepeating && e.day == dayIndex;
+  final date = TimetableStore.dateOfWeekDay(tt.startDate, week, dayIndex);
+  return e.occursOnColumn(
+    date,
+    semesterStart: TimetableStore.semesterStartOf(tt) ?? date,
+    weekdayOverride: columnEffectiveDay(tt, week, dayIndex),
+  );
+}
+
 /// 分段次的公共判据：'HH:mm' → 一天中的分钟，格式不对返回 -1。
 int hm(String s) {
   final p = s.split(':');
@@ -68,10 +83,10 @@ int hm(String s) {
 
 /// 周次类型（all / odd / even）的中文名。
 String weekTypeLabel(String t) => switch (t) {
-      'odd' => '单周',
-      'even' => '双周',
-      _ => '每周',
-    };
+  'odd' => '单周',
+  'even' => '双周',
+  _ => '每周',
+};
 
 /// 与网站一致：课名哈希 → 5 色相（蓝紫/青绿/橙/绿/粉）。
 const List<double> _courseHues = [258.0, 174.0, 25.0, 145.0, 335.0];
@@ -90,13 +105,13 @@ Color courseBlockColor(String name) {
 
 /// 这节课是否已上完：按该列当天日期 + 实际下课时刻判断，不能只看「今天」那一列。
 bool courseIsPast(TtCourse c, String colISO) => TimetableStore.lessonPassed(
-      colISO,
-      TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)],
-    );
+  colISO,
+  TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)],
+);
 
-/// 日程是否已结束：有具体日期看那天，date 为空的看本列日期；没写时刻不置灰。
+/// 日程是否已结束：单次看它那一天，重复日程看这一列的日期；没写时刻不置灰。
 bool eventIsPast(TtEvent e, String colISO) {
-  final iso = e.date.isNotEmpty ? e.date : colISO;
+  final iso = e.isRepeating ? colISO : e.date;
   final d = DateTime.tryParse(iso);
   if (d == null) return false;
   final endMin = hm(e.end) >= 0 ? hm(e.end) : hm(e.start);

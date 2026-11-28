@@ -33,6 +33,8 @@ class TimetableIcs {
     if (start0 == null || start0.year <= 1970) return out; // 没设学期起点：算不出日期
     final start = DateTime(start0.year, start0.month, start0.day);
     final weeks = tt.weekCount.clamp(1, 40);
+    // 学期最后一天：重复日程没写结束日期时就排到这里（写进 RRULE 的 UNTIL）。
+    final semesterEnd = start.add(Duration(days: weeks * 7 - 1));
 
     // 逐「列」（某周某天）走，和课表页同一套：调休把这一列换成别的星期几，或整列放假。
     for (var week = 1; week <= weeks; week++) {
@@ -46,26 +48,36 @@ class TimetableIcs {
             out.add(_courseOccurrence(c, date, week, slotStarts, slotEnds));
           }
         }
-        // 每周重复的日程跟着当天的课表走（与课表页的判据一致）
-        if (eff != null) {
-          for (final e in events) {
-            if (e.date.isNotEmpty || e.day != eff) continue;
-            out.add(_eventOccurrence(e, date));
-          }
-        }
+        // 重复日程不走「逐列铺开」：它们与调休无关，见下面的单独一轮。
       }
     }
-    // 定日期的日程按日期本身出现（放假也照常显示，与课表页一致）
+    // 重复日程只导出一条（带 RRULE），其余场次交给日历客户端铺开。
+    // 它不受调休影响：调休换的是「上哪天的课」，日历事件到日子就发生。
     for (final e in events) {
+      if (!e.isRepeating) continue;
+      var day = DateTime(from.year, from.month, from.day);
+      while (!day.isAfter(to)) {
+        if (e.occursOn(day, semesterStart: start)) {
+          out.add(_eventOccurrence(e, day, semesterEnd: semesterEnd));
+          break;
+        }
+        day = day.add(const Duration(days: 1));
+      }
+    }
+    // 单次日程按日期本身出现（放假也照常显示，与课表页一致）
+    for (final e in events) {
+      if (e.isRepeating) continue;
       final d = DateTime.tryParse(e.date);
       if (d == null) continue;
       final day = DateTime(d.year, d.month, d.day);
       if (day.isBefore(from) || day.isAfter(to)) continue;
       out.add(_eventOccurrence(e, day));
     }
-    out.sort((a, b) => a.date != b.date
-        ? a.date.compareTo(b.date)
-        : a.startMin.compareTo(b.startMin));
+    out.sort(
+      (a, b) => a.date != b.date
+          ? a.date.compareTo(b.date)
+          : a.startMin.compareTo(b.startMin),
+    );
     return out;
   }
 
@@ -92,7 +104,11 @@ class TimetableIcs {
     );
     final name = calendarName.isNotEmpty
         ? calendarName
-        : ['AntiSIT 课表', if (tt.name.isNotEmpty) tt.name, scope.label].join(' ');
+        : [
+            'AntiSIT 课表',
+            if (tt.name.isNotEmpty) tt.name,
+            scope.label,
+          ].join(' ');
     final lines = <String>[
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -116,6 +132,7 @@ class TimetableIcs {
       'DTSTAMP:${_utcStamp(stamp)}',
       'DTSTART:${_floating(start)}',
       'DTEND:${_floating(end)}',
+      if (o.rrule.isNotEmpty) 'RRULE:${o.rrule}',
       'SUMMARY:${_esc(o.title)}',
       if (o.place.isNotEmpty) 'LOCATION:${_esc(o.place)}',
       if (o.description.isNotEmpty) 'DESCRIPTION:${_esc(o.description)}',
@@ -123,8 +140,29 @@ class TimetableIcs {
     ];
   }
 
-  static TtOccurrence _courseOccurrence(TtCourse c, DateTime date, int week,
-      List<String> slotStarts, List<String> slotEnds) {
+  /// 重复日程的 RRULE：每周 / 每两周 / 每月；[until] 为空就不写 UNTIL（不限次）。
+  ///
+  /// UNTIL 落在 repeatEnd 的次日 0 点（本地浮动，与 DTSTART 同一套写法），
+  /// 表示「repeatEnd 当天这次也算」；用日期型 UNTIL 各客户端解释不一致。
+  static String _rruleOf(String repeat, DateTime? until) {
+    final suffix = until == null
+        ? ''
+        : ';UNTIL=${_floating(until.add(const Duration(days: 1)))}';
+    return switch (repeat) {
+      TtEvent.repeatWeekly => 'FREQ=WEEKLY$suffix',
+      TtEvent.repeatBiweekly => 'FREQ=WEEKLY;INTERVAL=2$suffix',
+      TtEvent.repeatMonthly => 'FREQ=MONTHLY$suffix',
+      _ => '',
+    };
+  }
+
+  static TtOccurrence _courseOccurrence(
+    TtCourse c,
+    DateTime date,
+    int week,
+    List<String> slotStarts,
+    List<String> slotEnds,
+  ) {
     final s = c.slotStart.clamp(0, slotStarts.length - 1);
     final e = c.slotEnd.clamp(s, slotEnds.length - 1);
     final desc = <String>[
@@ -134,7 +172,8 @@ class TimetableIcs {
       if (c.clazz.isNotEmpty) '班级：${c.clazz}',
     ];
     return TtOccurrence(
-      uid: 'antisit-course-${c.id}-${_dayStamp(date)}T${_hhmm(slotStarts[s])}@antisit',
+      uid:
+          'antisit-course-${c.id}-${_dayStamp(date)}T${_hhmm(slotStarts[s])}@antisit',
       title: c.name,
       place: c.place,
       description: desc.join('\n'),
@@ -145,17 +184,24 @@ class TimetableIcs {
     );
   }
 
-  static TtOccurrence _eventOccurrence(TtEvent e, DateTime date) {
+  static TtOccurrence _eventOccurrence(
+    TtEvent e,
+    DateTime date, {
+    DateTime? semesterEnd,
+  }) {
     final start = _minutes(e.start);
     final end = _minutes(e.end);
+    // 结束时界：repeatEnd 有就用到那天；没写就按学期末——不写 UNTIL 等于排到天荒地老。
+    final until = DateTime.tryParse(e.repeatEnd) ?? semesterEnd;
     final desc = [
       if (e.kind == 'exam') '考试',
+      if (e.isRepeating) '重复：${e.repeatLabel}',
       if (e.place.isNotEmpty) '地点：${e.place}',
       if (e.seat.isNotEmpty) '座位：${e.seat}',
       if (e.note.isNotEmpty) e.note,
     ];
     return TtOccurrence(
-      uid: 'antisit-event-${e.id}-${_dayStamp(date)}@antisit',
+      uid: 'antisit-event-${e.id}@antisit',
       title: e.name,
       place: e.place,
       description: desc.join('\n'),
@@ -164,6 +210,7 @@ class TimetableIcs {
       startMin: start < 0 ? 0 : start,
       endMin: end < 0 ? 1439 : end,
       isEvent: true,
+      rrule: e.isRepeating ? _rruleOf(e.repeat, until) : '',
     );
   }
 
@@ -178,10 +225,10 @@ class TimetableIcs {
   }
 
   static String _weekTypeText(String t) => switch (t) {
-        'odd' => '单周',
-        'even' => '双周',
-        _ => '每周',
-      };
+    'odd' => '单周',
+    'even' => '双周',
+    _ => '每周',
+  };
 
   // ── 导入 ──
 
@@ -210,7 +257,8 @@ class TimetableIcs {
   /// 一条 VEVENT → 一至多条事件：简单「每周重复」折成「每周日程」（date 空 + 星期几）；
   /// 带 COUNT / UNTIL 的展开成逐条；复杂重复规则只取首次发生并标记 simplified。
   static List<IcsEvent>? _toEvent(
-      Map<String, ({String value, Map<String, String> params})> props) {
+    Map<String, ({String value, Map<String, String> params})> props,
+  ) {
     final start = _parseDate(props['DTSTART']);
     if (start == null) return null;
     final end = _parseDate(props['DTEND']);
@@ -229,7 +277,23 @@ class TimetableIcs {
       description: text('DESCRIPTION'),
       uid: props['UID']?.value ?? '',
     );
-    IcsEvent make(DateTime date, int? weeklyDay, bool simplified) {
+    final weekdays = rule.byDay.map(_weekdayOf).whereType<int>().toList();
+    // 导入只认「每周」这一种（与导出侧一致：每两周 / 每月导出的是具体日期，
+    // 导回来就是一条条单次日程）。其它频率一律只取首次并标记 simplified。
+    final repeat =
+        rule.freq == 'WEEKLY' && rule.interval <= 1 && weekdays.length <= 1
+        ? TtEvent.repeatWeekly
+        : '';
+    final repeatEnd = rule.until == null ? '' : TimetableStore.iso(rule.until!);
+
+    IcsEvent make(
+      DateTime date,
+      int? weeklyDay,
+      bool simplified, {
+      String repeatKind = TtEvent.repeatWeekly,
+      String until = '',
+      String anchor = '',
+    }) {
       final day = DateTime(date.year, date.month, date.day); // 只留日期，时刻另存
       return IcsEvent(
         summary: base.summary,
@@ -242,20 +306,30 @@ class TimetableIcs {
         endMin: endMin,
         allDay: allDay,
         simplified: simplified,
+        repeat: repeatKind,
+        repeatStart: anchor,
+        repeatEnd: until,
       );
     }
 
-    final weekdays = rule.byDay.map(_weekdayOf).whereType<int>().toList();
-    final weekly = rule.freq == 'WEEKLY' && rule.interval <= 1 && weekdays.length <= 1;
-    if (!weekly) {
-      // 按月 / 按年 / 多星期几 / 跨周重复：只取首次发生
+    if (repeat.isEmpty) {
+      // 按年 / 多星期几 / 其它间隔：只取首次发生
       final simplified = rule.freq.isNotEmpty || rule.interval > 1;
       return [make(start.date, null, simplified)];
     }
-    if (rule.count == null && rule.until == null) {
-      // 每周重复且没有期限：用「每周日程」表达（date 空 + 星期几）
+    if (rule.count == null) {
+      // 没有次数上限：折成一条重复日程（date 空 + 重复类型 + 星期几）
       final wd = weekdays.isNotEmpty ? weekdays.first : start.date.weekday - 1;
-      return [make(start.date, wd, false)];
+      return [
+        make(
+          start.date,
+          wd,
+          false,
+          repeatKind: repeat,
+          until: repeatEnd,
+          anchor: TimetableStore.iso(start.date),
+        ),
+      ];
     }
     final out = <IcsEvent>[];
     var date = start.date;
@@ -273,8 +347,15 @@ class TimetableIcs {
     final key = byDay.replaceAll(RegExp(r'^[+-]?\d+'), '').toUpperCase();
     return map[key];
   }
-  static ({String freq, int interval, int? count, DateTime? until, List<String> byDay})
-      _parseRrule(String raw) {
+
+  static ({
+    String freq,
+    int interval,
+    int? count,
+    DateTime? until,
+    List<String> byDay,
+  })
+  _parseRrule(String raw) {
     var freq = '';
     var interval = 1;
     int? count;
@@ -298,22 +379,43 @@ class TimetableIcs {
           byDay.addAll(v.split(',').where((s) => s.isNotEmpty));
       }
     }
-    return (freq: freq, interval: interval, count: count, until: until, byDay: byDay);
+    return (
+      freq: freq,
+      interval: interval,
+      count: count,
+      until: until,
+      byDay: byDay,
+    );
   }
 
   /// 日期 / 日期时间：`YYYYMMDD`（全天）、`YYYYMMDDTHHMMSS`（本地浮动）、
   /// `...Z`（UTC → 本地）。带 TZID 的按墙上时钟处理（不换算）。
   static ({DateTime date, bool allDay})? _parseDate(
-      ({String value, Map<String, String> params})? prop) {
+    ({String value, Map<String, String> params})? prop,
+  ) {
     final raw = prop?.value.trim() ?? '';
     if (raw.length < 8) return null;
-    int n(int from, int len) => int.tryParse(raw.substring(from, from + len)) ?? 0;
+    int n(int from, int len) =>
+        int.tryParse(raw.substring(from, from + len)) ?? 0;
     final allDay = raw.length == 8;
-    var d = DateTime(n(0, 4), n(4, 2), n(6, 2),
-        allDay ? 0 : n(9, 2), allDay ? 0 : n(11, 2), allDay ? 0 : n(13, 2));
+    var d = DateTime(
+      n(0, 4),
+      n(4, 2),
+      n(6, 2),
+      allDay ? 0 : n(9, 2),
+      allDay ? 0 : n(11, 2),
+      allDay ? 0 : n(13, 2),
+    );
     // 带 Z 的是 UTC，要换算到本机时区（本地浮动值原样用）
     if (raw.endsWith('Z')) {
-      d = DateTime.utc(d.year, d.month, d.day, d.hour, d.minute, d.second).toLocal();
+      d = DateTime.utc(
+        d.year,
+        d.month,
+        d.day,
+        d.hour,
+        d.minute,
+        d.second,
+      ).toLocal();
     }
     return (date: d, allDay: allDay);
   }
@@ -431,6 +533,7 @@ class TtOccurrence {
     this.place = '',
     this.description = '',
     this.isEvent = false,
+    this.rrule = '',
   });
 
   /// 稳定的 UID：同一次课每次导出都一样 → 重复导入到日历 App 不会翻倍。
@@ -444,6 +547,9 @@ class TtOccurrence {
 
   /// true = 来自日程（[TtEvent]），false = 来自课程。
   final bool isEvent;
+
+  /// 重复日程的 RRULE（如 `FREQ=WEEKLY;INTERVAL=2`）；空 = 只发生这一次。
+  final String rrule;
 
   String get timeText =>
       '${(startMin ~/ 60).toString().padLeft(2, '0')}:${(startMin % 60).toString().padLeft(2, '0')}'
@@ -495,6 +601,9 @@ class IcsEvent {
     this.uid = '',
     this.allDay = false,
     this.simplified = false,
+    this.repeat = 'weekly',
+    this.repeatStart = '',
+    this.repeatEnd = '',
   });
 
   final String summary;
@@ -502,7 +611,7 @@ class IcsEvent {
   final String description;
   final String uid;
 
-  /// 具体日期；**null = 每周重复**（按 [weekday]）。
+  /// 具体日期；**null = 重复日程**（按 [repeat] 与 [weekday]）。
   final DateTime? date;
 
   /// 0 = 周一（date 为 null 时表示每周几）。
@@ -515,4 +624,14 @@ class IcsEvent {
 
   /// 原文件的重复规则我们不支持，只取了首次发生。
   final bool simplified;
+
+  /// 重复类型（date 为 null 时有效）：weekly / biweekly / monthly。
+  final String repeat;
+
+  /// 重复的起始日期（原文件 DTSTART，`YYYY-MM-DD`）；空 = 没有起点。
+  /// 每两周 / 每月要靠它定锚点（单双周、每月几号）。
+  final String repeatStart;
+
+  /// 重复的结束日期（`YYYY-MM-DD`）；空 = 没有期限。
+  final String repeatEnd;
 }

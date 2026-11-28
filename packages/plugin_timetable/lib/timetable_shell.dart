@@ -59,6 +59,7 @@ Widget buildTimetableBody({
   required Widget Function() examStrip,
   required Widget Function(double width) pagerBuilder,
   required Widget Function() navBar,
+  Widget Function()? filterBanner,
 }) {
   return GlassFadedBody(
     barHeight: topInset,
@@ -67,7 +68,9 @@ Widget buildTimetableBody({
       builder: (context, _) {
         if (dayView) {
           // 日视图分页高度取当周各天内容的最高值（每天课数不同）——量完再设，故排一帧
-          WidgetsBinding.instance.addPostFrameCallback((_) => onDayViewLayout());
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => onDayViewLayout(),
+          );
         }
         return Stack(
           children: [
@@ -98,7 +101,9 @@ Widget buildTimetableBody({
                 ),
                 child: Column(
                   children: [
-                    if (!AppState.I.loggedIn) buildGuestBanner(AppState.I.direct),
+                    if (!AppState.I.loggedIn)
+                      buildGuestBanner(AppState.I.direct),
+                    if (filterBanner != null) filterBanner(),
                     todayCard(),
                     examStrip(),
                     LayoutBuilder(
@@ -124,21 +129,21 @@ Widget buildTimetableBody({
 
 /// 未登录 / 未填凭据时的顶部提示条。
 Widget buildGuestBanner(bool directMode) => Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: SemColors.infoSoft,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: SemColors.info.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        directMode
-            ? '未填写校园凭据：手动编辑 / 调休等本地功能可正常使用，填写后可从教务导入课表与考试（需校园网）。'
-            : '未登录：手动编辑 / 调休等本地功能可正常使用，登录后可从教务导入课表与考试。',
-        style: TextStyle(fontSize: 12, color: SemColors.info, height: 1.5),
-      ),
-    );
+  width: double.infinity,
+  margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  decoration: BoxDecoration(
+    color: SemColors.infoSoft,
+    borderRadius: BorderRadius.circular(10),
+    border: Border.all(color: SemColors.info.withValues(alpha: 0.3)),
+  ),
+  child: Text(
+    directMode
+        ? '未填写校园凭据：手动编辑 / 调休等本地功能可正常使用，填写后可从教务导入课表与考试（需校园网）。'
+        : '未登录：手动编辑 / 调休等本地功能可正常使用，登录后可从教务导入课表与考试。',
+    style: TextStyle(fontSize: 12, color: SemColors.info, height: 1.5),
+  ),
+);
 
 /// 周视图分页：只有课表格子（顶部两块在分页之外），高度固定（11 节网格）。
 Widget buildWeekPager({
@@ -146,16 +151,15 @@ Widget buildWeekPager({
   required int weekCount,
   required ValueChanged<int> onPageChanged,
   required Widget Function(int week) gridBuilder,
-}) =>
-    SizedBox(
-      height: weekPagerHeight,
-      child: PageView.builder(
-        controller: controller,
-        itemCount: weekCount,
-        onPageChanged: onPageChanged,
-        itemBuilder: (context, i) => gridBuilder(i + 1),
-      ),
-    );
+}) => SizedBox(
+  height: weekPagerHeight,
+  child: PageView.builder(
+    controller: controller,
+    itemCount: weekCount,
+    onPageChanged: onPageChanged,
+    itemBuilder: (context, i) => gridBuilder(i + 1),
+  ),
+);
 
 /// 日视图分页：页高取当周 7 天内容的最大高度（矮的页留白，高的页不被裁）。
 Widget buildDayPager({
@@ -167,37 +171,36 @@ Widget buildDayPager({
   required List<GlobalKey> probeKeys,
   required ValueChanged<int> onPageChanged,
   required Widget Function(int week, int day) bodyBuilder,
-}) =>
-    SizedBox(
-      height: height,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: controller,
-            itemCount: weekCount * 7,
-            onPageChanged: onPageChanged,
-            // 内容按自然高度排（页高等量完再设）：先让 Column 拿到不限高，
-            // 首帧内容比兜底高度高时也不会报 RenderFlex 溢出（会被分页裁掉一瞬）
-            itemBuilder: (context, idx) => OverflowBox(
-              alignment: Alignment.topLeft,
-              minHeight: 0,
-              maxHeight: double.infinity,
-              child: bodyBuilder(idx ~/ 7 + 1, idx % 7),
+}) => SizedBox(
+  height: height,
+  child: Stack(
+    children: [
+      PageView.builder(
+        controller: controller,
+        itemCount: weekCount * 7,
+        onPageChanged: onPageChanged,
+        // 内容按自然高度排（页高等量完再设）：先让 Column 拿到不限高，
+        // 首帧内容比兜底高度高时也不会报 RenderFlex 溢出（会被分页裁掉一瞬）
+        itemBuilder: (context, idx) => OverflowBox(
+          alignment: Alignment.topLeft,
+          minHeight: 0,
+          maxHeight: double.infinity,
+          child: bodyBuilder(idx ~/ 7 + 1, idx % 7),
+        ),
+      ),
+      // 量高用的不可见副本：与分页同宽、高度不受分页约束，量出当周各天的自然高度
+      for (var d = 0; d < 7; d++)
+        Positioned(
+          left: 0,
+          top: 0,
+          width: width,
+          child: Offstage(
+            child: KeyedSubtree(
+              key: probeKeys[d],
+              child: bodyBuilder(probeWeek, d),
             ),
           ),
-          // 量高用的不可见副本：与分页同宽、高度不受分页约束，量出当周各天的自然高度
-          for (var d = 0; d < 7; d++)
-            Positioned(
-              left: 0,
-              top: 0,
-              width: width,
-              child: Offstage(
-                child: KeyedSubtree(
-                  key: probeKeys[d],
-                  child: bodyBuilder(probeWeek, d),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
+        ),
+    ],
+  ),
+);

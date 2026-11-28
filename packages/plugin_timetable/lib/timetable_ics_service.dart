@@ -18,9 +18,8 @@ String icsHhmm(int minutes) =>
 ) {
   final start = DateTime.tryParse(tt.startDate);
   final end = start?.add(Duration(days: tt.weekCount.clamp(1, 40) * 7));
-  final keys = {
-    for (final e in tt.events) '${e.date}|${e.name}|${e.start}|${e.end}',
-  };
+  // 去重键走 TtEvent.dedupeKey：老数据（date 空 = 每周）也算得出来，重复日程带重复类型。
+  final keys = {for (final e in tt.events) e.dedupeKey};
   final items = <TtEvent>[];
   var outside = 0, dup = 0, simplified = 0;
   for (final e in parsed) {
@@ -37,27 +36,28 @@ String icsHhmm(int minutes) =>
     final start2 = icsHhmm(e.startMin);
     final end2 = icsHhmm(e.endMin);
     final name = e.summary.trim().isEmpty ? '（未命名日程）' : e.summary.trim();
-    final key = '$date|$name|$start2|$end2';
-    if (keys.contains(key)) {
+    final ev = TtEvent(
+      id: TimetableStore.genId(),
+      name: name,
+      place: e.location,
+      date: date,
+      day: e.weekday,
+      start: start2,
+      end: end2,
+      note: [
+        if (e.allDay) '全天',
+        if (e.description.isNotEmpty) e.description,
+      ].join('\n'),
+      // 重复日程：保留原文件的重复规则与起止，落成课表里的重复日程。
+      repeat: d == null ? e.repeat : TtEvent.repeatNone,
+      repeatStart: d == null ? e.repeatStart : '',
+      repeatEnd: d == null ? e.repeatEnd : '',
+    );
+    if (!keys.add(ev.dedupeKey)) {
       dup++;
       continue;
     }
-    keys.add(key);
-    items.add(
-      TtEvent(
-        id: TimetableStore.genId(),
-        name: name,
-        place: e.location,
-        date: date,
-        day: e.weekday,
-        start: start2,
-        end: end2,
-        note: [
-          if (e.allDay) '全天',
-          if (e.description.isNotEmpty) e.description,
-        ].join('\n'),
-      ),
-    );
+    items.add(ev);
   }
   final extras = [
     if (outside > 0) '$outside 条不在本学期范围内',
@@ -73,7 +73,7 @@ String icsHhmm(int minutes) =>
       else
         '没有可导入的日程。',
       if (extras.isNotEmpty) '跳过：${extras.join('；')}。',
-      '导入的日程按每周重复或具体日期显示在课表上，可在课表里再编辑 / 删除。',
+      '导入的日程按每周 / 每两周 / 每月重复或具体日期显示在课表上，可在课表里再编辑 / 删除。',
     ].join('\n'),
   );
 }

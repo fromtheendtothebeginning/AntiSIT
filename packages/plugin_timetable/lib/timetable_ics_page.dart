@@ -25,8 +25,7 @@ class TimetableIcsPage extends StatefulWidget {
   static ({List<TtEvent> items, String summary}) planImport(
     List<IcsEvent> parsed,
     SemesterTt tt,
-  ) =>
-      planIcsImport(parsed, tt);
+  ) => planIcsImport(parsed, tt);
 
   @override
   State<TimetableIcsPage> createState() => _TimetableIcsPageState();
@@ -37,9 +36,9 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
 
   /// 手动课程 + 教务课程（与课表页同一套）。
   List<TtCourse> get _courses => [
-        ...TimetableStore.deriveImported(tt),
-        ...tt.courses,
-      ];
+    ...TimetableStore.deriveImported(tt),
+    ...tt.courses,
+  ];
 
   IcsScope _scope = IcsScope.week;
   final Set<String> _offCourses = {}; // 取消勾选的课程 id
@@ -51,13 +50,13 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
       DateTime.tryParse(tt.startDate)!.year > 1970;
 
   List<TtCourse> get _pickedCourses => [
-        for (final c in _courses)
-          if (!_offCourses.contains(c.id)) c,
-      ];
+    for (final c in _courses)
+      if (!_offCourses.contains(c.id)) c,
+  ];
   List<TtEvent> get _pickedEvents => [
-        for (final e in tt.events)
-          if (!_offEvents.contains(e.id)) e,
-      ];
+    for (final e in tt.events)
+      if (!_offEvents.contains(e.id)) e,
+  ];
 
   List<TtOccurrence> get _preview => _hasStart
       ? TimetableIcs.occurrences(
@@ -83,18 +82,18 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
   }
 
   String _buildIcs() => TimetableIcs.build(
-        tt: tt,
-        courses: _pickedCourses,
-        events: _pickedEvents,
-        scope: _scope,
-        slotStarts: TimetableStore.slotStarts,
-        slotEnds: TimetableStore.slotEnds,
-        calendarName: [
-          'AntiSIT 课表',
-          if (tt.name.isNotEmpty) tt.name,
-          _scope.label,
-        ].join(' · '),
-      );
+    tt: tt,
+    courses: _pickedCourses,
+    events: _pickedEvents,
+    scope: _scope,
+    slotStarts: TimetableStore.slotStarts,
+    slotEnds: TimetableStore.slotEnds,
+    calendarName: [
+      'AntiSIT 课表',
+      if (tt.name.isNotEmpty) tt.name,
+      _scope.label,
+    ].join(' · '),
+  );
 
   String get _fileName =>
       'antisit-timetable-${TimetableStore.iso(DateTime.now())}-${_scope.name}.ics';
@@ -180,8 +179,9 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed:
-                plan.items.isEmpty ? null : () => Navigator.pop(ctx, true),
+            onPressed: plan.items.isEmpty
+                ? null
+                : () => Navigator.pop(ctx, true),
             child: const Text('导入'),
           ),
         ],
@@ -275,8 +275,9 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
                         children: [
                           Expanded(
                             child: FilledButton.icon(
-                              onPressed:
-                                  _busy || items.isEmpty ? null : _export,
+                              onPressed: _busy || items.isEmpty
+                                  ? null
+                                  : _export,
                               icon: const Icon(
                                 Icons.ios_share_rounded,
                                 size: 18,
@@ -286,8 +287,9 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
                           ),
                           const SizedBox(width: 10),
                           OutlinedButton(
-                            onPressed:
-                                items.isEmpty ? null : () => _copy(_buildIcs()),
+                            onPressed: items.isEmpty
+                                ? null
+                                : () => _copy(_buildIcs()),
                             child: const Text('复制内容'),
                           ),
                         ],
@@ -341,7 +343,8 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
                       Text(
                         '选一个 .ics（iCalendar）文件，把里面的日程导进课表：只收本学期范围内的'
                         '事件，与已有日程重复的会自动跳过；导入的是日程（考试 / 临时事项），'
-                        '不会改动课程。按月的重复规则只取首次发生。',
+                        '不会改动课程。每周 / 每两周 / 每月的重复规则会保留成重复日程，'
+                        '其它频率只取首次发生。',
                         style: TextStyle(
                           fontSize: 12,
                           height: 1.7,
@@ -370,7 +373,7 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
     required String title,
     required String empty,
     required List<({String id, String title, String subtitle, bool checked})>
-        entries,
+    entries,
     required Set<String> off,
   }) {
     final allOn = entries.isEmpty || entries.every((e) => e.checked);
@@ -438,6 +441,12 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
     );
   }
 
+  /// 重复日程的起止日期片段：MM/DD；空串换成 [empty]（不限 / 学期末）。
+  static String _shortDate(String iso, String empty) {
+    if (iso.isEmpty) return empty;
+    return iso.length >= 10 ? iso.substring(5).replaceAll('-', '/') : iso;
+  }
+
   String _courseSubtitle(TtCourse c) {
     final type = switch (c.weekType) {
       'odd' => '单周',
@@ -454,9 +463,14 @@ class _TimetableIcsPageState extends State<TimetableIcsPage> {
   }
 
   String _eventSubtitle(TtEvent e) {
-    final when = e.date.isEmpty
-        ? '每周周${'一二三四五六日'[e.day.clamp(0, 6)]}'
-        : '${e.date} 周${'一二三四五六日'[e.day.clamp(0, 6)]}';
+    final wd = '周${'一二三四五六日'[e.day.clamp(0, 6)]}';
+    final when = !e.isRepeating
+        ? '${e.date} $wd'
+        : [
+            '${e.repeatLabel}$wd',
+            if (e.repeatStart.isNotEmpty || e.repeatEnd.isNotEmpty)
+              '${_shortDate(e.repeatStart, '不限')} ~ ${_shortDate(e.repeatEnd, '学期末')}',
+          ].join(' · ');
     return [
       when,
       if (e.start.isNotEmpty) '${e.start}-${e.end}',

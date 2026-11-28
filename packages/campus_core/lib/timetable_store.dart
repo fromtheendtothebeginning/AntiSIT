@@ -34,10 +34,30 @@ class TimetableStore {
 
   /// 默认的 11 节上课 / 下课时刻（索引 = 节次序号，0 起）。
   static const List<String> defaultSlotStarts = [
-    '08:20', '09:10', '10:15', '11:05', '13:00', '13:50', '14:55', '15:45', '18:00', '18:50', '19:40',
+    '08:20',
+    '09:10',
+    '10:15',
+    '11:05',
+    '13:00',
+    '13:50',
+    '14:55',
+    '15:45',
+    '18:00',
+    '18:50',
+    '19:40',
   ];
   static const List<String> defaultSlotEnds = [
-    '09:05', '09:55', '11:00', '11:50', '13:45', '14:35', '15:40', '16:30', '18:45', '19:35', '20:25',
+    '09:05',
+    '09:55',
+    '11:00',
+    '11:50',
+    '13:45',
+    '14:35',
+    '15:40',
+    '16:30',
+    '18:45',
+    '19:35',
+    '20:25',
   ];
 
   /// 当前生效的 11 节时刻：课表页、导出日历、上课提醒共用这一份表。
@@ -46,10 +66,14 @@ class TimetableStore {
 
   /// 用户改过作息没有（设置页据此显示「自定义 / 默认」）。
   static bool get slotTimesCustomized =>
-      !listEquals(slotStarts, defaultSlotStarts) || !listEquals(slotEnds, defaultSlotEnds);
+      !listEquals(slotStarts, defaultSlotStarts) ||
+      !listEquals(slotEnds, defaultSlotEnds);
 
   /// 保存自定义的 11 节上课 / 下课时刻（`HH:mm`）；不传 = 恢复默认。
-  static Future<void> setSlotTimes({List<String>? starts, List<String>? ends}) async {
+  static Future<void> setSlotTimes({
+    List<String>? starts,
+    List<String>? ends,
+  }) async {
     final sp = await SharedPreferences.getInstance();
     if (starts == null || ends == null) {
       slotStarts = defaultSlotStarts;
@@ -58,7 +82,10 @@ class TimetableStore {
     } else {
       slotStarts = List.unmodifiable(starts);
       slotEnds = List.unmodifiable(ends);
-      await sp.setString(_slotTimesKey, jsonEncode({'starts': starts, 'ends': ends}));
+      await sp.setString(
+        _slotTimesKey,
+        jsonEncode({'starts': starts, 'ends': ends}),
+      );
     }
     _rescheduleReminder();
   }
@@ -75,7 +102,8 @@ class TimetableStore {
       final m = jsonDecode(raw) as Map<String, dynamic>;
       final starts = [for (final v in (m['starts'] as List)) '$v'];
       final ends = [for (final v in (m['ends'] as List)) '$v'];
-      if (starts.length == defaultSlotStarts.length && ends.length == defaultSlotEnds.length) {
+      if (starts.length == defaultSlotStarts.length &&
+          ends.length == defaultSlotEnds.length) {
         slotStarts = List.unmodifiable(starts);
         slotEnds = List.unmodifiable(ends);
         return;
@@ -157,7 +185,9 @@ class TimetableStore {
     // 启动早期提醒服务会先跑一遍（那时 store 还是空的，会主动跳过），这里补一发。
     loaded = true;
     _rescheduleReminder();
-    debugPrint('[课表] 载入完成 → 重排上课提醒${ok || raw == null ? '' : '（本机数据已损坏，本次为空课表）'}');
+    debugPrint(
+      '[课表] 载入完成 → 重排上课提醒${ok || raw == null ? '' : '（本机数据已损坏，本次为空课表）'}',
+    );
   }
 
   /// 把落盘的 JSON 字符串采纳进内存；解析或结构不对时返回 false，不动现有内存状态。
@@ -182,7 +212,8 @@ class TimetableStore {
       final updatedAt = _saneUpdatedAt(asInt(m['updatedAt']) ?? 0);
       final sems = (m['semesters'] as Map<String, dynamic>?) ?? {};
       final parsed = sems.map(
-          (k, v) => MapEntry(k, SemesterTt.fromJson(v as Map<String, dynamic>)));
+        (k, v) => MapEntry(k, SemesterTt.fromJson(v as Map<String, dynamic>)),
+      );
       _nj = nj;
       this.active = active;
       this.updatedAt = updatedAt;
@@ -206,12 +237,14 @@ class TimetableStore {
   }
 
   Map<String, dynamic> toJson() => {
-        'version': 1,
-        'nj': _nj,
-        'active': active.isNotEmpty ? active : (semesters.keys.isNotEmpty ? semesters.keys.first : ''),
-        'semesters': semesters.map((k, v) => MapEntry(k, v.toJson())),
-        'updatedAt': updatedAt,
-      };
+    'version': 1,
+    'nj': _nj,
+    'active': active.isNotEmpty
+        ? active
+        : (semesters.keys.isNotEmpty ? semesters.keys.first : ''),
+    'semesters': semesters.map((k, v) => MapEntry(k, v.toJson())),
+    'updatedAt': updatedAt,
+  };
 
   /// 旧版按学期的周缓存（`tt_cache_<xnm>_<xqm>`）迁入本地 store 的教务原始数据。
   Future<void> _migrateLegacyCache(SharedPreferences sp) async {
@@ -222,7 +255,10 @@ class TimetableStore {
         final parts = key.substring('tt_cache_'.length).split('_');
         if (parts.length != 2) continue;
         final m = jsonDecode(sp.getString(key)!) as Map<String, dynamic>;
-        final tt = semesters.putIfAbsent('${parts[0]}-${parts[1]}', () => SemesterTt());
+        final tt = semesters.putIfAbsent(
+          '${parts[0]}-${parts[1]}',
+          () => SemesterTt(),
+        );
         if ((tt.startDate).isEmpty) tt.startDate = '${m['start'] ?? ''}';
         final weeks = (m['weeks'] as Map<String, dynamic>?) ?? {};
         for (final e in weeks.entries) {
@@ -260,11 +296,17 @@ class TimetableStore {
 
   /// 按 id 取提醒 / 课程通知 / 桌面卡片能力，插件没装或停用时取不到就跳过。
   static void _rescheduleReminder() {
-    final reminder = PluginRegistry.I.capability<ReminderCapability>(PluginIds.reminder);
+    final reminder = PluginRegistry.I.capability<ReminderCapability>(
+      PluginIds.reminder,
+    );
     if (reminder != null) unawaited(reminder.reschedule());
-    final courseCloud = PluginRegistry.I.capability<CourseCloudCapability>(PluginIds.courseCloud);
+    final courseCloud = PluginRegistry.I.capability<CourseCloudCapability>(
+      PluginIds.courseCloud,
+    );
     if (courseCloud != null) unawaited(courseCloud.sync());
-    final widget = PluginRegistry.I.capability<HomeWidgetCapability>(PluginIds.homeWidget);
+    final widget = PluginRegistry.I.capability<HomeWidgetCapability>(
+      PluginIds.homeWidget,
+    );
     if (widget != null) unawaited(_syncHomeWidget(widget));
   }
 
@@ -273,9 +315,13 @@ class TimetableStore {
     try {
       final now = DateTime.now();
       final courses = todayCourses(now: now);
-      final nowHHmm = '${now.hour.toString().padLeft(2, '0')}:'
+      final nowHHmm =
+          '${now.hour.toString().padLeft(2, '0')}:'
           '${now.minute.toString().padLeft(2, '0')}';
-      final upcoming = [for (final c in courses) if (c.end.compareTo(nowHHmm) > 0) c];
+      final upcoming = [
+        for (final c in courses)
+          if (c.end.compareTo(nowHHmm) > 0) c,
+      ];
       await widget.syncTimetable(
         day: ttIso(now),
         date: '${now.month}月${now.day}日 周${'一二三四五六日'[now.weekday - 1]}',
@@ -313,12 +359,14 @@ class TimetableStore {
         if (c.weekType == 'even' && week.isOdd) continue;
         final s = c.slotStart.clamp(0, starts.length - 1);
         final e = c.slotEnd.clamp(s, ends.length - 1);
-        out.add(HomeWidgetCourse(
-          name: c.name.trim(),
-          place: c.place.trim(),
-          start: starts[s],
-          end: ends[e],
-        ));
+        out.add(
+          HomeWidgetCourse(
+            name: c.name.trim(),
+            place: c.place.trim(),
+            start: starts[s],
+            end: ends[e],
+          ),
+        );
       }
     }
     final seen = <String>{};
@@ -357,7 +405,9 @@ class TimetableStore {
   /// 既不清内存也不落盘——旧实现先 `semesters = {}` 再吞掉解析异常，
   /// 一份脏数据就会把本地课表换成空表写盘，还会在下次回推时污染云端。
   Future<bool> syncCloud() async {
-    if (!AppState.I.loggedIn || AppState.I.demo || AppState.I.direct) return false;
+    if (!AppState.I.loggedIn || AppState.I.demo || AppState.I.direct) {
+      return false;
+    }
     try {
       final r = await ApiClient.I.timetableCloudGet();
       final data = r['data'];
@@ -421,9 +471,14 @@ class TimetableStore {
     required int dayIndex,
     required List<String> endTimes,
     DateTime? now,
-  }) =>
-      ttUpcomingOn(courses,
-          startDate: startDate, week: week, dayIndex: dayIndex, endTimes: endTimes, now: now);
+  }) => ttUpcomingOn(
+    courses,
+    startDate: startDate,
+    week: week,
+    dayIndex: dayIndex,
+    endTimes: endTimes,
+    now: now,
+  );
 
   static List<TtCourse> pastOn(
     List<TtCourse> courses, {
@@ -432,9 +487,14 @@ class TimetableStore {
     required int dayIndex,
     required List<String> endTimes,
     DateTime? now,
-  }) =>
-      ttPastOn(courses,
-          startDate: startDate, week: week, dayIndex: dayIndex, endTimes: endTimes, now: now);
+  }) => ttPastOn(
+    courses,
+    startDate: startDate,
+    week: week,
+    dayIndex: dayIndex,
+    endTimes: endTimes,
+    now: now,
+  );
 
   static DateTime dateOfWeekDay(String startDate, int week, int dayIndex) =>
       ttDateOfWeekDay(startDate, week, dayIndex);
@@ -448,18 +508,44 @@ class TimetableStore {
   static void removeImportedSegment(SemesterTt tt, TtCourse c) =>
       ttRemoveImportedSegment(tt, c);
 
-  static void removeImportedOccurrence(SemesterTt tt, TtCourse item,
-          {required bool all, int week = 0}) =>
-      ttRemoveImportedOccurrence(tt, item, all: all, week: week);
+  static void removeImportedOccurrence(
+    SemesterTt tt,
+    TtCourse item, {
+    required bool all,
+    int week = 0,
+  }) => ttRemoveImportedOccurrence(tt, item, all: all, week: week);
 
-  static List<TtAdjust> mergeAdjustments(List<TtAdjust> prev, List<TtAdjust> entries) =>
-      ttMergeAdjustments(prev, entries);
+  static List<TtAdjust> mergeAdjustments(
+    List<TtAdjust> prev,
+    List<TtAdjust> entries,
+  ) => ttMergeAdjustments(prev, entries);
 
   static List<DateTime> expandDateRange(String start, String? end) =>
       ttExpandDateRange(start, end);
 
   static int addExamEvents(SemesterTt tt, List<Map<String, dynamic>> exams) =>
       ttAddExamEvents(tt, exams);
+
+  static DateTime? semesterStartOf(SemesterTt tt) => ttSemesterStart(tt);
+
+  static DateTime? semesterEndOf(SemesterTt tt) => ttSemesterEnd(tt);
+
+  static bool eventOccursOn(SemesterTt tt, TtEvent e, DateTime date) =>
+      ttEventOccursOn(tt, e, date);
+
+  static bool eventOccursBetween(
+    SemesterTt tt,
+    TtEvent e,
+    DateTime from,
+    DateTime to,
+  ) => ttEventOccursBetween(tt, e, from, to);
+
+  static DateTime? eventNextOccurrence(
+    SemesterTt tt,
+    TtEvent e,
+    DateTime from, {
+    int limitDays = 400,
+  }) => ttEventNextOccurrence(tt, e, from, limitDays: limitDays);
 
   static String genId() => ttGenId();
 }

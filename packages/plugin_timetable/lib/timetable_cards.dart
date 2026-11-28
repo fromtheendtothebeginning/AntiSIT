@@ -12,20 +12,27 @@ Widget buildTodayCard({
   required int? todayWeek,
   required List<TtCourse> allCourses,
   required VoidCallback onOpenSemesterSettings,
+
+  /// 页面级日程筛选后的清单（null = 全部）；被筛掉的不会出现在「今天」卡上。
+  List<TtEvent>? shownEvents,
+  ValueChanged<TtEvent>? onEventTap,
 }) {
+  final shown = shownEvents ?? tt.events;
   final now = DateTime.now();
   final tw = todayWeek;
   final noStart = tt.startDate.isEmpty;
   // 调休规则同样作用于今天：off → 无课，follow → 按被借星期的课表
   final adj = tw == null ? null : columnAdjust(tt, tw, now.weekday - 1);
-  final effDay =
-      adj == null ? now.weekday - 1 : (adj.type == 'off' ? null : adj.day);
+  final effDay = adj == null
+      ? now.weekday - 1
+      : (adj.type == 'off' ? null : adj.day);
   List<TtCourse> courses = const [];
   if (tw != null && effDay != null) {
-    courses = allCourses
-        .where((c) => TimetableStore.coversWeek(c, tw) && c.day == effDay)
-        .toList()
-      ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
+    courses =
+        allCourses
+            .where((c) => TimetableStore.coversWeek(c, tw) && c.day == effDay)
+            .toList()
+          ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
   }
   // 判「上完没有」要用今天这一列的真实日期：调休补课时 effDay 是被借的星期，
   // 拿被借那天的日期去比会把今天的课全判成已上完，卡片就一片空白。
@@ -40,6 +47,15 @@ Widget buildTodayCard({
           now: now,
         );
   final next = upcoming.isEmpty ? null : upcoming.first;
+  // 今天还有没有日程（按重复规则 + 筛选条件判；调休与日程无关）
+  // （const 空列表不能被 sort() 改动，所以分开写：先取空，再在可变列表上排序。）
+  final todayEvents = <TtEvent>[];
+  if (!noStart && tw != null) {
+    for (final e in shown) {
+      if (eventOccursInColumn(tt, e, tw, now.weekday - 1)) todayEvents.add(e);
+    }
+    todayEvents.sort((a, b) => hm(a.start).compareTo(hm(b.start)));
+  }
   return Padding(
     padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
     child: AppCard(
@@ -55,8 +71,8 @@ Widget buildTodayCard({
                 noStart
                     ? '未设置学期起点'
                     : tw == null
-                        ? '假期中（学期外）'
-                        : '今天 · 第$tw周',
+                    ? '假期中（学期外）'
+                    : '今天 · 第$tw周',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
@@ -76,12 +92,12 @@ Widget buildTodayCard({
                   adj?.type == 'off'
                       ? '放假（调休）'
                       : (adj?.type == 'follow'
-                          ? '按周${'一二三四五六日'[adj!.day]}上课'
-                          : (courses.isEmpty
-                              ? '今天没有课'
-                              : (next == null
-                                  ? '今天的课都上完了'
-                                  : '还剩 ${upcoming.length} 节'))),
+                            ? '按周${'一二三四五六日'[adj!.day]}上课'
+                            : (courses.isEmpty
+                                  ? '今天没有课'
+                                  : (next == null
+                                        ? '今天的课都上完了'
+                                        : '还剩 ${upcoming.length} 节'))),
                   style: TextStyle(
                     fontSize: 12,
                     color: adj?.type == 'off'
@@ -91,6 +107,10 @@ Widget buildTodayCard({
                 ),
             ],
           ),
+          if (!noStart && tw != null && todayEvents.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _todayEventRow(todayEvents, now, onEventTap),
+          ],
           if (!noStart && tw != null && next != null) ...[
             const SizedBox(height: 8),
             _nextClassRow(next, now, tt, tw),
@@ -108,13 +128,67 @@ String _todayISO(SemesterTt tt, int? todayWeek) {
   return columnISO(tt, tw, DateTime.now().weekday - 1);
 }
 
+/// 今天还有的日程（考试 / 自定义事项）：一列小胶囊，按开始时刻排序，已结束的压暗。
+Widget _todayEventRow(
+  List<TtEvent> events,
+  DateTime now,
+  ValueChanged<TtEvent>? onEventTap,
+) {
+  return SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        for (final e in events) ...[
+          Opacity(
+            opacity:
+                eventIsPast(e, TimetableStore.iso(now)) &&
+                    AppState.I.dimCompleted
+                ? 0.55
+                : 1,
+            child: GestureDetector(
+              onTap: onEventTap == null ? null : () => onEventTap(e),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: e.kind == 'exam'
+                      ? SemColors.dangerSoft
+                      : SemColors.accentSoft,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color:
+                        (e.kind == 'exam' ? SemColors.danger : SemColors.accent)
+                            .withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(
+                  e.start.isEmpty ? e.name : '${e.start} ${e.name}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: e.kind == 'exam'
+                        ? SemColors.danger
+                        : SemColors.accent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ],
+    ),
+  );
+}
+
 /// 今天最近一节还没上完的课（时间、节次、地点；正在上的标「正在上课」）。
 Widget _nextClassRow(TtCourse c, DateTime now, SemesterTt tt, int todayWeek) {
   final from = TimetableStore.slotStarts[c.slotStart.clamp(0, 10)];
   final to = TimetableStore.slotEnds[c.slotEnd.clamp(0, 10)];
   final colISO = _todayISO(tt, todayWeek);
   // 正在上课 = 已到上课时刻且还没下课（只看「没下课」会把还没开始的课也标成正在上）。
-  final inClass = colISO.isNotEmpty &&
+  final inClass =
+      colISO.isNotEmpty &&
       TimetableStore.lessonPassed(colISO, from, now: now) &&
       !TimetableStore.lessonPassed(colISO, to, now: now);
   return Container(
@@ -191,10 +265,7 @@ Widget _nextClassRow(TtCourse c, DateTime now, SemesterTt tt, int todayWeek) {
                 '第${c.slotStart + 1}-${c.slotEnd + 1}节'
                 '${c.place.isEmpty ? '' : ' · ${c.place}'}'
                 '${c.teachers.isEmpty ? '' : ' · ${c.teachers}'}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: SemColors.textSecondary,
-                ),
+                style: TextStyle(fontSize: 11, color: SemColors.textSecondary),
                 overflow: TextOverflow.ellipsis,
               ),
             ],
@@ -206,15 +277,23 @@ Widget _nextClassRow(TtCourse c, DateTime now, SemesterTt tt, int todayWeek) {
 }
 
 /// 近期考试 / 日程提醒条：全局信息，不随左右切周变化；没有日程时不占位。
-Widget buildExamStrip({required SemesterTt tt}) {
+///
+/// 「近期」按下一次发生的日期算：每周 / 每两周 / 每月重复的日程也各有下一次，
+/// 被筛掉的日程不进这条（[events] 就是页面级筛选后的清单）。
+Widget buildExamStrip({
+  required SemesterTt tt,
+
+  /// 页面级日程筛选后的清单（null = 全部）。
+  List<TtEvent>? shownEvents,
+}) {
+  final shown = shownEvents ?? tt.events;
   final now = DateTime.now();
   final day0 = DateTime(now.year, now.month, now.day);
   final upcoming = <(TtEvent, int)>[];
-  for (final e in tt.events) {
-    final d = DateTime.tryParse(e.date);
-    if (d == null) continue;
-    final diff = DateTime(d.year, d.month, d.day).difference(day0).inDays;
-    if (diff >= 0 && diff <= 90) upcoming.add((e, diff));
+  for (final e in shown) {
+    final next = TimetableStore.eventNextOccurrence(tt, e, day0, limitDays: 90);
+    if (next == null) continue;
+    upcoming.add((e, next.difference(day0).inDays));
   }
   if (upcoming.isEmpty) return const SizedBox.shrink();
   upcoming.sort((a, b) => a.$2.compareTo(b.$2));
@@ -255,9 +334,12 @@ Widget buildExamStrip({required SemesterTt tt}) {
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (context, i) {
                 final (e, diff) = upcoming[i];
+                final at = day0.add(Duration(days: diff));
                 // 今天已经结束的那条也压暗（列表本身只列今天及以后）
                 return Opacity(
-                  opacity: eventIsPast(e, e.date) && AppState.I.dimCompleted
+                  opacity:
+                      eventIsPast(e, TimetableStore.iso(at)) &&
+                          AppState.I.dimCompleted
                       ? 0.55
                       : 1,
                   child: Container(
@@ -270,8 +352,12 @@ Widget buildExamStrip({required SemesterTt tt}) {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      '${e.name} ${e.date.substring(5)} '
-                      '${diff == 0 ? '今天' : diff == 1 ? '明天' : '还有$diff天'}',
+                      '${e.name} ${TimetableStore.iso(at).substring(5)} '
+                      '${diff == 0
+                          ? '今天'
+                          : diff == 1
+                          ? '明天'
+                          : '还有$diff天'}',
                       style: TextStyle(fontSize: 12, color: SemColors.danger),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -295,25 +381,31 @@ Widget buildDayBody({
   required int? todayWeek,
   required void Function(TtCourse course, int week) onCourseTap,
   required ValueChanged<TtEvent> onEventTap,
+
+  /// 页面级日程筛选（null = 全放行）。
+  bool Function(TtEvent)? eventFilter,
 }) {
   final colISO = columnISO(tt, week, day);
   final adj = columnAdjust(tt, week, day);
   final eff = adj == null ? day : (adj.type == 'off' ? null : adj.day);
-  final courses = (eff == null
-      ? <TtCourse>[]
-      : allCourses
+  final courses =
+      (eff == null
+            ? <TtCourse>[]
+            : allCourses
+                  .where(
+                    (c) => c.day == eff && TimetableStore.coversWeek(c, week),
+                  )
+                  .toList())
+        ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
+  final dayEvents =
+      tt.events
           .where(
-            (c) => c.day == eff && TimetableStore.coversWeek(c, week),
+            (e) =>
+                (eventFilter?.call(e) ?? true) &&
+                eventOccursInColumn(tt, e, week, day),
           )
-          .toList())
-    ..sort((a, b) => a.slotStart.compareTo(b.slotStart));
-  final events = tt.events
-      .where(
-        (e) =>
-            e.date.isEmpty ? (eff != null && e.day == eff) : e.date == colISO,
-      )
-      .toList()
-    ..sort((a, b) => hm(a.start).compareTo(hm(b.start)));
+          .toList()
+        ..sort((a, b) => hm(a.start).compareTo(hm(b.start)));
 
   final isToday = todayWeek == week && day == DateTime.now().weekday - 1;
   final dateText = colISO.isEmpty
@@ -326,11 +418,8 @@ Widget buildDayBody({
         hm(TimetableStore.slotStarts[c.slotStart.clamp(0, 10)]),
         _dayCourseCard(c, week, colISO, onCourseTap),
       ),
-    for (final e in events)
-      (
-        hm(e.start) < 0 ? 0 : hm(e.start),
-        _dayEventCard(e, colISO, onEventTap),
-      ),
+    for (final e in dayEvents)
+      (hm(e.start) < 0 ? 0 : hm(e.start), _dayEventCard(e, colISO, onEventTap)),
   ]..sort((a, b) => a.$1.compareTo(b.$1));
 
   return Padding(
@@ -343,10 +432,7 @@ Widget buildDayBody({
           children: [
             Text(
               '$dateText 周${'一二三四五六日'[day]}',
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
             const SizedBox(width: 8),
             if (isToday) Capsule('今天', color: SemColors.accent),
@@ -550,8 +636,8 @@ Widget _dayEventCard(
                           ),
                         ),
                       ),
-                      if (e.date.isEmpty)
-                        Capsule('每周', color: SemColors.info),
+                      if (e.isRepeating)
+                        Capsule(e.repeatLabel, color: SemColors.info),
                     ],
                   ),
                   if (e.place.isNotEmpty)

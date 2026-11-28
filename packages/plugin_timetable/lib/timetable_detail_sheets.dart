@@ -65,10 +65,7 @@ void showCourseDetailSheet(
                     size: 18,
                     color: SemColors.danger,
                   ),
-                  label: Text(
-                    '删除',
-                    style: TextStyle(color: SemColors.danger),
-                  ),
+                  label: Text('删除', style: TextStyle(color: SemColors.danger)),
                 ),
               ],
             ),
@@ -96,10 +93,7 @@ Future<void> deleteCourse(
         children: [
           const Padding(
             padding: EdgeInsets.all(12),
-            child: Text(
-              '删除方式',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            child: Text('删除方式', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
           ListTile(
             title: Text('仅第 $week 周这一次'),
@@ -200,17 +194,13 @@ void showEventDetailSheet(
                 ),
                 if (event.kind == 'exam')
                   Capsule('考试', color: SemColors.danger),
-                if (event.date.isEmpty)
-                  Capsule('每周', color: SemColors.info),
+                if (event.isRepeating)
+                  Capsule(event.repeatLabel, color: SemColors.info),
               ],
             ),
             const SizedBox(height: 12),
-            _detailRow(
-              '时间',
-              event.date.isEmpty
-                  ? '每周 周${'一二三四五六日'[event.day]} ${event.start}~${event.end}'
-                  : '${event.date} ${event.start}~${event.end}',
-            ),
+            _detailRow('时间', eventTimeText(event)),
+            if (event.isRepeating) _detailRow('循环', eventRepeatText(event)),
             if (event.place.isNotEmpty) _detailRow('地点', event.place),
             if (event.seat.isNotEmpty) _detailRow('座位', event.seat),
             if (event.note.isNotEmpty) _detailRow('备注', event.note),
@@ -236,10 +226,7 @@ void showEventDetailSheet(
                     size: 18,
                     color: SemColors.danger,
                   ),
-                  label: Text(
-                    '删除',
-                    style: TextStyle(color: SemColors.danger),
-                  ),
+                  label: Text('删除', style: TextStyle(color: SemColors.danger)),
                 ),
               ],
             ),
@@ -250,17 +237,47 @@ void showEventDetailSheet(
   );
 }
 
+/// 日程详情里的「时间」一行：单次写日期，重复写「每周周X / 每月 N 号」+ 起止时刻。
+String eventTimeText(TtEvent e) {
+  final wd = '周${'一二三四五六日'[e.day.clamp(0, 6)]}';
+  final span = e.start.isEmpty
+      ? ''
+      : '${e.start}${e.end.isEmpty ? '' : '~${e.end}'}';
+  final when = !e.isRepeating
+      ? e.date
+      : switch (e.repeat) {
+          TtEvent.repeatMonthly => '每月 ${_eventMonthDay(e)} 号',
+          _ => '${e.repeatLabel} $wd',
+        };
+  return [when, if (span.isNotEmpty) span].join(' ');
+}
+
+/// 日程详情里的「循环」一行：重复类型 + 起止日期（空串换成不限 / 学期末）。
+String eventRepeatText(TtEvent e) {
+  final label = e.repeatLabel;
+  final from = e.repeatStart;
+  final to = e.repeatEnd;
+  if (from.isEmpty && to.isEmpty) return '$label · 不限起止';
+  return '$label · ${from.isEmpty ? '不限' : from} ~ ${to.isEmpty ? '学期末' : to}';
+}
+
+/// 每月重复的「几号」：取 repeatStart 的日；没有起点时按每月 1 号（默认）。
+String _eventMonthDay(TtEvent e) {
+  final d = DateTime.tryParse(e.repeatStart);
+  return '${d?.day ?? 1}';
+}
+
 /// 详情弹层里的一行「标签 : 值」。
 Widget _detailRow(String k, String v) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(k, style: TextStyle(color: SemColors.textSecondary)),
-          ),
-          Expanded(child: Text(v)),
-        ],
+  padding: const EdgeInsets.symmetric(vertical: 4),
+  child: Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(
+        width: 72,
+        child: Text(k, style: TextStyle(color: SemColors.textSecondary)),
       ),
-    );
+      Expanded(child: Text(v)),
+    ],
+  ),
+);

@@ -3,6 +3,7 @@ library;
 
 export 'timetable_background.dart';
 export 'timetable_display_sheets.dart';
+export 'timetable_events_filter.dart';
 export 'timetable_ics_page.dart';
 export 'timetable_page.dart';
 export 'timetable_plugin.dart';

@@ -80,9 +80,7 @@ Widget buildDayNav({
             Icons.chevron_left,
             // 「上一天」= 全局日索引减一后换算回 (周, 周几)：周一（idx%7==0）要落到
             // 上一周周日。不能拿 idx%7-1（= -1，会被调用方 clamp 成 0，直接跳过 6 天）。
-            idx > 0
-                ? () => onGoDay((idx - 1) ~/ 7 + 1, (idx - 1) % 7)
-                : null,
+            idx > 0 ? () => onGoDay((idx - 1) ~/ 7 + 1, (idx - 1) % 7) : null,
           ),
           GestureDetector(
             onTap: onTitleTap,
@@ -112,19 +110,19 @@ Widget buildDayNav({
 }
 
 Widget _navBtn(IconData icon, VoidCallback? onTap) => SizedBox(
-      width: 34,
-      height: 34,
-      child: IconButton(
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        onPressed: onTap,
-        icon: Icon(
-          icon,
-          size: 20,
-          color: onTap == null ? SemColors.textMuted : SemColors.textSecondary,
-        ),
-      ),
-    );
+  width: 34,
+  height: 34,
+  child: IconButton(
+    padding: EdgeInsets.zero,
+    visualDensity: VisualDensity.compact,
+    onPressed: onTap,
+    icon: Icon(
+      icon,
+      size: 20,
+      color: onTap == null ? SemColors.textMuted : SemColors.textSecondary,
+    ),
+  ),
+);
 
 /// 课表页顶栏右侧操作：周 / 日切换、上课提醒开关、更多菜单。
 List<Widget> buildTimetableActions({
@@ -134,6 +132,10 @@ List<Widget> buildTimetableActions({
   required VoidCallback onToggleReminder,
   required bool loggedIn,
   required ValueChanged<String> onMenuSelected,
+
+  /// 日程筛选命中条数（null = 没有筛选生效）；生效时顶栏多一颗可见的筛选钮。
+  int? filteredHits,
+  VoidCallback? onClearFilter,
 }) {
   return [
     IconButton(
@@ -145,6 +147,15 @@ List<Widget> buildTimetableActions({
       ),
       tooltip: dayView ? '周视图' : '日视图',
     ),
+    // 筛选生效：顶栏给一颗「筛选生效中」的可见按钮，点一下直接清掉
+    if (filteredHits case final hits?)
+      glassTopBarAction(
+        IconButton(
+          onPressed: onClearFilter,
+          icon: Icon(Icons.filter_alt_rounded, color: SemColors.info),
+          tooltip: '筛选生效中 · 命中 $hits 条（点击清除）',
+        ),
+      ),
     // 上课提醒由插件提供：能力取不到时整颗按钮都不出现
     if (reminder case final r?)
       glassTopBarAction(
@@ -200,6 +211,15 @@ List<Widget> buildTimetableActions({
             child: ListTile(
               leading: Icon(Icons.event_note_outlined),
               title: Text('导入考试安排'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'filter',
+            child: ListTile(
+              leading: Icon(Icons.filter_list_rounded),
+              title: Text('筛选日程'),
               contentPadding: EdgeInsets.zero,
               dense: true,
             ),

@@ -16,10 +16,14 @@ Widget buildWeekGrid({
   required bool loading,
   required void Function(TtCourse course, int week) onCourseTap,
   required ValueChanged<TtEvent> onEventTap,
+
+  /// 页面级日程筛选（null = 全放行）；命中的才算这一列有日程。
+  bool Function(TtEvent)? eventFilter,
 }) {
   final dates = _datesOf(tt, week);
   final todayIdx = todayWeek == week ? DateTime.now().weekday - 1 : -1;
-  final hasAny = allCourses.isNotEmpty || tt.events.isNotEmpty;
+  final shown = tt.events.where((e) => eventFilter?.call(e) ?? true).toList();
+  final hasAny = allCourses.isNotEmpty || shown.isNotEmpty;
   if (!hasAny && loading) {
     return const Center(child: CircularProgressIndicator());
   }
@@ -138,13 +142,12 @@ Widget buildWeekGrid({
                               if (group != const [8, 9, 10])
                                 SizedBox(
                                   width: kAxisW,
-                                  height: kBandH +
+                                  height:
+                                      kBandH +
                                       (group == const [0, 1, 2, 3]
                                           ? kNoonH
                                           : 0) +
-                                      (group == const [4, 5, 6, 7]
-                                          ? kGapH
-                                          : 0),
+                                      (group == const [4, 5, 6, 7] ? kGapH : 0),
                                 ),
                             ],
                           ],
@@ -163,23 +166,26 @@ Widget buildWeekGrid({
                             final dayCourses = eff == null
                                 ? const <TtCourse>[]
                                 : allCourses
-                                    .where(
-                                      (c) =>
-                                          c.day == eff &&
-                                          TimetableStore.coversWeek(c, week),
-                                    )
-                                    .toList();
+                                      .where(
+                                        (c) =>
+                                            c.day == eff &&
+                                            TimetableStore.coversWeek(c, week),
+                                      )
+                                      .toList();
                             // 按开始时刻排序：后开始的后画，真重叠时压在上层。
-                            final dayEvents = tt.events
-                                .where(
-                                  (e) => e.date.isEmpty
-                                      ? (eff != null && e.day == eff)
-                                      : e.date == columnISO(tt, week, di),
-                                )
-                                .toList()
-                              ..sort(
-                                (a, b) => hm(a.start).compareTo(hm(b.start)),
-                              );
+                            // 日程按自己的重复规则判「这一天有没有」；不看调休
+                            // （调休换的是上哪天的课），再套上页面级的筛选条件。
+                            final dayEvents =
+                                shown
+                                    .where(
+                                      (e) =>
+                                          eventOccursInColumn(tt, e, week, di),
+                                    )
+                                    .toList()
+                                  ..sort(
+                                    (a, b) =>
+                                        hm(a.start).compareTo(hm(b.start)),
+                                  );
                             return Expanded(
                               child: Container(
                                 decoration: BoxDecoration(
@@ -323,20 +329,20 @@ Widget _dayHeaders(SemesterTt tt, int week, List<String> dates, int todayIdx) {
 
 /// 时段色带（上午 / 下午 / 晚上）：不进最左时间列。
 Widget _band(double top, String label) => Positioned(
-      top: top,
-      left: kAxisW,
-      right: 0,
-      height: kBandH,
-      child: Container(
-        color: SemColors.stripe,
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 9,
-            letterSpacing: 2,
-            color: SemColors.textMuted,
-          ),
-        ),
+  top: top,
+  left: kAxisW,
+  right: 0,
+  height: kBandH,
+  child: Container(
+    color: SemColors.stripe,
+    alignment: Alignment.center,
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 9,
+        letterSpacing: 2,
+        color: SemColors.textMuted,
       ),
-    );
+    ),
+  ),
+);

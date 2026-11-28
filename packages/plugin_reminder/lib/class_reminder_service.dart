@@ -14,8 +14,12 @@ const String reminderPluginId = PluginIds.reminder;
 /// 一条待排期的上课提醒（纯数据，便于单测）。
 @immutable
 class ClassReminder {
-  const ClassReminder({required this.id, required this.at, this.course, this.event})
-      : assert(course != null || event != null, '课程 / 日程二选一');
+  const ClassReminder({
+    required this.id,
+    required this.at,
+    this.course,
+    this.event,
+  }) : assert(course != null || event != null, '课程 / 日程二选一');
 
   final int id; // 通知 id（按课次去重、稳定）
   final DateTime at; // 提前 leadMinutes 的本机时刻
@@ -39,7 +43,8 @@ class ClassReminder {
       : ClassReminderService.hhmm(event!.start);
 
   @override
-  bool operator ==(Object other) => other is ClassReminder && other.id == id && other.at == at;
+  bool operator ==(Object other) =>
+      other is ClassReminder && other.id == id && other.at == at;
 
   @override
   int get hashCode => Object.hash(id, at);
@@ -95,8 +100,11 @@ class ClassReminderService extends ChangeNotifier {
   }
 
   static DateTime dateOfWeekWeek(DateTime startDate, int week, int dayIndex) =>
-      DateTime(startDate.year, startDate.month, startDate.day)
-          .add(Duration(days: (week - 1) * 7 + dayIndex));
+      DateTime(
+        startDate.year,
+        startDate.month,
+        startDate.day,
+      ).add(Duration(days: (week - 1) * 7 + dayIndex));
 
   /// 该课在第 [week] 周是否开课（周次范围 + 单双周）。
   static bool meetsIn(TtCourse c, int week) {
@@ -131,14 +139,18 @@ class ClassReminderService extends ChangeNotifier {
     for (final tt in store.semesters.values) {
       final start = DateTime.tryParse(tt.startDate);
       if (start == null || tt.weekCount <= 0) continue;
-      final courses = TimetableStore.deriveImported(tt).followedBy(tt.courses).toList();
+      final courses = TimetableStore.deriveImported(
+        tt,
+      ).followedBy(tt.courses).toList();
       for (var w = 1; w <= tt.weekCount; w++) {
         for (var di = 0; di < 7; di++) {
           // 这一天实际按星期几的课表上课；放假（off）返回 null。
           final eff = effectiveDay(tt, w, di);
           if (eff == null) continue;
           for (final c in courses) {
-            if (c.name.trim().isEmpty || c.day != eff || !meetsIn(c, w)) continue;
+            if (c.name.trim().isEmpty || c.day != eff || !meetsIn(c, w)) {
+              continue;
+            }
             final day = dateOfWeekWeek(start, w, di);
             final at = day
                 .add(Duration(minutes: classStartMinutes(c)))
@@ -146,34 +158,65 @@ class ClassReminderService extends ChangeNotifier {
             if (at.isBefore(from) || !at.isBefore(until)) continue;
             final key = '${c.name}|${c.place}|${at.toIso8601String()}';
             if (!seen.add(key)) continue;
-            out.add(ClassReminder(id: notificationIdFor(c, at), course: c, at: at));
+            out.add(
+              ClassReminder(id: notificationIdFor(c, at), course: c, at: at),
+            );
           }
         }
       }
-      // 日程 / 考试：有日期的按那天排一次，date 为空的按每周的 day 重复排；
+      // 日程 / 考试：单次按那一天排一次；重复日程逐日过 occursOn
+      // （每周 / 每两周 / 每月都走同一套），不受调休影响——它是日历事件，不是课。
       // 没写开始时刻的全天日程不排（没有「提前多少分钟」可算）。
+      final semester0 = DateTime(start.year, start.month, start.day);
+      final semesterEnd = semester0.add(
+        Duration(days: tt.weekCount.clamp(1, 60) * 7 - 1),
+      );
       for (final e in tt.events) {
         if (e.name.trim().isEmpty) continue;
         final sm = hhmm(e.start);
         if (sm < 0) continue;
-        DateTime atOf(DateTime day) =>
-            day.add(Duration(minutes: sm)).subtract(Duration(minutes: leadMinutes));
-        if (e.date.isNotEmpty) {
+        DateTime atOf(DateTime day) => day
+            .add(Duration(minutes: sm))
+            .subtract(Duration(minutes: leadMinutes));
+        if (!e.isRepeating) {
           final d = DateTime.tryParse(e.date);
           if (d != null) {
             final at = atOf(DateTime(d.year, d.month, d.day));
             if (at.isBefore(from) || !at.isBefore(until)) continue;
-            if (!seen.add('${e.name}|${e.place}|${at.toIso8601String()}')) continue;
-            out.add(ClassReminder(id: notificationIdForEvent(e, at), at: at, event: e));
+            final key = '${e.name}|${e.place}|${at.toIso8601String()}';
+            if (!seen.add(key)) {
+              continue;
+            }
+            out.add(
+              ClassReminder(
+                id: notificationIdForEvent(e, at),
+                at: at,
+                event: e,
+              ),
+            );
           }
           continue;
         }
-        // 每周重复的日程不受调休影响：它是日历事件，不是课
-        for (var w = 1; w <= tt.weekCount; w++) {
-          final at = atOf(dateOfWeekWeek(start, w, e.day.clamp(0, 6)));
-          if (at.isBefore(from) || !at.isBefore(until)) continue;
-          if (!seen.add('${e.name}|${e.place}|${at.toIso8601String()}')) continue;
-          out.add(ClassReminder(id: notificationIdForEvent(e, at), at: at, event: e));
+        // 只扫「排期窗口 ∩ 学期」这段日子，重复日程一天一天判
+        final firstDay = from.isBefore(semester0) ? semester0 : from;
+        final lastDay = until.isAfter(semesterEnd) ? semesterEnd : until;
+        var day = DateTime(firstDay.year, firstDay.month, firstDay.day);
+        while (!day.isAfter(lastDay)) {
+          if (e.occursOn(day, semesterStart: semester0)) {
+            final at = atOf(day);
+            if (!at.isBefore(from) && at.isBefore(until)) {
+              if (seen.add('${e.name}|${e.place}|${at.toIso8601String()}')) {
+                out.add(
+                  ClassReminder(
+                    id: notificationIdForEvent(e, at),
+                    at: at,
+                    event: e,
+                  ),
+                );
+              }
+            }
+          }
+          day = day.add(const Duration(days: 1));
         }
       }
     }
@@ -185,7 +228,9 @@ class ClassReminderService extends ChangeNotifier {
   /// 与课表页 _colEffDay 同规则，两边必须一致。
   static int? effectiveDay(SemesterTt tt, int week, int dayIndex) {
     if (tt.startDate.isEmpty) return dayIndex;
-    final iso = TimetableStore.iso(TimetableStore.dateOfWeekDay(tt.startDate, week, dayIndex));
+    final iso = TimetableStore.iso(
+      TimetableStore.dateOfWeekDay(tt.startDate, week, dayIndex),
+    );
     for (final a in tt.adjustments) {
       if (a.date != iso) continue;
       return a.type == 'off' ? null : a.day;
@@ -196,9 +241,11 @@ class ClassReminderService extends ChangeNotifier {
   static int notificationIdFor(TtCourse c, DateTime at) =>
       _hash('${c.name}|${c.day}|${c.slotStart}|${at.toIso8601String()}');
 
-  /// 日程的排期 id：按「名称 + 日期/星期 + 时刻」定，重排时稳定、不同场次不撞。
-  static int notificationIdForEvent(TtEvent e, DateTime at) =>
-      _hash('${e.name}|${e.date}|${e.day}|${e.start}|${at.toIso8601String()}');
+  /// 日程的排期 id：按「名称 + 日期/重复规则 + 时刻」定，重排时稳定、不同场次不撞。
+  static int notificationIdForEvent(TtEvent e, DateTime at) => _hash(
+    '${e.name}|${e.date}|${e.day}|${e.start}|'
+    '${e.repeat}|${e.repeatStart}|${at.toIso8601String()}',
+  );
 
   static int _hash(String s) {
     var h = 17;
@@ -220,13 +267,17 @@ class ClassReminderService extends ChangeNotifier {
         ),
       );
       await _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(const AndroidNotificationChannel(
-            _channelId,
-            _channelName,
-            description: _channelDesc,
-            importance: Importance.high,
-          ));
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.createNotificationChannel(
+            const AndroidNotificationChannel(
+              _channelId,
+              _channelName,
+              description: _channelDesc,
+              importance: Importance.high,
+            ),
+          );
       _ready = true;
     } catch (e) {
       debugPrint('[上课提醒] 通知插件初始化失败：$e');
@@ -246,7 +297,8 @@ class ClassReminderService extends ChangeNotifier {
     for (final l in tz.timeZoneDatabase.locations.values) {
       if (l.currentTimeZone.offset == offset.inMilliseconds) return l;
     }
-    debugPrint('[上课提醒] 设备时区 "$name" 不可识别，按 UTC 处理（提醒时刻可能偏移）');    return tz.getLocation('UTC');
+    debugPrint('[上课提醒] 设备时区 "$name" 不可识别，按 UTC 处理（提醒时刻可能偏移）');
+    return tz.getLocation('UTC');
   }
 
   /// 重新排期：清空本 App 排过的通知，再按当前课表排未来 [horizonDays] 天的提醒。
@@ -294,8 +346,10 @@ class ClassReminderService extends ChangeNotifier {
           androidScheduleMode: mode,
         );
       }
-      debugPrint('[上课提醒] 已排期 ${reminders.length} 条（未来 $horizonDays 天，'
-          '${mode == AndroidScheduleMode.exactAllowWhileIdle ? '精确' : '不精确'}闹钟）');
+      debugPrint(
+        '[上课提醒] 已排期 ${reminders.length} 条（未来 $horizonDays 天，'
+        '${mode == AndroidScheduleMode.exactAllowWhileIdle ? '精确' : '不精确'}闹钟）',
+      );
     } catch (e) {
       // 排期异常不让提醒功能炸掉页面。
       debugPrint('[上课提醒] 排期失败：$e');
@@ -306,7 +360,12 @@ class ClassReminderService extends ChangeNotifier {
   /// 「不通知 / 流体云通知」只留日程与考试，课程那一路交给对应模式处理。
   @visibleForTesting
   static List<ClassReminder> forMode(List<ClassReminder> all, String mode) =>
-      mode == 'popup' ? all : [for (final r in all) if (r.course == null) r];
+      mode == 'popup'
+      ? all
+      : [
+          for (final r in all)
+            if (r.course == null) r,
+        ];
 
   /// 这次 [reschedule] 该做什么——纯函数，rule 越直白越好测。
   @visibleForTesting
@@ -328,7 +387,9 @@ class ClassReminderService extends ChangeNotifier {
   Future<AndroidScheduleMode> _scheduleMode() async {
     try {
       final android = _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       final ok = await android?.canScheduleExactNotifications();
       if (ok == true) return AndroidScheduleMode.exactAllowWhileIdle;
     } catch (e) {
@@ -370,7 +431,9 @@ class ClassReminderService extends ChangeNotifier {
     AndroidFlutterLocalNotificationsPlugin? android;
     try {
       android = _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
     } catch (_) {}
     try {
       final granted = await android?.requestNotificationsPermission();
@@ -412,7 +475,9 @@ class ClassReminderService extends ChangeNotifier {
     try {
       // 测试 / 桌面端没有注册平台实现，这个 getter 自己会抛，所以它也得在 try 里。
       android = _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
     } catch (_) {}
     bool? notifications;
     bool? exact;
@@ -425,7 +490,9 @@ class ClassReminderService extends ChangeNotifier {
     } catch (_) {}
     try {
       if (defaultTargetPlatform == TargetPlatform.android) {
-        battery = await _systemChannel.invokeMethod<bool>('isIgnoringBatteryOptimizations');
+        battery = await _systemChannel.invokeMethod<bool>(
+          'isIgnoringBatteryOptimizations',
+        );
       }
     } catch (_) {}
     return ReminderHealth(
@@ -440,7 +507,9 @@ class ClassReminderService extends ChangeNotifier {
   Future<void> openExactAlarmSettings() async {
     try {
       final android = _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       await android?.requestExactAlarmsPermission();
     } catch (e) {
       debugPrint('[上课提醒] 打开精确闹钟设置失败：$e');
@@ -448,10 +517,12 @@ class ClassReminderService extends ChangeNotifier {
   }
 
   /// 去系统里把通知打开（被拒过之后只能从设置页开）。返回 false = 这个 ROM 没有对应页面。
-  Future<bool> openNotificationSettings() => _openSystem('openNotificationSettings');
+  Future<bool> openNotificationSettings() =>
+      _openSystem('openNotificationSettings');
 
   /// 去「电池优化」列表页，把本 App 设为不优化。
-  Future<bool> openBatterySettings() => _openSystem('openBatteryOptimizationSettings');
+  Future<bool> openBatterySettings() =>
+      _openSystem('openBatteryOptimizationSettings');
 
   /// 去应用信息页（各家 ROM 的省电策略 / 自启动开关都在这里）。
   Future<bool> openAppInfoSettings() => _openSystem('openAppInfoSettings');
@@ -504,14 +575,16 @@ class ReminderHealth {
 
   /// 三项都没问题。
   bool get allGood =>
-      notifications != false && exactAlarm != false && batteryUnrestricted != false;
+      notifications != false &&
+      exactAlarm != false &&
+      batteryUnrestricted != false;
 
   /// 需要用户去系统里处理的项数（探测不到的项不算，那不是问题）。
   int get issueCount => [
-        notifications == false,
-        exactAlarm == false,
-        batteryUnrestricted == false,
-      ].where((bad) => bad).length;
+    notifications == false,
+    exactAlarm == false,
+    batteryUnrestricted == false,
+  ].where((bad) => bad).length;
 
   /// 摘要用的第一处问题；都正常返回 null。
   String? get firstIssue {
