@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 
 import 'package:campus_core/campus_core.dart';
 
-/// 启动动画：把校徽「画」出来。
+/// 启动动画：把项目的 logo「画」出来。
 ///
 /// 素材是 [split] 出来的三层（同一张 512 画布，各留本层像素），叠回去就是原标：
 /// * `assets/sit-mark-dark.png` —— 深蓝弧（下半的「S」尾）
 /// * `assets/sit-mark-light.png` —— 浅蓝弧（上半的「S」头）
 /// * `assets/sit-mark-green.png` —— 绿节点（服务点位）
 ///
-/// 播放顺序照校徽自己的图形语言（浅蓝 / 深蓝对角断口 + 45° 锐角端头 + 绿点）：
+/// 播放顺序照 logo 自己的图形语言（浅蓝 / 深蓝对角断口 + 45° 锐角端头 + 绿点）：
 /// 白底板弹入 → 深蓝弧顺时针扫出 → 浅蓝弧反向扫出并旋正 → 绿点弹落 → 字标上浮
 /// → 转成呼吸 + 光环，直到首屏初始化跑完。
 ///
@@ -79,7 +79,7 @@ class _BootSplashState extends State<BootSplash> with TickerProviderStateMixin {
           builder: (context, _) {
             final plateT = Curves.easeOutBack.transform(_slice(0.0, 0.26));
             final wordT = Curves.easeOut.transform(_slice(0.68, 1.0));
-            // 装配完才呼吸：整块校徽 1.0 → 1.035 → 1.0
+            // 装配完才呼吸：整块 logo 1.0 → 1.035 → 1.0
             final breathe = 1 + math.sin(_loop.value * 2 * math.pi) * 0.035;
             return Column(
               mainAxisSize: MainAxisSize.min,
@@ -110,7 +110,7 @@ class _BootSplashState extends State<BootSplash> with TickerProviderStateMixin {
                                   key: const ValueKey('boot-plate'),
                                   width: 136,
                                   height: 136,
-                                  // 白底板：校徽是三色图形（浅蓝 + 深蓝 + 绿），压在深色底上
+                                  // 白底板：logo 是三色图形（浅蓝 + 深蓝 + 绿），压在深色底上
                                   // 会糊成一团；白圆角方块深浅色都衬得清，同桌面图标。
                                   decoration: BoxDecoration(
                                     color: Colors.white,
@@ -149,7 +149,7 @@ class _BootSplashState extends State<BootSplash> with TickerProviderStateMixin {
                                   ],
                                 ),
                               ),
-                              // 装配收尾：一道 45° 斜光扫过校徽（对应腰部那道斜断口）
+                              // 装配收尾：一道 45° 斜光扫过 logo（对应腰部那道斜断口）
                               _sheen(),
                             ],
                           ),

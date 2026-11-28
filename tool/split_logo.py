@@ -1,8 +1,8 @@
-"""校徽三色拆分：assets/sit-mark.png → sit-mark-{light,dark,green}.png
+"""logo三色拆分：assets/sit-mark.png → sit-mark-{light,dark,green}.png
 
 用法：python tool/split_logo.py
 
-启动动画要分层「画」校徽（浅蓝弧 / 深蓝弧 / 绿点各自扫出来），但手上只有一张
+启动动画要分层「画」项目 logo（浅蓝弧 / 深蓝弧 / 绿点各自扫出来），但手上只有一张
 合成好的 PNG。这个脚本按「离哪种基色最近」把像素分到三层：三层都保留原图同一张
 512 画布与各自的 alpha（抗锯齿靠 alpha），叠回去就是原标，位置天然对齐。
 

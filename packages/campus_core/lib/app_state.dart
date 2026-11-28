@@ -66,7 +66,7 @@ class AppState extends ChangeNotifier {
   /// 顶栏是否用「悬浮玻璃」样式：开 = 顶栏浮在内容上，靠近它的内容被模糊。
   bool glassTopBar = true;
 
-  /// 启动动画开关：关 = 直接进主页，不播开机那几秒的校徽装配。
+  /// 启动动画开关：关 = 直接进主页，不播开机那几秒的 logo 装配。
   ///
   /// 名字写全（boot / startup）而不是 `animation`：以后再加别的动画开关时
   /// 不必改名，键名也不会跟已有存档撞。

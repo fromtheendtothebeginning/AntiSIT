@@ -161,8 +161,8 @@ void main() {
       ),
     ));
 
-    // 图片解码是真实异步的（假时钟推不动它）：先 precache，截图里才有校徽
-    // 图片解码是真实异步的（假时钟推不动它）：先把校徽三层都 precache 掉
+    // 图片解码是真实异步的（假时钟推不动它）：先 precache，截图里才有 logo
+    // 图片解码是真实异步的（假时钟推不动它）：先把 logo 三层都 precache 掉
     await tester.runAsync(() async {
       for (final asset in const [
         'assets/sit-mark-light.png',
@@ -264,7 +264,7 @@ void main() {
     }, skip: !enabled);
   }
 
-  // 3) 启动动画：装配完成后的一帧（校徽三层合成 + 呼吸光环）
+  // 3) 启动动画：装配完成后的一帧（logo三层合成 + 呼吸光环）
   shots('boot-splash', () => const Scaffold(
         body: BootSplash(stage: '正在加载课程表…'),
       ), frames: 4);

@@ -2,9 +2,9 @@ import 'package:campus_service/pages/boot_splash.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 启动动画：三层校徽依次合拢成整体，然后呼吸 + 光环；阶段文案跟着启动流程换。
+/// 启动动画：三层 logo 依次合拢成整体，然后呼吸 + 光环；阶段文案跟着启动流程换。
 void main() {
-  testWidgets('首帧显示校徽三层与阶段文案', (tester) async {
+  testWidgets('首帧显示 logo 三层与阶段文案', (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
@@ -16,7 +16,7 @@ void main() {
     expect(find.byType(BootSplash), findsOneWidget);
     expect(find.text('AntiSIT'), findsOneWidget);
     expect(find.text('正在读取设置…'), findsOneWidget);
-    // 浅蓝 / 深蓝 / 绿三层都在（叠回去才是完整的校徽）
+    // 浅蓝 / 深蓝 / 绿三层都在（叠回去才是完整的 logo）
     expect(find.byType(Image), findsNWidgets(3));
     final assets = tester
         .widgetList<Image>(find.byType(Image))
@@ -29,7 +29,7 @@ void main() {
     });
   });
 
-  testWidgets('装配动画在动：连续两帧的校徽底板尺寸不同', (tester) async {
+  testWidgets('装配动画在动：连续两帧的 logo 底板尺寸不同', (tester) async {
     await tester.pumpWidget(const MaterialApp(
       home: Scaffold(body: BootSplash(stage: '正在加载插件…')),
     ));
@@ -39,7 +39,7 @@ void main() {
     final b = tester.getRect(find.byKey(const ValueKey('boot-plate')));
     // 底板是普通 Container：不依赖图片解码，尺寸一定量得到
     expect(a.width, isNot(0));
-    expect(a.width, isNot(b.width), reason: '校徽在装配缩放');
+    expect(a.width, isNot(b.width), reason: 'logo 在装配缩放');
   });
 
   testWidgets('装配播完后进入呼吸循环：尺寸继续变化', (tester) async {

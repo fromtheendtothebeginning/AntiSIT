@@ -260,7 +260,7 @@ class _AppearanceSettingsPageState extends State<AppearanceSettingsPage> {
                     secondary: const Icon(Icons.movie_filter_outlined),
                     title: const Text('启动动画'),
                     subtitle: const Text(
-                      '打开 App 时播校徽装配。关掉直接进主页，冷启动快一点',
+                      '打开 App 时播 logo 装配。关掉直接进主页，冷启动快一点',
                       style: TextStyle(fontSize: 12),
                     ),
                     value: st.bootAnimation,

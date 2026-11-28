@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:campus_core/campus_core.dart';
 import 'package:campus_service/pages/boot_page.dart';
 
-/// 启动动画开关：关掉后启动页不久等（也不播校徽），开关本身要能落盘。
+/// 启动动画开关：关掉后启动页不久等（也不播 logo），开关本身要能落盘。
 void main() {
   test('最少停留时长：开动画等装配播完，关了只留一帧过渡', () {
     expect(bootMinShowFor(true), bootMinShow);
