@@ -28,6 +28,7 @@ let onSessionChange = () => {};
 // 描边图标（内联 SVG，跟 DSH 一样不依赖图标字体）。
 const ICONS = {
   mic: '<svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
   send: '<svg viewBox="0 0 24 24"><path d="M12 19V6"/><path d="M6.5 11.5L12 6l5.5 5.5"/></svg>',
   menu: '<svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>',
@@ -1819,14 +1820,17 @@ export default {
           <div class="composer">
             <textarea id="input" rows="1" placeholder="说说要做什么，或者打 / 挑工具、挑技能"></textarea>
             <div class="composer-bar">
-              <button id="btnPlan" class="chip" aria-label="计划模式">计划</button>
-              <button id="btnFull" class="chip danger" aria-label="完全访问">完全访问</button>
-              <button id="btnModel" class="chip" aria-label="切换模型">模型</button>
-              <button id="btnEffort" class="chip" aria-label="思考深度">思考</button>
-              <span class="composer-grow"></span>
-              <button id="btnMic" class="icon-btn hidden" aria-label="语音输入"></button>
-              <button id="btnStop" class="icon-btn hidden" aria-label="停止"></button>
-              <button id="btnSend" class="icon-btn send" aria-label="发送"></button>
+              <div class="bar-tools">
+                <button id="btnCmd" class="plus" aria-label="工具与技能"></button>
+                <button id="btnPlan" class="chip-text" aria-label="计划模式">计划</button>
+                <button id="btnFull" class="chip-text" aria-label="完全访问">完全访问</button>
+              </div>
+              <div class="bar-trailing">
+                <button id="btnModel" class="chip-text" aria-label="切换模型">模型</button>
+                <button id="btnMic" class="icon-btn" aria-label="语音输入"></button>
+                <button id="btnStop" class="icon-btn hidden" aria-label="停止"></button>
+                <button id="btnSend" class="icon-btn send" aria-label="发送"></button>
+              </div>
             </div>
           </div>
           <div class="ws-meta"><span id="metaLine"></span><span id="status" class="hidden"></span></div>
@@ -1927,6 +1931,7 @@ export default {
     // 内联 SVG 图标：不依赖 emoji 也不依赖图标字体（emoji 在不同 ROM 上大小不一、
     // 还可能被当成表情，这在 DSH 那套界面里是不出现的）。
     $('#btnSwitch').innerHTML = ICONS.menu;
+    $('#btnCmd').innerHTML = ICONS.plus;
     $('#btnMore').innerHTML = ICONS.more;
     $('#btnMic').innerHTML = ICONS.mic;
     $('#btnStop').innerHTML = ICONS.stop;
@@ -2033,28 +2038,29 @@ export default {
       $('#btnFull').classList.toggle('active', !!S.fullAccess);
       $('#btnFull').disabled = S.running;
 
+      // 模型按钮：显示「模型名 · 档位」，换模型与调档位都在同一个面板里选
       const modelBtn = $('#btnModel');
-      modelBtn.textContent = S.model ? shortModel(S.model) : '模型';
-      modelBtn.classList.toggle('active', !!S.model);
-      const effortBtn = $('#btnEffort');
-      effortBtn.textContent = S.effort ? EFFORT_LABELS[S.effort] || '思考' : '思考';
-      effortBtn.classList.toggle('active', !!S.effort);
+      const effortShort = S.effort ? (EFFORT_LABELS[S.effort] || '') : '';
+      modelBtn.textContent = S.model
+        ? shortModel(S.model) + (effortShort ? ' · ' + effortShort : '')
+        : '模型';
+      modelBtn.classList.toggle('active', true);
       modelBtn.disabled = S.running;
-      effortBtn.disabled = S.running;
 
       // 麦克风常驻（不再因为「没检测到识别服务」就消失）：按了才知道有没有，
       // 没有就给一句提示，而不是让按钮凭空不见、用户找不到。
       const micBtn = $('#btnMic');
+      micBtn.classList.remove('hidden');
       micBtn.classList.toggle('recording', !!S.listening);
       micBtn.setAttribute('aria-label', S.listening ? '停止录音' : '语音输入');
       micBtn.title = S.listening ? '停止录音' : '语音输入';
-      // 录音时把发送收起来、换成停止：同一位置只留一个主动作，免得点错
-      $('#btnSend').classList.toggle('hidden', S.running || !!S.listening);
-      $('#btnSend').disabled = !S.session;
-      $('#btnStop').classList.toggle('hidden', !(S.running || S.listening));
       const publishBtn = $('#btnPublish');
       if (publishBtn) publishBtn.disabled = S.running || !draft;
-      $('#btnStop').classList.toggle('hidden', !S.running);
+      // 录音 / 运行中：同一位置只留一个主动作（停止），别让发送和停止挤在一起
+      const busy = S.running || !!S.listening;
+      $('#btnSend').classList.toggle('hidden', busy);
+      $('#btnSend').disabled = !S.session;
+      $('#btnStop').classList.toggle('hidden', !busy);
       input.placeholder = S.running
         ? '可以继续输入，下一步会看到'
         : S.planMode
@@ -3125,13 +3131,13 @@ function renderModels() {
       modelSheet.classList.add('hidden');
       backdrop.classList.add('hidden');
     });
-    $('#btnEffort').addEventListener('click', () => {
-      modelSheet.classList.toggle('hidden');
-      backdrop.classList.toggle('hidden', modelSheet.classList.contains('hidden'));
-      if (!modelSheet.classList.contains('hidden')) {
-        renderModels();
-        refreshModelState();
-      }
+    // 「+」：把指令面板当成菜单打开（点完直接把焦点放回输入框，接着打名字）
+    $('#btnCmd').addEventListener('click', () => {
+      input.focus();
+      S.slashItems = slashCandidates('');
+      S.slashIndex = 0;
+      S.slashOpen = true;
+      renderSlash();
     });
     $('#btnMic').addEventListener('click', toggleMic);
     $('#btnPlan').addEventListener('click', async () => {

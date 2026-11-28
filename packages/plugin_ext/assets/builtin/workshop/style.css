@@ -496,36 +496,84 @@ button {
   padding: 6px 6px 2px;
 }
 
+/* 控制行：左边「+ / 计划 / 完全访问」，右边「模型 / 麦克风 / 发送」——
+   跟 DSH 一样分两组，中间靠 space-between 顶开，不再一排等宽胶囊挤在一起。 */
 .composer-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 1px 2px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 6px;
 }
 
-.composer-grow { flex: 1 1 auto; }
+.bar-tools,
+.bar-trailing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
 
-.chip {
+.bar-trailing { margin-left: auto; }
+
+/* 「+」圆形按钮（DSH 的 attach 位）：打开工具与技能菜单 */
+.plus {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+  display: inline-grid;
+  place-items: center;
+}
+.plus svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; }
+.plus:active { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+
+
+/* 文字胶囊（计划 / 完全访问 / 模型）：DSH 里这些是「扁平的次要文字按钮」，
+   默认无底色，只有开启态才染色 —— 不像按钮排成一排，一眼看过去只剩一行字。 */
+.chip-text {
   height: 26px;
   min-height: 26px;
-  padding: 0 9px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.chip.active {
+.chip-text:active { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+
+.chip-text.active {
   color: var(--fg);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
   font-weight: 600;
 }
 
-.chip.danger.active {
+.chip-text.danger.active {
   color: var(--danger);
   background: var(--danger-soft);
 }
+
+/* 面板里（技能 / MCP）的按钮仍要有点底色撑出可点的形状 */
+.chip {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+  font-size: 12px;
+}
+.chip:active { background: color-mix(in srgb, var(--fg) 14%, transparent); }
 
 /* 只有图标的按钮：图标走内联 SVG，不依赖字体，跟 DSH 一样是描边图标 */
 .icon-btn {
