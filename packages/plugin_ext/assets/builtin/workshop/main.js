@@ -52,6 +52,9 @@ class AgentSession {
     this.seq = 0;
     this.turnSeq = 0;
     this.observed = new Map();
+    // 目标 / 计划：都是会话级状态（不是聊天消息），从事件流里重建
+    this.goal = '';
+    this.plan = [];
     this.dirty = false;
     this.timer = null;
     this.saving = null;
@@ -110,6 +113,8 @@ class AgentSession {
 
   rebuildState() {
     this.observed = new Map();
+    this.goal = '';
+    this.plan = [];
     this.turnSeq = 0;
     for (const event of this.events) {
       if (event.seq > this.seq) this.seq = event.seq;
@@ -121,7 +126,18 @@ class AgentSession {
   }
 
   observeEvent(event) {
-    if (event.type === 'file/observed') {
+    if (event.type === 'goal/set') {
+      this.goal = String(event.objective || '');
+    } else if (event.type === 'plan/update') {
+      this.plan = Array.isArray(event.steps)
+        ? event.steps.map((s) => ({
+            content: String((s && s.content) || ''),
+            status: ['pending', 'in_progress', 'completed'].includes(s && s.status)
+              ? s.status
+              : 'pending',
+          }))
+        : [];
+    } else if (event.type === 'file/observed') {
       this.observed.set(event.path, event.version || '');
     } else if (event.type === 'file/removed') {
       this.observed.delete(event.path);
@@ -288,7 +304,16 @@ class AgentSession {
     const out = [];
     const calls = new Map();
     for (const event of this.events) {
-      if (event.type === 'user/message') {
+      if (event.type === 'goal/set') {
+        const objective = String(event.objective || '').trim();
+        if (objective) out.push({ role: 'goal', text: objective, key: 'g' + event.seq });
+      } else if (event.type === 'plan/update') {
+        const steps = Array.isArray(event.steps) ? event.steps : [];
+        // 后来更新的覆盖前面那条：同一个计划只显示最新一版
+        const last = out.length ? out[out.length - 1] : null;
+        if (last && last.role === 'plan') out.pop();
+        if (steps.length) out.push({ role: 'plan', steps: steps.slice(), key: 'p' + event.seq });
+      } else if (event.type === 'user/message') {
         if (event.source === 'user') out.push({ role: 'user', text: event.content || '' });
       } else if (event.type === 'assistant/message') {
         if (!event.hidden && (event.text || event.reasoning)) {
@@ -395,6 +420,27 @@ const PROMPT_SECTIONS = [
       '- Call install_extension only when the user explicitly asks to install. Writes, deletes and installs are confirmed by the app.',
       '- Reply in Chinese, concisely. Do not paste whole files unless the user asks.',
     ].join('\n'),
+  },
+  {
+    name: 'goal-and-plan',
+    order: 140,
+    text: () => {
+      const goal = (S && S.session && S.session.goal) || '';
+      const plan = (S && S.session && S.session.plan) || [];
+      const lines = [
+        '## Goal and plan',
+        goal
+          ? 'Current goal: ' + goal
+          : 'No goal set. Call set_goal before multi-step work so the user can see what you are doing.',
+        plan.length
+          ? 'Current plan:\n' + plan
+              .map((s, i) => (i + 1) + '. [' + s.status + '] ' + s.content)
+              .join('\n')
+          : 'No plan yet. Use update_plan for anything that takes more than two steps, and keep it current.',
+        'Both are visible to the user as cards in the chat, so keep them short and truthful.',
+      ];
+      return lines.join('\n');
+    },
   },
   {
     name: 'plan-mode',
@@ -564,6 +610,67 @@ function renderRead(path, content, offset, limit) {
 
 const TOOL_DEFS = [
   {
+    name: 'set_goal',
+    readOnly: true,
+    description: 'Set (or clear) the one objective this conversation is working toward.',
+    prompt: 'declare the single concrete objective before multi-step work; clear it with an empty objective when the work is done or the user changes direction.',
+    parameters: {
+      type: 'object',
+      properties: {
+        objective: {
+          type: 'string',
+          description: 'One sentence describing the completion objective; empty string clears it.',
+        },
+      },
+      required: ['objective'],
+    },
+    async run(args) {
+      const objective = args.objective == null ? '' : String(args.objective).trim();
+      if (objective.length > 400) throw new Error('目标太长（最多 400 字）');
+      S.session.append('goal/set', { objective: objective });
+      return objective ? '目标已记录：' + objective : '目标已清空。';
+    },
+  },
+  {
+    name: 'update_plan',
+    readOnly: true,
+    description: 'Publish or update the ordered step list for the current objective.',
+    prompt: 'keep exactly one step in_progress while working; mark completed as soon as it is done. Pass the full list every time (not a delta).',
+    parameters: {
+      type: 'object',
+      properties: {
+        steps: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              content: { type: 'string', description: 'What the step does' },
+              status: {
+                type: 'string',
+                enum: ['pending', 'in_progress', 'completed'],
+              },
+            },
+            required: ['content'],
+          },
+        },
+      },
+      required: ['steps'],
+    },
+    async run(args) {
+      const raw = Array.isArray(args.steps) ? args.steps : [];
+      if (raw.length > 12) throw new Error('步骤最多 12 条');
+      const steps = raw.map((s) => ({
+        content: String((s && s.content) || '').slice(0, 160),
+        status: ['pending', 'in_progress', 'completed'].includes(s && s.status)
+          ? s.status
+          : 'pending',
+      }));
+      S.session.append('plan/update', { steps: steps });
+      if (!steps.length) return '计划已清空。';
+      const done = steps.filter((s) => s.status === 'completed').length;
+      return '计划已更新：' + done + ' / ' + steps.length + ' 步完成';
+    },
+  },  {
     name: 'list_files',
     readOnly: true,
     description: 'List every file in the current draft and its size.',
@@ -2095,7 +2202,42 @@ function renderModels() {
       return run;
     }
 
+
+    /** 目标卡：这条对话在做什么（Agent 用 set_goal 写的）。 */
+    function goalEl(m) {
+      const div = document.createElement('div');
+      div.className = 'goal';
+      div.innerHTML = '<span class="goal-tag">目标</span>'
+        + '<span class="goal-text">' + esc(m.text) + '</span>';
+      return div;
+    }
+
+    /** 计划卡：有序步骤 + 勾选状态，运行中一眼看到进行到哪。 */
+    function planEl(m) {
+      const steps = Array.isArray(m.steps) ? m.steps : [];
+      const done = steps.filter((s) => s.status === 'completed').length;
+      const div = document.createElement('div');
+      div.className = 'plan';
+      const head = document.createElement('div');
+      head.className = 'plan-head';
+      head.innerHTML = '<span class="plan-tag">计划</span>'
+        + '<span>' + done + ' / ' + steps.length + '</span>';
+      div.appendChild(head);
+      const list = document.createElement('div');
+      list.className = 'plan-list';
+      for (const step of steps) {
+        const row = document.createElement('div');
+        row.className = 'plan-step ' + (step.status || 'pending');
+        row.innerHTML = '<span class="plan-dot"></span>'
+          + '<span class="plan-text">' + esc(step.content) + '</span>';
+        list.appendChild(row);
+      }
+      div.appendChild(list);
+      return div;
+    }
     function messageEl(m) {
+      if (m.role === 'goal') return goalEl(m);
+      if (m.role === 'plan') return planEl(m);
       if (m.role === 'error') {
         const div = document.createElement('div');
         div.className = 'msg error';

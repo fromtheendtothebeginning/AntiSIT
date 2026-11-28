@@ -660,6 +660,65 @@ button {
   padding: 0 2px 8px;
 }
 .skill-tools .pill { flex: 0 0 auto; }
+
+/* 目标卡 / 计划卡：Agent 用 set_goal / update_plan 写的会话级状态 */
+.goal {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 2px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--soft);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.goal-tag {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.goal-text { color: var(--fg); }
+
+.plan {
+  margin: 4px 2px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 13px;
+}
+.plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.plan-tag { font-weight: 600; color: var(--accent); }
+.plan-list { display: flex; flex-direction: column; gap: 3px; }
+.plan-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  line-height: 1.45;
+}
+.plan-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+.plan-step.in_progress .plan-dot { border-color: var(--accent); background: var(--accent); }
+.plan-step.completed .plan-dot { border-color: var(--muted); background: var(--muted); }
+.plan-step.completed .plan-text { color: var(--muted); text-decoration: line-through; }
+.plan-step.pending .plan-text { color: var(--fg); }
 /* ---------- 底部面板（切换 / 技能） ---------- */
 
 .ws-sheet {
