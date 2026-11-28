@@ -19,6 +19,15 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.6',
+    date: '2026-11-28',
+    notes: [
+      '修：融合门户登录状态下退不出去——返回键不再看网页浏览历史（登录页一退回去就自动登录再压一页，历史永远非空），栈空就关页面',
+      '网页页顶栏加了「后退 / 前进」两个按钮（像浏览器那样），没有可退可进的页面时是灰的',
+      '液态玻璃主题：底部导航栏更实一档，压在课表格子、卡片上也读得清',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.5',
     date: '2026-11-27',
     notes: [
