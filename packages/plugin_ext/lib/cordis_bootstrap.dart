@@ -309,6 +309,15 @@ String buildCordisBootstrap({
         constructor(c) { super(c, 'background'); }
         keepAlive(options) { return call('background.keepAlive', options || {}); }
       }
+      class Voice extends Service {
+        constructor(c) { super(c, 'voice'); }
+        // 有可用识别服务且用户给了录音权限 → true；网页据此显示麦克风
+        available() { return call('voice.available', {}); }
+        // 开始一轮：true = 已开始，结果走 antiSIT.on('voice.result')
+        start() { return call('voice.start', {}); }
+        stop() { return call('voice.stop', {}); }
+        cancel() { return call('voice.cancel', {}); }
+      }
       class Permissions extends Service {
         constructor(c) { super(c, 'permissions'); }
         request(options) { return call('permissions.request', options || {}); }
@@ -400,6 +409,7 @@ String buildCordisBootstrap({
       await ctx.plugin(Files);
       await ctx.plugin(Login);
       await ctx.plugin(Background);
+      await ctx.plugin(Voice);
       await ctx.plugin(Permissions);
       await ctx.plugin(App);
       await ctx.plugin(Workshop);

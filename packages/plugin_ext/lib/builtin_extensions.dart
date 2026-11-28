@@ -13,8 +13,9 @@ const List<ExtensionItem> kBuiltinExtensions = [
     bundled: true,
     builtin: true,
     runtime: ExtensionItem.runtimeCordis,
-    version: '1.1.0',
-    // files：从「技能」面板导入 SKILL.md / 粘贴文本要用文件选择器
-    permissions: ['storage', 'ai', 'files'],
+    version: '1.2.0',
+    // files：从「技能」面板导入 SKILL.md / 粘贴文本要用文件选择器；
+    // voice：输入框旁边的麦克风（系统识别的结果只回填输入框）
+    permissions: ['storage', 'ai', 'files', 'voice'],
   ),
 ];

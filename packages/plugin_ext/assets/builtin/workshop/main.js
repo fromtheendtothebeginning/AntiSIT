@@ -1576,6 +1576,10 @@ export default {
       model: '',
       models: [],
       effort: '', // '' = 提供商默认；none / low / medium / high
+      // 语音：micReady = 宿主有可用识别服务；listening = 正在录
+      micReady: false,
+      listening: false,
+      micBase: '', // 开始录音时输入框里已有的文字（识别结果接在它后面）
       skills: [],
       status: '',
       tab: 'chat',
@@ -1616,6 +1620,7 @@ export default {
               <button id="btnModel" class="pill" title="切换模型">模型</button>
               <button id="btnEffort" class="pill" title="思考深度">思考</button>
               <span class="composer-grow"></span>
+              <button id="btnMic" class="round hidden" title="语音输入">🎤</button>
               <button id="btnStop" class="round hidden" title="停止">■</button>
               <button id="btnSend" class="round primary" title="发送">↑</button>
             </div>
@@ -1714,6 +1719,63 @@ export default {
       });
     }
 
+
+    // ---------- 语音输入 ----------
+
+    function applyVoiceResult(text, isFinal) {
+      if (typeof text !== 'string') return;
+      const base = S.micBase || '';
+      const sep = base && !/\s$/.test(base) ? ' ' : '';
+      input.value = base + sep + text;
+      input.dispatchEvent(new Event('input'));
+      if (isFinal) {
+        S.listening = false;
+        S.micBase = '';
+        scheduleRender();
+      }
+    }
+
+    function voiceFailed(message) {
+      S.listening = false;
+      S.micBase = '';
+      if (message) ctx.ui.toast(message);
+      scheduleRender();
+    }
+
+    if (window.antiSIT && typeof window.antiSIT.on === 'function') {
+      window.antiSIT.on('voice.result', (data) => {
+        if (!S.alive || !data) return;
+        applyVoiceResult(String(data.text || ''), !!data.isFinal);
+      });
+      window.antiSIT.on('voice.error', (data) => {
+        if (!S.alive) return;
+        voiceFailed(String((data && data.message) || '语音识别失败'));
+      });
+    }
+
+    async function toggleMic() {
+      if (!S.micReady) {
+        ctx.ui.toast('这台设备没有可用的语音识别服务');
+        return;
+      }
+      if (S.listening) {
+        S.listening = false;
+        scheduleRender();
+        try {
+          await ctx.voice.stop();
+        } catch (_) {}
+        return;
+      }
+      S.micBase = input.value;
+      S.listening = true;
+      scheduleRender();
+      try {
+        const ok = await ctx.voice.start();
+        if (!ok) voiceFailed('没能开始录音：检查麦克风权限');
+      } catch (e) {
+        voiceFailed((e && e.message) || '语音输入不可用');
+      }
+    }
     notify = () => {
       if (S.alive) render();
     };
@@ -1751,7 +1813,12 @@ export default {
       modelBtn.disabled = S.running;
       effortBtn.disabled = S.running;
 
+      const micBtn = $('#btnMic');
+      micBtn.classList.toggle('hidden', !S.micReady);
+      micBtn.classList.toggle('recording', !!S.listening);
+      micBtn.title = S.listening ? '停止录音' : '语音输入';
       $('#btnSend').classList.toggle('hidden', S.running);
+      // 录音时把发送藏起来：同一位置只留一个主动作，免得点错
       $('#btnSend').disabled = !S.session;
       const publishBtn = $('#btnPublish');
       if (publishBtn) publishBtn.disabled = S.running || !draft;
@@ -2532,6 +2599,7 @@ function renderModels() {
         refreshModelState();
       }
     });
+    $('#btnMic').addEventListener('click', toggleMic);
     $('#btnPlan').addEventListener('click', async () => {
       if (S.running) return;
       S.planMode = !S.planMode;
@@ -2581,6 +2649,11 @@ function renderModels() {
         if (typeof savedEffort === 'string') S.effort = savedEffort;
       } catch (_) {}
       await refreshModelState();
+      try {
+        S.micReady = !!(await ctx.voice.available());
+      } catch (_) {
+        S.micReady = false;
+      }
       await refreshSkills();
       await refreshDrafts();
       render();

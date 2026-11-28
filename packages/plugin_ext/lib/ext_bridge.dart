@@ -18,6 +18,7 @@ import 'ext_icon.dart';
 import 'ext_net.dart';
 import 'ext_permissions.dart';
 import 'ext_secrets.dart';
+import 'ext_voice.dart';
 import 'extension_item.dart';
 import 'extension_store.dart';
 import 'workshop/workshop_store.dart';
@@ -66,6 +67,7 @@ class ExtBridge extends WebBridge {
   late final ExtPermissionChannel _permissions =
       ExtPermissionChannel(context: context, extId: extId, item: item);
   late final ExtAiChannel _ai = ExtAiChannel(events: () => _events);
+  late final ExtVoiceChannel _voice = ExtVoiceChannel(events: () => _events);
   late final WorkshopChannel _workshop =
       WorkshopChannel(store: store, workshop: workshop, context: context);
 
@@ -213,6 +215,14 @@ class ExtBridge extends WebBridge {
         return _ai.chatToolsStream(args);
       case 'ai.models':
         return _ai.models(args);
+      case 'voice.start':
+        return _voice.start(args);
+      case 'voice.stop':
+        return _voice.stop(args);
+      case 'voice.cancel':
+        return _voice.cancel(args);
+      case 'voice.available':
+        return _voice.available(args);
       case 'ai.current':
         return _ai.current(args);
       case 'ai.setModel':

@@ -17,6 +17,8 @@ const Set<String> kSensitivePermissions = {
   'login',
   'background',
   'files',
+  // 语音输入：系统识别器要录音权限（用户点麦克风时才申请，识别结果只回填输入框）
+  'voice',
 };
 
 /// 权限的中文说明（与市场仓库 `market_manifest.dart` 的文案保持一致）。
@@ -31,6 +33,7 @@ const Map<String, String> kPermissionLabels = {
   'login': '打开登录页并读取你声明域名的 Cookie（打开前会再弹一次确认）',
   'background': '在后台保持运行（显示一条常驻通知，可随时停止）',
   'files': '读取 / 保存你选中的文件（只通过系统文件选择器，不会扫描本机文件）',
+  'voice': '语音输入（点麦克风时录音识别，结果只填进输入框，录音不保存）',
   'theme': '读取 App 配色（只读）',
   'toast': '弹一条 App 风格的提示',
   'close': '关闭自己的页面',
@@ -65,6 +68,10 @@ const Map<String, String> kMethodPermissions = {
   'background.keepAlive': 'background',
   'files.pick': 'files',
   'files.save': 'files',
+  'voice.start': 'voice',
+  'voice.stop': 'voice',
+  'voice.cancel': 'voice',
+  'voice.available': 'voice',
 };
 
 /// 服务名 → 需要的权限：给「源码体检」用（拓展工坊自检、市场 `check` 共用）。
@@ -78,6 +85,7 @@ const Map<String, String> kServicePermissions = {
   'login': 'login',
   'background': 'background',
   'ai': 'ai',
+  'voice': 'voice',
 };
 
 /// 敏感权限的中文说明列表（市场页 / 安装弹窗 / 详情页共用）。

@@ -496,6 +496,18 @@ button {
 }
 
 .round.primary { background: var(--accent); color: #fff; }
+/* 语音输入：录音中变成实心，按钮呼吸一下当「正在听」的提示 */
+.round.recording {
+  background: var(--accent);
+  color: #fff;
+  animation: micPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes micPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.62; }
+}
+
 .round:disabled, .pill:disabled { opacity: 0.45; }
 
 .ws-meta {

@@ -37,6 +37,9 @@ class MainActivity : FlutterActivity() {
     /** 拓展文件保存：ACTION_CREATE_DOCUMENT 的结果从这里转回 Dart。 */
     private var extFilesBridge: ExtFilesBridge? = null
 
+    /** 语音输入：麦克风运行时权限的回调要从这里转给桥。 */
+    private var voiceBridge: VoiceInputBridge? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // 流体云 / 原子通知 / 焦点通知：课程常驻通知与闹钟排期（无厂商 SDK，走系统通知）
@@ -58,6 +61,9 @@ class MainActivity : FlutterActivity() {
         ).register()
         // WebView 进程级代理：服务器模式的评教页经校园隧道打开
         WebViewProxyBridge(this, flutterEngine.dartExecutor.binaryMessenger).register()
+        // 语音输入：系统 SpeechRecognizer → 拓展输入框（录音不落盘）
+        voiceBridge = VoiceInputBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+            .also { it.register() }
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .also { ch ->
                 ch.setMethodCallHandler { call, result ->
@@ -119,10 +125,27 @@ class MainActivity : FlutterActivity() {
         HomeWidget.routeOf(intent)?.let { HomeWidget.setLaunch(this, it) }
     }
 
+    /** 麦克风权限：回给语音桥，允许后它自己接着开识别。 */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        val granted = grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        voiceBridge?.onRequestPermissionsResult(requestCode, granted)
+    }
+
     /** 拓展文件保存（ACTION_CREATE_DOCUMENT）的结果：交给 ExtFilesBridge 回填 Dart。 */
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (extFilesBridge?.handleActivityResult(requestCode, resultCode, data) == true) return
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onDestroy() {
+        voiceBridge = null
+        super.onDestroy()
     }
 
     private fun packageUri(): Uri = Uri.fromParts("package", packageName, null)
