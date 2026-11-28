@@ -11,6 +11,11 @@ allprojects {
         }
         google()
         mavenCentral()
+        // 与 settings.gradle.kts 同理：官方源被限流（429）时用镜像兜底。
+        if (onCi) {
+            maven("https://maven.aliyun.com/repository/google")
+            maven("https://maven.aliyun.com/repository/public")
+        }
     }
 }
 

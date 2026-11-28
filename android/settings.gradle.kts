@@ -24,6 +24,15 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
+        // CI 上官方源也会抽风：2026-11-28 dev.12 那次 Maven Central 直接回
+        // 429 Too Many Requests，Gradle 三次重试全挂在解析 kotlin-gradle-plugin 上。
+        // Gradle 是按仓库顺序逐个试的，所以把阿里云放最后当兜底——官方源正常时
+        // 根本不会走到它，真被限流时还能用镜像取到同一份构件。
+        if (onCi) {
+            maven("https://maven.aliyun.com/repository/google")
+            maven("https://maven.aliyun.com/repository/public")
+            maven("https://maven.aliyun.com/repository/gradle-plugin")
+        }
     }
 }
 
