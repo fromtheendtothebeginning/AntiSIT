@@ -961,13 +961,19 @@ async function callModel(turn, step, signal) {
       const stream = ctx.ai.chatToolsStream;
       if (typeof stream !== 'function') {
         // 老宿主没有流式接口：退回一次性请求，S.stream 保持为空
-        return await ctx.ai.chatTools({ messages: messages, tools: tools, maxTokens: 4096 });
+        return await ctx.ai.chatTools({
+          messages: messages,
+          tools: tools,
+          maxTokens: 4096,
+          reasoningEffort: S.effort || '',
+        });
       }
       return await stream.call(ctx.ai, {
         streamId: S.stream.id,
         messages: messages,
         tools: tools,
         maxTokens: 4096,
+        reasoningEffort: S.effort || '',
       });
     } catch (e) {
       lastError = e;
@@ -1566,6 +1572,10 @@ export default {
       stream: null,
       planMode: false,
       fullAccess: false,
+      // 模型 / 思考深度：都要持久化（用户换过一次，下次进工坊还是那个）
+      model: '',
+      models: [],
+      effort: '', // '' = 提供商默认；none / low / medium / high
       skills: [],
       status: '',
       tab: 'chat',
@@ -1603,6 +1613,8 @@ export default {
             <div class="composer-row">
               <button id="btnPlan" class="pill" title="只读分析并给出执行计划">计划</button>
               <button id="btnFull" class="pill danger" title="写入 / 安装不再逐次确认">完全访问</button>
+              <button id="btnModel" class="pill" title="切换模型">模型</button>
+              <button id="btnEffort" class="pill" title="思考深度">思考</button>
               <span class="composer-grow"></span>
               <button id="btnStop" class="round hidden" title="停止">■</button>
               <button id="btnSend" class="round primary" title="发送">↑</button>
@@ -1640,6 +1652,14 @@ export default {
           <div class="sheet-label">对话</div>
           <div id="convList"></div>
         </div>
+        <div class="ws-sheet hidden" id="modelSheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head"><strong>模型</strong><button id="btnCloseModel" class="ws-link">关闭</button></div>
+          <div class="sheet-label">思考深度</div>
+          <div id="effortList"></div>
+          <div class="sheet-label">可用模型</div>
+          <div id="modelList"></div>
+        </div>
         <div class="ws-sheet hidden" id="skillsDrawer">
           <div class="sheet-handle"></div>
           <div class="sheet-head"><strong>Agent 技能</strong><button id="btnCloseSkills" class="ws-link">关闭</button></div>
@@ -1657,6 +1677,7 @@ export default {
     const status = $('#status');
     const filesPanel = $('#filesPanel');
     const switchSheet = $('#switchSheet');
+    const modelSheet = $('#modelSheet');
     const skillsDrawer = $('#skillsDrawer');
     const backdrop = $('#backdrop');
     const viewer = $('#viewer');
@@ -1707,6 +1728,15 @@ export default {
       $('#btnFull').classList.toggle('active', !!S.fullAccess);
       $('#btnFull').disabled = S.running;
 
+      const modelBtn = $('#btnModel');
+      modelBtn.textContent = S.model ? shortModel(S.model) : '模型';
+      modelBtn.classList.toggle('active', !!S.model);
+      const effortBtn = $('#btnEffort');
+      effortBtn.textContent = S.effort ? EFFORT_LABELS[S.effort] || '思考' : '思考';
+      effortBtn.classList.toggle('active', !!S.effort);
+      modelBtn.disabled = S.running;
+      effortBtn.disabled = S.running;
+
       $('#btnSend').classList.toggle('hidden', S.running);
       $('#btnSend').disabled = !S.session;
       const publishBtn = $('#btnPublish');
@@ -1736,9 +1766,92 @@ export default {
       renderChat();
       renderFiles();
       if (!switchSheet.classList.contains('hidden')) renderSwitch();
+      if (!modelSheet.classList.contains('hidden')) renderModels();
       if (!skillsDrawer.classList.contains('hidden')) renderSkills();
     }
 
+
+// ==================== 模型 / 思考深度 ====================
+
+/** 思考档位：key 是发给宿主的值，label 是按钮上的字。 */
+const EFFORTS = [
+  ['', '默认'],
+  ['none', '不思考'],
+  ['low', '浅'],
+  ['medium', '中'],
+  ['high', '深'],
+];
+const EFFORT_LABELS = { none: '不思考', low: '浅思考', medium: '中思考', high: '深思考' };
+
+/** 按钮上只放模型名的尾巴（deepseek-v4-pro → v4-pro），省位置。 */
+function shortModel(id) {
+  const parts = String(id || '').split(/[\/-]/).filter(Boolean);
+  const tail = parts.length > 1 ? parts[parts.length - 1] : (parts[0] || id);
+  return tail.length > 12 ? tail.slice(0, 12) + '…' : tail;
+}
+
+/** 拉一次模型清单 + 当前值（进工坊 / 打开面板时各调一次）。 */
+async function refreshModelState() {
+  try {
+    const info = await ctx.ai.current();
+    if (!S.alive) return;
+    S.model = String((info && info.model) || '');
+    const list = await ctx.ai.models();
+    if (!S.alive) return;
+    const arr = (list && list.models) || [];
+    S.models = arr.map((m) => String(m));
+    if (!S.model && S.models.length) S.model = S.models[0];
+  } catch (e) {
+    // AI 没配好（没 Key / 没选提供商）时这里会抛：按钮就当「未配置」，别弹错误
+    S.model = '';
+    S.models = [];
+  }
+  scheduleRender();
+}
+
+/** 模型面板：思考档位 + 模型列表，点一下即生效。 */
+function renderModels() {
+  const effortBox = $('#effortList');
+  effortBox.innerHTML = '';
+  for (const [value, label] of EFFORTS) {
+    const b = document.createElement('button');
+    b.className = 'pick' + (S.effort === value ? ' active' : '');
+    b.innerHTML = '<span class="pick-main"><strong>' + esc(label) + '</strong></span>';
+    b.addEventListener('click', async () => {
+      S.effort = value;
+      await ctx.storage.set('reasoning_effort', value);
+      scheduleRender();
+    });
+    effortBox.appendChild(b);
+  }
+  const modelBox = $('#modelList');
+  modelBox.innerHTML = '';
+  if (!S.models.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sheet-label';
+    empty.textContent = '没读到可用模型：先到「我的 → AI 设置」配好提供商与 Key';
+    modelBox.appendChild(empty);
+    return;
+  }
+  for (const id of S.models) {
+    const b = document.createElement('button');
+    b.className = 'pick' + (S.model === id ? ' active' : '');
+    b.innerHTML = '<span class="pick-main"><strong>' + esc(id) + '</strong></span>';
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        const r = await ctx.ai.setModel(id);
+        S.model = String((r && r.model) || id);
+        await ctx.storage.set('model', S.model);
+      } catch (e) {
+        ctx.ui.toast('换模型失败：' + ((e && e.message) || e));
+      }
+      b.disabled = false;
+      scheduleRender();
+    });
+    modelBox.appendChild(b);
+  }
+}
     /** 「切换」面板：拓展列表 + 当前拓展的对话列表（点一下切过去）。 */
     function renderSwitch() {
       const draftBox = $('#draftList');
@@ -2032,6 +2145,7 @@ export default {
 
     function closeOverlays() {
       switchSheet.classList.add('hidden');
+      modelSheet.classList.add('hidden');
       skillsDrawer.classList.add('hidden');
       moreMenu.classList.add('hidden');
       backdrop.classList.add('hidden');
@@ -2282,6 +2396,26 @@ export default {
       copyText(body ? body.innerText : '');
     });
 
+    $('#btnModel').addEventListener('click', () => {
+      modelSheet.classList.toggle('hidden');
+      backdrop.classList.toggle('hidden', modelSheet.classList.contains('hidden'));
+      if (!modelSheet.classList.contains('hidden')) {
+        renderModels();
+        refreshModelState();
+      }
+    });
+    $('#btnCloseModel').addEventListener('click', () => {
+      modelSheet.classList.add('hidden');
+      backdrop.classList.add('hidden');
+    });
+    $('#btnEffort').addEventListener('click', () => {
+      modelSheet.classList.toggle('hidden');
+      backdrop.classList.toggle('hidden', modelSheet.classList.contains('hidden'));
+      if (!modelSheet.classList.contains('hidden')) {
+        renderModels();
+        refreshModelState();
+      }
+    });
     $('#btnPlan').addEventListener('click', async () => {
       if (S.running) return;
       S.planMode = !S.planMode;
@@ -2324,6 +2458,11 @@ export default {
       try {
         S.planMode = (await ctx.storage.get('plan_mode')) === true;
       } catch (_) {}
+      try {
+        const savedEffort = await ctx.storage.get('reasoning_effort');
+        if (typeof savedEffort === 'string') S.effort = savedEffort;
+      } catch (_) {}
+      await refreshModelState();
       await refreshSkills();
       await refreshDrafts();
       render();
