@@ -19,6 +19,16 @@ class ChangelogEntry {
 /// versionName 一致；用户升级后第一次打开 App 时，比他上次见过的版本新的条目会弹窗展示。
 const List<ChangelogEntry> appChangelog = [
   ChangelogEntry(
+    version: '1.48.1-dev.10',
+    date: '2026-11-28',
+    notes: [
+      '拓展工坊界面按 DSH 重做：图标全部换成描边图标（不再用表情符号），麦克风常驻可按',
+      '拓展工坊输入「/」弹出工具与技能候选，中文名 + 说明，上下键选、回车补进输入框',
+      '课表的日期 / 时间选择器换成 App 自己的玻璃面板，不再是系统默认弹层',
+      '日程表单整块换成玻璃输入框与选择器，和课表其它界面统一',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.48.1-dev.9',
     date: '2026-11-28',
     notes: [
